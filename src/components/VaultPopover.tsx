@@ -331,7 +331,7 @@ export function VaultPopover({ variant = "header" }: VaultPopoverProps) {
         >
           <span
             aria-hidden
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[--color-coral-soft] font-round text-sm font-semibold text-[--color-coral-ink]"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-grass-soft font-round text-sm font-semibold text-grass-ink"
           >
             {initial}
           </span>

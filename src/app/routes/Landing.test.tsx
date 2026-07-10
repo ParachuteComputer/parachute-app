@@ -1,6 +1,6 @@
 import { Landing } from "@/app/routes/Landing";
 import { resetDoorProbeCache } from "@/lib/vault/probe";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,7 +50,7 @@ function renderLanding() {
   );
 }
 
-describe("Landing (no-vault) door fork", () => {
+describe("Landing (arrival) door fork", () => {
   beforeEach(() => {
     // The door probe caches per origin for the page session; clear it so each
     // case probes fresh with its own mocked response.
@@ -67,8 +67,8 @@ describe("Landing (no-vault) door fork", () => {
     mockFetchOnce({ json: validMetadata });
     renderLanding();
 
-    // Primary: "Create your Parachute" is a plain full-page link to the
-    // same-origin `/signup` ceremony (not an SPA route).
+    // Primary: "Create your Parachute" links to the same-origin `/signup`
+    // ceremony (a real anchor, not an SPA route).
     const create = await screen.findByRole("link", { name: /create your parachute/i });
     expect(create).toHaveAttribute("href", "/signup");
 
@@ -80,21 +80,31 @@ describe("Landing (no-vault) door fork", () => {
 
     // The misdetection is gone: never present the serving origin as a vault.
     expect(screen.queryByText(/looks like there's a vault/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^connect$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^connect a vault →$/i })).not.toBeInTheDocument();
+  });
+
+  it("threads the typed vault name into the echo and the create href", async () => {
+    mockFetchOnce({ json: validMetadata });
+    renderLanding();
+
+    // Wait for the fork to resolve, then type a name into the identity field.
+    await screen.findByRole("link", { name: /create your parachute/i });
+    fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
+
+    // The live echo makes the threading visible; the CTA relabels + the href
+    // carries the name forward to the ceremony.
+    expect(screen.getByText("moss")).toBeInTheDocument();
+    const create = screen.getByRole("link", { name: /create moss/i });
+    expect(create).toHaveAttribute("href", "/signup?vault=moss");
   });
 
   it("leads with connect-by-URL and NEVER self-offers when the origin is not a door", async () => {
-    // notes.parachute.computer today: a static host, no issuer discovery (404).
+    // A static host (no issuer discovery, 404).
     mockFetchOnce({ ok: false, status: 404 });
     renderLanding();
 
-    await waitFor(() =>
-      expect(screen.getByRole("link", { name: /^connect a vault$/i })).toBeInTheDocument(),
-    );
-    expect(screen.getByRole("link", { name: /^connect a vault$/i })).toHaveAttribute(
-      "href",
-      "/add",
-    );
+    const connect = await screen.findByRole("link", { name: /connect a vault/i });
+    expect(connect).toHaveAttribute("href", "/add");
 
     // Regression pin (surface#193): the serving origin is never offered as a
     // vault, and the create fork does not appear off a non-door origin.
@@ -107,7 +117,7 @@ describe("Landing (no-vault) door fork", () => {
     renderLanding();
 
     await waitFor(() =>
-      expect(screen.getByRole("link", { name: /^connect a vault$/i })).toBeInTheDocument(),
+      expect(screen.getByRole("link", { name: /connect a vault/i })).toBeInTheDocument(),
     );
     expect(screen.queryByRole("link", { name: /create your parachute/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/looks like there's a vault/i)).not.toBeInTheDocument();
@@ -121,7 +131,7 @@ describe("Landing (no-vault) door fork", () => {
     renderLanding();
 
     await waitFor(() =>
-      expect(screen.getByRole("link", { name: /^connect a vault$/i })).toBeInTheDocument(),
+      expect(screen.getByRole("link", { name: /connect a vault/i })).toBeInTheDocument(),
     );
     expect(screen.queryByRole("link", { name: /create your parachute/i })).not.toBeInTheDocument();
   });

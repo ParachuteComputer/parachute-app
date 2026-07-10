@@ -53,36 +53,28 @@ describe("detectMountBase", () => {
     });
   });
 
-  describe("fallback behaviour", () => {
-    it("falls back to /notes when the path is unrecognised (defensive)", () => {
-      // Operator pointing the browser at the bare origin — we degrade to the
-      // historical default rather than blank the router. Real production
-      // mounts are always either `/surface/<slug>` or `/notes`, so this branch
-      // is the "someone hit the wrong URL" affordance.
-      expect(detectMountBase("/")).toBe("/notes");
+  describe("fallback behaviour (root-hosted default)", () => {
+    it("resolves the bare origin root to the empty (root) mount", () => {
+      // parachute-app is root-hosted: the bare origin `/` is the real, common
+      // case, and the router basename must be empty to match it.
+      expect(detectMountBase("/")).toBe("");
     });
-    it("falls back to /notes for an unknown sibling route under /surface/", () => {
-      // `/surface/admin` is parachute-surface's admin SPA, not a UI mount — its
-      // bundle would never call into Notes. But if Notes' bundle ever loaded
-      // here by accident, we'd rather it render at /notes than at /surface/admin.
-      // (PATH_PATTERN forbids the literal `admin` slug, so this case is
-      // theoretical — kept as a guard against future relaxation.)
-      expect(detectMountBase("/surface/")).toBe("/notes");
+    it("resolves an unknown sibling route under /surface/ to root", () => {
+      // `/surface/admin` is parachute-surface's admin SPA, not a UI mount. If
+      // this bundle ever loaded there by accident, root is the safe default.
+      // (PATH_PATTERN forbids the literal `admin` slug, so this is theoretical.)
+      expect(detectMountBase("/surface/")).toBe("");
     });
-    it("falls back to /notes for paths the slug grammar rejects", () => {
-      // Slug must start with [a-z0-9]; a leading hyphen fails the regex and
-      // we fall through to the legacy default.
-      expect(detectMountBase("/surface/-bad/")).toBe("/notes");
+    it("resolves paths the slug grammar rejects to root", () => {
+      // Slug must start with [a-z0-9]; a leading hyphen fails the regex and we
+      // fall through to the root default.
+      expect(detectMountBase("/surface/-bad/")).toBe("");
     });
-    it("falls back to /notes when no window is available (SSR/test)", () => {
-      // Implicit when called with no arg in a non-browser env. We can't
-      // delete `window` from jsdom mid-test without breaking other tests,
-      // so cover this branch via the explicit `undefined` path the function
-      // accepts. jsdom's `document` has no `<meta name="parachute-mount">`
-      // injected (the test environment leaves the document bare), so the
-      // canonical tier returns null and we fall through to the legacy
-      // default.
-      expect(detectMountBase(undefined as unknown as string | undefined)).toBe("/notes");
+    it("resolves to root when no window is available (SSR/test)", () => {
+      // Implicit when called with no arg in a non-browser env. jsdom's document
+      // has no `<meta name="parachute-mount">` injected, so the canonical tier
+      // returns null and we fall through to the root default.
+      expect(detectMountBase(undefined as unknown as string | undefined)).toBe("");
     });
   });
 
@@ -134,9 +126,9 @@ describe("detectMountBase", () => {
       expect(detectMountBase("/surface/my-notes/x", doc)).toBe("/surface/my-notes");
     });
 
-    it("falls back to /notes when meta tag absent AND no pathname match", () => {
+    it("falls back to root when meta tag absent AND no pathname match", () => {
       const doc = stubWith(null);
-      expect(detectMountBase("/", doc)).toBe("/notes");
+      expect(detectMountBase("/", doc)).toBe("");
     });
   });
 

@@ -16,45 +16,31 @@ import {
 // navigation. And we must also unregister any stale SW left behind by a
 // pre-0.1.2 install that auto-registered before this gate existed.
 //
-// The vitest config sets vite's `base` to `/notes/`, so
-// `import.meta.env.BASE_URL` resolves to `/notes/` and
-// `BUILD_TIME_BASE` evaluates to `/notes`. Tests below assume that.
+// The vitest config sets vite's `base` to `/` (parachute-app is root-hosted),
+// so `import.meta.env.BASE_URL` resolves to `/` and `BUILD_TIME_BASE` evaluates
+// to "" (origin root). Tests below assume that.
 
 describe("BUILD_TIME_BASE", () => {
-  it("trims the trailing slash from vite's BASE_URL", () => {
-    expect(BUILD_TIME_BASE).toBe("/notes");
+  it("resolves the root-hosted build (BASE_URL=/) to the empty base", () => {
+    expect(BUILD_TIME_BASE).toBe("");
   });
 });
 
-describe("resolveBuildTimeBase — standalone-mount SW gate reconciliation (FIX 1)", () => {
-  // The bug this guards against: the standalone deploy (notes.parachute.computer)
-  // stamps `VITE_BASE_PATH="/"`. `detectMountBase()` returns "" (origin root)
-  // for that build, but `buildTimeBase()` used to normalise "/" → "/notes", so
-  // `shouldRegisterServiceWorker` (`runtime === build-time`) could NEVER pass —
-  // the installed PWA got no offline shell on cold start. The fix reconciles
-  // the build-time base to "" for the standalone build so the gate passes.
+describe("resolveBuildTimeBase — root-hosted SW gate reconciliation", () => {
+  // The gate is `runtime === build-time`; `detectMountBase()` defaults to ""
+  // (origin root) for parachute-app, so the build-time base must resolve to ""
+  // for the root-hosted build or the installed PWA gets no offline shell on
+  // cold start. A `/surface/<slug>` sub-mount build keeps its prefix.
 
-  // The mount `detectMountBase()` returns for the standalone (VITE_BASE_PATH=/)
-  // build. Kept as a named constant so the reconciliation is explicit: the
-  // build-time base must equal this for the gate to pass.
-  const STANDALONE_RUNTIME_MOUNT = "";
-
-  it("maps the standalone VITE_BASE_PATH=/ build to '' so it matches detectMountBase()", () => {
-    // VITE_BASE_PATH wins even when Vite's BASE_URL disagrees.
-    expect(resolveBuildTimeBase("/", "/notes/")).toBe(STANDALONE_RUNTIME_MOUNT);
-    expect(resolveBuildTimeBase("/", "/")).toBe(STANDALONE_RUNTIME_MOUNT);
-    expect(resolveBuildTimeBase("/", undefined)).toBe(STANDALONE_RUNTIME_MOUNT);
-    // Gate now passes for standalone: runtime ("") === build-time ("").
+  it("maps a root build ('/' via either signal) to '' so it matches detectMountBase()", () => {
+    expect(resolveBuildTimeBase("/", "/notes/")).toBe("");
+    expect(resolveBuildTimeBase("/", "/")).toBe("");
+    expect(resolveBuildTimeBase("/", undefined)).toBe("");
+    // A bare BASE_URL="/" with VITE_BASE_PATH unset is also root-hosted.
+    expect(resolveBuildTimeBase(undefined, "/")).toBe("");
   });
 
-  it("still folds a bundled-host BASE_URL=/ (VITE_BASE_PATH unset) to the legacy /notes", () => {
-    // A `base: ""` build surfaces BASE_URL as "/", but its runtime mount is
-    // always `/notes` or `/surface/<slug>` (never ""), so the gate must
-    // compare against `/notes` — NOT be misread as the standalone build.
-    expect(resolveBuildTimeBase(undefined, "/")).toBe("/notes");
-  });
-
-  it("resolves the default daemon build (BASE_URL=/notes/) to /notes", () => {
+  it("resolves an explicit /notes sub-mount build to /notes", () => {
     expect(resolveBuildTimeBase(undefined, "/notes/")).toBe("/notes");
   });
 
@@ -63,31 +49,32 @@ describe("resolveBuildTimeBase — standalone-mount SW gate reconciliation (FIX 
     expect(resolveBuildTimeBase("/surface/my-notes", undefined)).toBe("/surface/my-notes");
   });
 
-  it("falls back to /notes when neither signal is usable", () => {
-    expect(resolveBuildTimeBase(undefined, undefined)).toBe("/notes");
-    expect(resolveBuildTimeBase("", "")).toBe("/notes");
+  it("resolves to root ('') when neither signal is usable", () => {
+    expect(resolveBuildTimeBase(undefined, undefined)).toBe("");
+    expect(resolveBuildTimeBase("", "")).toBe("");
   });
 });
 
 describe("shouldRegisterServiceWorker", () => {
-  it("returns true when the runtime mount matches the build-time base (default daemon mount)", () => {
-    expect(shouldRegisterServiceWorker("/notes/")).toBe(true);
+  it("returns true at the origin root (the root-hosted happy path)", () => {
+    expect(shouldRegisterServiceWorker("/")).toBe(true);
   });
 
-  it("returns true for a deep route under the matching mount", () => {
-    expect(shouldRegisterServiceWorker("/notes/n/abc123")).toBe(true);
+  it("returns true for a deep route under the root mount", () => {
+    expect(shouldRegisterServiceWorker("/settings")).toBe(true);
+    expect(shouldRegisterServiceWorker("/n/abc123")).toBe(true);
+  });
+
+  it("returns false when the bundle is served under a /notes sub-mount", () => {
+    // Root-hosted build (base "") served at /notes/ → precache mismatch.
+    expect(shouldRegisterServiceWorker("/notes/")).toBe(false);
   });
 
   it("returns false when the runtime mount is parachute-surface's /surface/notes/", () => {
-    // The bug: bundle built for /notes/, served at /surface/notes/.
     expect(shouldRegisterServiceWorker("/surface/notes/")).toBe(false);
   });
 
-  it("returns false for a custom-slug app mount", () => {
-    expect(shouldRegisterServiceWorker("/surface/my-notes/")).toBe(false);
-  });
-
-  it("returns false for an OAuth callback under a mismatched mount (the exact scenario Aaron hit)", () => {
+  it("returns false for an OAuth callback under a mismatched sub-mount", () => {
     expect(shouldRegisterServiceWorker("/surface/notes/oauth/callback")).toBe(false);
   });
 });

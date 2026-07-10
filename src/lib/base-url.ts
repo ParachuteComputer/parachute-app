@@ -75,30 +75,18 @@ const MOUNT_PATTERNS: readonly RegExp[] = [
   /^(\/notes)(?=\/|$)/,
 ] as const;
 
-/** Fallback when no recognised mount matches. Preserves the legacy default. */
-const LEGACY_FALLBACK = "/notes" as const;
-
 /**
- * Build-time signal for the standalone deploy (notes.parachute.computer).
+ * Fallback when no recognised sub-mount matches.
  *
- * The deploy workflow at `.github/workflows/deploy-notes-ui.yml` sets
- * `VITE_BASE_PATH: "/"` before `vite build`. Vite exposes any `VITE_*`
- * env var via `import.meta.env`, so the built bundle carries the signal
- * forward into runtime. When set, BrowserRouter's basename must be
- * empty — every URL on notes.parachute.computer is at origin root with
- * no path prefix, so falling back to `/notes` would mismatch and
- * blank the router (Aaron hit exactly this on 2026-05-27 with
- * `<Router basename="/notes"> not able to match the URL "/"`).
- *
- * For bundled-host builds (parachute-surface's `surface-host` bundling
- * `@openparachute/notes-ui` under `/surface/notes/`), VITE_BASE_PATH
- * is unset → STANDALONE_DEPLOY is false → existing meta-tag + regex
- * detection runs as before.
+ * parachute-app is the root-hosted super-surface — it lives at the origin root
+ * (app.parachute.computer / *.pages.dev), so the default mount is `""` (empty
+ * basename). BrowserRouter's basename must be empty for routes to match the bare
+ * pathname; falling back to `/notes` here would blank the router at `/` (the
+ * classic `<Router basename="/notes"> not able to match the URL "/"`). The
+ * `/surface/<slug>` and `/notes` patterns still win if the same bundle is ever
+ * served under one of those sub-mounts.
  */
-const STANDALONE_DEPLOY =
-  typeof import.meta !== "undefined" &&
-  import.meta.env != null &&
-  (import.meta.env as { VITE_BASE_PATH?: string }).VITE_BASE_PATH === "/";
+const ROOT_FALLBACK = "" as const;
 
 /**
  * Detect the mount path the SPA is served under at runtime.
@@ -132,23 +120,18 @@ export function detectMountBase(pathname?: string, doc?: Document): string {
   const fromMeta = getMountBase({ doc });
   if (fromMeta) return fromMeta;
 
-  // 2. Standalone-deploy build (notes.parachute.computer). The deploy
-  //    workflow stamps VITE_BASE_PATH=/ before vite build, which
-  //    propagates into import.meta.env and tells the runtime "this
-  //    bundle is at origin root with no path prefix." BrowserRouter's
-  //    basename must be empty for routes to match the bare pathname.
-  if (STANDALONE_DEPLOY) return "";
-
-  // 3. Pathname fallback. Preserved locally because app-client's helper
+  // 2. Pathname fallback. Preserved locally because app-client's helper
   //    intentionally never reads `window.location.pathname` — pathname-
   //    based detection is interim until every host injects the meta tag.
+  //    A recognised sub-mount (`/surface/<slug>`, `/notes`) wins; anything
+  //    else — including the bare origin root — resolves to the root mount.
   const path = pathname ?? (typeof window === "undefined" ? null : window.location.pathname);
-  if (path == null) return LEGACY_FALLBACK;
+  if (path == null) return ROOT_FALLBACK;
   for (const pattern of MOUNT_PATTERNS) {
     const match = pattern.exec(path);
     if (match?.[1]) return match[1];
   }
-  return LEGACY_FALLBACK;
+  return ROOT_FALLBACK;
 }
 
 /**

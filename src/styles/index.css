@@ -68,12 +68,14 @@
     Quicksand, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, "Cascadia Code", monospace;
 
-  /* --- Surfaces + text (light) --- */
+  /* --- Surfaces + text (light) ---
+     bg-soft warmed to the prototype's paper-2 (#f7f1e6) so the rail + recessed
+     surfaces glow rather than sit grey against the paper. */
   --color-bg: #fdfaf4;
-  --color-bg-soft: #f3f0ea;
-  --color-fg: #2c2a26;
-  --color-fg-muted: #6b6860;
-  --color-fg-dim: #9a9690;
+  --color-bg-soft: #f7f1e6;
+  --color-fg: #2a2521;
+  --color-fg-muted: #6b6459;
+  --color-fg-dim: #9a9184;
 
   /* --- Brand accent (light) — coral (brand-tokens §1) ---
      accent = the button hue #bf4a2a (4.97:1 on white, 4.77:1 on paper);
@@ -83,9 +85,27 @@
   --color-accent-light: #e05d3c;
   --color-sky: #5b8fa8;
 
-  /* --- Hairlines + raised surfaces (light) --- */
-  --color-border: #e4e0d8;
-  --color-border-light: #ece9e2;
+  /* --- Warm secondary hues (prototype parity) ---
+     The synthesized prototype threads three warm-paper accents beyond coral:
+     GRASS (the vault's own colour — switcher glyph, active rail rows, the
+     "issued / connected" trust green), SUN (the gentle "finish setting up"
+     nudge), and SAGE (mid blue-green, "connected apps" on the map — == sky).
+     Each carries a -strong (button fill), -soft (tint bg), -ink (text-on-soft)
+     so they compose like the coral family. Ratios AA-checked on paper. */
+  --color-grass: #3f8a58;
+  --color-grass-strong: #2f7647;
+  --color-grass-soft: #dcefe0;
+  --color-grass-ink: #245c39;
+  --color-sun: #f4c020;
+  --color-sun-soft: #fdf1c9;
+  --color-sun-ink: #6b5200;
+  --color-sage: #5b8fa8;
+
+  /* --- Hairlines + raised surfaces (light) ---
+     Warmed toward the prototype's paper lines (#ece5d8 / #e2d9c8) so hairlines
+     read as part of the paper, not a cool grey. */
+  --color-border: #e2d9c8;
+  --color-border-light: #ece5d8;
   --color-card: #ffffff;
   --color-card-hover: #fefdfb;
 
@@ -141,6 +161,10 @@
     color-mix(in srgb, #2c2a26 5%, transparent);
   --shadow-lg: 0 8px 24px color-mix(in srgb, #2c2a26 12%, transparent), 0 2px 6px
     color-mix(in srgb, #2c2a26 6%, transparent);
+  /* Prototype's generous, diffuse warm shadows — the "settling gently onto
+     paper" feel. -soft lifts cards a touch; -lift is the floating sheet / FAB. */
+  --shadow-soft: 0 10px 30px color-mix(in srgb, #3c2d1e 8%, transparent);
+  --shadow-lift: 0 18px 44px color-mix(in srgb, #3c2d1e 14%, transparent);
 
   /* --- Container widths (consolidated; Header/footer/content now agree) --- */
   --w-prose: 42rem;
@@ -221,6 +245,17 @@
   --_d-accent-hover: #f08d70;
   --_d-accent-light: #c95f40;
   --_d-sky: #7fb3cc;
+  /* Warm secondary hues, lightened for the dark ground (grass/sun/sage). */
+  --_d-grass: #6fbf8a;
+  --_d-grass-strong: #4f9d6b;
+  --_d-grass-soft: #1e3527;
+  --_d-grass-ink: #9fd9b3;
+  --_d-sun: #f4c020;
+  --_d-sun-soft: #38300f;
+  --_d-sun-ink: #f0d68a;
+  --_d-sage: #7fb3cc;
+  --_d-shadow-soft: 0 10px 30px color-mix(in srgb, #000 42%, transparent);
+  --_d-shadow-lift: 0 18px 44px color-mix(in srgb, #000 52%, transparent);
   --_d-border: #33312d;
   --_d-border-light: #2a2926;
   --_d-card: #23221f;
@@ -257,6 +292,14 @@
     --color-accent-hover: var(--_d-accent-hover);
     --color-accent-light: var(--_d-accent-light);
     --color-sky: var(--_d-sky);
+    --color-grass: var(--_d-grass);
+    --color-grass-strong: var(--_d-grass-strong);
+    --color-grass-soft: var(--_d-grass-soft);
+    --color-grass-ink: var(--_d-grass-ink);
+    --color-sun: var(--_d-sun);
+    --color-sun-soft: var(--_d-sun-soft);
+    --color-sun-ink: var(--_d-sun-ink);
+    --color-sage: var(--_d-sage);
     --color-border: var(--_d-border);
     --color-border-light: var(--_d-border-light);
     --color-card: var(--_d-card);
@@ -270,6 +313,8 @@
     --shadow-sm: var(--_d-shadow-sm);
     --shadow-md: var(--_d-shadow-md);
     --shadow-lg: var(--_d-shadow-lg);
+    --shadow-soft: var(--_d-shadow-soft);
+    --shadow-lift: var(--_d-shadow-lift);
   }
 }
 
@@ -284,6 +329,14 @@
   --color-accent-hover: var(--_d-accent-hover);
   --color-accent-light: var(--_d-accent-light);
   --color-sky: var(--_d-sky);
+  --color-grass: var(--_d-grass);
+  --color-grass-strong: var(--_d-grass-strong);
+  --color-grass-soft: var(--_d-grass-soft);
+  --color-grass-ink: var(--_d-grass-ink);
+  --color-sun: var(--_d-sun);
+  --color-sun-soft: var(--_d-sun-soft);
+  --color-sun-ink: var(--_d-sun-ink);
+  --color-sage: var(--_d-sage);
   --color-border: var(--_d-border);
   --color-border-light: var(--_d-border-light);
   --color-card: var(--_d-card);
@@ -297,6 +350,8 @@
   --shadow-sm: var(--_d-shadow-sm);
   --shadow-md: var(--_d-shadow-md);
   --shadow-lg: var(--_d-shadow-lg);
+  --shadow-soft: var(--_d-shadow-soft);
+  --shadow-lift: var(--_d-shadow-lift);
 }
 
 html,
@@ -821,5 +876,131 @@ body {
     background-color: color-mix(in srgb, var(--color-border) 55%, transparent);
     border-radius: var(--radius-sm);
     animation: pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* ===========================================================================
+     Prototype super-surface classes — the warm home + calm arrival.
+     These reproduce the synthesized prototype's signature surfaces (the focused
+     composer, the sun "finish setting up" nudge, the note row) as reusable
+     classes so Home/Landing read the same way the prototype does. Generous
+     radii + the diffuse -soft shadow are the point: things settle onto paper.
+     =========================================================================== */
+
+  /* The write-in-place composer — the home's hero affordance. A big soft card
+     that, when focused/hovered, blooms the coral ring (prototype .composer.focused). */
+  .composer {
+    border: 1.5px solid var(--color-border);
+    border-radius: 20px;
+    background-color: var(--color-card);
+    box-shadow: var(--shadow-soft);
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  }
+  .composer-focus,
+  .composer:hover,
+  .composer:focus-within {
+    border-color: var(--color-accent-light);
+    box-shadow: 0 0 0 4px var(--color-coral-soft);
+  }
+
+  /* The single quiet "finish setting up" nudge — sun-soft, never a wall. */
+  .nudge-sun {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: var(--radius-xl);
+    border: 1px solid color-mix(in srgb, var(--color-sun) 45%, var(--color-border));
+    background-color: var(--color-sun-soft);
+    color: var(--color-sun-ink);
+    font-family: var(--font-round);
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+  }
+
+  /* A note row on the home — dot · title · preview · time (prototype .note). */
+  .note-row {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: var(--radius-xl);
+    border: 1px solid transparent;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+  }
+  .note-row:hover {
+    background-color: var(--color-card);
+    border-color: var(--color-border-light);
+  }
+  .note-dot {
+    margin-top: 0.45rem;
+    height: 0.5rem;
+    width: 0.5rem;
+    flex: none;
+    border-radius: var(--radius-full);
+    background-color: var(--color-grass);
+  }
+
+  /* A large soft quick-action tile for the arrival + home quick doors. */
+  .tile {
+    border-radius: var(--radius-xl);
+    border: 1.5px solid var(--color-border);
+    background-color: var(--color-card);
+    box-shadow: var(--shadow-soft);
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+  }
+  .tile:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+    box-shadow: var(--shadow-lift);
+  }
+
+  /* Arrival hero title — one notch above page-title, the marketing-calm scale. */
+  .hero-title {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    font-size: clamp(2.4rem, 5vw, 3.6rem);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--color-fg);
+  }
+  /* The one coral italic accent word (prototype .acc). */
+  .accent-word {
+    color: var(--color-accent-light);
+    font-style: italic;
+  }
+
+  /* The settling-note drop on arrival (reduced-motion: no animation). */
+  @keyframes drop-in {
+    0% {
+      transform: translateY(-42px) rotate(-7deg);
+      opacity: 0;
+    }
+    60% {
+      transform: translateY(6px) rotate(2deg);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(0) rotate(-2deg);
+      opacity: 1;
+    }
+  }
+  .drop-in {
+    animation: drop-in 1.2s cubic-bezier(0.3, 0.7, 0.4, 1) both;
+  }
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .fade-up {
+    animation: fade-up 0.5s ease both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .drop-in,
+    .fade-up {
+      animation: none;
+    }
   }
 }

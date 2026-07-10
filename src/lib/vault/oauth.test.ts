@@ -74,7 +74,7 @@ describe("beginOAuth", () => {
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("client_id")).toBe("client-123");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:3000/notes/oauth/callback");
+    expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:3000/oauth/callback");
     expect(url.searchParams.get("scope")).toBe("vault:read vault:write");
 
     const challenge = url.searchParams.get("code_challenge");
@@ -263,14 +263,12 @@ describe("redirectUriForOrigin under runtime mount detection", () => {
     );
   });
 
-  it("falls back to /notes/oauth/callback for unrecognised mounts (defensive)", () => {
-    // Bare origin or any unrecognised pathname falls through to the legacy
-    // default — better than blanking the redirect URI. Real-world mounts
-    // are always one of the cases above.
+  it("uses the root /oauth/callback for the bare origin (root-hosted default)", () => {
+    // parachute-app is root-hosted: the bare origin resolves to the root mount,
+    // so the callback is `/oauth/callback` with no path prefix. The recognised
+    // sub-mount cases above still prefix their mount.
     window.history.replaceState({}, "", "/");
-    expect(redirectUriForOrigin("http://host.example")).toBe(
-      "http://host.example/notes/oauth/callback",
-    );
+    expect(redirectUriForOrigin("http://host.example")).toBe("http://host.example/oauth/callback");
   });
 });
 

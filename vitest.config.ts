@@ -4,8 +4,9 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   // Mirror the production default so `import.meta.env.BASE_URL` in tests
-  // reflects what the SPA actually sees at runtime.
-  base: "/notes/",
+  // reflects what the SPA actually sees at runtime. parachute-app is
+  // root-hosted, so the base is "/" (→ BUILD_TIME_BASE "").
+  base: "/",
   plugins: [react()],
   resolve: {
     alias: {

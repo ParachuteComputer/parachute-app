@@ -104,7 +104,7 @@ function RailLink({
       aria-current={active ? "page" : undefined}
       className={`focus-ring flex items-center gap-3 rounded-lg px-3 py-2 font-round text-sm transition-colors ${
         active
-          ? "bg-[--color-coral-soft] font-semibold text-[--color-coral-ink]"
+          ? "bg-grass-soft font-semibold text-grass-ink"
           : "font-medium text-fg-muted hover:bg-bg hover:text-fg"
       }`}
     >

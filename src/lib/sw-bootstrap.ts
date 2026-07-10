@@ -50,35 +50,25 @@ import { detectMountBase } from "./base-url";
  * service worker + PWA manifest were baked for. Extracted from `buildTimeBase`
  * so it can be unit-tested without stubbing `import.meta.env`.
  *
- * The load-bearing case is the **standalone origin-root deploy**
- * (notes.parachute.computer), whose build stamps `VITE_BASE_PATH="/"`.
- * `detectMountBase()` returns "" (origin root) for that build — so the
- * build-time base MUST also be "" or the SW gate (`runtime === build-time`,
- * see `shouldRegisterServiceWorker`) can never pass, and the installed PWA
- * gets no offline shell on cold start. We therefore special-case an explicit
- * `VITE_BASE_PATH === "/"` to "" BEFORE the generic normalisation below —
- * which otherwise folds a bare "/" into the legacy `/notes` default. That
- * generic fold is correct only when the "/" arrives via Vite's `BASE_URL`
- * on a bundled-host build (`base: ""` → `BASE_URL === "/"`) where
- * `VITE_BASE_PATH` is unset; there the runtime mount is `/notes` or
- * `/surface/<slug>` (never ""), so `/notes` is the right comparator.
- *
- * This mirrors `detectMountBase()`'s `STANDALONE_DEPLOY` branch
- * (`VITE_BASE_PATH === "/"` → "") so the two sides of the gate agree by
- * construction.
+ * parachute-app is the **root-hosted super-surface**: its build uses
+ * `base: "/"` (and, when set explicitly, `VITE_BASE_PATH="/"`), and
+ * `detectMountBase()` defaults to "" (origin root). The build-time base MUST
+ * therefore also resolve to "" or the SW gate (`runtime === build-time`, see
+ * `shouldRegisterServiceWorker`) can never pass and the installed PWA gets no
+ * offline shell on cold start. A bare "/" (via `VITE_BASE_PATH` or Vite's
+ * `BASE_URL`) resolves to root ""; a `/surface/<slug>` sub-mount build keeps
+ * its prefix. This mirrors `detectMountBase()`'s root default so the two sides
+ * of the gate agree by construction.
  */
 export function resolveBuildTimeBase(
   viteBasePath: string | undefined,
   baseUrl: string | undefined,
 ): string {
-  // Standalone deploy: explicit VITE_BASE_PATH="/" → origin-root mount "".
-  if (viteBasePath === "/") return "";
   const raw = viteBasePath && viteBasePath.length > 0 ? viteBasePath : baseUrl;
-  // When vite.config sets `base: ""`, BASE_URL becomes "/" — useless as a
-  // mount comparator on a bundled-host build. Fall through to the legacy
-  // default in that case.
-  const normalised = !raw || raw === "" || raw === "/" ? "/notes/" : raw;
-  return normalised.replace(/\/$/, "") || "/notes";
+  // Root-hosted default: a bare "/" (or empty) means the origin root, so the
+  // build-time base is "" — matching the runtime mount detector.
+  if (!raw || raw === "" || raw === "/") return "";
+  return raw.replace(/\/$/, "");
 }
 
 function buildTimeBase(): string {
