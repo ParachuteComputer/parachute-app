@@ -118,7 +118,7 @@ function SingleDay({ dateParam }: { dateParam: string }) {
   if (!parsed) {
     return (
       <div className="page-prose">
-        <p className="text-sm text-[--color-danger]">Invalid date in URL: {targetKey}</p>
+        <p className="text-sm text-danger">Invalid date in URL: {targetKey}</p>
         <Link to="/today" className="text-sm text-accent hover:underline">
           Back to today
         </Link>

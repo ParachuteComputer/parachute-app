@@ -54,7 +54,7 @@
    The dark-mode accent LIGHTENS to a coral (#ec7a5c, 6.28:1 on the dark
    ground), so `--color-on-accent` flips to a dark warm ink (#2a1710 → 6.11:1
    on the dark accent) instead of white. Every accent-surfaced label uses
-   `.btn-primary` or `text-[--color-on-accent]`, never a hardcoded `text-white`.
+   `.btn-primary` or `text-on-accent`, never a hardcoded `text-white`.
    Ratios computed in the 0.1.21 brand pass; see the PR for the full table.
    =========================================================================== */
 

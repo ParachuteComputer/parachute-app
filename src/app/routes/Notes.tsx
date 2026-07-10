@@ -571,7 +571,7 @@ function SavedViewsSidebar({
       {isPending ? (
         <p className="text-xs text-fg-dim">Loading…</p>
       ) : error ? (
-        <p className="text-xs text-[--color-danger]">Could not load views.</p>
+        <p className="text-xs text-danger">Could not load views.</p>
       ) : !views || views.length === 0 ? (
         <p className="text-xs text-fg-dim">
           None yet. Apply a filter and click “Save view” to add one.
@@ -642,7 +642,7 @@ function SavedViewsSidebar({
                         setOpenMenuId(null);
                         onDelete(v);
                       }}
-                      className="block w-full border-t border-border px-3 py-2 text-left text-sm text-[--color-danger] hover:bg-bg"
+                      className="block w-full border-t border-border px-3 py-2 text-left text-sm text-danger hover:bg-bg"
                     >
                       Delete
                     </button>
@@ -708,7 +708,7 @@ function RenameViewDialog({
           />
         </label>
         {collides ? (
-          <p className="mt-2 text-xs text-[--color-danger]">
+          <p className="mt-2 text-xs text-danger">
             A view with that name already exists.
           </p>
         ) : null}
@@ -774,7 +774,7 @@ function SaveViewDialog({
           />
         </label>
         {collides ? (
-          <p className="mt-2 text-xs text-[--color-danger]">
+          <p className="mt-2 text-xs text-danger">
             A view with that name already exists.
           </p>
         ) : null}
