@@ -161,7 +161,7 @@ export function OAuthCallback() {
       <button
         type="button"
         onClick={() => navigate("/add", { replace: true })}
-        className="rounded-md bg-accent px-4 py-2 text-sm text-[--color-on-accent] hover:bg-accent-hover"
+        className="rounded-md bg-accent px-4 py-2 text-sm text-on-accent hover:bg-accent-hover"
       >
         Try again
       </button>
