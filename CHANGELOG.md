@@ -1,5 +1,18 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.3.1] - 2026-07-10
+
+PWA service worker → **auto-update**. A new deploy now wins on the next load
+without the manual "reload" prompt — the judge URL is iterated on and shown to
+Aaron, so a returning visitor should never be stuck on a stale bundle.
+
+- `registerType: "prompt"` → `"autoUpdate"`; workbox `skipWaiting` +
+  `clientsClaim` + `cleanupOutdatedCaches` so a fresh SW activates and claims
+  open pages immediately, and purged precaches never 404 a claimed page.
+- `UpdateBanner` is now a silent auto-updater: on `needRefresh` it arms the
+  controllerchange reload FIRST, then messages skipWaiting (notes#148 reload
+  contract preserved) — no visible banner. Offline capability unchanged.
+
 ## [0.3.0] - 2026-07-10
 
 Arrival IA fix (Aaron's live feedback): the front door is an **entry fork**, not

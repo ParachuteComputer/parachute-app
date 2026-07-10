@@ -1,18 +1,24 @@
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { reloadAfterServiceWorkerUpdate } from "@/lib/pwa";
 import { shouldRegisterServiceWorker } from "@/lib/sw-bootstrap";
+import { useEffect } from "react";
 
 /**
- * Inner banner that actually drives `useRegisterSW`. Split out from the
+ * Silent auto-updater that drives `useRegisterSW`. Split out from the
  * exported `UpdateBanner` shim so the hook only runs when the runtime
  * mount matches the build-time vite base — calling `useRegisterSW` at a
  * mismatched mount would register the SW with the wrong scope (the bug
  * Aaron hit 2026-05-23). React hooks can't be conditional within a single
  * component, but conditional *rendering* of the child component is fine.
+ *
+ * autoUpdate policy (parachute-app): when a new deploy is ready
+ * (`needRefresh`), apply it AUTOMATICALLY and reload — no "reload" prompt.
+ * The judge URL is iterated on + shown to Aaron, so a returning visitor must
+ * never be stuck on a stale bundle behind a manual button. Renders no UI.
  */
 function UpdateBannerInner() {
   const {
-    needRefresh: [needRefresh, setNeedRefresh],
+    needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_url, registration) {
@@ -25,57 +31,32 @@ function UpdateBannerInner() {
     },
   });
 
-  if (!needRefresh) return null;
-
-  async function onReload() {
-    // Belt-and-suspenders reload: vite-plugin-pwa's built-in `controlling`
-    // listener (registered inside `showSkipWaitingPrompt`) is supposed to
-    // reload the page after the new SW takes over, but in real PWAs that
-    // event can be missed (already-fired-before-listener-attached, iOS
-    // standalone quirks, BFCache interactions) and the click visibly does
-    // nothing. We arm our own controllerchange listener + a hard timeout
-    // BEFORE asking the SW to skipWaiting, so whichever fires first
-    // triggers the reload. Whichever path wins, `window.location.reload()`
-    // gets called exactly once (notes#148).
+  useEffect(() => {
+    if (!needRefresh) return;
+    // A new deploy is ready — apply it automatically. Arm our own
+    // controllerchange listener + a hard timeout BEFORE asking the SW to
+    // skipWaiting, so whichever fires first reloads the page exactly once
+    // (notes#148 — vite-plugin-pwa's built-in `controlling` listener can be
+    // missed on iOS standalone / BFCache). The reload swaps the new assets in
+    // atomically, so skipWaiting never leaves stale JS requesting purged chunks.
     reloadAfterServiceWorkerUpdate();
-    await updateServiceWorker(true);
-  }
+    void updateServiceWorker(true);
+  }, [needRefresh, updateServiceWorker]);
 
-  return (
-    <output className="fixed inset-x-0 bottom-4 z-40 mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border border-border bg-card px-4 py-3 shadow-lg">
-      <p className="text-sm text-fg">A new version of Parachute is available.</p>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => setNeedRefresh(false)}
-          className="text-sm text-fg-muted hover:text-accent"
-        >
-          Later
-        </button>
-        <button
-          type="button"
-          onClick={onReload}
-          className="rounded-md bg-accent px-3 py-1 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-        >
-          Reload
-        </button>
-      </div>
-    </output>
-  );
+  return null;
 }
 
 /**
  * Mount-gated SW registration. The PWA service worker and manifest are
- * baked at Vite build time with a fixed scope (default `/notes/`); when
+ * baked at Vite build time with a fixed scope (root `/` for this app); when
  * the bundle is served at a different mount (e.g. `/surface/notes/` under
  * parachute-surface), registering the SW there interferes with every fetch
  * — workbox can't find precached entries for the runtime mount and ends
  * up returning HTML for what should be JS modules / JSON manifests.
  *
- * We render the inner banner (and let it call `useRegisterSW`) only when
+ * We mount the inner updater (and let it call `useRegisterSW`) only when
  * the runtime mount matches the build-time base. Otherwise we render
- * nothing — no SW registration, no update banner. The CHANGELOG documents
- * this as a known limitation: PWA install requires a custom build with
+ * nothing — no SW registration. PWA install requires a custom build with
  * `VITE_BASE_PATH=<runtime-mount>` for non-default mounts.
  */
 export function UpdateBanner() {

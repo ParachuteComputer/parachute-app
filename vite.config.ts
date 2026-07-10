@@ -107,7 +107,13 @@ export default defineConfig({
     }),
     infoEndpointPlugin({ basePath, ...serviceInfo }),
     VitePWA({
-      registerType: "prompt",
+      // autoUpdate: a new deploy wins on the next load without a manual "reload"
+      // prompt — the judge URL (parachute-app.pages.dev) is iterated on and shown
+      // to Aaron, so a returning visitor should never be stuck on a stale bundle.
+      // The app still owns registration (see below); `UpdateBanner` applies the
+      // update automatically on `needRefresh` and reloads on controllerchange, so
+      // skipWaiting never leaves the page's old JS requesting cleaned-up chunks.
+      registerType: "autoUpdate",
       // App code is the only registration path: `UpdateBanner` calls
       // `useRegisterSW` (gated by `shouldRegisterServiceWorker()` which
       // compares the runtime mount to the build-time vite base). Tell
@@ -128,6 +134,13 @@ export default defineConfig({
         // once the SPA is served same-origin — see pwa-navigation-denylist.ts).
         navigateFallbackDenylist: [...navigationDenylist],
         globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
+        // A fresh SW takes over immediately (skipWaiting) and claims open pages
+        // (clientsClaim) so a new deploy activates on next load; the app reloads
+        // on controllerchange to swap in the new assets atomically. Old precaches
+        // are purged so a claimed page never requests a chunk that's gone.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         // No runtimeCaching: fonts are system stacks now (0.1.21 brand pass), so
         // there's nothing external to cache. The old google-fonts rule was dead.
       },

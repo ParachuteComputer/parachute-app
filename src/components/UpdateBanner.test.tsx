@@ -1,7 +1,7 @@
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { __resetReloadArmedForTests } from "@/lib/pwa";
 import { __getPwaTestRig, __getPwaUpdateCalls, __resetPwaTestRig } from "@/test/stubs/pwa-register";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The `virtual:pwa-register/react` module is aliased to a test stub (see
@@ -37,14 +37,13 @@ describe("UpdateBanner", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("clicking Reload calls updateServiceWorker(true) AND arms its own controllerchange listener", async () => {
-    // notes#148 contract: the click must NOT rely solely on workbox's
-    // built-in controlling listener — we wire our own controllerchange
-    // listener + fallback timeout so a missed event doesn't leave the
-    // user stuck. Pin the wiring (window.location.reload is non-configurable
-    // in jsdom so we can't observe the actual reload call here; the unit
-    // tests on `reloadAfterServiceWorkerUpdate` in pwa.test.ts cover that
-    // half of the contract).
+  it("auto-applies a ready update (no prompt): calls updateServiceWorker(true) AND arms controllerchange", async () => {
+    // autoUpdate policy: a new deploy applies automatically — no visible
+    // "reload" button. On needRefresh the updater calls updateServiceWorker(true)
+    // (skipWaiting) and arms its OWN controllerchange listener + fallback timeout
+    // FIRST, so a missed-by-workbox `controlling` event still reloads exactly
+    // once (notes#148; window.location.reload is non-configurable in jsdom, so
+    // pwa.test.ts covers the actual reload half).
     const swContainer = {
       addEventListener: vi.fn(),
     };
@@ -57,23 +56,18 @@ describe("UpdateBanner", () => {
     });
 
     render(<UpdateBanner />);
-    act(() => {
-      __getPwaTestRig()?.setNeedRefresh(true);
-    });
-    // Banner now shows; click Reload.
-    const reloadBtn = await screen.findByRole("button", { name: /reload/i });
+    // No user action — flipping needRefresh drives the auto-apply effect.
     await act(async () => {
-      fireEvent.click(reloadBtn);
-      // Let the onReload async handler land.
+      __getPwaTestRig()?.setNeedRefresh(true);
       await Promise.resolve();
     });
 
-    // (1) The wrapper still calls updateServiceWorker(true) so workbox's
-    // own controlling listener is also armed and skipWaiting is messaged.
+    // No "reload" button is ever rendered — the update is silent.
+    expect(screen.queryByRole("button", { name: /reload/i })).not.toBeInTheDocument();
+    // (1) updateServiceWorker(true) is messaged so the waiting SW skips waiting.
     expect(__getPwaUpdateCalls()).toEqual([true]);
-    // (2) Our own controllerchange listener was attached BEFORE the
-    // skipWaiting message went out — so a missed-by-workbox `controlling`
-    // event still triggers our reload path.
+    // (2) Our own controllerchange listener was attached BEFORE the skipWaiting
+    // message so a missed workbox `controlling` event still triggers the reload.
     expect(swContainer.addEventListener).toHaveBeenCalledWith(
       "controllerchange",
       expect.any(Function),
