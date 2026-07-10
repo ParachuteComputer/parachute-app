@@ -26,16 +26,16 @@ describe("App", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the Parachute wordmark and the connect CTA when no vaults exist", async () => {
+  it("renders the wordmark and the hosted sign-in entry fork when no vaults exist", async () => {
     render(<App />);
     expect(screen.getByRole("link", { name: /^parachute$/i })).toBeInTheDocument();
-    // Home holds back the CTA until the origin probe settles to avoid
-    // flashing "Connect a vault" before swapping to "Looks like there's a
-    // vault at …". Wait for the probe to resolve before asserting the CTA.
+    // The arrival is now an entry fork: hosted email sign-in (primary) + a
+    // quieter self-hosted connect path — not vault-naming, not a bare "connect".
     await waitFor(() => {
-      expect(screen.getByRole("link", { name: /connect a vault/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/no vault connected/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in or create your parachute/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /connect your own vault/i })).toBeInTheDocument();
   });
 
   it("resolves the root list view at external /notes/ without double-prefixing", () => {

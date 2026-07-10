@@ -1,43 +1,16 @@
 import { Landing } from "@/app/routes/Landing";
-import { resetDoorProbeCache } from "@/lib/vault/probe";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beginHostedSignin } from "@/lib/vault/hosted-door";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// A valid OAuth authorization-server document — what a DOOR (identity/issuer)
-// answers at `/.well-known/oauth-authorization-server`. The `issuer` value need
-// not equal the probed origin: the probe returns the candidate origin, and
-// discovery validates the document's shape (S256, endpoints), not its host.
-const validMetadata = {
-  issuer: "http://localhost:1940",
-  authorization_endpoint: "http://localhost:1940/oauth/authorize",
-  token_endpoint: "http://localhost:1940/oauth/token",
-  registration_endpoint: "http://localhost:1940/oauth/register",
-  response_types_supported: ["code"],
-  code_challenge_methods_supported: ["S256"],
-  grant_types_supported: ["authorization_code"],
-  token_endpoint_auth_methods_supported: ["none"],
-  scopes_supported: ["full", "read"],
-};
+// The arrival is now an ENTRY FORK (Aaron's feedback): sign in / create a hosted
+// account (primary) OR connect a self-hosted vault (secondary) — NOT vault-naming
+// first. Naming moved to the /welcome first-run screen after account creation.
 
-function mockFetchOnce(response: {
-  ok?: boolean;
-  status?: number;
-  json?: unknown;
-  throwNetwork?: boolean;
-}) {
-  const impl = vi.fn<typeof fetch>(async () => {
-    if (response.throwNetwork) throw new Error("network down");
-    return {
-      ok: response.ok ?? true,
-      status: response.status ?? 200,
-      json: async () => response.json,
-      text: async () => "",
-    } as Response;
-  });
-  vi.stubGlobal("fetch", impl);
-  return impl;
-}
+vi.mock("@/lib/vault/hosted-door", () => ({
+  beginHostedSignin: vi.fn().mockResolvedValue(undefined),
+}));
 
 function renderLanding() {
   return render(
@@ -50,89 +23,50 @@ function renderLanding() {
   );
 }
 
-describe("Landing (arrival) door fork", () => {
+describe("Landing (arrival) entry fork", () => {
   beforeEach(() => {
-    // The door probe caches per origin for the page session; clear it so each
-    // case probes fresh with its own mocked response.
-    resetDoorProbeCache();
+    vi.mocked(beginHostedSignin).mockClear();
   });
-
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.restoreAllMocks();
-    resetDoorProbeCache();
   });
 
-  it("offers the create/connect fork when a door is serving the origin", async () => {
-    mockFetchOnce({ json: validMetadata });
+  it("leads with the hosted email sign-in, not vault-naming", () => {
     renderLanding();
+    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in or create your parachute/i)).toBeInTheDocument();
+    // The naming-first prompt is gone from the arrival.
+    expect(screen.queryByText(/what should we call your vault/i)).not.toBeInTheDocument();
+  });
 
-    // Primary: "Create your Parachute" links to the same-origin `/signup`
-    // ceremony (a real anchor, not an SPA route).
-    const create = await screen.findByRole("link", { name: /create your parachute/i });
-    expect(create).toHaveAttribute("href", "/signup");
+  it("keeps the primary CTA disabled until a plausible email is entered", () => {
+    renderLanding();
+    const cta = screen.getByRole("button", { name: /continue with email/i });
+    expect(cta).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/email address/i), {
+      target: { value: "not-an-email" },
+    });
+    expect(cta).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/email address/i), {
+      target: { value: "moss@example.com" },
+    });
+    expect(cta).toBeEnabled();
+  });
 
-    // Secondary: "I already have a vault" leads to the connect-by-URL flow.
-    expect(screen.getByRole("link", { name: /i already have a vault/i })).toHaveAttribute(
+  it("hands off to the hosted door's ceremony with the typed email on submit", () => {
+    renderLanding();
+    fireEvent.change(screen.getByLabelText(/email address/i), {
+      target: { value: "moss@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /continue with email/i }));
+    expect(beginHostedSignin).toHaveBeenCalledWith("moss@example.com");
+  });
+
+  it("offers the self-hosted path as a quieter secondary link to /add", () => {
+    renderLanding();
+    expect(screen.getByRole("link", { name: /connect your own vault/i })).toHaveAttribute(
       "href",
       "/add",
     );
-
-    // The misdetection is gone: never present the serving origin as a vault.
-    expect(screen.queryByText(/looks like there's a vault/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^connect a vault →$/i })).not.toBeInTheDocument();
-  });
-
-  it("threads the typed vault name into the echo and the create href", async () => {
-    mockFetchOnce({ json: validMetadata });
-    renderLanding();
-
-    // Wait for the fork to resolve, then type a name into the identity field.
-    await screen.findByRole("link", { name: /create your parachute/i });
-    fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
-
-    // The live echo makes the threading visible; the CTA relabels + the href
-    // carries the name forward to the ceremony.
-    expect(screen.getByText("moss")).toBeInTheDocument();
-    const create = screen.getByRole("link", { name: /create moss/i });
-    expect(create).toHaveAttribute("href", "/signup?vault=moss");
-  });
-
-  it("leads with connect-by-URL and NEVER self-offers when the origin is not a door", async () => {
-    // A static host (no issuer discovery, 404).
-    mockFetchOnce({ ok: false, status: 404 });
-    renderLanding();
-
-    const connect = await screen.findByRole("link", { name: /connect a vault/i });
-    expect(connect).toHaveAttribute("href", "/add");
-
-    // Regression pin (surface#193): the serving origin is never offered as a
-    // vault, and the create fork does not appear off a non-door origin.
-    expect(screen.queryByText(/looks like there's a vault/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /create your parachute/i })).not.toBeInTheDocument();
-  });
-
-  it("treats a probe network error as not-a-door (fail-quiet → connect-by-URL)", async () => {
-    mockFetchOnce({ throwNetwork: true });
-    renderLanding();
-
-    await waitFor(() =>
-      expect(screen.getByRole("link", { name: /connect a vault/i })).toBeInTheDocument(),
-    );
-    expect(screen.queryByRole("link", { name: /create your parachute/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/looks like there's a vault/i)).not.toBeInTheDocument();
-  });
-
-  it("treats invalid issuer metadata as not-a-door", async () => {
-    // A 200 that isn't real issuer metadata (no S256) must not count as a door.
-    mockFetchOnce({
-      json: { ...validMetadata, code_challenge_methods_supported: ["plain"] },
-    });
-    renderLanding();
-
-    await waitFor(() =>
-      expect(screen.getByRole("link", { name: /connect a vault/i })).toBeInTheDocument(),
-    );
-    expect(screen.queryByRole("link", { name: /create your parachute/i })).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,31 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.3.0] - 2026-07-10
+
+Arrival IA fix (Aaron's live feedback): the front door is an **entry fork**, not
+vault-naming. The naming delight moves to first-run onboarding after an account
+exists.
+
+- **Landing → entry fork.** PRIMARY: "Sign in or create your Parachute" — one
+  warm email field → the hosted door's magic-link ceremony
+  (`cloud.parachute.computer`) via the app's OAuth 2.1 + PKCE + DCR machinery
+  (`beginHostedSignin`, email as `login_hint`, no URL typing; magic-link unifies
+  new vs returning). SECONDARY (quieter): "Connect a self-hosted vault" → the
+  existing `/add` flow. Keeps the parachute mark, trust chips, warmth. Removed
+  the origin door-probe from the arrival.
+- **New `/welcome` first-run route** — the relocated "What should we call your
+  vault?" screen. The hosted flow lands here via `OAuthCallback`'s `redirect`;
+  it pre-fills an already-chosen name (returning users confirm) or starts empty
+  for a machine-default name (fresh accounts name it). Sets the vault display
+  name via a new `renameVault` store action (threads through rail/home/title).
+- Fixed the dead `text-[--color-on-accent]` / `text-red-400` in `OAuthCallback`.
+
+Door-dependent seams (noted, not faked): authoritative server-side vault naming
+and the precise "brand-new account" signal await the hosted account/vault API
+(`/.well-known/parachute-account` is 404 today — C4/C5). The hosted button does a
+real handoff to the live cloud ceremony; naming persists locally + seams the
+server PATCH.
+
 ## [0.2.0] - 2026-07-10
 
 Extend the warm-paper/coral/serif design system INWARD to the inner surfaces —
