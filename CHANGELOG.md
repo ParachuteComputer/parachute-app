@@ -1,5 +1,21 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.3.1] - 2026-07-10
+
+PWA service worker → **auto-update**. A new deploy now wins on the next load
+without the manual "reload" prompt — the judge URL is iterated on and shown to
+Aaron, so a returning visitor should never be stuck on a stale bundle.
+
+- `registerType: "prompt"` → `"autoUpdate"`; workbox `skipWaiting` +
+  `clientsClaim` + `cleanupOutdatedCaches` so the generated SW self-activates
+  and claims open pages, and purged precaches never 404 a claimed page.
+- `UpdateBanner` is now a silent auto-updater (no banner). In autoUpdate mode
+  the plugin fires `onNeedReload` on the new worker's `activated` event (the
+  prompt-mode `needRefresh`/`updateServiceWorker` path is dead); the app routes
+  that through `reloadAfterServiceWorkerUpdate` — a one-shot `controllerchange`
+  listener + fallback timeout that reloads exactly once even if the event is
+  dropped (notes#148/#165). Offline capability unchanged.
+
 ## [0.3.0] - 2026-07-10
 
 Arrival IA fix (Aaron's live feedback): the front door is an **entry fork**, not

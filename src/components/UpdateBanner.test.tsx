@@ -1,13 +1,14 @@
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { __resetReloadArmedForTests } from "@/lib/pwa";
-import { __getPwaTestRig, __getPwaUpdateCalls, __resetPwaTestRig } from "@/test/stubs/pwa-register";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { __getPwaTestRig, __resetPwaTestRig } from "@/test/stubs/pwa-register";
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The `virtual:pwa-register/react` module is aliased to a test stub (see
-// vitest.config.ts) that returns needRefresh=false by default. This smoke
-// test proves the component imports the stub, renders without crashing,
-// and correctly renders nothing when there's no pending update.
+// vitest.config.ts). With `registerType: "autoUpdate"` the SHIPPING reload path
+// is the plugin's `onNeedReload` callback (fired on the new SW's `activated`
+// event) — NOT the prompt-mode `needRefresh`/`updateServiceWorker` branch, which
+// is dead in auto mode. These tests exercise the real path only.
 describe("UpdateBanner", () => {
   beforeEach(() => {
     __resetPwaTestRig();
@@ -18,10 +19,6 @@ describe("UpdateBanner", () => {
     __resetReloadArmedForTests();
     // Clean up our navigator.serviceWorker stub between tests so an absent
     // SW container in the next test still reflects the production default.
-    // Assign undefined rather than delete — biome flags `delete` as a perf
-    // anti-pattern and Object.defineProperty with value:undefined matches
-    // jsdom's "absent property" behaviour for `"serviceWorker" in navigator`
-    // checks downstream.
     try {
       Object.defineProperty(navigator, "serviceWorker", {
         configurable: true,
@@ -32,48 +29,38 @@ describe("UpdateBanner", () => {
     }
   });
 
-  it("renders nothing when there is no pending service-worker update", () => {
+  it("renders nothing — autoUpdate is silent, no reload prompt or button", () => {
     render(<UpdateBanner />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reload/i })).not.toBeInTheDocument();
   });
 
-  it("clicking Reload calls updateServiceWorker(true) AND arms its own controllerchange listener", async () => {
-    // notes#148 contract: the click must NOT rely solely on workbox's
-    // built-in controlling listener — we wire our own controllerchange
-    // listener + fallback timeout so a missed event doesn't leave the
-    // user stuck. Pin the wiring (window.location.reload is non-configurable
-    // in jsdom so we can't observe the actual reload call here; the unit
-    // tests on `reloadAfterServiceWorkerUpdate` in pwa.test.ts cover that
-    // half of the contract).
+  it("routes the plugin's onNeedReload (autoUpdate `activated` path) through the one-shot controllerchange reload", () => {
+    // In autoUpdate mode the plugin invokes `onNeedReload` on the new SW's
+    // `activated` event, REPLACING its default `window.location.reload()`. We
+    // route it through `reloadAfterServiceWorkerUpdate`, which arms a one-shot
+    // `controllerchange` listener + a fallback timeout so the reload happens
+    // exactly once even if the browser drops the event (notes#148/#165). This
+    // is the shipping path — there is no prompt-mode button to click, and
+    // `updateServiceWorker(true)` is a no-op in auto mode, so we don't touch it.
     const swContainer = {
       addEventListener: vi.fn(),
     };
-    // Stub navigator.serviceWorker so the production code path can attach
-    // its listener. The default jsdom navigator has no serviceWorker
-    // property at all.
+    // Stub navigator.serviceWorker so reloadAfterServiceWorkerUpdate can attach
+    // its listener. The default jsdom navigator has no serviceWorker property.
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
       value: swContainer,
     });
 
     render(<UpdateBanner />);
+    // No user action — model the plugin firing onNeedReload on `activated`.
     act(() => {
-      __getPwaTestRig()?.setNeedRefresh(true);
-    });
-    // Banner now shows; click Reload.
-    const reloadBtn = await screen.findByRole("button", { name: /reload/i });
-    await act(async () => {
-      fireEvent.click(reloadBtn);
-      // Let the onReload async handler land.
-      await Promise.resolve();
+      __getPwaTestRig()?.triggerNeedReload();
     });
 
-    // (1) The wrapper still calls updateServiceWorker(true) so workbox's
-    // own controlling listener is also armed and skipWaiting is messaged.
-    expect(__getPwaUpdateCalls()).toEqual([true]);
-    // (2) Our own controllerchange listener was attached BEFORE the
-    // skipWaiting message went out — so a missed-by-workbox `controlling`
-    // event still triggers our reload path.
+    // Our one-shot controllerchange listener was armed — the belt-and-suspenders
+    // reload is REAL on the auto path (not asserting a dead prompt-mode path).
     expect(swContainer.addEventListener).toHaveBeenCalledWith(
       "controllerchange",
       expect.any(Function),
