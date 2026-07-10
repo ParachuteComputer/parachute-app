@@ -4,7 +4,7 @@ import {
   SectionLabel,
   groupNotesByDay,
 } from "@/components/RecentTimeline";
-import { OfflineRibbon } from "@/components/ui";
+import { EmptyState, ErrorState, OfflineRibbon, Skeleton } from "@/components/ui";
 import { formatLongDate, parseDateKey, shiftDay, toDateKey, todayKey } from "@/lib/dates";
 import { useNotesForDateViews, useVaultStore } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
@@ -60,7 +60,7 @@ function Timeline({ vaultName }: { vaultName: string }) {
       </header>
 
       {notes.isPending ? (
-        <Skeleton />
+        <TimelineSkeleton />
       ) : notes.isError && !notes.data ? (
         // Only a genuinely empty cache falls through to the error block — when
         // a background refetch fails but we still hold notes, keep showing them.
@@ -79,13 +79,15 @@ function Timeline({ vaultName }: { vaultName: string }) {
 
 function TimelineEmpty() {
   return (
-    <div className="rounded-md border border-border bg-card p-10 text-center">
-      <p className="mb-1 font-serif text-xl text-fg">A quiet, empty page.</p>
-      <p className="mb-6 text-sm text-fg-muted">Your notes will gather here, newest day first.</p>
-      <Link to="/new" className="btn btn-primary btn-touch">
-        Capture the first one
-      </Link>
-    </div>
+    <EmptyState
+      title={<span className="font-serif text-lg text-fg">A quiet, empty page.</span>}
+      description="Your notes will gather here, newest day first."
+      action={
+        <Link to="/new" className="btn btn-primary btn-touch">
+          Capture the first one
+        </Link>
+      }
+    />
   );
 }
 
@@ -116,7 +118,7 @@ function SingleDay({ dateParam }: { dateParam: string }) {
   if (!parsed) {
     return (
       <div className="page-prose">
-        <p className="text-sm text-red-400">Invalid date in URL: {targetKey}</p>
+        <p className="text-sm text-[--color-danger]">Invalid date in URL: {targetKey}</p>
         <Link to="/today" className="text-sm text-accent hover:underline">
           Back to today
         </Link>
@@ -139,43 +141,34 @@ function SingleDay({ dateParam }: { dateParam: string }) {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Link
             to={`/today?date=${prev}`}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
+            className="btn btn-secondary btn-sm"
             aria-label="Previous day"
           >
             ← {prev}
           </Link>
           {!isToday ? (
-            <Link
-              to="/today"
-              className="rounded-md border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
-            >
+            <Link to="/today" className="btn btn-secondary btn-sm">
               Today
             </Link>
           ) : null}
           <Link
             to={`/today?date=${next}`}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
+            className="btn btn-secondary btn-sm"
             aria-label="Next day"
           >
             {next} →
           </Link>
-          <Link
-            to={`/calendar?month=${monthKey}`}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
-          >
+          <Link to={`/calendar?month=${monthKey}`} className="btn btn-secondary btn-sm">
             Calendar
           </Link>
-          <Link
-            to="/new"
-            className="rounded-md bg-accent px-3 py-1.5 font-medium text-[--color-on-accent] hover:bg-accent-hover"
-          >
+          <Link to="/new" className="btn btn-primary btn-sm">
             + New note
           </Link>
         </div>
       </header>
 
       {notes.isPending ? (
-        <Skeleton />
+        <TimelineSkeleton />
       ) : notes.isError && !notes.data ? (
         <ErrorBlock error={notes.error} />
       ) : buckets.created.length === 0 && buckets.edited.length === 0 ? (
@@ -218,27 +211,24 @@ function Section({ title, notes }: { title: string; notes: Note[] }) {
 
 function EmptyBlock({ isToday, targetKey }: { isToday: boolean; targetKey: string }) {
   return (
-    <div className="rounded-md border border-border bg-card p-10 text-center">
-      <p className="mb-4 text-fg-muted">
-        {isToday ? "Nothing yet today — start capturing." : `Nothing on ${targetKey}.`}
-      </p>
-      {isToday ? (
-        <Link
-          to="/new"
-          className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-        >
-          New note
-        </Link>
-      ) : null}
-    </div>
+    <EmptyState
+      title={isToday ? "Nothing yet today — start capturing." : `Nothing on ${targetKey}.`}
+      action={
+        isToday ? (
+          <Link to="/new" className="btn btn-primary">
+            New note
+          </Link>
+        ) : undefined
+      }
+    />
   );
 }
 
-function Skeleton() {
+function TimelineSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
       {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="h-14 animate-pulse rounded-md bg-border/30" />
+        <Skeleton key={i} className="h-14 rounded-xl" />
       ))}
     </div>
   );
@@ -247,19 +237,16 @@ function Skeleton() {
 function ErrorBlock({ error }: { error: Error }) {
   const isAuth = error instanceof VaultAuthError;
   return (
-    <div className="rounded-md border border-red-500/30 bg-red-500/5 p-6">
-      <p className="mb-2 font-medium text-red-400">
-        {isAuth ? "Session expired" : "Could not load notes"}
-      </p>
-      <p className="mb-4 text-sm text-fg-muted">{error.message}</p>
-      {isAuth ? (
-        <Link
-          to="/add"
-          className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-        >
-          Reconnect vault
-        </Link>
-      ) : null}
-    </div>
+    <ErrorState
+      title={isAuth ? "Session expired" : "Could not load notes"}
+      message={error.message}
+      action={
+        isAuth ? (
+          <Link to="/add" className="btn btn-primary">
+            Reconnect vault
+          </Link>
+        ) : undefined
+      }
+    />
   );
 }
