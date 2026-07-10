@@ -7,11 +7,14 @@ without the manual "reload" prompt — the judge URL is iterated on and shown to
 Aaron, so a returning visitor should never be stuck on a stale bundle.
 
 - `registerType: "prompt"` → `"autoUpdate"`; workbox `skipWaiting` +
-  `clientsClaim` + `cleanupOutdatedCaches` so a fresh SW activates and claims
-  open pages immediately, and purged precaches never 404 a claimed page.
-- `UpdateBanner` is now a silent auto-updater: on `needRefresh` it arms the
-  controllerchange reload FIRST, then messages skipWaiting (notes#148 reload
-  contract preserved) — no visible banner. Offline capability unchanged.
+  `clientsClaim` + `cleanupOutdatedCaches` so the generated SW self-activates
+  and claims open pages, and purged precaches never 404 a claimed page.
+- `UpdateBanner` is now a silent auto-updater (no banner). In autoUpdate mode
+  the plugin fires `onNeedReload` on the new worker's `activated` event (the
+  prompt-mode `needRefresh`/`updateServiceWorker` path is dead); the app routes
+  that through `reloadAfterServiceWorkerUpdate` — a one-shot `controllerchange`
+  listener + fallback timeout that reloads exactly once even if the event is
+  dropped (notes#148/#165). Offline capability unchanged.
 
 ## [0.3.0] - 2026-07-10
 

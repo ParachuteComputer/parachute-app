@@ -1,7 +1,6 @@
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { reloadAfterServiceWorkerUpdate } from "@/lib/pwa";
 import { shouldRegisterServiceWorker } from "@/lib/sw-bootstrap";
-import { useEffect } from "react";
 
 /**
  * Silent auto-updater that drives `useRegisterSW`. Split out from the
@@ -11,37 +10,37 @@ import { useEffect } from "react";
  * Aaron hit 2026-05-23). React hooks can't be conditional within a single
  * component, but conditional *rendering* of the child component is fine.
  *
- * autoUpdate policy (parachute-app): when a new deploy is ready
- * (`needRefresh`), apply it AUTOMATICALLY and reload — no "reload" prompt.
- * The judge URL is iterated on + shown to Aaron, so a returning visitor must
- * never be stuck on a stale bundle behind a manual button. Renders no UI.
+ * autoUpdate policy (parachute-app): a new deploy applies automatically —
+ * no "reload" prompt. The judge URL is iterated on + shown to Aaron, so a
+ * returning visitor must never be stuck on a stale bundle behind a button.
+ *
+ * How the reload ACTUALLY runs (vite-plugin-pwa build register, `registerType:
+ * "autoUpdate"` → `auto=true`): the generated SW self-`skipWaiting`s +
+ * `clientsClaim`s, and the plugin fires `onNeedReload()` on the new worker's
+ * `activated` (isUpdate/isExternal) event — REPLACING its default
+ * `window.location.reload()`. (The `needRefresh`/`waiting`/`updateServiceWorker`
+ * prompt path is dead in this mode — `updateServiceWorker(true)` is a no-op —
+ * so we don't touch it.) We route `onNeedReload` through
+ * `reloadAfterServiceWorkerUpdate`: it arms a one-shot `controllerchange`
+ * listener + a fallback timeout and reloads exactly once, so a browser that
+ * drops the reload (iOS standalone / BFCache) still recovers — reload has
+ * bitten us before (notes#148/#165). Renders no UI.
  */
 function UpdateBannerInner() {
-  const {
-    needRefresh: [needRefresh],
-    updateServiceWorker,
-  } = useRegisterSW({
+  useRegisterSW({
     onRegisteredSW(_url, registration) {
-      // Check for a fresh SW hourly while the app is open.
+      // Check for a fresh SW hourly while the app is open, so a long-lived
+      // session picks up a new deploy without a manual reload.
       if (!registration) return;
       const hour = 60 * 60 * 1000;
       setInterval(() => {
         registration.update().catch(() => {});
       }, hour);
     },
+    onNeedReload() {
+      reloadAfterServiceWorkerUpdate();
+    },
   });
-
-  useEffect(() => {
-    if (!needRefresh) return;
-    // A new deploy is ready — apply it automatically. Arm our own
-    // controllerchange listener + a hard timeout BEFORE asking the SW to
-    // skipWaiting, so whichever fires first reloads the page exactly once
-    // (notes#148 — vite-plugin-pwa's built-in `controlling` listener can be
-    // missed on iOS standalone / BFCache). The reload swaps the new assets in
-    // atomically, so skipWaiting never leaves stale JS requesting purged chunks.
-    reloadAfterServiceWorkerUpdate();
-    void updateServiceWorker(true);
-  }, [needRefresh, updateServiceWorker]);
 
   return null;
 }

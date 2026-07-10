@@ -110,9 +110,13 @@ export default defineConfig({
       // autoUpdate: a new deploy wins on the next load without a manual "reload"
       // prompt — the judge URL (parachute-app.pages.dev) is iterated on and shown
       // to Aaron, so a returning visitor should never be stuck on a stale bundle.
-      // The app still owns registration (see below); `UpdateBanner` applies the
-      // update automatically on `needRefresh` and reloads on controllerchange, so
-      // skipWaiting never leaves the page's old JS requesting cleaned-up chunks.
+      // In this mode the generated SW self-`skipWaiting`s + `clientsClaim`s, and
+      // vite-plugin-pwa's register fires `onNeedReload` on the new worker's
+      // `activated` event (the prompt-mode `needRefresh`/`updateServiceWorker`
+      // path is dead here). The app still OWNS registration (see below,
+      // mount-gated) and handles `onNeedReload` via `reloadAfterServiceWorkerUpdate`
+      // so the reload happens exactly once even if the event is dropped
+      // (UpdateBanner.tsx, notes#148/#165).
       registerType: "autoUpdate",
       // App code is the only registration path: `UpdateBanner` calls
       // `useRegisterSW` (gated by `shouldRegisterServiceWorker()` which

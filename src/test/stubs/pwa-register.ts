@@ -1,45 +1,48 @@
 import { useState } from "react";
 
 // Test stub for `virtual:pwa-register/react` — the real module is only
-// resolved by vite-plugin-pwa at build time. In tests we return a minimal
-// shape consumers rely on, plus a hook (`__pwaTestRig`) that lets a test
-// flip needRefresh and observe updateServiceWorker calls. Production code
-// imports from this stub via the vitest alias.
+// resolved by vite-plugin-pwa at build time. In tests we return the minimal
+// shape consumers rely on, plus a rig that models the AUTO-UPDATE path: with
+// `registerType: "autoUpdate"` the plugin fires the caller's `onNeedReload`
+// callback on the new SW's `activated` event (it replaces the default
+// `window.location.reload()`). The rig lets a test invoke that callback and
+// observe the reload wiring — the actual shipping path, not the dead
+// prompt-mode `needRefresh` branch. Production code imports from this stub via
+// the vitest alias.
 export interface PwaTestRig {
-  setNeedRefresh: (v: boolean) => void;
-  updateServiceWorker: (reload?: boolean) => Promise<void>;
+  /**
+   * Invoke the `onNeedReload` callback the app passed to `useRegisterSW` —
+   * models the plugin firing it on the new SW's `activated` event in
+   * autoUpdate mode.
+   */
+  triggerNeedReload: () => void;
+}
+
+interface RegisterSWStubOptions {
+  onRegisteredSW?: (url: string, registration: unknown) => void;
+  onNeedReload?: () => void;
+  onNeedRefresh?: () => void;
+  onOfflineReady?: () => void;
 }
 
 let rig: PwaTestRig | null = null;
-const updateCalls: boolean[] = [];
 
-export function useRegisterSW(_options?: unknown) {
-  const needRefreshState = useState(false);
+export function useRegisterSW(options?: RegisterSWStubOptions) {
+  // The prompt-mode state is retained only so the returned shape matches the
+  // real hook; autoUpdate never flips it (updateServiceWorker is a no-op there).
+  const needRefresh = useState(false);
   const offlineReady = useState(false);
-  const setNeedRefresh = needRefreshState[1];
-  const updateServiceWorker = async (reload?: boolean) => {
-    updateCalls.push(reload ?? false);
+  const updateServiceWorker = async () => {};
+  rig = {
+    triggerNeedReload: () => options?.onNeedReload?.(),
   };
-  rig = { setNeedRefresh, updateServiceWorker };
-  return {
-    needRefresh: needRefreshState,
-    offlineReady,
-    updateServiceWorker,
-  };
+  return { needRefresh, offlineReady, updateServiceWorker };
 }
 
-// Test-only: trigger needRefresh from outside React's hook tree so a test
-// can render UpdateBanner, flip the flag, click Reload, and observe the
-// chain. Returns the underlying rig so tests can also assert the call.
 export function __getPwaTestRig(): PwaTestRig | null {
   return rig;
 }
 
-export function __getPwaUpdateCalls(): boolean[] {
-  return updateCalls;
-}
-
 export function __resetPwaTestRig(): void {
   rig = null;
-  updateCalls.length = 0;
 }
