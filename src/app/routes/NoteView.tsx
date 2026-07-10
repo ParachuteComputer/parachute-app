@@ -92,7 +92,7 @@ function NoteBody({ note }: { note: Note }) {
   return (
     <article className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="min-w-0">
-        <header className="mb-6 border-b border-border pb-4">
+        <header className="mb-8 border-b border-border pb-5">
           <h1 className="page-title">{title}</h1>
           {note.tags && note.tags.length > 0 ? <HeaderTags tags={note.tags} /> : null}
           <p className="note-id mt-2">{label}</p>
@@ -144,7 +144,7 @@ function MetadataPanel({ note }: { note: Note }) {
   const metaEntries = Object.entries(note.metadata ?? {}).filter(([key]) => key !== "summary");
 
   return (
-    <section className="card p-4">
+    <section className="card shadow-soft p-4">
       <h2 className="eyebrow mb-2">Metadata</h2>
       <dl className="space-y-1.5 text-sm">
         {note.path ? (
@@ -205,7 +205,7 @@ function LinksPanel({
   peer: "source" | "target";
 }) {
   return (
-    <section className="card p-4">
+    <section className="card shadow-soft p-4">
       <h2 className="eyebrow mb-2">
         {title} ({links.length})
       </h2>
@@ -242,7 +242,7 @@ function AttachmentView({ attachment }: { attachment: NoteAttachment }) {
   const filename = attachment.filename ?? attachment.id;
 
   return (
-    <figure className="card p-3">
+    <figure className="card shadow-soft p-3">
       <figcaption className="mb-2 flex items-baseline justify-between gap-3">
         <span className="truncate font-mono text-xs text-fg-muted">{filename}</span>
         {typeof attachment.size === "number" ? (
@@ -297,7 +297,7 @@ function AttachmentBody({
     return <p className="text-sm text-fg-dim">(no URL)</p>;
   }
   if (error) {
-    return <p className="text-sm text-[--color-danger]">{error}</p>;
+    return <p className="text-sm text-danger">{error}</p>;
   }
   if (needsBlob && !blobUrl) {
     return <Skeleton className="h-32 w-full" />;

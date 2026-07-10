@@ -416,32 +416,28 @@ export function NoteNew() {
   } as Note);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-5 md:px-6 md:py-8">
-      <nav className="mb-4 text-sm text-fg-dim">
+    <div className="page">
+      <nav className="mb-6 text-sm text-fg-dim">
         <Link to="/all" className="hover:text-accent">
           ← All notes
         </Link>
       </nav>
 
       <article>
-        <header className="mb-4 border-b border-border pb-4">
+        {/* The composer, opened. Same warm card + coral focus-bloom as Home's
+            "What's on your mind?" — this screen IS that composer, expanded. */}
+        <header className="composer mb-6 p-5 md:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-xs uppercase tracking-wider text-fg-dim">New note</span>
-            </div>
+            <span className="eyebrow">New note</span>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent"
-              >
+              <button type="button" onClick={handleCancel} className="btn btn-secondary btn-touch">
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={!isValid || pending}
-                className="min-h-11 rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
+                className="btn btn-primary btn-touch"
                 title="Create (⌘S)"
               >
                 {pending ? "Creating…" : "Create"}
@@ -449,18 +445,16 @@ export function NoteNew() {
             </div>
           </div>
 
-          <div className="mt-3 flex flex-col gap-2">
-            <label className="flex items-baseline gap-3 text-sm">
-              <span className="shrink-0 text-xs uppercase tracking-wider text-fg-dim">Title</span>
-              <input
-                type="text"
-                value={draft.path}
-                onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
-                className="flex-1 rounded-md border border-border bg-card px-2.5 py-1 font-mono text-sm text-fg focus:border-accent focus:outline-none"
-                aria-label="Note path"
-                placeholder="e.g. Projects/README"
-              />
-            </label>
+          <input
+            type="text"
+            value={draft.path}
+            onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
+            className="mt-4 w-full border-0 bg-transparent font-serif text-2xl text-fg outline-none placeholder:text-fg-dim md:text-3xl"
+            aria-label="Note path"
+            placeholder="e.g. Projects/README"
+          />
+
+          <div className="mt-4">
             <TagEditor
               tags={draft.tags}
               input={tagInput}
@@ -476,7 +470,7 @@ export function NoteNew() {
           <div
             role="status"
             data-testid="draft-restored"
-            className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-sm"
+            className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-sm"
           >
             <span className="text-fg-muted">
               Unsaved draft restored from {relativeTime(restoredAt)}.
@@ -485,7 +479,7 @@ export function NoteNew() {
               <button
                 type="button"
                 onClick={discardRestoredDraft}
-                className="text-fg-dim hover:text-red-400"
+                className="text-fg-dim hover:text-danger"
               >
                 Discard draft
               </button>
@@ -504,7 +498,7 @@ export function NoteNew() {
         {saveError ? (
           <div
             role="alert"
-            className="mb-4 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-400"
+            className="mb-4 rounded-xl border border-danger-border bg-danger-soft p-3 text-sm text-danger"
           >
             {saveError}
           </div>
@@ -522,7 +516,7 @@ export function NoteNew() {
         <div className="grid min-h-[60vh] gap-4 lg:grid-cols-2">
           <AttachmentDropZone
             onDropFiles={uploader.start}
-            className="min-w-0 rounded-md border border-border bg-card"
+            className="card min-w-0"
             hint="Images, audio, webm video"
           >
             <CodeMirrorEditor
@@ -537,7 +531,7 @@ export function NoteNew() {
               }}
             />
           </AttachmentDropZone>
-          <div className="min-w-0 overflow-auto rounded-md border border-border bg-card p-4">
+          <div className="card min-w-0 overflow-auto p-4">
             {draft.content.trim() ? (
               <NoteRenderer
                 note={{ path: draft.path, content: draft.content }}
@@ -551,7 +545,7 @@ export function NoteNew() {
 
         <section className="mt-6 border-t border-border pt-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-serif text-lg">Attachments</h2>
+            <h2 className="font-serif text-xl">Attachments</h2>
             <AttachmentPicker onPickFiles={uploader.start} />
           </div>
           <p className="mb-3 text-xs text-fg-dim">
@@ -561,7 +555,7 @@ export function NoteNew() {
               href="https://github.com/ParachuteComputer/parachute-vault/issues/127"
               target="_blank"
               rel="noreferrer"
-              className="underline"
+              className="text-accent hover:underline"
             >
               PDF + mp4 coming
             </a>
@@ -577,7 +571,7 @@ export function NoteNew() {
               {staged.map((s) => (
                 <li
                   key={s.path}
-                  className="flex items-center justify-between gap-2 rounded border border-border bg-card/50 px-3 py-1.5 font-mono text-xs text-fg-muted"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card/50 px-3 py-1.5 font-mono text-xs text-fg-muted"
                 >
                   <span className="truncate">{s.filename}</span>
                   <span className="shrink-0 text-fg-dim">staged</span>
@@ -658,7 +652,7 @@ function RetentionChoice({
   return (
     <div
       data-testid="retention-choice"
-      className="mb-4 flex flex-col gap-2 rounded-md border border-border bg-card/60 p-3"
+      className="mb-4 flex flex-col gap-2 rounded-xl border border-border bg-card/60 p-3"
     >
       <p className="text-xs text-fg-muted">
         First voice note here — should this vault keep your audio files after transcribing?
@@ -668,7 +662,7 @@ function RetentionChoice({
           type="button"
           onClick={() => choose("keep")}
           disabled={setRetention.isPending}
-          className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent disabled:opacity-40"
+          className="btn btn-secondary btn-touch"
         >
           Keep my recordings
         </button>
@@ -676,7 +670,7 @@ function RetentionChoice({
           type="button"
           onClick={() => choose("until_transcribed")}
           disabled={setRetention.isPending}
-          className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent disabled:opacity-40"
+          className="btn btn-secondary btn-touch"
         >
           Just keep the words
         </button>
@@ -686,7 +680,7 @@ function RetentionChoice({
         Either way your capture saves now. Change this anytime in Settings.
       </p>
       {error ? (
-        <p className="text-xs text-red-400" data-testid="retention-choice-error">
+        <p className="text-xs text-danger" data-testid="retention-choice-error">
           {error}
         </p>
       ) : null}
@@ -706,7 +700,7 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
 
   if (phase.kind === "have-audio") {
     return (
-      <div className="mb-4 flex flex-col gap-2 rounded-md border border-accent/30 bg-accent/5 p-3">
+      <div className="mb-4 flex flex-col gap-2 rounded-xl border border-accent/30 bg-accent/5 p-3">
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm text-fg-muted">
             🎙 Recorded {formatElapsed(phase.durationMs)}
@@ -714,7 +708,7 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
           <button
             type="button"
             onClick={discardAudio}
-            className="text-xs text-fg-dim hover:text-red-400"
+            className="text-xs text-fg-dim hover:text-danger"
           >
             Discard
           </button>
@@ -730,7 +724,7 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-card/60 p-3">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/60 p-3">
       <div className="text-xs text-fg-dim">
         {isRecording
           ? "Recording — tap Stop to finish."
@@ -748,7 +742,7 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
           onClick={() => void stopRecording()}
           aria-label={`Recording — ${formatElapsed(elapsedMs)} — stop`}
           aria-pressed="true"
-          className="flex min-h-11 items-center gap-2 rounded-full border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400"
+          className="flex min-h-11 items-center gap-2 rounded-full border border-danger-border bg-danger-soft px-4 py-2 text-sm font-medium text-danger"
         >
           <span aria-hidden="true" className="animate-pulse">
             🎙
@@ -769,7 +763,7 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
         </button>
       )}
       {phase.kind === "denied" ? (
-        <p className="basis-full rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+        <p className="basis-full rounded-xl border border-danger-border bg-danger-soft px-3 py-2 text-xs text-danger">
           {phase.message}
         </p>
       ) : null}
