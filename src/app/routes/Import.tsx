@@ -140,18 +140,18 @@ export function Import() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-7 md:px-6 md:py-10">
+    <div className="page-prose">
       <nav className="mb-4 text-sm text-fg-dim">
-        <Link to="/all" className="hover:text-accent">
+        <Link to="/all" className="focus-ring hover:text-accent">
           ← All notes
         </Link>
       </nav>
 
-      <header className="mb-6">
-        <h1 className="font-serif text-2xl tracking-tight md:text-3xl">
+      <header className="mb-8">
+        <h1 className="page-title">
           Import notes into <span className="text-accent">{activeVault.name}</span>
         </h1>
-        <p className="mt-2 text-sm text-fg-muted">
+        <p className="mt-3 text-fg-muted">
           Upload an Obsidian vault zip or drop in loose markdown files. Everything is parsed in your
           browser and previewed before any note lands in the vault.
         </p>
@@ -201,16 +201,18 @@ function PickStage({ parsing, onFiles, inputRef }: PickProps) {
     <section>
       <AttachmentDropZone
         onDropFiles={onFiles}
-        className="rounded-md border border-border bg-card"
+        className="rounded-2xl border border-border bg-card shadow-soft"
         hint="zip or markdown"
       >
         <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 p-8 text-center">
-          <p className="font-serif text-lg">{parsing ? "Reading files…" : "Drop a file here"}</p>
+          <p className="font-serif text-lg text-fg">
+            {parsing ? "Reading files…" : "Drop a file here"}
+          </p>
           <p className="text-sm text-fg-dim">
             Accepts an Obsidian vault `.zip`, or one or more `.md` / `.markdown` files.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <label className="inline-flex min-h-11 cursor-pointer items-center rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover">
+            <label className="btn btn-primary btn-touch cursor-pointer">
               {parsing ? "Reading…" : "Choose files"}
               <input
                 ref={inputRef}
@@ -231,7 +233,7 @@ function PickStage({ parsing, onFiles, inputRef }: PickProps) {
             <p className="mt-2 max-w-md">
               Notion CSV/JSON, Roam, Logseq, and Apple Notes exports are on the roadmap. For now,
               the CLI path{" "}
-              <code className="rounded bg-bg/60 px-1 font-mono">
+              <code className="rounded bg-bg-soft px-1 font-mono">
                 parachute-vault import &lt;path&gt;
               </code>{" "}
               handles broader formats — or paste the contents into Claude and ask it to add the
@@ -267,8 +269,8 @@ function ReviewStage({ parsed, onConfirm, onBack }: ReviewProps) {
 
   return (
     <section className="space-y-6">
-      <div className="rounded-md border border-border bg-card p-4">
-        <h2 className="font-serif text-lg">Dry run</h2>
+      <div className="card rounded-xl p-5 shadow-soft">
+        <h2 className="font-serif text-lg text-fg">Dry run</h2>
         <p className="mt-1 text-sm text-fg-muted">
           Detected format: <FormatBadge format={parsed.format} />.{" "}
           <strong className="text-fg">{noteCount}</strong> {noteCount === 1 ? "note" : "notes"} will
@@ -297,12 +299,9 @@ function ReviewStage({ parsed, onConfirm, onBack }: ReviewProps) {
         </p>
         {tags.length > 0 ? (
           <p className="mt-2 text-sm text-fg-muted">
-            <span className="text-xs uppercase tracking-wider text-fg-dim">Tags found</span>{" "}
+            <span className="eyebrow">Tags found</span>{" "}
             {sampleTags.map((t) => (
-              <span
-                key={t}
-                className="ml-1 inline-block rounded bg-bg/60 px-1.5 py-0.5 font-mono text-xs text-fg"
-              >
+              <span key={t} className="chip chip-tag ml-1">
                 #{t}
               </span>
             ))}
@@ -314,8 +313,8 @@ function ReviewStage({ parsed, onConfirm, onBack }: ReviewProps) {
       </div>
 
       {sampleNotes.length > 0 ? (
-        <div className="rounded-md border border-border bg-card p-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
+        <div className="card rounded-xl p-5 shadow-soft">
+          <h3 className="eyebrow mb-2">
             Preview ({sampleNotes.length} of {noteCount})
           </h3>
           <ul className="space-y-1.5 font-mono text-xs">
@@ -332,7 +331,7 @@ function ReviewStage({ parsed, onConfirm, onBack }: ReviewProps) {
       ) : null}
 
       {errors.length > 0 ? (
-        <details className="rounded-md border border-border bg-card p-4">
+        <details className="card rounded-xl p-5 shadow-soft">
           <summary className="cursor-pointer text-sm text-fg-muted hover:text-accent">
             {errors.length} file(s) skipped during parse
           </summary>
@@ -348,18 +347,14 @@ function ReviewStage({ parsed, onConfirm, onBack }: ReviewProps) {
       ) : null}
 
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent"
-        >
+        <button type="button" onClick={onBack} className="btn btn-secondary btn-touch">
           Choose different files
         </button>
         <button
           type="button"
           onClick={onConfirm}
           disabled={!canImport}
-          className="min-h-11 rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
+          className="btn btn-primary btn-touch"
         >
           Run import ({noteCount} {noteCount === 1 ? "note" : "notes"}
           {attachmentCount > 0
@@ -381,13 +376,13 @@ function ImportingStage({
 }) {
   const pct = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
   return (
-    <section className="space-y-4 rounded-md border border-border bg-card p-6">
-      <h2 className="font-serif text-lg">Importing…</h2>
+    <section className="card space-y-4 rounded-xl p-6 shadow-soft">
+      <h2 className="font-serif text-lg text-fg">Importing…</h2>
       <p className="text-sm text-fg-muted">
         {progress.done} / {progress.total} notes processed.
       </p>
       <div
-        className="h-2 w-full overflow-hidden rounded bg-bg/60"
+        className="h-2 w-full overflow-hidden rounded-full bg-bg-soft"
         role="progressbar"
         tabIndex={0}
         aria-label="Import progress"
@@ -398,11 +393,7 @@ function ImportingStage({
         <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
       </div>
       <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent"
-        >
+        <button type="button" onClick={onCancel} className="btn btn-secondary btn-touch">
           Cancel
         </button>
       </div>
@@ -428,8 +419,8 @@ function DoneStage({
   const hasAttachments = report.attachmentOutcomes.length > 0;
   return (
     <section className="space-y-6">
-      <div className="rounded-md border border-border bg-card p-4">
-        <h2 className="font-serif text-lg">Import complete</h2>
+      <div className="card rounded-xl p-5 shadow-soft">
+        <h2 className="font-serif text-lg text-fg">Import complete</h2>
         <ul className="mt-3 space-y-1 text-sm">
           <li>
             <span className="text-accent">{report.created}</span> notes created
@@ -438,7 +429,7 @@ function DoneStage({
             <span className="text-fg-muted">{report.skipped}</span> notes skipped (already in vault)
           </li>
           <li>
-            <span className={report.errored > 0 ? "text-red-400" : "text-fg-muted"}>
+            <span className={report.errored > 0 ? "text-danger" : "text-fg-muted"}>
               {report.errored}
             </span>{" "}
             notes errored
@@ -463,7 +454,7 @@ function DoneStage({
               ) : null}
               {report.attachmentsErrored > 0 ? (
                 <li>
-                  <span className="text-red-400">{report.attachmentsErrored}</span> attachments
+                  <span className="text-danger">{report.attachmentsErrored}</span> attachments
                   errored
                 </li>
               ) : null}
@@ -478,7 +469,7 @@ function DoneStage({
       </div>
 
       {attachmentsSkipped.length > 0 || attachmentsErrored.length > 0 ? (
-        <details className="rounded-md border border-border bg-card p-4">
+        <details className="card rounded-xl p-5 shadow-soft">
           <summary className="cursor-pointer text-sm text-fg-muted hover:text-accent">
             {attachmentsSkipped.length + attachmentsErrored.length} attachment(s) not imported as
             files — why
@@ -497,7 +488,7 @@ function DoneStage({
       ) : null}
 
       {skipped.length > 0 ? (
-        <details className="rounded-md border border-border bg-card p-4">
+        <details className="card rounded-xl p-5 shadow-soft">
           <summary className="cursor-pointer text-sm text-fg-muted hover:text-accent">
             {skipped.length} skipped — vault already had a matching note
           </summary>
@@ -513,8 +504,8 @@ function DoneStage({
       ) : null}
 
       {errored.length > 0 ? (
-        <details className="rounded-md border border-red-500/30 bg-red-500/5 p-4" open>
-          <summary className="cursor-pointer text-sm font-medium text-red-400">
+        <details className="rounded-xl border border-danger-border bg-danger-soft p-5" open>
+          <summary className="cursor-pointer text-sm font-medium text-danger">
             {errored.length} errored
           </summary>
           <ul className="mt-3 space-y-1 text-xs">
@@ -529,18 +520,10 @@ function DoneStage({
       ) : null}
 
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <button
-          type="button"
-          onClick={onAnother}
-          className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent"
-        >
+        <button type="button" onClick={onAnother} className="btn btn-secondary btn-touch">
           Run another import
         </button>
-        <button
-          type="button"
-          onClick={onHome}
-          className="min-h-11 rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-        >
+        <button type="button" onClick={onHome} className="btn btn-primary btn-touch">
           Back to vault
         </button>
       </div>
@@ -555,5 +538,7 @@ function FormatBadge({ format }: { format: DetectedFormat }) {
       : format === "loose-markdown"
         ? "loose markdown"
         : "unknown";
-  return <span className="rounded bg-bg/60 px-1.5 py-0.5 font-mono text-xs text-fg">{label}</span>;
+  return (
+    <span className="rounded bg-bg-soft px-1.5 py-0.5 font-mono text-xs text-fg">{label}</span>
+  );
 }

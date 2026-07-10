@@ -1,5 +1,8 @@
 import { TagRenameDialog } from "@/components/TagRenameDialog";
 import { TagSchemaEditor } from "@/components/TagSchemaEditor";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   useMergeTags,
   usePinnedTags,
@@ -56,16 +59,16 @@ export function Tags() {
   const offline = !isOnline;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-10">
+    <div className="page">
       <header className="mb-5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-3 md:mb-6">
         <div>
-          <p className="text-xs uppercase tracking-wider text-fg-dim">{activeVault.name}</p>
-          <h1 className="font-serif text-2xl tracking-tight md:text-3xl">Tags</h1>
+          <p className="eyebrow">{activeVault.name}</p>
+          <h1 className="page-title">Tags</h1>
         </div>
         <button
           type="button"
           onClick={() => setSort((s) => (s === "count" ? "alpha" : "count"))}
-          className="text-sm text-fg-muted hover:text-accent"
+          className="focus-ring text-sm text-fg-muted hover:text-accent"
           aria-label="Toggle tag sort"
         >
           Sort: {sort === "count" ? "most used" : "A–Z"}
@@ -78,12 +81,12 @@ export function Tags() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         aria-label="Filter tags"
-        className="mb-4 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
+        className="input mb-6"
       />
 
       {selectedCount > 0 ? (
         <div
-          className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-sm"
+          className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm"
           aria-label="Tag selection actions"
         >
           <span className="text-fg-muted">
@@ -93,15 +96,11 @@ export function Tags() {
             type="button"
             onClick={() => setMergeOpen(true)}
             disabled={selectedCount < 2 || offline}
-            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
+            className="btn btn-primary btn-sm"
           >
             Merge into…
           </button>
-          <button
-            type="button"
-            onClick={clearSelection}
-            className="text-xs text-fg-muted hover:text-accent"
-          >
+          <button type="button" onClick={clearSelection} className="btn btn-ghost btn-sm">
             Clear
           </button>
         </div>
@@ -114,10 +113,7 @@ export function Tags() {
       ) : visible.length === 0 ? (
         <EmptyBlock filtering={search.trim().length > 0} hasAny={(tags.data ?? []).length > 0} />
       ) : (
-        <ul
-          className="divide-y divide-border rounded-md border border-border bg-card"
-          aria-label="Tag list"
-        >
+        <ul className="card shadow-soft divide-y divide-border rounded-xl" aria-label="Tag list">
           {visible.map((t) => (
             <TagRow
               key={t.name}
@@ -203,8 +199,8 @@ function TagRow({
   const hasSchemaSignal = !!tag.description || fieldNames.length > 0 || parents.length > 0;
 
   return (
-    <li className="flex flex-col gap-1 px-3 py-2 text-sm">
-      <div className="flex items-center gap-3">
+    <li className="px-4 py-3 text-sm transition-colors hover:bg-bg-soft">
+      <div className="flex flex-wrap items-center gap-3">
         <input
           type="checkbox"
           checked={selected}
@@ -214,47 +210,49 @@ function TagRow({
         />
         <Link
           to={`/all?tag=${encodeURIComponent(tag.name)}`}
-          className="flex flex-1 items-baseline gap-2 text-fg hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+          className="chip chip-tag focus-ring shrink-0 max-w-full break-all"
         >
           <span className="font-mono">#{tag.name}</span>
-          <span className="text-xs text-fg-dim">{tag.count ?? 0}</span>
+          <span className="opacity-70">{tag.count ?? 0}</span>
         </Link>
-        <button
-          type="button"
-          onClick={onTogglePin}
-          className={
-            pinned
-              ? "text-xs font-medium text-accent hover:text-accent-hover"
-              : "text-xs text-fg-muted hover:text-accent"
-          }
-          aria-label={pinned ? `Unpin tag ${tag.name}` : `Pin tag ${tag.name}`}
-          aria-pressed={pinned}
-          title={pinned ? "Pinned to home strip — click to unpin" : "Pin to home strip"}
-        >
-          {pinned ? "★ Pinned" : "☆ Pin"}
-        </button>
-        <button
-          type="button"
-          onClick={onEditSchema}
-          disabled={offline}
-          className="text-xs text-fg-muted hover:text-accent disabled:opacity-40"
-          aria-label={`Edit schema for tag ${tag.name}`}
-        >
-          {hasSchemaSignal ? "Schema" : "+ Schema"}
-        </button>
-        <button
-          type="button"
-          onClick={onRename}
-          disabled={offline}
-          className="text-xs text-fg-muted hover:text-accent disabled:opacity-40"
-          aria-label={`Rename tag ${tag.name}`}
-        >
-          Rename
-        </button>
+        <div className="ml-auto flex shrink-0 items-center gap-4">
+          <button
+            type="button"
+            onClick={onTogglePin}
+            className={
+              pinned
+                ? "focus-ring text-xs font-medium text-accent hover:text-accent-hover"
+                : "focus-ring text-xs text-fg-muted hover:text-accent"
+            }
+            aria-label={pinned ? `Unpin tag ${tag.name}` : `Pin tag ${tag.name}`}
+            aria-pressed={pinned}
+            title={pinned ? "Pinned to home strip — click to unpin" : "Pin to home strip"}
+          >
+            {pinned ? "★ Pinned" : "☆ Pin"}
+          </button>
+          <button
+            type="button"
+            onClick={onEditSchema}
+            disabled={offline}
+            className="focus-ring text-xs text-fg-muted hover:text-accent disabled:opacity-40"
+            aria-label={`Edit schema for tag ${tag.name}`}
+          >
+            {hasSchemaSignal ? "Schema" : "+ Schema"}
+          </button>
+          <button
+            type="button"
+            onClick={onRename}
+            disabled={offline}
+            className="focus-ring text-xs text-fg-muted hover:text-accent disabled:opacity-40"
+            aria-label={`Rename tag ${tag.name}`}
+          >
+            Rename
+          </button>
+        </div>
       </div>
       {hasSchemaSignal ? (
         <dl
-          className="ml-7 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-fg-dim"
+          className="ml-8 mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-fg-dim"
           aria-label={`Schema for ${tag.name}`}
         >
           {tag.description ? (
@@ -297,12 +295,9 @@ function filterAndSort(tags: TagRecord[], search: string, sort: SortMode): TagRe
 
 function SkeletonRows() {
   return (
-    <div
-      className="divide-y divide-border rounded-md border border-border bg-card"
-      aria-busy="true"
-    >
+    <div className="space-y-2" aria-busy="true">
       {[0, 1, 2, 3, 4].map((i) => (
-        <div key={i} className="h-10 animate-pulse bg-card/60" />
+        <Skeleton key={i} className="h-12 rounded-xl" />
       ))}
     </div>
   );
@@ -311,40 +306,32 @@ function SkeletonRows() {
 function ErrorBlock({ error }: { error: Error }) {
   const isAuth = error instanceof VaultAuthError;
   return (
-    <div className="rounded-md border border-red-500/30 bg-red-500/5 p-6">
-      <p className="mb-2 font-medium text-red-400">
-        {isAuth ? "Session expired" : "Could not load tags"}
-      </p>
-      <p className="mb-4 text-sm text-fg-muted">{error.message}</p>
-      {isAuth ? (
-        <Link
-          to="/add"
-          className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-        >
-          Reconnect vault
-        </Link>
-      ) : null}
-    </div>
+    <ErrorState
+      title={isAuth ? "Session expired" : "Could not load tags"}
+      message={error.message}
+      action={
+        isAuth ? (
+          <Link to="/add" className="btn btn-primary">
+            Reconnect vault
+          </Link>
+        ) : undefined
+      }
+    />
   );
 }
 
 function EmptyBlock({ filtering, hasAny }: { filtering: boolean; hasAny: boolean }) {
   if (filtering && hasAny) {
-    return (
-      <div className="rounded-md border border-border bg-card p-10 text-center">
-        <p className="text-fg-muted">No tags match your filter.</p>
-      </div>
-    );
+    return <EmptyState title="No tags match your filter." />;
   }
   return (
-    <div className="rounded-md border border-border bg-card p-10 text-center">
-      <p className="mb-3 text-fg-muted">No tags in this vault yet.</p>
-      <Link
-        to="/new"
-        className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-      >
-        Create a note
-      </Link>
-    </div>
+    <EmptyState
+      title="No tags in this vault yet."
+      action={
+        <Link to="/new" className="btn btn-primary">
+          Create a note
+        </Link>
+      }
+    />
   );
 }

@@ -1,4 +1,5 @@
 import { PathTree } from "@/components/PathTree";
+import { SectionLabel } from "@/components/RecentTimeline";
 import { TagBrowser } from "@/components/TagBrowser";
 import { normalizeTag } from "@/components/TagEditor";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -456,10 +457,8 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
           ) : displayNotes && displayNotes.length > 0 ? (
             <>
               {notes.isError ? <OfflineRibbon /> : null}
-              <ol
-                aria-label="Notes"
-                className="divide-y divide-border rounded-md border border-border bg-card"
-              >
+              <SectionLabel>{`${title} (${pageLast}${hasNext ? "+" : ""})`}</SectionLabel>
+              <ol aria-label="Notes" className="flex flex-col gap-0.5">
                 {displayNotes.map((n) => (
                   <NoteRow
                     key={n.id}
@@ -572,7 +571,7 @@ function SavedViewsSidebar({
       {isPending ? (
         <p className="text-xs text-fg-dim">Loading…</p>
       ) : error ? (
-        <p className="text-xs text-[--color-danger]">Could not load views.</p>
+        <p className="text-xs text-danger">Could not load views.</p>
       ) : !views || views.length === 0 ? (
         <p className="text-xs text-fg-dim">
           None yet. Apply a filter and click “Save view” to add one.
@@ -643,7 +642,7 @@ function SavedViewsSidebar({
                         setOpenMenuId(null);
                         onDelete(v);
                       }}
-                      className="block w-full border-t border-border px-3 py-2 text-left text-sm text-[--color-danger] hover:bg-bg"
+                      className="block w-full border-t border-border px-3 py-2 text-left text-sm text-danger hover:bg-bg"
                     >
                       Delete
                     </button>
@@ -709,7 +708,7 @@ function RenameViewDialog({
           />
         </label>
         {collides ? (
-          <p className="mt-2 text-xs text-[--color-danger]">
+          <p className="mt-2 text-xs text-danger">
             A view with that name already exists.
           </p>
         ) : null}
@@ -775,7 +774,7 @@ function SaveViewDialog({
           />
         </label>
         {collides ? (
-          <p className="mt-2 text-xs text-[--color-danger]">
+          <p className="mt-2 text-xs text-danger">
             A view with that name already exists.
           </p>
         ) : null}
@@ -819,10 +818,11 @@ function NoteRow({
   const isArchived = (note.tags ?? []).includes(archivedTag);
   return (
     <li className={isArchived ? "opacity-60 italic" : undefined}>
-      <div className="flex items-stretch">
+      <div className="note-row items-stretch">
+        <span aria-hidden="true" className="note-dot" />
         <Link
           to={`/n/${encodeURIComponent(note.id)}`}
-          className="focus-ring block flex-1 min-w-0 min-h-11 px-3 py-2.5 hover:bg-bg/60 md:min-h-0 md:px-4 md:py-3"
+          className="focus-ring block min-h-11 min-w-0 flex-1 md:min-h-0"
         >
           <div className="flex items-baseline justify-between gap-4">
             <span className="flex min-w-0 items-baseline gap-1.5">
@@ -836,6 +836,9 @@ function NoteRow({
             <span className="shrink-0 text-xs text-fg-dim">{relativeTime(stamp)}</span>
           </div>
           {showPath ? <p className="mt-0.5 min-w-0 truncate note-id">{note.path}</p> : null}
+          {note.preview ? (
+            <p className="mt-1 truncate text-sm text-fg-muted">{note.preview}</p>
+          ) : null}
           {note.tags && note.tags.length > 0 ? (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {note.tags.map((t) => (
@@ -845,12 +848,9 @@ function NoteRow({
               ))}
             </div>
           ) : null}
-          {note.preview ? (
-            <p className="mt-1.5 truncate text-sm text-fg-muted">{note.preview}</p>
-          ) : null}
         </Link>
         {quickTagSuggestions ? (
-          <div className="shrink-0 px-3 py-3">
+          <div className="shrink-0 self-center">
             <QuickTagControl
               noteId={note.id}
               existing={note.tags ?? []}
@@ -1023,9 +1023,7 @@ function PinnedTagsStrip({
           >
             <span className="min-w-0 break-all">#{name}</span>
             {count !== undefined ? (
-              <span className={active ? "text-[--color-on-accent]/80" : "text-accent/70"}>
-                {count}
-              </span>
+              <span className={active ? "text-on-accent/80" : "text-accent/70"}>{count}</span>
             ) : null}
           </button>
         );
@@ -1147,9 +1145,9 @@ function TagFilter({
 
 function SkeletonRows() {
   return (
-    <ol className="divide-y divide-border rounded-md border border-border bg-card" aria-busy="true">
+    <ol className="flex flex-col gap-0.5" aria-busy="true">
       {[0, 1, 2, 3, 4].map((i) => (
-        <li key={i} className="px-4 py-3">
+        <li key={i} className="rounded-xl px-3 py-3">
           <Skeleton className="h-4 w-1/3" />
           <Skeleton className="mt-2 h-3 w-2/3" />
         </li>

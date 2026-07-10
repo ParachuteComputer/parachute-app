@@ -9,6 +9,8 @@ import { NoteRenderer } from "@/components/NoteRenderer";
 import { PinArchiveButtons } from "@/components/PinArchiveButtons";
 import { RemoveAttachmentButton } from "@/components/RemoveAttachmentButton";
 import { TagEditor, normalizeTag } from "@/components/TagEditor";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { type StoredDraft, bodyEquals, clearDraft, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
@@ -29,8 +31,8 @@ export function NoteEditor() {
   if (!activeVault) return <Navigate to="/" replace />;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-5 md:px-6 md:py-8">
-      <nav className="mb-4 text-sm text-fg-dim">
+    <div className="page">
+      <nav className="mb-6 text-sm text-fg-dim">
         <Link
           to={decodedId ? `/n/${encodeURIComponent(decodedId)}` : "/"}
           className="hover:text-accent"
@@ -248,10 +250,10 @@ function EditorSurface({ note }: { note: Note }) {
 
   return (
     <article>
-      <header className="mb-4 border-b border-border pb-4">
+      <header className="card mb-6 p-5 shadow-soft md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-xs uppercase tracking-wider text-fg-dim">Editing</span>
+            <span className="eyebrow">Editing</span>
             {isDirty ? (
               <span
                 className="inline-flex items-center gap-1 text-xs text-accent"
@@ -272,22 +274,18 @@ function EditorSurface({ note }: { note: Note }) {
               type="button"
               onClick={handleRevert}
               disabled={!isDirty || mutation.isPending}
-              className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent disabled:opacity-40"
+              className="btn btn-secondary btn-touch"
             >
               Revert
             </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent"
-            >
+            <button type="button" onClick={handleCancel} className="btn btn-secondary btn-touch">
               Cancel
             </button>
             <button
               type="button"
               onClick={handleSaveAndView}
               disabled={!isDirty || mutation.isPending || uploadsActive}
-              className="min-h-11 rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
+              className="btn btn-primary btn-touch"
               title={uploadsActive ? "Waiting for upload…" : "Save (⌘S)"}
               aria-label={uploadsActive ? "Save — waiting for upload…" : "Save"}
             >
@@ -296,7 +294,19 @@ function EditorSurface({ note }: { note: Note }) {
           </div>
         </div>
 
-        <div className="mt-3 flex flex-col gap-2">
+        <input
+          type="text"
+          value={draft.path}
+          onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
+          className="mt-4 w-full border-0 bg-transparent font-serif text-xl text-fg outline-none placeholder:text-fg-dim md:text-2xl"
+          aria-label="Note path"
+          placeholder="(no path)"
+        />
+        {pathChanged ? (
+          <p className="mt-1 text-xs text-accent">Renaming moves the note — its id may change.</p>
+        ) : null}
+
+        <div className="mt-4">
           <TagEditor
             tags={draft.tags}
             input={tagInput}
@@ -304,20 +314,6 @@ function EditorSurface({ note }: { note: Note }) {
             onAdd={addTag}
             onRemove={removeTag}
           />
-          <label className="flex items-baseline gap-3 text-sm">
-            <span className="shrink-0 text-xs uppercase tracking-wider text-fg-dim">Title</span>
-            <input
-              type="text"
-              value={draft.path}
-              onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
-              className="flex-1 rounded-md border border-border bg-card px-2.5 py-1 font-mono text-sm text-fg focus:border-accent focus:outline-none"
-              aria-label="Note path"
-              placeholder="(no path)"
-            />
-          </label>
-          {pathChanged ? (
-            <p className="text-xs text-accent">Renaming moves the note — its id may change.</p>
-          ) : null}
         </div>
       </header>
 
@@ -326,7 +322,7 @@ function EditorSurface({ note }: { note: Note }) {
         <div
           role="status"
           data-testid="draft-offer"
-          className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-sm"
+          className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-sm"
         >
           <span className="text-fg-muted">
             You have an unsaved draft from {relativeTime(offeredDraft.savedAt)}.
@@ -342,7 +338,7 @@ function EditorSurface({ note }: { note: Note }) {
             <button
               type="button"
               onClick={discardOfferedDraft}
-              className="text-fg-dim hover:text-red-400"
+              className="text-fg-dim hover:text-danger"
             >
               Discard
             </button>
@@ -364,7 +360,7 @@ function EditorSurface({ note }: { note: Note }) {
         />
       ) : null}
       {saveError ? (
-        <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-400">
+        <div className="mb-4 rounded-xl border border-danger-border bg-danger-soft p-3 text-sm text-danger">
           {saveError}
         </div>
       ) : null}
@@ -372,7 +368,7 @@ function EditorSurface({ note }: { note: Note }) {
       <div
         role="tablist"
         aria-label="Editor view"
-        className="mb-3 inline-flex rounded-md border border-border bg-card p-0.5 text-sm lg:hidden"
+        className="mb-3 inline-flex rounded-lg border border-border bg-card p-0.5 text-sm lg:hidden"
       >
         {(["edit", "preview"] as const).map((p) => (
           <button
@@ -381,10 +377,8 @@ function EditorSurface({ note }: { note: Note }) {
             role="tab"
             aria-selected={mobilePane === p}
             onClick={() => setMobilePane(p)}
-            className={`rounded px-3 py-1.5 capitalize ${
-              mobilePane === p
-                ? "bg-accent text-[--color-on-accent]"
-                : "text-fg-muted hover:text-accent"
+            className={`rounded-md px-3 py-1.5 capitalize ${
+              mobilePane === p ? "bg-accent text-on-accent" : "text-fg-muted hover:text-accent"
             }`}
           >
             {p}
@@ -395,9 +389,7 @@ function EditorSurface({ note }: { note: Note }) {
       <div className="grid min-h-[60vh] gap-4 lg:grid-cols-2">
         <AttachmentDropZone
           onDropFiles={uploader.start}
-          className={`min-w-0 rounded-md border border-border bg-card ${
-            mobilePane === "edit" ? "" : "hidden lg:block"
-          }`}
+          className={`card min-w-0 ${mobilePane === "edit" ? "" : "hidden lg:block"}`}
           hint={ALLOWLIST_HINT}
         >
           <CodeMirrorEditor
@@ -413,7 +405,7 @@ function EditorSurface({ note }: { note: Note }) {
           />
         </AttachmentDropZone>
         <div
-          className={`min-w-0 overflow-auto rounded-md border border-border bg-card p-4 ${
+          className={`card min-w-0 overflow-auto p-4 ${
             mobilePane === "preview" ? "" : "hidden lg:block"
           }`}
         >
@@ -440,7 +432,7 @@ const ALLOWLIST_HINT = (
       href="https://github.com/ParachuteComputer/parachute-vault/issues/127"
       target="_blank"
       rel="noreferrer"
-      className="underline"
+      className="text-accent hover:underline"
     >
       PDF + mp4 coming
     </a>
@@ -465,7 +457,7 @@ function AttachmentsSection({
   return (
     <section className="mt-6 border-t border-border pt-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-serif text-lg">Attachments</h2>
+        <h2 className="font-serif text-xl">Attachments</h2>
         <AttachmentPicker onPickFiles={onPickFiles} />
       </div>
       <p className="mb-3 text-xs text-fg-dim">
@@ -477,7 +469,7 @@ function AttachmentsSection({
           {attachments.map((a) => (
             <li
               key={a.id}
-              className="flex items-center justify-between gap-2 rounded border border-border bg-card/50 px-3 py-1.5 font-mono text-xs"
+              className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card/50 px-3 py-1.5 font-mono text-xs"
             >
               <span className="truncate" title={a.path ?? a.id}>
                 {a.filename ?? a.path ?? a.id}
@@ -504,8 +496,8 @@ function ConflictBanner({
   onDismiss(): void;
 }) {
   return (
-    <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
-      <p className="mb-1 font-medium text-amber-500">This note was edited elsewhere.</p>
+    <div className="mb-4 rounded-xl border border-warning bg-warning-soft p-4">
+      <p className="mb-1 font-medium text-warning">This note was edited elsewhere.</p>
       <p className="mb-3 text-sm text-fg-muted">
         Your save was rejected to avoid overwriting the other edit.
         {conflict.currentUpdatedAt
@@ -513,18 +505,10 @@ function ConflictBanner({
           : ""}
       </p>
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={onReload}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-        >
+        <button type="button" onClick={onReload} className="btn btn-primary btn-touch">
           Reload latest (discard my edits)
         </button>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="rounded-md border border-border px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
-        >
+        <button type="button" onClick={onDismiss} className="btn btn-secondary btn-touch">
           Keep editing
         </button>
       </div>
@@ -535,43 +519,44 @@ function ConflictBanner({
 function EditorSkeleton() {
   return (
     <div className="grid min-h-[60vh] gap-4 lg:grid-cols-2" aria-busy="true">
-      <div className="animate-pulse rounded-md border border-border bg-card" />
-      <div className="animate-pulse rounded-md border border-border bg-card" />
+      <div className="card animate-pulse" />
+      <div className="card animate-pulse" />
     </div>
   );
 }
 
 function NotFoundBlock({ id }: { id: string }) {
   return (
-    <div className="rounded-md border border-border bg-card p-10 text-center">
-      <p className="mb-2 font-serif text-xl">Note not found</p>
-      <p className="mb-4 text-sm text-fg-muted">
-        No note with id <span className="font-mono">{id}</span> in this vault.
-      </p>
-      <Link to="/all" className="text-sm text-accent hover:underline">
-        Back to all notes
-      </Link>
-    </div>
+    <EmptyState
+      title={<span className="font-serif text-xl text-fg">Note not found</span>}
+      description={
+        <>
+          No note with id <span className="font-mono">{id}</span> in this vault.
+        </>
+      }
+      action={
+        <Link to="/all" className="text-sm text-accent hover:underline">
+          Back to all notes
+        </Link>
+      }
+    />
   );
 }
 
 function ErrorBlock({ error }: { error: Error }) {
   const isAuth = error instanceof VaultAuthError;
   return (
-    <div className="rounded-md border border-red-500/30 bg-red-500/5 p-6">
-      <p className="mb-2 font-medium text-red-400">
-        {isAuth ? "Session expired" : "Could not load note"}
-      </p>
-      <p className="mb-4 text-sm text-fg-muted">{error.message}</p>
-      {isAuth ? (
-        <Link
-          to="/add"
-          className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-        >
-          Reconnect vault
-        </Link>
-      ) : null}
-    </div>
+    <ErrorState
+      title={isAuth ? "Session expired" : "Could not load note"}
+      message={error.message}
+      action={
+        isAuth ? (
+          <Link to="/add" className="btn btn-primary">
+            Reconnect vault
+          </Link>
+        ) : undefined
+      }
+    />
   );
 }
 

@@ -4,7 +4,7 @@ import { InsecureContextError } from "@/lib/vault/pkce";
 import { useVaultStore } from "@/lib/vault/store";
 import { safeInternalRedirect, vaultIdFromUrl } from "@/lib/vault/url";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 
 export function AddVault() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -142,13 +142,21 @@ export function AddVault() {
   }
 
   return (
-    <div className="mx-auto max-w-xl px-6 py-16">
-      <h1 className="mb-2 font-serif text-4xl tracking-tight">Connect a vault</h1>
-      <p className="mb-8 text-fg-muted">
-        Paste your vault address. You'll be taken to its consent page to authorize Parachute Notes.
-      </p>
+    <div className="page-prose">
+      <nav className="mb-4 text-sm text-fg-dim">
+        <Link to="/" className="focus-ring hover:text-accent">
+          ← Back
+        </Link>
+      </nav>
 
-      <form onSubmit={onSubmit} className="space-y-4">
+      <header className="mb-8">
+        <h1 className="page-title">Connect a vault</h1>
+        <p className="mt-3 text-fg-muted">
+          Paste your vault address. You'll be taken to its consent page to authorize Parachute.
+        </p>
+      </header>
+
+      <form onSubmit={onSubmit} className="card space-y-5 rounded-xl p-6 shadow-soft">
         <div>
           <label htmlFor="vault-url" className="mb-1.5 block text-sm font-medium text-fg">
             Vault address
@@ -162,18 +170,19 @@ export function AddVault() {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             disabled={submitting}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-fg focus:border-accent focus:outline-none"
+            className="input input-on-bg font-mono"
           />
           <p className="mt-1.5 text-xs text-fg-dim">
-            From your cloud console at <code>cloud.parachute.computer</code>, or your own Parachute
-            hub — a local install lives at <code>http://localhost:1939</code>.
+            From your cloud console at <code className="note-id">cloud.parachute.computer</code>, or
+            your own Parachute hub — a local install lives at{" "}
+            <code className="note-id">http://localhost:1939</code>.
           </p>
         </div>
 
         {insecureContext ? <InsecureContextBanner /> : null}
 
         {error ? (
-          <div className="rounded-md border border-red-400/30 bg-red-400/5 px-3 py-2 text-sm text-red-400">
+          <div className="rounded-xl border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
             {error}
           </div>
         ) : null}
@@ -181,7 +190,7 @@ export function AddVault() {
         <button
           type="submit"
           disabled={submitting || !url}
-          className="w-full rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn btn-primary btn-lg w-full"
         >
           {submitting ? "Starting OAuth…" : "Continue"}
         </button>

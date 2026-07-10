@@ -1,5 +1,25 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.2.0] - 2026-07-10
+
+Extend the warm-paper/coral/serif design system INWARD to the inner surfaces —
+so clicking past Home no longer lands on structurally-notes-ui screens. Restyle +
+light IA-align only; all machinery (vault client, sync/outbox, CRUD, routing,
+`lens:*` storage) intact.
+
+- **Tier 1 (from home/rail):** `Notes` (All Notes — warm `.note-row` rows w/ grass
+  dots + coral view chips + section labels), `Today`, `NoteView` (calm reading),
+  `NoteNew` (the composer opened up — serif title field, `.composer` warmth, voice
+  affordance), `NoteEditor` (serif chrome around CodeMirror).
+- **Tier 2:** `Settings` (the calm "dissolved console" — serif section headings,
+  warm cards, selectable boxes), `Tags`, `Activity`.
+- **Tier 3:** `ConnectAI` (warm MCP-URL box + Claude/ChatGPT assistant tiles +
+  grass trust line), `Import`, `AddVault`, `Vaults`.
+- Swept many broken `text-[--color-on-accent]` arbitrary utilities (dead in
+  Tailwind v4 → dark-on-coral, fails AA) to the generated `text-on-accent` /
+  `.btn-primary`, and hardcoded `red-500`/`amber-500` literals to the
+  `danger`/`warning` tokens. Light + dark paired, phone-correct.
+
 ## [0.1.0] - 2026-07-10
 
 Founding scaffold of the Parachute super-surface.
