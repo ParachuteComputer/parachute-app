@@ -708,9 +708,7 @@ function RenameViewDialog({
           />
         </label>
         {collides ? (
-          <p className="mt-2 text-xs text-danger">
-            A view with that name already exists.
-          </p>
+          <p className="mt-2 text-xs text-danger">A view with that name already exists.</p>
         ) : null}
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onCancel} className="btn btn-secondary btn-touch">
@@ -774,9 +772,7 @@ function SaveViewDialog({
           />
         </label>
         {collides ? (
-          <p className="mt-2 text-xs text-danger">
-            A view with that name already exists.
-          </p>
+          <p className="mt-2 text-xs text-danger">A view with that name already exists.</p>
         ) : null}
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onCancel} className="btn btn-secondary btn-touch">

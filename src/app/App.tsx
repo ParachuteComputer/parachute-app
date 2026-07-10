@@ -47,6 +47,7 @@ const VaultGraph = lazy(() =>
   import("./routes/VaultGraph").then((m) => ({ default: m.VaultGraph })),
 );
 const Vaults = lazy(() => import("./routes/Vaults").then((m) => ({ default: m.Vaults })));
+const Welcome = lazy(() => import("./routes/Welcome").then((m) => ({ default: m.Welcome })));
 
 // Index dispatcher: the front door is the guided Home when a vault is
 // connected, else the landing page. Both live at internal `/`, which maps to
@@ -215,6 +216,7 @@ export function App() {
                       <Route path="/:id" element={<NoteIdRedirect />} />
                       <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
                       <Route path="/add" element={<AddVault />} />
+                      <Route path="/welcome" element={<Welcome />} />
                       <Route path="/oauth/callback" element={<OAuthCallback />} />
                       <Route path="/vaults" element={<Vaults />} />
                       <Route path="/settings" element={<Settings />} />

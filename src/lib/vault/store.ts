@@ -22,6 +22,18 @@ export interface VaultStoreState {
   ) => string;
   removeVault: (id: string) => void;
   setActiveVault: (id: string | null) => void;
+  /**
+   * Set a vault's display name — the identity threaded through the rail, the
+   * home masthead, the document title, and the map's center. Used by the
+   * first-run naming onboarding (`/welcome`).
+   *
+   * Display-only today: it renames the local `VaultRecord`, not the canonical
+   * server-side vault. SEAM: once the hosted account/vault API is live (the
+   * door descriptor at `/.well-known/parachute-account` + `PATCH /account/vaults`,
+   * C4/C5), also persist the chosen name to the cloud vault so the MCP URL and
+   * every device agree. Self-hosted vaults keep their hub-owned name.
+   */
+  renameVault: (id: string, name: string) => void;
   touchActive: (id: string) => void;
   getToken: (id: string) => StoredToken | null;
   getActiveVault: () => VaultRecord | null;
@@ -61,6 +73,16 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
   setActiveVault(id) {
     saveActiveVaultId(id);
     set({ activeVaultId: id });
+  },
+
+  renameVault(id, name) {
+    const existing = get().vaults[id];
+    const trimmed = name.trim();
+    if (!existing || !trimmed || existing.name === trimmed) return;
+    const updated = { ...existing, name: trimmed };
+    const nextVaults = { ...get().vaults, [id]: updated };
+    saveVaults(nextVaults);
+    set({ vaults: nextVaults });
   },
 
   touchActive(id) {

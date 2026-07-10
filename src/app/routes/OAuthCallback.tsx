@@ -138,7 +138,7 @@ export function OAuthCallback() {
             href={status.approveUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block rounded-md bg-accent px-4 py-2 text-sm text-[--color-on-accent] hover:bg-accent-hover"
+            className="inline-block rounded-md bg-accent px-4 py-2 text-sm text-on-accent hover:bg-accent-hover"
           >
             Open approval page
           </a>
@@ -156,7 +156,7 @@ export function OAuthCallback() {
 
   return (
     <div className="mx-auto max-w-xl px-6 py-24 text-center">
-      <h1 className="mb-3 font-serif text-3xl text-red-400">Connection failed</h1>
+      <h1 className="mb-3 font-serif text-3xl text-danger">Connection failed</h1>
       <p className="mb-8 text-fg-muted">{status.message}</p>
       <button
         type="button"
