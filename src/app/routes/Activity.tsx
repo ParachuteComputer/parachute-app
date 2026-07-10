@@ -1,3 +1,6 @@
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   type ActivityEvent,
   BUCKET_LABELS,
@@ -13,6 +16,10 @@ import { Link, Navigate } from "react-router";
 
 const PAGE_SIZE = 50;
 
+// The reflective "what happened" view — a calm timeline grouped into
+// Today / Yesterday / This week / Older, each an eyebrow-labelled section
+// over a warm card of rows. Reading-width (page-prose) since it's a linear
+// scan, not a working list.
 export function Activity() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const notes = useNotesForDateViews();
@@ -30,17 +37,17 @@ export function Activity() {
   if (!activeVault) return <Navigate to="/" replace />;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 md:px-6 md:py-10">
-      <header className="mb-5 md:mb-6">
-        <p className="text-xs uppercase tracking-wider text-fg-dim">Activity</p>
-        <h1 className="font-serif text-2xl tracking-tight md:text-3xl">Recent changes</h1>
-        <p className="mt-1 text-sm text-fg-muted">
+    <div className="page-prose">
+      <header className="mb-8">
+        <p className="eyebrow mb-1">Activity</p>
+        <h1 className="page-title">Recent changes</h1>
+        <p className="mt-2 text-fg-muted">
           Last 30 days, newest first. Deletions aren't tracked yet.
         </p>
       </header>
 
       {notes.isPending ? (
-        <Skeleton />
+        <ActivitySkeleton />
       ) : notes.isError ? (
         <ErrorBlock error={notes.error} />
       ) : events.length === 0 ? (
@@ -59,7 +66,7 @@ export function Activity() {
               <button
                 type="button"
                 onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
-                className="rounded-md border border-border bg-card px-4 py-2 text-sm text-fg-muted hover:text-accent"
+                className="btn btn-secondary btn-touch"
               >
                 Load more ({remaining} remaining)
               </button>
@@ -74,15 +81,15 @@ export function Activity() {
 function Section({ title, events }: { title: string; events: ActivityEvent[] }) {
   return (
     <section>
-      <h2 className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
+      <h2 className="eyebrow mb-3">
         {title} ({events.length})
       </h2>
-      <ol className="divide-y divide-border rounded-md border border-border bg-card">
+      <ol className="card shadow-soft divide-y divide-border rounded-xl">
         {events.map((ev) => (
           <li key={ev.id}>
             <Link
               to={`/n/${encodeURIComponent(ev.noteId)}`}
-              className="block px-4 py-3 hover:bg-bg/60 focus:bg-bg/60 focus:outline-none"
+              className="focus-ring block px-5 py-4 transition-colors hover:bg-bg-soft"
             >
               <div className="flex items-baseline justify-between gap-4">
                 <div className="flex min-w-0 items-baseline gap-2">
@@ -95,12 +102,9 @@ function Section({ title, events }: { title: string; events: ActivityEvent[] }) 
                 <p className="mt-1 truncate text-sm text-fg-muted">{ev.preview}</p>
               ) : null}
               {ev.tags && ev.tags.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-1">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   {ev.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-md bg-border/40 px-1.5 py-0.5 text-xs text-fg-dim"
-                    >
+                    <span key={tag} className="chip chip-tag max-w-full break-all">
                       #{tag}
                     </span>
                   ))}
@@ -116,38 +120,29 @@ function Section({ title, events }: { title: string; events: ActivityEvent[] }) 
 
 function KindBadge({ kind }: { kind: "created" | "updated" }) {
   if (kind === "created") {
-    return (
-      <span className="shrink-0 rounded-md bg-accent/10 px-1.5 py-0.5 text-xs text-accent">
-        Created
-      </span>
-    );
+    return <span className="chip chip-tag shrink-0">Created</span>;
   }
-  return (
-    <span className="shrink-0 rounded-md bg-border/40 px-1.5 py-0.5 text-xs text-fg-muted">
-      Edited
-    </span>
-  );
+  return <span className="chip shrink-0">Edited</span>;
 }
 
 function EmptyBlock() {
   return (
-    <div className="rounded-md border border-border bg-card p-10 text-center">
-      <p className="mb-4 text-fg-muted">No activity in the last 30 days.</p>
-      <Link
-        to="/new"
-        className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-      >
-        New note
-      </Link>
-    </div>
+    <EmptyState
+      title="No activity in the last 30 days."
+      action={
+        <Link to="/new" className="btn btn-primary">
+          New note
+        </Link>
+      }
+    />
   );
 }
 
-function Skeleton() {
+function ActivitySkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
       {[0, 1, 2, 3, 4].map((i) => (
-        <div key={i} className="h-16 animate-pulse rounded-md bg-border/30" />
+        <Skeleton key={i} className="h-16 rounded-xl" />
       ))}
     </div>
   );
@@ -156,19 +151,16 @@ function Skeleton() {
 function ErrorBlock({ error }: { error: Error }) {
   const isAuth = error instanceof VaultAuthError;
   return (
-    <div className="rounded-md border border-red-500/30 bg-red-500/5 p-6">
-      <p className="mb-2 font-medium text-red-400">
-        {isAuth ? "Session expired" : "Could not load activity"}
-      </p>
-      <p className="mb-4 text-sm text-fg-muted">{error.message}</p>
-      {isAuth ? (
-        <Link
-          to="/add"
-          className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
-        >
-          Reconnect vault
-        </Link>
-      ) : null}
-    </div>
+    <ErrorState
+      title={isAuth ? "Session expired" : "Could not load activity"}
+      message={error.message}
+      action={
+        isAuth ? (
+          <Link to="/add" className="btn btn-primary">
+            Reconnect vault
+          </Link>
+        ) : undefined
+      }
+    />
   );
 }

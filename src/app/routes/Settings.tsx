@@ -29,33 +29,35 @@ import type { AudioRetention } from "@/lib/vault/types";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router";
 
-// Per-vault settings UI. Sections stack top-to-bottom; add more as the
-// per-vault customization surface grows.
+// Per-vault settings UI. A calm, sectioned nav-and-panels page (SYNTHESIS
+// Scene 8) — not a dense form. Sections stack top-to-bottom with generous
+// air between them; add more as the per-vault customization surface grows.
 export function Settings() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   if (!activeVault) return <Navigate to="/" replace />;
 
   return (
     <div className="page-prose">
-      <header className="mb-8">
-        <nav className="mb-3 text-sm text-fg-dim">
-          <Link to="/" className="hover:text-accent">
+      <header className="mb-10">
+        <nav className="mb-4 text-sm text-fg-dim">
+          <Link to="/" className="focus-ring hover:text-accent">
             ← Home
           </Link>
         </nav>
-        <h1 className="font-serif text-2xl tracking-tight md:text-3xl">Settings</h1>
-        <p className="mt-1 text-sm text-fg-muted">
-          Everything about <span className="text-fg">{activeVault.name}</span>, in one place.
-        </p>
+        <p className="eyebrow mb-1">{activeVault.name}</p>
+        <h1 className="page-title">Settings</h1>
+        <p className="mt-2 text-fg-muted">Everything about this vault, in one calm place.</p>
       </header>
 
-      <ManageSection vaultUrl={activeVault.url} />
-      <ImportSection />
-      <VoiceRetentionSection vaultId={activeVault.id} />
-      <TextSizeSection />
-      <PathTreeSection vaultId={activeVault.id} />
-      <TagRolesSection vaultId={activeVault.id} />
-      <InstallStateSection />
+      <div className="space-y-8">
+        <ManageSection vaultUrl={activeVault.url} />
+        <ImportSection />
+        <VoiceRetentionSection vaultId={activeVault.id} />
+        <TextSizeSection />
+        <PathTreeSection vaultId={activeVault.id} />
+        <TagRolesSection vaultId={activeVault.id} />
+        <InstallStateSection />
+      </div>
     </div>
   );
 }
@@ -71,27 +73,27 @@ function ManageSection({ vaultUrl }: { vaultUrl: string }) {
   const consoleUrl = cloudConsoleUrl(vaultUrl);
   const isCloud = consoleUrl !== null;
   return (
-    <section aria-label="Manage" className="mb-8">
+    <section aria-label="Manage">
       <h2 className="eyebrow mb-3">Manage</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <ManageCard
+      <div className="card divide-y divide-border rounded-xl shadow-soft">
+        <ManageRow
           to="/connect"
           title="Connections"
           description="Connect Claude, ChatGPT, or any MCP client to this vault."
         />
-        <ManageCard
+        <ManageRow
           to="/vaults"
           title="Vaults"
           description="Add a vault, switch between them, or export."
         />
         {isCloud ? (
           <>
-            <ManageCard
+            <ManageRow
               href={consoleUrl}
               title="Account"
               description="Manage your account and sign-in on the console."
             />
-            <ManageCard
+            <ManageRow
               href={consoleUrl}
               title="Plan & Billing"
               description="Your plan, usage, and payment — on the console."
@@ -103,10 +105,11 @@ function ManageSection({ vaultUrl }: { vaultUrl: string }) {
   );
 }
 
-// A settings link-card. Internal destinations use `to` (client route);
-// external doors (the console) use `href` and carry a "↗" so the hop off the
-// app is honest, not disguised.
-function ManageCard({
+// A calm settings row — title + muted sub + a right-aligned arrow (Scene 8's
+// "quiet sectioned nav" pattern). Internal destinations use `to` (client
+// route); external doors (the console) use `href` and carry a "↗" so the hop
+// off the app is honest, not disguised.
+function ManageRow({
   to,
   href,
   title,
@@ -119,26 +122,26 @@ function ManageCard({
 }) {
   const body: ReactNode = (
     <>
-      <p className="flex items-center gap-1.5 font-medium text-fg">
-        {title}
-        {href ? (
-          <span aria-hidden className="text-xs text-fg-dim">
-            ↗
-          </span>
-        ) : null}
-      </p>
-      <p className="mt-0.5 text-sm text-fg-muted">{description}</p>
+      <span className="min-w-0">
+        <span className="block font-medium text-fg">{title}</span>
+        <span className="mt-0.5 block text-sm text-fg-muted">{description}</span>
+      </span>
+      <span aria-hidden="true" className="shrink-0 text-fg-dim">
+        {href ? "↗" : "→"}
+      </span>
     </>
   );
+  const className =
+    "focus-ring flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-bg-soft first:rounded-t-xl last:rounded-b-xl";
   if (href) {
     return (
-      <a href={href} className="focus-ring card p-4 transition-colors hover:border-accent">
+      <a href={href} className={className}>
         {body}
       </a>
     );
   }
   return (
-    <Link to={to ?? "/"} className="focus-ring card p-4 transition-colors hover:border-accent">
+    <Link to={to ?? "/"} className={className}>
       {body}
     </Link>
   );
@@ -150,17 +153,17 @@ function ManageCard({
 // with this vault?" affordances belong).
 function ImportSection() {
   return (
-    <section className="card mb-8 p-4">
-      <h2 className="font-serif text-lg">Import notes</h2>
-      <p className="mt-1 text-sm text-fg-muted">
-        Bring in an Obsidian vault zip or a folder of markdown files. Parsed in your browser;
-        previewed before any note lands in the vault.
-      </p>
-      <div className="mt-3">
-        <Link to="/import" className="btn btn-primary btn-touch">
-          Open importer
-        </Link>
+    <section className="card space-y-3 rounded-xl p-6 shadow-soft">
+      <div>
+        <h2 className="font-serif text-xl text-fg">Import notes</h2>
+        <p className="mt-1 text-sm text-fg-muted">
+          Bring in an Obsidian vault zip or a folder of markdown files. Parsed in your browser;
+          previewed before any note lands in the vault.
+        </p>
       </div>
+      <Link to="/import" className="btn btn-primary btn-touch">
+        Open importer
+      </Link>
     </section>
   );
 }
@@ -230,10 +233,10 @@ function VoiceRetentionSection({ vaultId }: { vaultId: string }) {
   };
 
   return (
-    <section className="card mt-6 space-y-4 rounded-xl p-6">
+    <section className="card space-y-4 rounded-xl p-6 shadow-soft">
       <div>
         <h2 className="font-serif text-xl text-fg">Voice recordings</h2>
-        <p className="mt-1 text-xs text-fg-dim">
+        <p className="mt-1 text-sm text-fg-muted">
           What happens to the audio file after a voice note is transcribed. Applies to this vault,
           from every device connected to it.
         </p>
@@ -248,22 +251,30 @@ function VoiceRetentionSection({ vaultId }: { vaultId: string }) {
         <>
           <fieldset className="space-y-2" disabled={!retention.supported || setRetention.isPending}>
             <legend className="sr-only">Voice recording retention</legend>
-            {RETENTION_OPTIONS.map((o) => (
-              <label key={o.value} className="flex items-start gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="audio-retention"
-                  value={o.value}
-                  checked={retention.value === o.value}
-                  onChange={() => onChange(o.value)}
-                  className="mt-1 accent-accent"
-                />
-                <span>
-                  <span className="text-fg">{o.title}</span>
-                  <span className="ml-2 text-xs text-fg-dim">{o.help}</span>
-                </span>
-              </label>
-            ))}
+            {RETENTION_OPTIONS.map((o) => {
+              const active = retention.value === o.value;
+              return (
+                <label
+                  key={o.value}
+                  className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${
+                    active ? "border-accent bg-accent/5" : "border-border hover:border-accent/40"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="audio-retention"
+                    value={o.value}
+                    checked={active}
+                    onChange={() => onChange(o.value)}
+                    className="mt-1 accent-accent"
+                  />
+                  <span>
+                    <span className="block font-medium text-fg">{o.title}</span>
+                    <span className="mt-0.5 block text-sm text-fg-muted">{o.help}</span>
+                  </span>
+                </label>
+              );
+            })}
           </fieldset>
           {!retention.supported ? (
             <p className="text-xs text-fg-dim" data-testid="retention-unsupported">
@@ -295,28 +306,36 @@ function TextSizeSection() {
   };
 
   return (
-    <section className="card mt-6 space-y-4 rounded-xl p-6">
+    <section className="card space-y-4 rounded-xl p-6 shadow-soft">
       <div>
         <h2 className="font-serif text-xl text-fg">Text size</h2>
-        <p className="mt-1 text-xs text-fg-dim">
+        <p className="mt-1 text-sm text-fg-muted">
           Affects the editor and rendered notes on this device. Your markdown isn't changed.
         </p>
       </div>
       <fieldset className="space-y-2">
         <legend className="sr-only">View text size</legend>
-        {TEXT_SIZES.map((s) => (
-          <label key={s} className="flex items-start gap-2 text-sm">
-            <input
-              type="radio"
-              name="text-size"
-              value={s}
-              checked={size === s}
-              onChange={() => onChange(s)}
-              className="mt-1 accent-accent"
-            />
-            <span className="text-fg">{textSizeLabel(s)}</span>
-          </label>
-        ))}
+        {TEXT_SIZES.map((s) => {
+          const active = size === s;
+          return (
+            <label
+              key={s}
+              className={`flex items-center gap-3 rounded-xl border p-3 transition-colors ${
+                active ? "border-accent bg-accent/5" : "border-border hover:border-accent/40"
+              }`}
+            >
+              <input
+                type="radio"
+                name="text-size"
+                value={s}
+                checked={active}
+                onChange={() => onChange(s)}
+                className="accent-accent"
+              />
+              <span className="font-medium text-fg">{textSizeLabel(s)}</span>
+            </label>
+          );
+        })}
       </fieldset>
     </section>
   );
@@ -331,9 +350,9 @@ function InstallStateSection() {
   }, []);
   if (!installed) return null;
   return (
-    <section className="card mt-6 p-4 text-sm">
+    <section className="card rounded-xl p-6 text-sm shadow-soft">
       <p className="text-fg-muted">
-        <span className="mr-2 inline-block rounded-full bg-[--color-positive-soft] px-2 py-0.5 text-xs font-medium text-[--color-positive]">
+        <span className="mr-2 inline-block rounded-full bg-positive-soft px-2 py-0.5 text-xs font-medium text-positive">
           Installed
         </span>
         Parachute is running as an installed app on this device.
@@ -360,32 +379,42 @@ const PATH_TREE_MODE_LABELS: Record<PathTreeMode, { title: string; help: string 
 function PathTreeSection({ vaultId }: { vaultId: string }) {
   const { mode, setMode } = usePathTreeMode(vaultId);
   return (
-    <section className="card mt-6 space-y-4 rounded-xl p-6">
+    <section className="card space-y-4 rounded-xl p-6 shadow-soft">
       <div>
         <h2 className="font-serif text-xl text-fg">Folder tree (Notes sidebar)</h2>
-        <p className="mt-1 text-xs text-fg-dim">
+        <p className="mt-1 text-sm text-fg-muted">
           Controls the collapsible folder tree on the notes list page. Auto-detect renders the tree
           when the vault has at least five top-level folders or twenty notes in folders.
         </p>
       </div>
       <fieldset className="space-y-2">
         <legend className="sr-only">Path tree visibility</legend>
-        {PATH_TREE_MODES.map((m) => (
-          <label key={m} className="flex items-start gap-2 text-sm">
-            <input
-              type="radio"
-              name="path-tree-mode"
-              value={m}
-              checked={mode === m}
-              onChange={() => setMode(m)}
-              className="mt-1 accent-accent"
-            />
-            <span>
-              <span className="text-fg">{PATH_TREE_MODE_LABELS[m].title}</span>
-              <span className="ml-2 text-xs text-fg-dim">{PATH_TREE_MODE_LABELS[m].help}</span>
-            </span>
-          </label>
-        ))}
+        {PATH_TREE_MODES.map((m) => {
+          const active = mode === m;
+          return (
+            <label
+              key={m}
+              className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${
+                active ? "border-accent bg-accent/5" : "border-border hover:border-accent/40"
+              }`}
+            >
+              <input
+                type="radio"
+                name="path-tree-mode"
+                value={m}
+                checked={active}
+                onChange={() => setMode(m)}
+                className="mt-1 accent-accent"
+              />
+              <span>
+                <span className="block font-medium text-fg">{PATH_TREE_MODE_LABELS[m].title}</span>
+                <span className="mt-0.5 block text-sm text-fg-muted">
+                  {PATH_TREE_MODE_LABELS[m].help}
+                </span>
+              </span>
+            </label>
+          );
+        })}
       </fieldset>
     </section>
   );
@@ -442,10 +471,10 @@ function TagRolesSection({ vaultId }: { vaultId: string }) {
   };
 
   return (
-    <section className="card mt-6 space-y-4 rounded-xl p-6">
+    <section className="card space-y-5 rounded-xl p-6 shadow-soft">
       <div>
         <h2 className="font-serif text-xl text-fg">Tag roles</h2>
-        <p className="mt-1 text-xs text-fg-dim">
+        <p className="mt-1 text-sm text-fg-muted">
           Point each role at whatever tag your vault already uses. Changes apply to future notes
           only — existing notes keep their current tags.
         </p>
@@ -457,11 +486,11 @@ function TagRolesSection({ vaultId }: { vaultId: string }) {
         ))}
       </datalist>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {TAG_ROLE_KEYS.map((key) => (
           <label key={key} className="block text-sm">
-            <span className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="text-fg-muted">{ROLE_LABELS[key].title}</span>
+            <span className="mb-1.5 flex items-baseline justify-between gap-2">
+              <span className="font-medium text-fg">{ROLE_LABELS[key].title}</span>
               <span className="text-xs text-fg-dim">default: #{DEFAULT_TAG_ROLES[key]}</span>
             </span>
             <input
@@ -476,20 +505,16 @@ function TagRolesSection({ vaultId }: { vaultId: string }) {
               autoCorrect="off"
               className="input input-on-bg"
             />
-            <span className="mt-1 block text-xs text-fg-dim">{ROLE_LABELS[key].help}</span>
+            <span className="mt-1.5 block text-xs text-fg-dim">{ROLE_LABELS[key].help}</span>
           </label>
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 pt-2">
+      <div className="flex flex-wrap items-center gap-4 pt-1">
         <button type="button" onClick={save} disabled={!isDirty} className="btn btn-primary btn-lg">
           Save
         </button>
-        <button
-          type="button"
-          onClick={resetDefaults}
-          className="focus-ring text-sm text-fg-muted hover:text-accent"
-        >
+        <button type="button" onClick={resetDefaults} className="btn btn-ghost">
           Reset to defaults
         </button>
       </div>
