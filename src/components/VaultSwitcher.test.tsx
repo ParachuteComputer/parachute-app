@@ -488,6 +488,24 @@ describe("VaultSwitcher (component)", () => {
     expect(line.closest("a")).toHaveAttribute("href", "/account");
   });
 
+  it("renders 'ends today' at 0 trial days left (not '0 days left')", async () => {
+    seedDefaultVault();
+    vi.spyOn(accountClient, "getAccountSummary").mockResolvedValue(
+      summaryWith({
+        tier: "trial",
+        label: "Free trial",
+        trial_days_left: 0,
+        vault_limit: 1,
+        vaults_used: 1,
+      }),
+    );
+    renderSwitcher();
+    fireEvent.click(screen.getByRole("button", { name: /active vault/i }));
+    const line = await screen.findByText("Free trial · ends today");
+    expect(line.closest("a")).toHaveAttribute("href", "/account");
+    expect(screen.queryByText(/0 days left/)).not.toBeInTheDocument();
+  });
+
   it("shows no trial line on a paid plan", async () => {
     seedDefaultVault();
     vi.spyOn(accountClient, "getAccountSummary").mockResolvedValue(

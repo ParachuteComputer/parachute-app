@@ -95,6 +95,13 @@ export function buildVaultSwitcherRows(
 ): VaultSwitcherRow[] {
   const hubUrlSet = new Set(hubVaults.map((v) => normalizedUrlForMatch(v.url)));
   const connectedUrlSet = new Set(connected.map((v) => normalizedUrlForMatch(v.url)));
+  // Home-door records identify by slug (the belt-and-braces name match in the
+  // account filter below). KNOWN edge, not a miss: with two accounts used on
+  // one device, a leftover home-door "moss" from account A would hide account
+  // B's remote "moss" from the account (Open) section by name collision. Rare
+  // (multi-account-single-device + colliding slugs), and `/account`'s
+  // VaultsBlock is the fallback door to open it. Noted so a future reader
+  // knows the tradeoff was chosen, not overlooked.
   const hostedNameSet = new Set(
     connected.filter((v) => isHostedVaultRecord(v.clientId)).map((v) => v.name),
   );
@@ -541,7 +548,10 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
             onClick={close}
             className="focus-ring mb-1 block text-xs text-sun-ink hover:underline"
           >
-            Free trial · {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} left
+            Free trial ·{" "}
+            {trialDaysLeft === 0
+              ? "ends today"
+              : `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`}
           </Link>
         ) : null}
         <div className="flex items-center justify-between gap-3">

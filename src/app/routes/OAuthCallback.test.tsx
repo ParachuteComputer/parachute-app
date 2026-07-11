@@ -1,8 +1,9 @@
 import { OAuthCallback } from "@/app/routes/OAuthCallback";
+import { useToastStore } from "@/lib/toast/store";
 import { useAuthHaltStore } from "@/lib/vault/auth-halt-store";
 import { savePendingOAuth } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
-import type { PendingOAuthState } from "@/lib/vault/types";
+import type { PendingOAuthState, VaultRecord } from "@/lib/vault/types";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -416,6 +417,82 @@ describe("OAuthCallback auth-halt clearing on successful reconnect (notes#148)",
     await waitFor(() => {
       expect(localStorage.getItem(`lens:auth-halt:${oldId}`)).toBeNull();
     });
+  });
+});
+
+// §4.4 switch-confirmation (W2-4): a fresh OAuth connect changes the active
+// vault, so it toasts "Now in {vault}". But the auth-halt "Reconnect" flow
+// (VaultStatusBanner → beginOAuth with priorHaltedVaultId) rides this SAME
+// callback for the ALREADY-ACTIVE vault — re-authing the vault you're in is
+// not a switch and must NOT toast. The announce is guarded on the active id
+// actually changing.
+describe("OAuthCallback switch-confirmation toast (§4.4 / W2-4)", () => {
+  function makeVault(over: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url">): VaultRecord {
+    return {
+      name: "",
+      issuer: over.url,
+      clientId: "client-test",
+      scope: "vault:read vault:write",
+      addedAt: "2026-07-10T00:00:00.000Z",
+      lastUsedAt: "2026-07-10T00:00:00.000Z",
+      ...over,
+    };
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useAuthHaltStore.setState({ byVault: {} });
+    useToastStore.setState({ toasts: [] });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useAuthHaltStore.setState({ byVault: {} });
+    useToastStore.setState({ toasts: [] });
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  it("toasts 'Now in {vault}' on a genuine new-vault OAuth landing", async () => {
+    savePendingOAuth(pending);
+    mockSuccessfulTokenResponse({
+      vault: "boulder",
+      services: { vault: { url: "http://hub.example/vault/boulder" } },
+    });
+
+    renderCallback();
+
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Now in boulder"),
+    );
+  });
+
+  it("does NOT toast when reconnecting the already-active vault (same-URL reconnect)", async () => {
+    // The vault is already on this device AND active; the reconnect resolves
+    // to the same id (vaultIdFromUrl("http://localhost:1940") → localhost_1940).
+    const sameId = "localhost_1940";
+    useVaultStore.setState({
+      vaults: {
+        [sameId]: makeVault({ id: sameId, url: "http://localhost:1940", name: "default" }),
+      },
+      activeVaultId: sameId,
+    });
+    useAuthHaltStore.getState().markHalted(sameId, "session expired");
+    savePendingOAuth({ ...pending, priorHaltedVaultId: sameId });
+    mockSuccessfulTokenResponse({
+      vault: "default",
+      services: { vault: { url: "http://localhost:1940" } },
+    });
+
+    renderCallback();
+
+    // Wait for the reconnect to complete (the halt clears), then assert no toast.
+    await waitFor(() => expect(useAuthHaltStore.getState().byVault[sameId]).toBeUndefined());
+    expect(useVaultStore.getState().activeVaultId).toBe(sameId);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 });
 
