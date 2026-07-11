@@ -1,6 +1,7 @@
 import { clearAccountToken, loadAccountToken, saveAccountToken } from "./store";
 import type {
   AccountSession,
+  AccountSummary,
   AccountTokenResponse,
   AccountVaultsResponse,
   CreateVaultResponse,
@@ -113,20 +114,34 @@ export async function mintAccountToken(
   return jsonOrThrow<AccountTokenResponse>(res);
 }
 
-// --- The Bearer layer: `/account/vaults*` (C3) -------------------------------
+// --- The Bearer layer: `/account/*` C3 surface -------------------------------
+
+// A single in-flight C2 mint, shared across concurrent C3 callers: the Account
+// surface fires listVaults + getAccountSummary at once, and without this each
+// would mint its own account token (duplicate getSession + /account/token
+// round-trips, last-write-wins on the cache). While a mint is in flight every
+// caller awaits the SAME promise; it clears on settle so the next lapse re-mints.
+let inflightMint: Promise<string> | null = null;
 
 /**
  * Mint a fresh account bearer from the live session cookie (C2) and cache it
- * (sessionStorage, via the account store). Throws `SessionExpiredError` if the
- * session itself is gone — no cookie means no bearer can be minted, and the
- * caller (or the re-mint recovery) surfaces the "sign in again" banner.
+ * (sessionStorage, via the account store), de-duping concurrent mints. Throws
+ * `SessionExpiredError` if the session itself is gone — no cookie means no
+ * bearer can be minted, and the caller (or the re-mint recovery) surfaces the
+ * "sign in again" banner.
  */
-async function mintAccountBearer(fetchImpl: Fetch): Promise<string> {
-  const session = await getSession(fetchImpl);
-  if (!session.signed_in) throw new SessionExpiredError();
-  const { token } = await mintAccountToken(session.csrf, fetchImpl);
-  saveAccountToken(token);
-  return token;
+function mintAccountBearer(fetchImpl: Fetch): Promise<string> {
+  if (inflightMint) return inflightMint;
+  inflightMint = (async () => {
+    const session = await getSession(fetchImpl);
+    if (!session.signed_in) throw new SessionExpiredError();
+    const { token } = await mintAccountToken(session.csrf, fetchImpl);
+    saveAccountToken(token);
+    return token;
+  })().finally(() => {
+    inflightMint = null;
+  });
+  return inflightMint;
 }
 
 /** The cached account bearer, or a freshly minted one (C2). */
@@ -135,11 +150,12 @@ async function ensureAccountBearer(fetchImpl: Fetch): Promise<string> {
 }
 
 /**
- * A Bearer-gated `/account/vaults*` request with ONE automatic re-mint on 401.
+ * A Bearer-gated `/account/*` request with ONE automatic re-mint on 401.
  * Attaches `Authorization: Bearer <account token>`; if the server 401s the
  * bearer (its ~10-min TTL lapsed), clears it, re-mints from the still-live
  * session cookie, and retries once. A POST body is JSON-encoded (no CSRF — the
- * Bearer layer isn't CSRF-gated).
+ * Bearer layer isn't CSRF-gated). No cookie is sent: the C3 gate reads only the
+ * Authorization header.
  */
 async function bearerFetch(
   fetchImpl: Fetch,
@@ -151,7 +167,7 @@ async function bearerFetch(
       authorization: `Bearer ${token}`,
       "X-Requested-With": "fetch",
     };
-    const reqInit: RequestInit = { method: init.method, credentials: "include", headers };
+    const reqInit: RequestInit = { method: init.method, headers };
     if (init.method === "POST") {
       headers["content-type"] = "application/json";
       reqInit.body = JSON.stringify(init.body ?? {});
@@ -166,6 +182,27 @@ async function bearerFetch(
     res = await send(await mintAccountBearer(fetchImpl));
   }
   return res;
+}
+
+/**
+ * `GET /account/summary` — the account-level plan/usage roll-up (the
+ * Account-manager surface). Bearer-gated (`account:<id>:read`), so it rides the
+ * same account bearer as the other C3 calls. SEAMED: cloud may not have shipped
+ * it yet, so this returns `null` on ANY non-200 (404 unbuilt, 403/401) and on a
+ * mint/network failure — the caller renders the plan/usage line only when a
+ * summary is present, and never blocks the rest of the Account screen on its
+ * absence.
+ */
+export async function getAccountSummary(
+  fetchImpl: Fetch = fetch.bind(globalThis),
+): Promise<AccountSummary | null> {
+  try {
+    const res = await bearerFetch(fetchImpl, "/account/summary", { method: "GET" });
+    if (!res.ok) return null;
+    return (await res.json()) as AccountSummary;
+  } catch {
+    return null;
+  }
 }
 
 /** `GET /account/vaults` — the account's hosted vaults (drives the dispatch). */

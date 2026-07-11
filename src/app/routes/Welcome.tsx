@@ -2,6 +2,7 @@ import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { getSession, listVaults } from "@/lib/account/client";
 import { classifyVaults } from "@/lib/account/dispatch";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
+import { formatUsageBytes } from "@/lib/account/provenance";
 import type { AccountVault } from "@/lib/account/types";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
@@ -14,18 +15,6 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 // base, the echo can show the full address — a small contract addition.)
 function sanitizeVaultName(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, "");
-}
-
-// Cloud's usage is BYTES only (notes_bytes + attachment_bytes), nullable — there
-// is no note COUNT on this endpoint, so we show total size only.
-function formatUsage(usage?: AccountVault["usage"]): string | null {
-  if (!usage) return null;
-  const bytes = (usage.notes_bytes ?? 0) + (usage.attachment_bytes ?? 0);
-  if (bytes <= 0) return null;
-  const mb = bytes / (1024 * 1024);
-  return mb >= 1
-    ? `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
-    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
 // The vault-naming context: onboarding (first vault, right after account
@@ -570,7 +559,7 @@ function VaultCard({
   busy: boolean;
   onOpen: () => void;
 }) {
-  const usage = formatUsage(vault.usage);
+  const usage = formatUsageBytes(vault.usage);
   // The door provides the vault's real URL (cloud's field is `url`); never
   // fabricate a cloud host.
   const address = vault.url ? vault.url.replace(/^https?:\/\//, "") : "";

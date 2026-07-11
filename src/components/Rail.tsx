@@ -6,6 +6,7 @@ import {
   IconNotes,
   IconSearch,
   IconTag,
+  IconUser,
 } from "@/components/NavIcons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VaultPopover } from "@/components/VaultPopover";
@@ -58,18 +59,26 @@ export function Rail() {
         <SetupShelf vaultId={vault.id} />
       </nav>
 
-      <div className="flex items-center gap-2 border-t border-border p-3">
-        <div className="min-w-0 flex-1">
-          <RailLink
-            to="/settings"
-            label="Settings"
-            icon={<IconCog />}
-            match={(p) => p === "/settings"}
-          />
+      <div className="border-t border-border p-3">
+        <RailLink
+          to="/account"
+          label="Account"
+          icon={<IconUser />}
+          match={(p) => p === "/account"}
+        />
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <RailLink
+              to="/settings"
+              label="Settings"
+              icon={<IconCog />}
+              match={(p) => p === "/settings"}
+            />
+          </div>
+          {/* Appearance lived in the old desktop ⋯ overflow; the rail foot is its
+              calm new home (a quiet icon, no label — Neil's air). */}
+          <ThemeToggle />
         </div>
-        {/* Appearance lived in the old desktop ⋯ overflow; the rail foot is its
-            calm new home (a quiet icon, no label — Neil's air). */}
-        <ThemeToggle />
       </div>
     </aside>
   );

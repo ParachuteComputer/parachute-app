@@ -2,7 +2,6 @@ import { saveServicesCatalog } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
 import type { ServicesCatalog, StoredToken } from "@/lib/vault/types";
 import { SessionExpiredError, createVault, getSession, mintVaultToken } from "./client";
-import { saveAccountToken } from "./store";
 import { useAccountSessionStore } from "./store";
 import type { VaultTokenResponse } from "./types";
 
@@ -147,7 +146,3 @@ export async function remintHostedVault(
     throw err;
   }
 }
-
-// Best-effort helper for a full sign-out: the caller clears local vaults; here
-// we just drop the account token. Re-exported for convenience.
-export { saveAccountToken };
