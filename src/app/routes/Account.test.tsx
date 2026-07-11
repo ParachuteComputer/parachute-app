@@ -136,4 +136,58 @@ describe("Account — the app-as-manager surface", () => {
     await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
     await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
   });
+
+  it("shows a retry card (NOT the empty-state) when the vault list fails to load", async () => {
+    vi.mocked(getSession).mockResolvedValue({
+      signed_in: true,
+      csrf: "c",
+      email: "ag@unforced.org",
+    });
+    vi.mocked(listVaults).mockRejectedValue(new Error("500"));
+    vi.mocked(getAccountSummary).mockResolvedValue(null);
+
+    renderAccount();
+    await waitFor(() => expect(screen.getByText(/couldn't load your vaults/i)).toBeInTheDocument());
+    // The empty-state / create affordances must NOT show on a failure (that would
+    // invite a duplicate vault).
+    expect(screen.queryByText(/no vaults yet/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /create a new vault/i })).not.toBeInTheDocument();
+
+    // Retry re-fetches and renders the list.
+    vi.mocked(listVaults).mockResolvedValue({ vaults: [CLOUD_VAULT] });
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    await waitFor(() => expect(screen.getByText("moss")).toBeInTheDocument());
+  });
+
+  it("omits the vault meter when the door gives a limit but no count (no fabricated 0)", async () => {
+    vi.mocked(getSession).mockResolvedValue({
+      signed_in: true,
+      csrf: "c",
+      email: "ag@unforced.org",
+    });
+    vi.mocked(listVaults).mockResolvedValue({ vaults: [CLOUD_VAULT] });
+    vi.mocked(getAccountSummary).mockResolvedValue({
+      email: "ag@unforced.org",
+      plan: { tier: "standard", label: "Standard", vault_limit: 3 }, // no vaults_used
+    });
+
+    renderAccount();
+    await waitFor(() => expect(screen.getByText(/Standard/)).toBeInTheDocument());
+    expect(screen.queryByText(/of 3 vaults/)).not.toBeInTheDocument();
+  });
+
+  it("opens the billing link in a new tab so the app stays open", async () => {
+    vi.mocked(getSession).mockResolvedValue({
+      signed_in: true,
+      csrf: "c",
+      email: "ag@unforced.org",
+    });
+    vi.mocked(listVaults).mockResolvedValue({ vaults: [CLOUD_VAULT] });
+    vi.mocked(getAccountSummary).mockResolvedValue(null);
+
+    renderAccount();
+    const link = await screen.findByRole("link", { name: /manage plan & billing/i });
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+  });
 });

@@ -4,7 +4,7 @@ import { formatBytes, formatUsageBytes, manageBillingUrl } from "@/lib/account/p
 import { clearAccountToken } from "@/lib/account/store";
 import type { AccountSummary, AccountVault } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 
 // The Account surface — the app AS the manager (SYNTHESIS "The shape"). The
@@ -23,7 +23,10 @@ type View =
       kind: "manager";
       email?: string;
       csrf: string;
-      vaults: AccountVault[];
+      // null = the vault list FAILED to load (transient 500 / session lapse).
+      // Distinct from [] (genuinely no vaults) so we never show the "create your
+      // first" empty-state on a failure — that would invite a duplicate vault.
+      vaults: AccountVault[] | null;
       summary: AccountSummary | null;
     }
   | { kind: "device" };
@@ -46,25 +49,34 @@ export function Account() {
         if (live) setView({ kind: "device" });
         return;
       }
-      // Both reads ride the same account bearer; each degrades on its own
-      // (an empty list / an absent summary never strands the screen).
-      const [vaultsRes, summary] = await Promise.all([
-        listVaults().catch(() => ({ vaults: [] as AccountVault[] })),
+      // Both reads ride the same account bearer; each degrades on its own. A
+      // vault-load FAILURE resolves to null (→ a "couldn't load, retry" card),
+      // NOT [] — an empty list must mean genuinely-no-vaults, or we'd nudge a
+      // signed-in person to create a duplicate. An absent summary is just null.
+      const [vaults, summary] = await Promise.all([
+        listVaults()
+          .then((r) => r.vaults)
+          .catch(() => null),
         getAccountSummary(),
       ]);
       if (live) {
-        setView({
-          kind: "manager",
-          email: session.email,
-          csrf: session.csrf,
-          vaults: vaultsRes.vaults,
-          summary,
-        });
+        setView({ kind: "manager", email: session.email, csrf: session.csrf, vaults, summary });
       }
     })();
     return () => {
       live = false;
     };
+  }, []);
+
+  // Retry just the vault list (the "Couldn't load your vaults" card), leaving
+  // the rest of the manager view in place.
+  const reloadVaults = useCallback(async () => {
+    try {
+      const { vaults } = await listVaults();
+      setView((v) => (v.kind === "manager" ? { ...v, vaults } : v));
+    } catch {
+      setView((v) => (v.kind === "manager" ? { ...v, vaults: null } : v));
+    }
   }, []);
 
   return (
@@ -94,6 +106,7 @@ export function Account() {
           csrf={view.csrf}
           vaults={view.vaults}
           summary={view.summary}
+          onReloadVaults={reloadVaults}
         />
       )}
     </div>
@@ -107,15 +120,17 @@ function ManagerView({
   csrf,
   vaults,
   summary,
+  onReloadVaults,
 }: {
   email?: string;
   csrf: string;
-  vaults: AccountVault[];
+  vaults: AccountVault[] | null;
   summary: AccountSummary | null;
+  onReloadVaults: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const activeVault = useVaultStore((s) => s.getActiveVault());
-  const firstCloudVaultUrl = vaults.find((v) => v.url)?.url ?? null;
+  const firstCloudVaultUrl = (vaults ?? []).find((v) => v.url)?.url ?? null;
   const billingUrl = manageBillingUrl(summary, firstCloudVaultUrl);
 
   async function signOut() {
@@ -130,7 +145,7 @@ function ManagerView({
   return (
     <div className="space-y-8">
       <AccountBlock email={email} summary={summary} billingUrl={billingUrl} onSignOut={signOut} />
-      <VaultsBlock vaults={vaults} />
+      <VaultsBlock vaults={vaults} onReload={onReloadVaults} />
       <ConnectionsBlock hasActiveVault={!!activeVault} />
     </div>
   );
@@ -174,7 +189,12 @@ function AccountBlock({
       </div>
       {billingUrl ? (
         <div className="mt-5 border-t border-border pt-5">
-          <a href={billingUrl} className="btn btn-primary btn-touch">
+          <a
+            href={billingUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-primary btn-touch"
+          >
             Manage plan &amp; billing ↗
           </a>
           <p className="mt-2 text-xs text-fg-dim">
@@ -196,8 +216,10 @@ function planSummaryLine(summary: AccountSummary): string {
   } else if (typeof plan.price_monthly_usd === "number" && plan.price_monthly_usd > 0) {
     parts.push(`$${plan.price_monthly_usd}/mo`);
   }
-  if (typeof plan.vault_limit === "number") {
-    parts.push(`${plan.vaults_used ?? 0} of ${plan.vault_limit} vaults`);
+  // Both meters must be present — never fabricate a `0 of N` if a door reports
+  // the limit but not the count (that would read as "no vaults used" falsely).
+  if (typeof plan.vault_limit === "number" && typeof plan.vaults_used === "number") {
+    parts.push(`${plan.vaults_used} of ${plan.vault_limit} vaults`);
   }
   const storage = formatBytes(plan.storage_used_bytes ?? 0);
   if (storage) {
@@ -209,10 +231,17 @@ function planSummaryLine(summary: AccountSummary): string {
 
 // The account's Cloud vaults (the endpoint returns only these — all `Cloud`).
 // Every card verb is Open; the self-hosted device list lives on /vaults.
-function VaultsBlock({ vaults }: { vaults: AccountVault[] }) {
+function VaultsBlock({
+  vaults,
+  onReload,
+}: {
+  vaults: AccountVault[] | null;
+  onReload: () => Promise<void>;
+}) {
   const navigate = useNavigate();
   const [busyName, setBusyName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   async function open(vault: AccountVault) {
     if (busyName) return;
@@ -227,6 +256,15 @@ function VaultsBlock({ vaults }: { vaults: AccountVault[] }) {
     }
   }
 
+  async function retry() {
+    setRetrying(true);
+    try {
+      await onReload();
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   return (
     <section aria-label="Your vaults">
       <div className="mb-3 flex items-center justify-between gap-4">
@@ -236,7 +274,24 @@ function VaultsBlock({ vaults }: { vaults: AccountVault[] }) {
         </Link>
       </div>
 
-      {vaults.length === 0 ? (
+      {vaults === null ? (
+        // Load FAILED (not empty) — never the "create your first" nudge here, or
+        // a transient 500 / session lapse invites a duplicate vault.
+        <div className="card rounded-xl p-6 text-center shadow-soft">
+          <p className="mb-1 font-serif text-lg text-fg">Couldn't load your vaults.</p>
+          <p className="mb-5 text-sm text-fg-muted">
+            A hiccup reaching your account — nothing's lost, your vaults are safe.
+          </p>
+          <button
+            type="button"
+            onClick={retry}
+            disabled={retrying}
+            className="btn btn-primary btn-touch"
+          >
+            {retrying ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      ) : vaults.length === 0 ? (
         <div className="card rounded-xl p-6 text-center shadow-soft">
           <p className="mb-1 font-serif text-lg text-fg">No vaults yet.</p>
           <p className="mb-5 text-sm text-fg-muted">
@@ -285,19 +340,21 @@ function VaultsBlock({ vaults }: { vaults: AccountVault[] }) {
         </p>
       ) : null}
 
-      <p className="mt-4 font-round text-sm text-fg-muted">
-        <Link to="/welcome?new=1" className="font-semibold text-accent hover:underline">
-          ＋ Create a new vault
-        </Link>{" "}
-        ·{" "}
-        <Link
-          to="/add"
-          className="font-semibold hover:underline"
-          style={{ color: "var(--color-sage)" }}
-        >
-          Connect a self-hosted vault
-        </Link>
-      </p>
+      {vaults !== null ? (
+        <p className="mt-4 font-round text-sm text-fg-muted">
+          <Link to="/welcome?new=1" className="font-semibold text-accent hover:underline">
+            ＋ Create a new vault
+          </Link>{" "}
+          ·{" "}
+          <Link
+            to="/add"
+            className="font-semibold hover:underline"
+            style={{ color: "var(--color-sage)" }}
+          >
+            Connect a self-hosted vault
+          </Link>
+        </p>
+      ) : null}
     </section>
   );
 }
