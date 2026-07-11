@@ -22,7 +22,9 @@ sanctioned places. Minor bump: a full surface rebuild plus a client-contract add
 - **Failed ≠ absent — the tri-state summary seam.** New `getAccountSummaryState()` (client.ts):
   200 → summary, **404/501 → `null`** (the door honestly serves no summary — a hub's steady
   state; the card is absent, never a retry that can't succeed), **anything transient → `"error"`**
-  (network/5xx → the retry card). `getAccountSummary()` remains the ambient collapse-to-null read.
+  (network/5xx → the retry card). Ambient consumers read through the new `summaryOrNull()` helper
+  over the shared hook (a chip collapses both `null` and `"error"` to no-chip); the old
+  `getAccountSummary()` is removed.
   The shared `useAccountSummary()` hook now carries the tri-state (error answers are never cached:
   `staleTime` 0 on `"error"`), and `/account` consumes the same cached query as the switcher and
   the nav badge.
