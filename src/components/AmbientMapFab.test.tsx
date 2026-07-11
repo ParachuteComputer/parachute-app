@@ -43,7 +43,7 @@ describe("AmbientMapFab", () => {
     expect(container.querySelector("a")).toBeNull();
   });
 
-  it("opens the graph when a vault is active and the Map is unearned", () => {
+  it("opens the graph when a vault is active and the Map is unearned — on BOTH form factors", () => {
     useVaultStore.setState({
       vaults: { a: makeVault("a", "http://localhost:1940") },
       activeVaultId: "a",
@@ -51,7 +51,7 @@ describe("AmbientMapFab", () => {
     renderFab("/");
     const fab = screen.getByRole("link", { name: /open the relational map/i });
     expect(fab).toHaveAttribute("href", "/graph");
-    // Unearned → visible on desktop too (no lg:hidden — there's no rail row).
+    // Pre-earn the FAB is the ambient door everywhere — no breakpoint gate.
     expect(fab.className).not.toMatch(/\blg:hidden\b/);
   });
 
@@ -64,7 +64,7 @@ describe("AmbientMapFab", () => {
     expect(container.querySelector("a")).toBeNull();
   });
 
-  it("steps back to lg:hidden once the Map is earned (rail carries it on desktop)", () => {
+  it("disappears entirely once the Map is earned — the nav row takes over on BOTH form factors (W2-5 / route-map row 11)", () => {
     useVaultStore.setState({
       vaults: {
         a: makeVault("a", "http://localhost:1940"),
@@ -72,8 +72,7 @@ describe("AmbientMapFab", () => {
       },
       activeVaultId: "a",
     });
-    renderFab("/");
-    const fab = screen.getByRole("link", { name: /open the relational map/i });
-    expect(fab.className).toMatch(/\blg:hidden\b/);
+    const { container } = renderFab("/");
+    expect(container.querySelector("a")).toBeNull();
   });
 });

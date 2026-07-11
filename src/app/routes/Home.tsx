@@ -69,13 +69,9 @@ export function Home() {
             Everything here is yours. Open format. Export anytime.
           </p>
         </div>
-        {/* F8/W2-3: Home absorbed /today's no-param timeline, which was the
-            only desktop door to Calendar (the rail carries no Calendar row
-            yet — that's W2-5). This link keeps Calendar reachable from the
-            front door on both form factors. */}
-        <Link to="/calendar" className="text-sm text-fg-dim hover:text-accent">
-          Calendar
-        </Link>
+        {/* W2-3's stopgap Calendar link lived here while the rail carried no
+            Calendar row; W2-5 promoted Calendar into the notes band on both
+            projections, so the duplicate affordance is gone. */}
       </header>
 
       <Composer vaultName={vault.name} focused={mode === "fresh"} />

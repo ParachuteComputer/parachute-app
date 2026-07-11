@@ -89,6 +89,57 @@ export function IconActivity(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// A month grid — the Calendar mark.
+export function IconCalendar(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <rect x="4" y="5.5" width="16" height="15" rx="2" />
+      <path d="M4 10.5h16" />
+      <path d="M8.5 3.5V7M15.5 3.5V7" />
+    </svg>
+  );
+}
+
+// A dialed safe door — the Vaults mark (your places, kept).
+export function IconVault(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <rect x="4" y="4" width="16" height="16" rx="2.5" />
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 6.5v2M12 15.5v2M17.5 12h-2M8.5 12h-2" />
+    </svg>
+  );
+}
+
+// A four-point spark — the Connect-AI mark (✧ in the spec's shorthand).
+export function IconSpark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <path d="M12 4c.9 4 3.1 6.2 7 7-3.9.8-6.1 3-7 7-.9-4-3.1-6.2-7-7 3.9-.8 6.1-3 7-7Z" />
+    </svg>
+  );
+}
+
+// An arrow settling into a tray — the Import mark (⇊ in the spec's shorthand).
+export function IconImport(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <path d="M12 4v9" />
+      <path d="m8.5 9.5 3.5 3.5 3.5-3.5" />
+      <path d="M4.5 15v3.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V15" />
+    </svg>
+  );
+}
+
+// A quiet chevron — the rail's collapse/expand toggle.
+export function IconChevronLeft(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <path d="m14.5 6-5 6 5 6" />
+    </svg>
+  );
+}
+
 // A one-hub / three-satellite relational glyph — the Map mark.
 export function IconMap(props: SVGProps<SVGSVGElement>) {
   return (

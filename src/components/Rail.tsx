@@ -1,230 +1,187 @@
-import {
-  IconActivity,
-  IconCog,
-  IconHome,
-  IconMap,
-  IconNotes,
-  IconSearch,
-  IconTag,
-  IconUser,
-} from "@/components/NavIcons";
+import { IconChevronLeft, IconSearch } from "@/components/NavIcons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
-import {
-  type DerivedStep,
-  type HomeStepId,
-  deriveSteps,
-  hasUserAuthoredNote,
-  stepsComplete,
-} from "@/lib/home/checklist";
-import { useHomeChecklist } from "@/lib/home/use-home-checklist";
-import { useInstallAffordance } from "@/lib/pwa-install";
+import { type NavBand, type NavItem, useNavBands } from "@/lib/nav/model";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
-import { useMapEarned, useNotesForDateViews, useVaultStore } from "@/lib/vault";
-import type { ReactNode } from "react";
+import { useVaultStore } from "@/lib/vault";
+import { useCallback, useState } from "react";
 import { Link, useLocation } from "react-router";
 
-// The desktop left rail — the app's spine on wide screens (SYNTHESIS D5;
-// prototype scene 6). It REPLACES the old top nav-bar. Reading top→bottom:
+// The desktop left rail — the app's spine on wide screens (DESIGN-SPEC §2.2;
+// prototype scenes 10–12). Rendered `hidden lg:flex`; below lg the mobile
+// chrome (Header + NavSheet + BottomTabBar) takes over. Reading top→bottom:
 //
-//   · the vault switcher (identity — the vault name leads everything),
+//   · the vault switcher (the hinge — identity leads everything) + the
+//     collapse toggle,
 //   · a quiet Search affordance (opens the command palette),
-//   · YOUR NOTES — Today · All notes · Tags, and Map once it's earned,
-//   · SET UP — the same guided steps as Home, collapsing to a ✓ when done,
-//   · Settings, pinned to the foot.
+//   · YOUR NOTES — Today · Notes · Calendar · Tags · Activity · Map(earned),
+//   · YOUR PARACHUTE — Account & plan · Vaults · Connect AI · Import notes,
+//   · SET UP — the guided shelf, hidden once done or dismissed,
+//   · Settings, pinned to the foot (theme toggle keeps its spot).
 //
-// It grows with your parachuting: the Map row only appears once the vault
-// crosses the earned threshold (`useMapEarned`); until then the ambient FAB
-// (`AmbientMapFab`) carries it. Rendered `hidden lg:flex` — below lg the
-// mobile chrome (Header top bar + BottomTabBar) takes over. Returns null with
-// no active vault (the no-vault desktop view is the full-width Landing).
+// The bands come from `useNavBands()` — the ONE nav model the mobile NavSheet
+// also renders (F14: neither projection owns a room list, so they can't
+// disagree). Collapses to a 64px icon rail (icons only, title tooltips),
+// persisted in localStorage("parachute.rail-collapsed"). Returns null with no
+// active vault (the no-vault desktop view is the full-width Landing).
+
+const RAIL_COLLAPSED_KEY = "parachute.rail-collapsed";
+
+function useRailCollapsed(): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(RAIL_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = useCallback(() => {
+    setCollapsed((cur) => {
+      const next = !cur;
+      try {
+        localStorage.setItem(RAIL_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // storage unavailable — the state still flips for this session.
+      }
+      return next;
+    });
+  }, []);
+  return [collapsed, toggle];
+}
+
 export function Rail() {
   const vault = useVaultStore((s) => s.getActiveVault());
+  const bands = useNavBands();
+  const [collapsed, toggleCollapsed] = useRailCollapsed();
 
   if (!vault) return null;
+
+  const rooms = bands.filter((b) => b.id !== "foot");
+  const foot = bands.find((b) => b.id === "foot");
 
   return (
     <aside
       aria-label="Primary"
-      className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-border bg-bg-soft lg:flex"
+      // Width animates 300ms (spec §1.2 micro-motion) — disabled under
+      // prefers-reduced-motion like every other transition in the app.
+      className={`glass-panel sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border transition-[width] duration-300 motion-reduce:transition-none lg:flex ${
+        collapsed ? "w-16" : "w-60"
+      }`}
       style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
-      <div className="p-3">
-        <VaultSwitcher variant="rail" />
-        <RailSearch />
+      <div className={collapsed ? "flex flex-col items-stretch gap-2 p-3" : "p-3"}>
+        <div className={collapsed ? "" : "flex items-start gap-1.5"}>
+          <div className="min-w-0 flex-1">
+            <VaultSwitcher variant="rail" collapsed={collapsed} />
+          </div>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand" : "Collapse"}
+            className={`focus-ring grid shrink-0 place-items-center rounded-lg text-fg-dim hover:bg-bg hover:text-fg-muted ${
+              collapsed ? "mx-auto mt-2 h-8 w-8" : "h-9 w-7"
+            }`}
+          >
+            <span
+              aria-hidden
+              className={`transition-transform duration-300 motion-reduce:transition-none ${collapsed ? "rotate-180" : ""}`}
+            >
+              <IconChevronLeft width={16} height={16} />
+            </span>
+          </button>
+        </div>
+        <RailSearch collapsed={collapsed} />
       </div>
 
       <nav aria-label="Your vault" className="flex-1 overflow-y-auto px-3 pb-3">
-        <NotesSection />
-        <SetupShelf vaultId={vault.id} />
+        {rooms.map((band) => (
+          <RailBand key={band.id} band={band} collapsed={collapsed} />
+        ))}
       </nav>
 
-      <div className="border-t border-border p-3">
-        <RailLink
-          to="/account"
-          label="Account"
-          icon={<IconUser />}
-          match={(p) => p === "/account"}
-        />
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <RailLink
-              to="/settings"
-              label="Settings"
-              icon={<IconCog />}
-              match={(p) => p === "/settings"}
-            />
+      <div data-nav-band="foot" className="border-t border-border p-3">
+        {foot?.items.map((item) =>
+          collapsed ? (
+            <RailLink key={item.id} item={item} collapsed />
+          ) : (
+            <div key={item.id} className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <RailLink item={item} collapsed={false} />
+              </div>
+              {/* Appearance lived in the old desktop ⋯ overflow; the rail foot
+                  is its calm home (a quiet icon, no label — Neil's air). */}
+              <ThemeToggle />
+            </div>
+          ),
+        )}
+        {collapsed ? (
+          <div className="mt-1 flex justify-center">
+            <ThemeToggle />
           </div>
-          {/* Appearance lived in the old desktop ⋯ overflow; the rail foot is its
-              calm new home (a quiet icon, no label — Neil's air). */}
-          <ThemeToggle />
-        </div>
+        ) : null}
       </div>
     </aside>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Rail primitives
+// Rail primitives — one band, one row. Collapsed: icons only, tooltips carry
+// the labels, section labels hide.
 // ---------------------------------------------------------------------------
 
-function RailSectionLabel({ children }: { children: ReactNode }) {
-  return <p className="eyebrow px-3 pt-4 pb-1.5">{children}</p>;
+function RailBand({ band, collapsed }: { band: NavBand; collapsed: boolean }) {
+  return (
+    <div data-nav-band={band.id}>
+      {band.label && !collapsed ? (
+        <p className="eyebrow flex items-baseline gap-2 px-3 pt-4 pb-1.5">
+          <span>{band.label}</span>
+          {band.sublabel ? (
+            <span className="font-round text-2xs normal-case text-fg-dim">{band.sublabel}</span>
+          ) : null}
+        </p>
+      ) : null}
+      {band.label && collapsed ? (
+        // The collapsed rail keeps the band SEAM (a hairline breath) so the
+        // two zones stay visually distinct even without their labels.
+        <div aria-hidden className="mx-2 mt-3 mb-2 border-t border-border-light" />
+      ) : null}
+      {band.items.map((item) => (
+        <RailLink key={item.id} item={item} collapsed={collapsed} />
+      ))}
+    </div>
+  );
 }
 
-function RailLink({
-  to,
-  label,
-  icon,
-  match,
-  badge,
-}: {
-  to: string;
-  label: string;
-  icon: ReactNode;
-  match: (pathname: string) => boolean;
-  badge?: ReactNode;
-}) {
+function RailLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   const { pathname } = useLocation();
-  const active = match(pathname);
+  const active = item.match(pathname);
   return (
     <Link
-      to={to}
+      to={item.to}
+      data-nav-item={item.id}
       aria-current={active ? "page" : undefined}
-      className={`focus-ring flex items-center gap-3 rounded-lg px-3 py-2 font-round text-sm transition-colors ${
+      aria-label={collapsed ? item.label : undefined}
+      title={collapsed ? item.label : undefined}
+      className={`focus-ring flex items-center rounded-lg font-round text-sm transition-colors ${
+        collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2"
+      } ${
         active
           ? "bg-grass-soft font-semibold text-grass-ink"
           : "font-medium text-fg-muted hover:bg-bg hover:text-fg"
       }`}
     >
       <span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center">
-        {icon}
+        {item.icon}
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {badge}
+      {collapsed ? null : (
+        <>
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          {item.badge}
+        </>
+      )}
     </Link>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// YOUR NOTES — the rooms. Map earns its slot; the others are always present.
-// ---------------------------------------------------------------------------
-
-function NotesSection() {
-  const mapEarned = useMapEarned();
-  return (
-    <div>
-      <RailSectionLabel>Your notes</RailSectionLabel>
-      {/* Reading a note (/n/:id) and the day drill-in (/today?date=) live
-          under Today. F8/W2-3: the mobile tab used to call this same room
-          "Home" — both form factors now agree it's "Today". */}
-      <RailLink
-        to="/"
-        label="Today"
-        icon={<IconHome />}
-        match={(p) => p === "/" || p === "/today" || p.startsWith("/n/")}
-      />
-      <RailLink to="/all" label="All notes" icon={<IconNotes />} match={(p) => p === "/all"} />
-      <RailLink to="/tags" label="Tags" icon={<IconTag />} match={(p) => p === "/tags"} />
-      {mapEarned ? (
-        <RailLink to="/graph" label="Map" icon={<IconMap />} match={(p) => p === "/graph"} />
-      ) : null}
-      {/* Activity lost its desktop home when the ⋯ overflow went; a quiet room
-          here is its calm landing (the reflective "what happened" view). */}
-      <RailLink
-        to="/activity"
-        label="Activity"
-        icon={<IconActivity />}
-        match={(p) => p === "/activity"}
-      />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SET UP — the guided steps, sharing state with Home's checklist. Collapses
-// to a single ✓ row once everything's done; hidden when the user dismissed it.
-// ---------------------------------------------------------------------------
-
-const SETUP_DEST: Record<HomeStepId, { label: string; to: string }> = {
-  write: { label: "Write a note", to: "/new" },
-  connect: { label: "Connect your AI", to: "/connect" },
-  import: { label: "Bring notes over", to: "/import" },
-  install: { label: "Install the app", to: "/settings" },
-};
-
-function SetupShelf({ vaultId }: { vaultId: string }) {
-  const { state } = useHomeChecklist(vaultId);
-  const notes = useNotesForDateViews();
-  const install = useInstallAffordance();
-
-  const steps = deriveSteps(state, {
-    hasUserNote: hasUserAuthoredNote(notes.data),
-    installed: install.state === "installed",
-    installable: install.state === "available",
-  });
-  const allDone = stepsComplete(steps);
-
-  // Respect dismissal — guidance is dismissible; the door is never a manual.
-  if (state.dismissed && !allDone) return null;
-
-  if (allDone) {
-    return (
-      <div>
-        <RailSectionLabel>Set up</RailSectionLabel>
-        <p className="flex items-center gap-2 rounded-lg px-3 py-2 font-round text-sm text-fg-muted">
-          <span aria-hidden className="text-accent">
-            ✓
-          </span>
-          You're all set
-        </p>
-      </div>
-    );
-  }
-
-  const incomplete = steps.filter((s: DerivedStep) => !s.done);
-  return (
-    <div>
-      <RailSectionLabel>Set up</RailSectionLabel>
-      {incomplete.map((step) => {
-        const dest = SETUP_DEST[step.id];
-        return (
-          <Link
-            key={step.id}
-            to={dest.to}
-            className="focus-ring flex items-center gap-3 rounded-lg px-3 py-2 font-round text-sm font-medium text-fg-muted transition-colors hover:bg-bg hover:text-fg"
-          >
-            <span
-              aria-hidden
-              className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-border text-[10px]"
-            >
-              ✦
-            </span>
-            <span className="min-w-0 flex-1 truncate">{dest.label}</span>
-          </Link>
-        );
-      })}
-    </div>
   );
 }
 
@@ -233,8 +190,21 @@ function SetupShelf({ vaultId }: { vaultId: string }) {
 // have a visible Search entry now that the old header row is gone.
 // ---------------------------------------------------------------------------
 
-function RailSearch() {
+function RailSearch({ collapsed }: { collapsed: boolean }) {
   const setOpen = useQuickSwitchOpen((s) => s.setOpen);
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Search"
+        title="Search (⌘K)"
+        className="focus-ring mx-auto grid h-9 w-9 place-items-center rounded-lg border border-border bg-card text-fg-dim transition-colors hover:border-accent/50 hover:text-fg-muted"
+      >
+        <IconSearch width={16} height={16} />
+      </button>
+    );
+  }
   return (
     <button
       type="button"

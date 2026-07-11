@@ -1,4 +1,5 @@
 import { BottomTabBar } from "@/components/BottomTabBar";
+import { NavSheet } from "@/components/NavSheet";
 import { Rail } from "@/components/Rail";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
@@ -8,15 +9,22 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Contract test (notes#147, re-homed to Rail↔BottomTabBar in Phase 3a): the
-// primary-navigation surface on desktop (the left Rail) and on mobile+tablet
-// (the BottomTabBar) MUST share the same breakpoint and meet without a gap.
-// The Rail is `hidden lg:flex` (only visible at >= lg); the BottomTabBar is
-// `lg:hidden` (visible until >= lg). At any viewport width exactly one shows.
-// The failure mode this guards is one side drifting to `md:` — that leaves the
+// Contract test (notes#147, re-homed to Rail↔BottomTabBar in Phase 3a; band
+// parity added in W2-5): the primary-navigation surface on desktop (the left
+// Rail) and on mobile+tablet (the BottomTabBar + NavSheet) MUST share the same
+// breakpoint and meet without a gap. The Rail is `hidden lg:flex` (only
+// visible at >= lg); the BottomTabBar and NavSheet are `lg:hidden` (visible
+// until >= lg). At any viewport width exactly one projection shows. The
+// failure mode this guards is one side drifting to `md:` — that leaves the
 // 768-1023px band with no primary navigation.
 //
-// JSDOM can't compute layout, so the assertion is at the class-name level.
+// W2-5 adds the BAND-PARITY half of the contract (F14): the Rail and the
+// NavSheet both render `useNavBands()`, and this test pins that neither
+// projection can grow (or lose) a room the other doesn't have — band ids,
+// item ids, labels, and hrefs must be identical, in order.
+//
+// JSDOM can't compute layout, so the visibility assertions are at the
+// class-name level.
 
 function makeVault(partial: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url">): VaultRecord {
   return {
@@ -94,9 +102,70 @@ describe("Rail + BottomTabBar breakpoint contract (notes#147)", () => {
     expect(bar?.className).not.toMatch(/\bmd:flex\b/);
   });
 
+  it("NavSheet is mobile-only (lg:hidden root) — at lg+ the Rail is the one projection", async () => {
+    const { container } = await renderWithClient(<NavSheet open onClose={() => {}} />);
+    const root = container.firstElementChild;
+    expect(root, "NavSheet must render when open").not.toBeNull();
+    expect(root?.className).toMatch(/\blg:hidden\b/);
+    expect(root?.className).not.toMatch(/\bmd:hidden\b/);
+  });
+
   it("Rail renders nothing with no active vault (the no-vault desktop view is full-width Landing)", async () => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     const { container } = await renderWithClient(<Rail />);
     expect(container.querySelector("aside")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------
+  // Band parity (W2-5, the F14 guard): both projections render the same
+  // bands, items, labels, hrefs — in the same order.
+  // ---------------------------------------------------------------------
+
+  function collectNav(container: HTMLElement): string[][] {
+    return Array.from(container.querySelectorAll("[data-nav-band] a[data-nav-item]")).map((a) => [
+      a.closest("[data-nav-band]")?.getAttribute("data-nav-band") ?? "",
+      a.getAttribute("data-nav-item") ?? "",
+      a.textContent ?? "",
+      a.getAttribute("href") ?? "",
+    ]);
+  }
+
+  it("Rail and NavSheet render IDENTICAL bands/items/order/labels from the one nav model (F14)", async () => {
+    const { container: railContainer } = await renderWithClient(<Rail />);
+    const { container: sheetContainer } = await renderWithClient(
+      <NavSheet open onClose={() => {}} />,
+    );
+
+    const railNav = collectNav(railContainer);
+    const sheetNav = collectNav(sheetContainer).filter(([band]) => band !== "switcher");
+
+    expect(railNav.length).toBeGreaterThan(0);
+    expect(sheetNav).toEqual(railNav);
+
+    // And the parity includes the F14 headliners: the manager zone's rooms.
+    const ids = railNav.map(([, id]) => id);
+    expect(ids).toContain("vaults");
+    expect(ids).toContain("account");
+    expect(ids).toContain("tags");
+    expect(ids).toContain("calendar");
+  });
+
+  it("band parity holds with the Map earned too (the gate flips on BOTH projections — F14)", async () => {
+    useVaultStore.setState({
+      vaults: {
+        a: makeVault({ id: "a", url: "http://localhost:1940", name: "default" }),
+        b: makeVault({ id: "b", url: "http://localhost:1941", name: "journal" }),
+      },
+      activeVaultId: "a",
+    });
+    const { container: railContainer } = await renderWithClient(<Rail />);
+    const { container: sheetContainer } = await renderWithClient(
+      <NavSheet open onClose={() => {}} />,
+    );
+
+    const railNav = collectNav(railContainer);
+    const sheetNav = collectNav(sheetContainer).filter(([band]) => band !== "switcher");
+    expect(railNav.map(([, id]) => id)).toContain("map");
+    expect(sheetNav).toEqual(railNav);
   });
 });

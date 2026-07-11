@@ -1,4 +1,5 @@
 import { IconHome, IconNotes, IconPlus, IconSearch } from "@/components/NavIcons";
+import { NOTES_TO, TODAY_TO, matchNotes, matchToday } from "@/lib/nav/model";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
 import { useVaultStore } from "@/lib/vault";
 import type { ReactNode } from "react";
@@ -25,9 +26,12 @@ export function BottomTabBar() {
 
   if (!hasActiveVault) return null;
 
+  // Active-state grammar comes from the shared nav model (W2-5) — the tab
+  // bar is a subset projection of the notes band, so it can't drift from the
+  // Rail/NavSheet's matching rules.
   const path = location.pathname;
-  const isToday = path === "/" || path === "/today" || path.startsWith("/n/");
-  const isNotes = path === "/all";
+  const isToday = matchToday(path);
+  const isNotes = matchNotes(path);
 
   return (
     <nav
@@ -36,8 +40,8 @@ export function BottomTabBar() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-[--w-page] items-stretch justify-around px-2">
-        <Tab to="/" label="Today" active={isToday} icon={<IconHome />} />
-        <Tab to="/all" label="Notes" active={isNotes} icon={<IconNotes />} />
+        <Tab to={TODAY_TO} label="Today" active={isToday} icon={<IconHome />} />
+        <Tab to={NOTES_TO} label="Notes" active={isNotes} icon={<IconNotes />} />
         <CenterCapture />
         <TabButton label="Search" icon={<IconSearch />} onClick={() => setSwitcherOpen(true)} />
       </ul>

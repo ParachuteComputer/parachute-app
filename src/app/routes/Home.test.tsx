@@ -192,7 +192,7 @@ describe("Home — the warm front door", () => {
     expect(screen.queryByRole("link", { name: /manage your account/i })).not.toBeInTheDocument();
   });
 
-  it("F8/W2-3: carries a Calendar link in the header (the day desktop had via /today, now gone)", async () => {
+  it("W2-5: the header's stopgap Calendar link is gone (the nav bands carry Calendar now)", async () => {
     installFetch(SEED_ONLY);
     render(
       <Wrap>
@@ -200,8 +200,7 @@ describe("Home — the warm front door", () => {
       </Wrap>,
     );
     await screen.findByRole("heading", { level: 1, name: "default" });
-    const calendarLink = screen.getByRole("link", { name: /^calendar$/i });
-    expect(calendarLink).toHaveAttribute("href", "/calendar");
+    expect(screen.queryByRole("link", { name: /^calendar$/i })).not.toBeInTheDocument();
   });
 
   it("F8/W2-3: the day-header hop still lands on the day drill-in", async () => {

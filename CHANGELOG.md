@@ -1,5 +1,51 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.6.0] - 2026-07-11
+
+**W2-5 — two-zone rail + mobile NavSheet: the IA centerpiece (F14 / F15-structure / F21-header /
+adopt #4 #9 #12).** "Your notes" and "Your parachute" become NAMED zones, rendered on both form
+factors from ONE nav model. Minor bump: the navigation IA changes shape (labels, zones, the mobile
+menu) — every room stays reachable, no route changes.
+
+- **New shared nav model `src/lib/nav/model.tsx` (`useNavBands()`, DESIGN-SPEC §2.1)** — the single
+  source both projections render. Bands: YOUR NOTES (Today · Notes · Calendar · Tags · Activity ·
+  Map-once-earned) · YOUR PARACHUTE (Account & plan · Vaults · Connect AI · Import notes) · SET UP
+  (incomplete guided steps + an "n of m" count, hidden once done/dismissed — no more persistent
+  "You're all set" row) · foot (Settings). Neither projection owns a room list, so desktop and
+  mobile can't disagree again (F14's root fix). Labels land now ("Notes", "Map"); the route
+  renames (`/all`→`/notes`, `/graph`→`/map`) are W2-7's.
+- **Desktop rail rebuilt (§2.2):** two labeled bands (sage eyebrows), the VaultSwitcher on top
+  (the hinge), Settings pinned at the foot (theme toggle keeps its spot), `glass-panel` ground.
+  **Collapsible to a 64px icon rail** — icons only, tooltips carry labels, the switcher shows the
+  vault-initial glyph; width animates 300ms (reduced-motion aware); persisted in
+  `localStorage("parachute.rail-collapsed")`. Calendar is promoted into the notes band (desktop
+  reaches it from the nav for the first time); Home's W2-3 stopgap Calendar link retires.
+  Account leaves the foot for the parachute band as "Account & plan", carrying a quiet sun-soft
+  trial chip ("5d") while trialing (§3.1 ambience slot 3; summary fetch only for home-door vaults).
+- **New mobile `NavSheet.tsx` (§2.3)** replaces the ☰ dropdown junk-drawer: a bottom sheet
+  (max-h 85dvh, rounded top, glass over a scrim, drag handle, focus-trapped dialog; closes on
+  scrim/Escape/swipe-down/route change) rendering **exactly the rail's bands in the rail's order**,
+  with the switcher band inline at the top (§2.4 rows, not a nested popover) and the foot carrying
+  Settings + the ☰ era's extras (InstallPrompt · TextSizeControl · ThemeToggle). **☰ and the
+  header's vault pill both open this one sheet** (the pill lands on the switcher band) — one menu
+  vocabulary. **Tags and Vaults become reachable on mobile for the first time** (F14).
+- **VaultSwitcher variants (§2.4 contract):** the panel (row model unchanged) extracts to an
+  internal `SwitcherPanel`; `rail` keeps the trigger + popover, new `sheet` renders the rows
+  inline in the NavSheet, and `header` owns no panel anymore — the pill delegates to the NavSheet.
+- **Map gate agreement (route-map row 11):** the Map nav row is earned-gated on BOTH projections;
+  `AmbientMapFab` is the pre-earn door on both form factors and now hides on BOTH once earned
+  (it used to linger on mobile).
+- **Header noise (F21, header part):** the "No vault connected" state line is gone; the bar shows
+  the wordmark (no vault) or the pill + sync dot (vault).
+- **BottomTabBar** unchanged in shape (Today · Notes · [+] · Search; [+] stays a direct hop to
+  `/new`) — its active-state matching now imports the model's shared rules instead of a copy.
+- Tests: new `src/lib/nav/model.test.tsx` (zones/order/gates/chip/shelf) + `NavSheet.test.tsx`
+  (bands, F14 reachability, active state, close gestures, no-vault foot); the breakpoint contract
+  extends with a **band-parity assertion** (Rail ≡ NavSheet, unearned + earned) and the NavSheet's
+  `lg:hidden` gate; Rail/Header/AmbientMapFab/VaultSwitcher suites updated to the new IA.
+- **Closes F14 (full), F15 (structure), F21 (header-noise part), adopt #4 #9 (nav rows) #12
+  (shelf collapse).**
+
 ## [0.5.3] - 2026-07-11
 
 **W2-4 — vault switcher v2: the manager hinge (F2 full / F13 full / F4 ambient half / WALK-manager #2+#3).**

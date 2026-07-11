@@ -250,6 +250,10 @@ describe("VaultSwitcher (component)", () => {
     vi.restoreAllMocks();
   });
 
+  // W2-5: the panel belongs to the RAIL variant (desktop trigger + popover);
+  // the sheet variant renders the same panel inline, and the header variant
+  // owns no panel at all (it delegates to the NavSheet). These tests exercise
+  // the panel through its rail trigger.
   function renderSwitcher() {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -257,7 +261,7 @@ describe("VaultSwitcher (component)", () => {
     return render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <VaultSwitcher />
+          <VaultSwitcher variant="rail" />
           <Routes>
             <Route path="*" element={<LocationProbe />} />
           </Routes>
@@ -655,5 +659,73 @@ describe("VaultSwitcher (component)", () => {
     // The dedicated banner stays hidden; the generic error line surfaces instead.
     await waitFor(() => expect(screen.getByText(/hub returned 502/i)).toBeInTheDocument());
     expect(screen.queryByTestId("insecure-context-banner")).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // W2-5 variants — the sheet's inline band and the header's delegate pill.
+  // -------------------------------------------------------------------------
+
+  it("sheet variant renders the panel INLINE (no trigger, no popover dialog)", async () => {
+    useVaultStore.setState({
+      vaults: {
+        a: makeVault({ id: "a", url: "http://localhost:1939/vault/default", name: "default" }),
+        b: makeVault({ id: "b", url: "http://localhost:1939/vault/techne", name: "techne" }),
+      },
+      activeVaultId: "a",
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <VaultSwitcher variant="sheet" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    // Rows are present without any trigger click…
+    expect(await screen.findByText("default")).toBeInTheDocument();
+    expect(screen.getByText("techne")).toBeInTheDocument();
+    expect(screen.getByText(/✓ current/i)).toBeInTheDocument();
+    // …and there is no floating dialog and no trigger button.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /active vault/i })).not.toBeInTheDocument();
+  });
+
+  it("sheet variant fires onAction after a switch (so the NavSheet can close)", async () => {
+    useVaultStore.setState({
+      vaults: {
+        a: makeVault({ id: "a", url: "http://localhost:1939/vault/default", name: "default" }),
+        b: makeVault({ id: "b", url: "http://localhost:1939/vault/techne", name: "techne" }),
+      },
+      activeVaultId: "a",
+    });
+    const onAction = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <VaultSwitcher variant="sheet" onAction={onAction} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByText("techne"));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(useVaultStore.getState().activeVaultId).toBe("b");
+  });
+
+  it("header variant owns no panel — the pill delegates to the NavSheet", () => {
+    seedDefaultVault();
+    const onOpenNavSheet = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <VaultSwitcher variant="header" onOpenNavSheet={onOpenNavSheet} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /active vault: default/i }));
+    expect(onOpenNavSheet).toHaveBeenCalledTimes(1);
+    // No popover of its own — one menu vocabulary on mobile (the sheet).
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
