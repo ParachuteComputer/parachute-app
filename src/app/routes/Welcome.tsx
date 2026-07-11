@@ -1,20 +1,17 @@
 import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { getSession, listVaults } from "@/lib/account/client";
 import { classifyVaults } from "@/lib/account/dispatch";
-import {
-  HOSTED_VAULT_ORIGIN,
-  createHostedVault,
-  openHostedVault,
-} from "@/lib/account/hosted-vault";
+import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
 import type { AccountVault } from "@/lib/account/types";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 
-/** The hosted vault address host, e.g. "u.parachute.computer" — derived from
- *  hosted-vault.ts's HOSTED_VAULT_ORIGIN so the two copies of the address
- *  format (this screen's echo text, the picker's card) never drift apart. */
-const HOSTED_VAULT_HOST = HOSTED_VAULT_ORIGIN.replace(/^https?:\/\//, "");
-
+// Door-agnostic: the app never hardcodes a cloud vault host. A vault's real
+// address comes from the door (the `address` field on `GET /account/vaults`);
+// the pre-creation naming screen can't know the host yet (the home door assigns
+// it at mint time), so the echo shows the slug + the permanent-address promise
+// without asserting a specific host. (If the door later advertises its vault
+// base, the echo can show the full address — a small contract addition.)
 function sanitizeVaultName(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, "");
 }
@@ -406,8 +403,7 @@ function VaultNamingForm({
           {trimmed ? (
             <span>
               Your vault:{" "}
-              <b className="rounded-md bg-grass-soft px-2 py-0.5 text-grass-ink">{trimmed}</b> — it
-              will live at {HOSTED_VAULT_HOST}/vault/{trimmed}
+              <b className="rounded-md bg-grass-soft px-2 py-0.5 text-grass-ink">{trimmed}</b>
             </span>
           ) : (
             "Letters, numbers, hyphens — pick a word you like."
@@ -576,10 +572,8 @@ function VaultCard({
   onOpen: () => void;
 }) {
   const usage = formatUsage(vault.usage);
-  const address = (vault.address ?? `${HOSTED_VAULT_ORIGIN}/vault/${vault.name}`).replace(
-    /^https?:\/\//,
-    "",
-  );
+  // The door provides the vault's real address; never fabricate a cloud host.
+  const address = vault.address ? vault.address.replace(/^https?:\/\//, "") : "";
   return (
     <li className="card flex items-center gap-4 rounded-2xl p-4 shadow-soft">
       <span
@@ -593,7 +587,7 @@ function VaultCard({
           <span className="font-serif text-lg text-fg">{vault.name}</span>
           <span className="chip">☁ Cloud</span>
         </div>
-        <p className="mt-0.5 truncate note-id">{address}</p>
+        {address ? <p className="mt-0.5 truncate note-id">{address}</p> : null}
         {usage ? <p className="mt-0.5 font-round text-xs text-fg-muted">{usage}</p> : null}
       </div>
       <button

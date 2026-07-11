@@ -26,9 +26,12 @@ export interface AccountSession {
   csrf: string;
   /** Signed-in branch only (G1) — powers "Signed in as X". */
   email?: string;
-  /** Signed-in branch (G1) — this account was just created by this sign-in. */
-  is_new?: boolean;
-  /** Signed-in branch (G1), ISO-8601. ASSUMED name. */
+  /**
+   * Signed-in branch (G1, shipped), ISO-8601. There is NO `is_new` flag — the
+   * authoritative new-account signal is `GET /account/vaults == []` (that's what
+   * routes to first-vault). `account_created_at` is only for the warmth of the
+   * "Account created ✓" cue (recently-created ⇒ fresh sign-up).
+   */
   account_created_at?: string;
 }
 

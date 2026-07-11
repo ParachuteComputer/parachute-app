@@ -82,9 +82,10 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       expect(field.value).toBe("mossgarden");
       expect(screen.getByText(/your vault:/i)).toBeInTheDocument();
       expect(screen.getByText("mossgarden")).toBeInTheDocument();
-      expect(
-        screen.getByText(/it will live at u\.parachute\.computer\/vault\/mossgarden/i),
-      ).toBeInTheDocument();
+      // Door-agnostic: no hardcoded cloud host in the echo (the door assigns the
+      // real address at mint time). The permanent-address promise stays.
+      expect(screen.queryByText(/u\.parachute\.computer/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/the address is permanent/i)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /create mossgarden →/i })).toBeInTheDocument();
     });
 

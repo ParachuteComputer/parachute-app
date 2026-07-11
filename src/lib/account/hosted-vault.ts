@@ -8,31 +8,50 @@ import { useAccountSessionStore } from "./store";
 
 type Fetch = typeof fetch;
 
-/** The hosted account issuer (Cloud). */
-export const HOSTED_ACCOUNT_ISSUER = "https://cloud.parachute.computer";
-/** Where hosted vaults live: u.parachute.computer/vault/<name>. */
-export const HOSTED_VAULT_ORIGIN = "https://u.parachute.computer";
 /**
- * Sentinel client_id for hosted VaultRecords. Hosted vaults are NOT OAuth
- * clients — their per-vault tokens are re-minted from the session cookie (see
- * `remintHostedVault`), not refreshed via a token endpoint. The field is
- * required by VaultRecord; this marks the record as hosted so the OAuth refresh
- * path is never taken for it.
+ * The HOME DOOR is the app's own serving origin — NOT a hardcoded cloud host.
+ * The app is served BY a door (cloud at app.parachute.computer today; a user's
+ * own hub tomorrow) and is same-origin with it. So the account API is relative
+ * (see client.ts) and a home-door vault's issuer is `window.location.origin` —
+ * the same code runs served by cloud or by a hub, with zero cloud coupling. The
+ * only place an explicit origin appears is the cross-origin `/add` connect path
+ * (a parachute that ISN'T your home door), which keeps its OAuth.
  */
-export const HOSTED_CLIENT_ID = "cloud-account";
+function homeDoorOrigin(): string {
+  return typeof window !== "undefined" ? window.location.origin : "";
+}
 
-/** Is this vault a hosted (Cloud) one, minted via the account session? */
+/**
+ * Sentinel client_id for home-door VaultRecords. These are NOT OAuth clients —
+ * their per-vault tokens are re-minted from the session cookie (see
+ * `remintHostedVault`), not refreshed via a token endpoint. The field is
+ * required by VaultRecord; this marks the record as home-door-minted so the
+ * OAuth refresh path is never taken for it.
+ */
+export const HOSTED_CLIENT_ID = "home-door";
+
+/** Is this vault minted via the account session (home door), not OAuth? */
 export function isHostedVaultRecord(clientId: string): boolean {
   return clientId === HOSTED_CLIENT_ID;
 }
 
+/**
+ * Resolve the vault's REST URL from the C3 token's services catalog. The HOME
+ * DOOR is authoritative about where its vaults live (cloud → u.parachute.computer;
+ * a hub → the hub's own vault URL) — the app must not assume a cloud host, so
+ * there is NO hardcoded fallback. A C3 response without a services URL is a
+ * contract violation (the door must carry `services.vault.url` or the per-vault
+ * key); surface it loudly rather than fabricate a wrong origin.
+ */
 function vaultUrlFromToken(token: TokenResponse, name: string): string {
   const perVaultKey = token.vault ? `vault:${token.vault}` : `vault:${name}`;
-  return (
-    token.services?.[perVaultKey]?.url ??
-    token.services?.vault?.url ??
-    `${HOSTED_VAULT_ORIGIN}/vault/${encodeURIComponent(name)}`
-  );
+  const url = token.services?.[perVaultKey]?.url ?? token.services?.vault?.url;
+  if (!url) {
+    throw new Error(
+      `Home-door token for vault "${name}" is missing services.vault.url — the account door's per-vault mint (C3) must carry the vault's REST URL in its services catalog.`,
+    );
+  }
+  return url;
 }
 
 /**
@@ -51,7 +70,8 @@ export async function openHostedVault(
     {
       url,
       name: token.vault ?? name,
-      issuer: HOSTED_ACCOUNT_ISSUER,
+      // The home door is the serving origin — never a hardcoded cloud host.
+      issuer: homeDoorOrigin(),
       clientId: HOSTED_CLIENT_ID,
       scope: token.scope,
     },
