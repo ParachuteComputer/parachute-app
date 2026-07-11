@@ -36,6 +36,15 @@ import { Link } from "react-router";
 // is PLAN-AWARE: at the account's vault limit it renders the upsell instead of
 // letting a doomed create attempt fire the 409 (WALK-manager #3). A quiet
 // trial line surfaces while trialing (decision b's ambient surfacing, F4).
+//
+// W2-5 split the render into three variants (§2.4 component contract):
+//   · rail   — the desktop rail's identity card + a floating popover panel.
+//   · sheet  — the SAME panel rendered INLINE as the NavSheet's top band
+//              (rows, not a nested popover).
+//   · header — the mobile top-bar pill; it owns NO panel — it delegates to
+//              the NavSheet (opened at the switcher band) via `onOpenNavSheet`.
+// The row model + behavior live in `SwitcherPanel`, mounted only while
+// visible, so its account/summary queries stay exactly as lazy as before.
 
 interface DeviceRow {
   kind: "device";
@@ -154,14 +163,22 @@ export function buildVaultSwitcherRows(
 
 interface VaultSwitcherProps {
   /**
-   * Render variant.
-   *   - `header` — the mobile/tablet dropdown anchored to the header's vault pill.
+   * Render variant (§2.4 component contract).
+   *   - `header` — the mobile top-bar vault pill. Owns no panel: it opens the
+   *                NavSheet at its switcher band via `onOpenNavSheet`.
    *   - `rail`   — the desktop left-rail identity switcher: a full-width card
    *                with a glyph + the vault name, its panel dropping full-width
    *                beneath it.
-   * (W2-5 adds `sheet` — rows rendered inline in the mobile NavSheet.)
+   *   - `sheet`  — the panel's rows rendered INLINE in the mobile NavSheet's
+   *                top band (no trigger, no nested popover).
    */
-  variant?: "header" | "rail";
+  variant?: "header" | "rail" | "sheet";
+  /** header only — opens the NavSheet (scrolled/focused at the switcher band). */
+  onOpenNavSheet?: () => void;
+  /** sheet only — called after a row action (switch/open/verb) so the sheet can close. */
+  onAction?: () => void;
+  /** rail only — the 64px icon-rail state: glyph-only trigger. */
+  collapsed?: boolean;
 }
 
 // The vault-initial glyph square — the icon-in-soft-circle row pattern
@@ -204,11 +221,24 @@ function VerbCircle({ tone, children }: { tone: "accent" | "sky" | "sun"; childr
   );
 }
 
-export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
+// ---------------------------------------------------------------------------
+// The panel — row sources, verbs, trial line. Mounted only while visible
+// (popover open / sheet open), so the lazy account + summary queries fire at
+// exactly the old moments of need.
+// ---------------------------------------------------------------------------
+
+function SwitcherPanel({
+  layout,
+  onAfterAction,
+}: {
+  /** popover = floating card (rail trigger); inline = the NavSheet's top band. */
+  layout: "popover" | "inline";
+  /** Close the containing surface after a completed action. */
+  onAfterAction: () => void;
+}) {
   const vaults = useVaultStore((s) => s.vaults);
   const activeVaultId = useVaultStore((s) => s.activeVaultId);
   const activeVault = activeVaultId ? (vaults[activeVaultId] ?? null) : null;
-  const [open, setOpen] = useState(false);
   const [hubVaults, setHubVaults] = useState<HubVaultEntry[] | null>(null);
   // Distinct from `hubVaults === null` (which also means "the probe failed") —
   // without it the quiet "looking…" hint would show forever on a door with no
@@ -219,19 +249,19 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
   const [openingName, setOpeningName] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const [insecureContext, setInsecureContext] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const hubOrigin = useMemo(
     () => (activeVault ? hubOriginForVault(activeVault) : null),
     [activeVault],
   );
 
-  // Plan/trial context — the shared account-summary hook (§2.4), LAZY: enabled
-  // only while the panel is open, so the switcher never adds a boot fetch.
-  const summaryQuery = useAccountSummary({ enabled: open });
+  // Plan/trial context — the shared account-summary hook (§2.4), LAZY: this
+  // panel only mounts while its surface is open, so the switcher never adds a
+  // boot fetch.
+  const summaryQuery = useAccountSummary();
   const summary = summaryQuery.data ?? null;
 
-  // The account's hosted vault list (the cloud door), also lazy on open.
+  // The account's hosted vault list (the cloud door), same mount-lazy timing.
   // `null` = nothing to show (signed out / self-host / fetch failed) — the
   // switcher degrades to on-device + hub rows, exactly today's behavior
   // (the chooser's Open card at /add-vault remains the fallback door).
@@ -245,38 +275,14 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
       }
     },
     staleTime: 60_000,
-    enabled: open,
   });
   const accountVaults = accountVaultsQuery.data ?? null;
 
-  // Outside-click and Escape close the popover. Same shape as
-  // SyncStatusIndicator — mousedown so a click that selects something inside
-  // doesn't fire before the click handler.
+  // Fetch the hub's vault list on mount. Re-fetched per-open (the panel
+  // remounts each time its surface opens) so newly-added vaults show up
+  // without a page reload; cheap (one same-origin GET to a static-ish JSON).
   useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (!rootRef.current) return;
-      if (rootRef.current.contains(e.target as Node)) return;
-      setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  // Fetch the hub's vault list when the popover opens. Refetched per-open so
-  // newly-added vaults show up without a page reload; cheap (one same-origin
-  // GET to a static-ish JSON).
-  useEffect(() => {
-    if (!open || !hubOrigin) {
-      return;
-    }
+    if (!hubOrigin) return;
     const ctrl = new AbortController();
     setHubPending(true);
     fetchHubVaults(hubOrigin, fetch.bind(globalThis), ctrl.signal).then((result) => {
@@ -288,7 +294,7 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
       ctrl.abort();
       setHubPending(false);
     };
-  }, [open, hubOrigin]);
+  }, [hubOrigin]);
 
   const rows = useMemo(
     () =>
@@ -318,28 +324,15 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
   // Trial ambience (decision b / F4): only when the door reports a number.
   const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
 
-  const triggerLabel = activeVault ? vaultDisplayLabel(activeVault) : "Choose vault";
-
-  const toggleOpen = useCallback(() => {
-    setOpen((v) => {
-      if (!v) {
-        // Fresh open — stale errors from the last open would read as current.
-        setConnectError(null);
-        setOpenError(null);
-        setInsecureContext(false);
-      }
-      return !v;
-    });
-  }, []);
-
-  const close = useCallback(() => setOpen(false), []);
-
-  const onSwitch = useCallback((row: DeviceRow) => {
-    // §4.4: every switch confirms with "Now in {vault}". Clicking the current
-    // vault just closes — nothing changed, nothing to announce.
-    if (!row.isActive) switchVault(row.id, { toast: true });
-    setOpen(false);
-  }, []);
+  const onSwitch = useCallback(
+    (row: DeviceRow) => {
+      // §4.4: every switch confirms with "Now in {vault}". Clicking the current
+      // vault just closes — nothing changed, nothing to announce.
+      if (!row.isActive) switchVault(row.id, { toast: true });
+      onAfterAction();
+    },
+    [onAfterAction],
+  );
 
   // Open an account vault that isn't on this device (the cloud door): mint a
   // per-vault token, store + activate it, confirm with the toast. No
@@ -352,7 +345,7 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
       try {
         await openHostedVault(row.name);
         announceVaultSwitch(row.name);
-        setOpen(false);
+        onAfterAction();
       } catch (err) {
         // F12 — friendly copy, never a raw wire code.
         setOpenError(describeAccountError(err, "Couldn't open that vault."));
@@ -360,7 +353,7 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
         setOpeningName(null);
       }
     },
-    [openingName],
+    [openingName, onAfterAction],
   );
 
   const onConnect = useCallback(async (row: HubRow) => {
@@ -389,24 +382,10 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
     }
   }, []);
 
-  const lookingForMore = open && (hubPending || accountVaultsQuery.isPending);
+  const lookingForMore = hubPending || accountVaultsQuery.isPending;
 
-  const panel = (
-    // biome-ignore lint/a11y/useSemanticElements: a native <dialog> requires imperative show()/showModal() calls; this is a popover, not a modal.
-    <div
-      role="dialog"
-      aria-label="Vaults"
-      // Both variants anchor LEFT: the trigger sits at the screen's left edge
-      // on both form factors, so a right-anchored panel wider than its trigger
-      // would hang off-screen (the old header popover's latent clip). The rail
-      // panel floats a step wider than the rail so the richer rows (Open
-      // pills, the upsell line) breathe instead of truncating.
-      className={
-        variant === "header"
-          ? "absolute left-0 z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-card text-sm shadow-lift"
-          : "absolute left-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-card text-sm shadow-lift"
-      }
-    >
+  const body = (
+    <>
       {deviceRows.length > 0 ? (
         <div className="border-b border-border-light">
           <p className="eyebrow px-3 pt-3 pb-1 text-2xs">On this device</p>
@@ -498,7 +477,7 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
           // NAVIGATION.md: card link — user-initiated, push.
           <Link
             to="/account"
-            onClick={close}
+            onClick={onAfterAction}
             className="focus-ring flex w-full items-center gap-2.5 px-3 py-1.5 hover:bg-bg-soft"
           >
             <VerbCircle tone="sun">↑</VerbCircle>
@@ -514,7 +493,7 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
           // the target to /add-vault/create.)
           <Link
             to="/welcome?new=1"
-            onClick={close}
+            onClick={onAfterAction}
             className="focus-ring flex w-full items-center gap-2.5 px-3 py-1.5 hover:bg-bg-soft"
           >
             <VerbCircle tone="accent">＋</VerbCircle>
@@ -526,7 +505,7 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
         {/* NAVIGATION.md: "Chooser card → /add" — user-initiated, push. */}
         <Link
           to="/add"
-          onClick={close}
+          onClick={onAfterAction}
           className="focus-ring flex w-full items-center gap-2.5 px-3 py-1.5 hover:bg-bg-soft"
         >
           <VerbCircle tone="sky">⌂</VerbCircle>
@@ -545,7 +524,7 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
           // NAVIGATION.md: footer link — user-initiated, push.
           <Link
             to="/account"
-            onClick={close}
+            onClick={onAfterAction}
             className="focus-ring mb-1 block text-xs text-sun-ink hover:underline"
           >
             Free trial ·{" "}
@@ -558,7 +537,7 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
           {/* NAVIGATION.md: footer link — user-initiated, push. */}
           <Link
             to="/vaults"
-            onClick={close}
+            onClick={onAfterAction}
             className="focus-ring text-xs text-fg-muted hover:text-accent"
           >
             Manage vaults →
@@ -568,12 +547,82 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
           ) : null}
         </div>
       </div>
+    </>
+  );
+
+  if (layout === "inline") {
+    // The NavSheet's top band: same rows, no floating chrome — the sheet is
+    // the panel (§2.3 "rendered inline — rows, not a nested popover").
+    return (
+      <section aria-label="Vaults" className="text-sm">
+        {body}
+      </section>
+    );
+  }
+
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a native <dialog> requires imperative show()/showModal() calls; this is a popover, not a modal.
+    <div
+      role="dialog"
+      aria-label="Vaults"
+      // Anchors LEFT: the trigger sits at the screen's left edge, so a
+      // right-anchored panel wider than its trigger would hang off-screen
+      // (the old header popover's latent clip). The panel floats a step wider
+      // than the rail so the richer rows (Open pills, the upsell line)
+      // breathe instead of truncating.
+      className="absolute left-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-card text-sm shadow-lift"
+    >
+      {body}
     </div>
   );
+}
+
+export function VaultSwitcher({
+  variant = "header",
+  onOpenNavSheet,
+  onAction,
+  collapsed = false,
+}: VaultSwitcherProps) {
+  const vaults = useVaultStore((s) => s.vaults);
+  const activeVaultId = useVaultStore((s) => s.activeVaultId);
+  const activeVault = activeVaultId ? (vaults[activeVaultId] ?? null) : null;
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Outside-click and Escape close the rail popover. Same shape as
+  // SyncStatusIndicator — mousedown so a click that selects something inside
+  // doesn't fire before the click handler.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!rootRef.current) return;
+      if (rootRef.current.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const close = useCallback(() => setOpen(false), []);
+
+  const triggerLabel = activeVault ? vaultDisplayLabel(activeVault) : "Choose vault";
+
+  // The NavSheet's inline band — no trigger, no popover; the sheet owns
+  // visibility, so the panel (and its lazy queries) mounts with the sheet.
+  if (variant === "sheet") {
+    return <SwitcherPanel layout="inline" onAfterAction={onAction ?? (() => {})} />;
+  }
 
   // The rail switcher is the identity spine at the top of the desktop rail:
   // a full-width card with a glyph square carrying the vault's initial + its
-  // name. Threads the vault name into the rail exactly where Neil put it.
+  // name (glyph only when the rail is collapsed to the 64px icon rail).
   if (variant === "rail") {
     const initial = (triggerLabel.trim()[0] ?? "?").toUpperCase();
     return (
@@ -583,9 +632,11 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
           aria-label={`Active vault: ${triggerLabel}`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          onClick={toggleOpen}
+          onClick={() => setOpen((v) => !v)}
           title={triggerLabel}
-          className="focus-ring flex w-full items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2 text-left shadow-sm hover:border-accent/50"
+          className={`focus-ring flex w-full items-center rounded-xl border border-border bg-card text-left shadow-sm hover:border-accent/50 ${
+            collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-2"
+          }`}
         >
           <span
             aria-hidden
@@ -593,43 +644,45 @@ export function VaultSwitcher({ variant = "header" }: VaultSwitcherProps) {
           >
             {initial}
           </span>
-          <span className="min-w-0 flex-1 truncate font-round font-semibold text-fg">
-            {triggerLabel}
-          </span>
-          <span aria-hidden className="shrink-0 text-xs text-fg-dim">
-            ▾
-          </span>
+          {collapsed ? null : (
+            <>
+              <span className="min-w-0 flex-1 truncate font-round font-semibold text-fg">
+                {triggerLabel}
+              </span>
+              <span aria-hidden className="shrink-0 text-xs text-fg-dim">
+                ▾
+              </span>
+            </>
+          )}
         </button>
-        {open ? panel : null}
+        {open ? <SwitcherPanel layout="popover" onAfterAction={close} /> : null}
       </div>
     );
   }
 
+  // header — the mobile top-bar vault pill. It opens the NavSheet at its
+  // switcher band (§2.4: "delegates, no own panel") — one surface, one menu
+  // vocabulary, instead of a second popover competing with the sheet.
   return (
-    <div ref={rootRef} className="relative max-w-full">
-      <button
-        type="button"
-        aria-label={`Active vault: ${triggerLabel}`}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        onClick={toggleOpen}
-        // `title` mirrors the visible label so sighted users can hover to
-        // see the full vault name when the rem-capped trigger truncates it
-        // (notes#147 reviewer).
-        title={triggerLabel}
-        // `max-w-[12rem]` caps the trigger at a rem-based width so a
-        // long vault name truncates instead of pushing header siblings
-        // out (notes#136). rem so the cap scales with text-size.
-        className="flex min-w-0 max-w-[12rem] items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm text-fg hover:border-accent/50"
-      >
-        <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent" />
-        <span className="min-w-0 truncate">{triggerLabel}</span>
-        <span aria-hidden className="ml-1 shrink-0 text-xs text-fg-dim">
-          ▾
-        </span>
-      </button>
-
-      {open ? panel : null}
-    </div>
+    <button
+      type="button"
+      aria-label={`Active vault: ${triggerLabel}`}
+      aria-haspopup="dialog"
+      onClick={onOpenNavSheet}
+      // `title` mirrors the visible label so sighted users can hover to
+      // see the full vault name when the rem-capped trigger truncates it
+      // (notes#147 reviewer).
+      title={triggerLabel}
+      // `max-w-[12rem]` caps the trigger at a rem-based width so a
+      // long vault name truncates instead of pushing header siblings
+      // out (notes#136). rem so the cap scales with text-size.
+      className="flex min-w-0 max-w-[12rem] items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm text-fg hover:border-accent/50"
+    >
+      <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent" />
+      <span className="min-w-0 truncate">{triggerLabel}</span>
+      <span aria-hidden className="ml-1 shrink-0 text-xs text-fg-dim">
+        ▾
+      </span>
+    </button>
   );
 }
