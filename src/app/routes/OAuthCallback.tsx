@@ -1,4 +1,5 @@
-import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
+import { ParachuteMark } from "@/components/ParachuteMark";
+import { WizardShell } from "@/components/WizardShell";
 import {
   PendingApprovalError,
   completeOAuth,
@@ -9,29 +10,13 @@ import {
 import { useAuthHaltStore } from "@/lib/vault/auth-halt-store";
 import { announceVaultSwitch, vaultDisplayLabel } from "@/lib/vault/switch";
 import { safeInternalRedirect } from "@/lib/vault/url";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 type Status =
   | { kind: "working" }
   | { kind: "error"; message: string }
   | { kind: "pending-approval"; approveUrl: string };
-
-// The shared no-vault-yet layout — matches Landing.tsx / Welcome.tsx /
-// CheckEmail.tsx / AddVault.tsx exactly, so the return trip from the hub
-// hand-off reads as part of the same visual world.
-function Shell({ children }: { children: ReactNode }) {
-  return (
-    <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col">
-      <div className="flex items-center px-6 pt-6 sm:px-10">
-        <Wordmark />
-      </div>
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
-        <div className="mx-auto w-full max-w-md">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 /** The hub/vault host named in an approve_url, for the "Approving Parachute
  *  on {host}" headline (sceneHubHandoff). Falls back to a generic phrase if
@@ -165,7 +150,9 @@ export function OAuthCallback() {
 
   if (status.kind === "working") {
     return (
-      <Shell>
+      // §4.1: an auto-advancing beat — escape "none" is legal; the linked
+      // wordmark stays as the always-on way out.
+      <WizardShell escape={{ kind: "none" }}>
         <ParachuteMark size={72} className="mx-auto mb-4 animate-pulse" />
         <p className="eyebrow mb-3">One moment</p>
         <h1 className="hero-title mb-2" style={{ fontSize: "clamp(1.8rem, 4vw, 2.3rem)" }}>
@@ -174,14 +161,17 @@ export function OAuthCallback() {
         <output aria-live="polite" className="font-round text-sm text-fg-muted">
           Exchanging the authorization code with your vault.
         </output>
-      </Shell>
+      </WizardShell>
     );
   }
 
   if (status.kind === "pending-approval") {
     const host = hostFromUrl(status.approveUrl);
     return (
-      <Shell>
+      // This state stalls on the hub admin — it carries the §4.1 escape. The
+      // history-aware back degrades to "/" (an external redirect landed here,
+      // so there's no in-app history behind; the hook never steps off-app).
+      <WizardShell escape={{ kind: "back", to: "/" }}>
         <ParachuteMark size={60} className="mx-auto mb-6" />
         <p className="eyebrow mb-3">Redirected</p>
         <h1 className="hero-title mb-4" style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.1rem)" }}>
@@ -212,12 +202,13 @@ export function OAuthCallback() {
             Retry now
           </button>
         </div>
-      </Shell>
+      </WizardShell>
     );
   }
 
   return (
-    <Shell>
+    // The failure state stalls — same §4.1 escape rule as above.
+    <WizardShell escape={{ kind: "back", to: "/" }}>
       <ParachuteMark size={60} className="mx-auto mb-6" />
       <p className="eyebrow mb-3">Connection failed</p>
       <h1 className="hero-title mb-4" style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.1rem)" }}>
@@ -233,6 +224,6 @@ export function OAuthCallback() {
       >
         Try again →
       </button>
-    </Shell>
+    </WizardShell>
   );
 }

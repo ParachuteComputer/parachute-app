@@ -584,7 +584,9 @@ function VaultsBlock({
           <p className="mb-5 text-sm text-fg-muted">
             Create your first — a private home for your notes, always yours to export.
           </p>
-          <Link to="/welcome?new=1" className="btn btn-primary btn-touch">
+          {/* NAVIGATION.md: card link — user-initiated, push (W2-6: the
+              creation ceremony's own URL, was /welcome?new=1). */}
+          <Link to="/add-vault/create" className="btn btn-primary btn-touch">
             Create a vault
           </Link>
         </div>
@@ -629,7 +631,9 @@ function VaultsBlock({
 
       {vaults !== null ? (
         <p className="mt-4 font-round text-sm text-fg-muted">
-          <Link to="/welcome?new=1" className="font-semibold text-accent hover:underline">
+          {/* NAVIGATION.md: card link — user-initiated, push (W2-6: the
+              creation ceremony's own URL, was /welcome?new=1). */}
+          <Link to="/add-vault/create" className="font-semibold text-accent hover:underline">
             ＋ Create a new vault
           </Link>{" "}
           ·{" "}

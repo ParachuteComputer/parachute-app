@@ -150,13 +150,15 @@ describe("AddVault self-hosted restyle (SYNTHESIS #11)", () => {
     expect(screen.getByRole("heading", { name: /connect your own vault\./i })).toBeInTheDocument();
   });
 
-  // F6 — the self-host connect form previously had NO way out short of the
-  // (often broken) browser Back button; a quiet Back link now sits beside
-  // the Wordmark.
-  it("has a Back link to / (F6)", async () => {
+  // F6 / §4.1 — the self-host connect form previously had NO way out short
+  // of the (often broken) browser Back button; the WizardShell's history-
+  // aware "← Back" escape (fallback "/" — exercised here: MemoryRouter
+  // leaves window.history untouched, so the hook takes the fallback branch)
+  // sits beside the linked Wordmark.
+  it("has a Back escape to / (F6/§4.1)", async () => {
     mockFetchOnce({ throwNetwork: true });
     renderAddVault();
-    fireEvent.click(screen.getByRole("link", { name: /back/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^← back$/i }));
     await waitFor(() => expect(screen.getByText("Today timeline")).toBeInTheDocument());
   });
 

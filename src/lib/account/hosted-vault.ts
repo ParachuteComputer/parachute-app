@@ -99,24 +99,29 @@ export async function openHostedVault(
 }
 
 /**
- * Create a brand-new hosted vault (immutable slug). Cloud's create returns a
- * ready-to-use per-vault token inline (the "land you IN the vault" hinge), so we
- * store it directly — no second C3 round-trip. If a future door omits the inline
- * token, fall back to an explicit C3 mint.
+ * Create a brand-new hosted vault (immutable slug) — MINTS ONLY.
+ *
+ * Activation honesty (DESIGN-SPEC §4.2, WALK-manager #2, W2-6): this used to
+ * compose `openHostedVault`, so the ACTIVE vault switched silently mid-
+ * "creating" and the ready beat's "Open" button was cosmetic — Back from the
+ * ready beat then landed on pages whose context (rail identity, account
+ * summary) silently belonged to a different vault. Now the create call only
+ * creates the account-side vault: no VaultRecord, no stored token, no active-
+ * vault change on this device. Activation is a separate, user-initiated step
+ * — the ready beat's "Open {name} →" calls `openHostedVault` (which stores +
+ * activates) and confirms with the §4.4 toast. Cloud's inline `vault_token`
+ * is deliberately discarded: "Maybe later" must leave zero unused credentials
+ * behind, and Open re-mints through the same C3 path every other open uses.
+ *
+ * Returns the door's canonical name for the created vault (echoed name, else
+ * the requested one) — the ready beat's `?vault=<name>` param.
  */
 export async function createHostedVault(
   name: string,
   fetchImpl: Fetch = fetch.bind(globalThis),
 ): Promise<string> {
   const created = await createVault(name, fetchImpl);
-  const vaultName = created.name || name;
-  if (created.vault_token && created.services) {
-    return storeHomeDoorVault(vaultName, {
-      vault_token: created.vault_token,
-      services: created.services,
-    });
-  }
-  return openHostedVault(vaultName, fetchImpl);
+  return created.name || name;
 }
 
 /**

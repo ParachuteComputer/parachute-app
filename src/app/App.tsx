@@ -20,7 +20,15 @@ import { QueryProvider } from "@/providers/QueryProvider";
 import { SyncProvider } from "@/providers/SyncProvider";
 import { matchesNavigationDenylist } from "@/pwa-navigation-denylist";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useParams, useSearchParams } from "react-router";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import { Home } from "./routes/Home";
 import { Landing } from "./routes/Landing";
 import { Notes } from "./routes/Notes";
@@ -39,6 +47,16 @@ const Activity = lazy(() => import("./routes/Activity").then((m) => ({ default: 
 const AddVault = lazy(() => import("./routes/AddVault").then((m) => ({ default: m.AddVault })));
 const AddVaultChooser = lazy(() =>
   import("./routes/AddVaultChooser").then((m) => ({ default: m.AddVaultChooser })),
+);
+// AddVaultCreate + AddVaultReady live in ONE module (and so one chunk) on
+// purpose: ready always follows create (a replace mid-ceremony), and a lazy
+// Suspense "Loading…" flash between the creating tick and "X is ready." would
+// break the ceremony's calm (§4.1 rule 4).
+const AddVaultCreate = lazy(() =>
+  import("./routes/AddVaultCreate").then((m) => ({ default: m.AddVaultCreate })),
+);
+const AddVaultReady = lazy(() =>
+  import("./routes/AddVaultCreate").then((m) => ({ default: m.AddVaultReady })),
 );
 const Calendar = lazy(() => import("./routes/Calendar").then((m) => ({ default: m.Calendar })));
 const ConnectAI = lazy(() => import("./routes/ConnectAI").then((m) => ({ default: m.ConnectAI })));
@@ -202,6 +220,35 @@ function NotFoundRedirect() {
   return <Navigate to="/" replace />;
 }
 
+// The full-screen ceremony routes (DESIGN-SPEC §4.1's applies-to list, minus
+// `/` — the BootGate route is Home or the marketing Landing, and the marketing
+// front door keeps its ecosystem footer). §4.1 rule 5 / F21: no app-chrome
+// noise under a ceremony — the AGPL footer must not render beneath "Making a
+// place for moss…". Gated on a route-list (the spec's builder's-choice) so the
+// footer's absence is a pure function of the URL.
+const CEREMONY_ROUTES = ["/welcome", "/check-email", "/add", "/add-vault", "/oauth/callback"];
+
+function isCeremonyPath(pathname: string): boolean {
+  return CEREMONY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
+
+// The AGPL ecosystem footer, gated off ceremony routes (§4.1 rule 5, F21).
+function AppFooter() {
+  const { pathname } = useLocation();
+  if (isCeremonyPath(pathname)) return null;
+  return (
+    <footer className="mx-auto max-w-5xl px-6 py-10 text-center text-sm text-fg-dim">
+      <p>
+        Part of the{" "}
+        <a href="https://parachute.computer" className="text-accent hover:underline">
+          Parachute Computer
+        </a>{" "}
+        ecosystem. AGPL-3.0.
+      </p>
+    </footer>
+  );
+}
+
 // Mounted under SyncProvider (which is under QueryProvider) so the
 // reachability probe can use both `useQueryClient` and `useActiveVaultClient`.
 // Renders no DOM — purely effects.
@@ -307,6 +354,15 @@ export function App() {
                       <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
                       <Route path="/add" element={<AddVault />} />
                       <Route path="/add-vault" element={<AddVaultChooser />} />
+                      {/*
+                    The creation ceremony's stepped URLs (W2-6, DESIGN-SPEC
+                    §4.2): naming (+ the in-shell creating beat) at
+                    /add-vault/create, the ready beat at /add-vault/ready.
+                    The old /welcome?new=1 entry shims to /create inside the
+                    Welcome dispatcher.
+                  */}
+                      <Route path="/add-vault/create" element={<AddVaultCreate />} />
+                      <Route path="/add-vault/ready" element={<AddVaultReady />} />
                       <Route path="/welcome" element={<Welcome />} />
                       <Route path="/oauth/callback" element={<OAuthCallback />} />
                       <Route path="/vaults" element={<Vaults />} />
@@ -316,15 +372,7 @@ export function App() {
                     </Routes>
                   </Suspense>
                 </main>
-                <footer className="mx-auto max-w-5xl px-6 py-10 text-center text-sm text-fg-dim">
-                  <p>
-                    Part of the{" "}
-                    <a href="https://parachute.computer" className="text-accent hover:underline">
-                      Parachute Computer
-                    </a>{" "}
-                    ecosystem. AGPL-3.0.
-                  </p>
-                </footer>
+                <AppFooter />
               </div>
             </div>
             <BottomTabBar />

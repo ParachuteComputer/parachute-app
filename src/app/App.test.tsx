@@ -1,3 +1,4 @@
+import { saveLastSigninEmail } from "@/lib/account/store";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -116,6 +117,53 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe("/notes/add");
       expect(window.location.search).toBe("?redirect=%2Fimport");
+    });
+  });
+
+  // §4.1 rule 5 / F21 — no app-chrome noise under a ceremony: the AGPL
+  // footer is gated off the ceremony routes (route-list gate in AppFooter).
+  describe("footer gating (F21 / DESIGN-SPEC §4.1 rule 5)", () => {
+    // The positive control at `/` (the eager index route — deliberately NOT
+    // a lazy room, so this test can't pre-warm a chunk another test's
+    // first-load timing depends on). It doubles as the documented gate
+    // boundary: `/` is Home OR the marketing Landing, and the marketing
+    // front door keeps its ecosystem footer (the route-list gates only the
+    // true full-screen ceremonies).
+    it("renders the AGPL footer on the front door (/ is not gated)", async () => {
+      render(<App />);
+      await waitFor(() => {
+        expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      });
+      expect(screen.getByText(/AGPL-3\.0/)).toBeInTheDocument();
+    });
+
+    // Each case waits for a POSITIVE marker of the ceremony actually being
+    // on screen before asserting the footer's absence — an unpainted route
+    // would make the negative assertion vacuously true. (Headings are
+    // matched by accessible NAME — the accent-word <span> splits their text.)
+    it.each([
+      ["/notes/add-vault", /bring another/i],
+      ["/notes/add-vault/create", /adding a vault/i],
+      ["/notes/add", /connect your own vault/i],
+    ])("does NOT render the footer under the ceremony route %s", async (path, marker) => {
+      window.history.replaceState({}, "", path);
+      render(<App />);
+      await waitFor(() => {
+        expect(
+          screen.queryByRole("heading", { name: marker }) ?? screen.getByText(marker),
+        ).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/AGPL-3\.0/)).not.toBeInTheDocument();
+    });
+
+    it("does NOT render the footer under /check-email", async () => {
+      saveLastSigninEmail("moss@example.com");
+      window.history.replaceState({}, "", "/notes/check-email");
+      render(<App />);
+      await waitFor(() => {
+        expect(screen.getByText(/we sent a sign-in link/i)).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/AGPL-3\.0/)).not.toBeInTheDocument();
     });
   });
 

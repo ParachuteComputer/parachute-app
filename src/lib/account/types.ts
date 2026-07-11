@@ -83,9 +83,12 @@ export interface AccountVaultsResponse {
 
 /**
  * `POST /account/vaults` (cloud account-api.ts) — creates a vault AND returns a
- * ready-to-use per-vault token inline (the "land you IN the vault, no extra
- * round-trip" hinge), so `createHostedVault` stores it directly.
- * VERIFIED against cloud source: `{ name, url, vault_token, services }`.
+ * ready-to-use per-vault token inline. Since W2-6's activation-honesty split
+ * (DESIGN-SPEC §4.2) `createHostedVault` deliberately DISCARDS the inline
+ * token — creation must not touch this device's vault state; activation is
+ * the ready beat's explicit "Open {name} →" (a fresh C3 mint via
+ * `openHostedVault`). VERIFIED against cloud source:
+ * `{ name, url, vault_token, services }`.
  */
 export interface CreateVaultResponse {
   name: string;

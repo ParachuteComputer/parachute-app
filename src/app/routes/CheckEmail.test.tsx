@@ -42,12 +42,21 @@ describe("CheckEmail", () => {
     expect(screen.getByText(/works once, expires in 10 min/i)).toBeInTheDocument();
   });
 
-  // F6 — no exit before this fix short of the browser Back button.
-  it("has a Back link to / (F6)", () => {
+  // F6 / §4.1 — the quiet escape, named for what it does (W2-6: a history-
+  // aware WizardShell button, falling back to "/" when nothing's behind —
+  // exactly this deep-link render).
+  it("has a '← Back to sign in' escape that lands on the front door (F6/§4.1)", () => {
     saveLastSigninEmail("moss@example.com");
     renderCheckEmail();
-    fireEvent.click(screen.getByRole("link", { name: /back/i }));
+    fireEvent.click(screen.getByRole("button", { name: /back to sign in/i }));
     expect(screen.getByText("Front door")).toBeInTheDocument();
+  });
+
+  // §4.1 rule 1 — the wordmark stays a link on every ceremony step.
+  it("renders the linked wordmark (§4.1)", () => {
+    saveLastSigninEmail("moss@example.com");
+    renderCheckEmail();
+    expect(screen.getByRole("link", { name: /parachute/i })).toBeInTheDocument();
   });
 
   it("resends the link and confirms", async () => {

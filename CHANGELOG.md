@@ -1,5 +1,58 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.7.0] - 2026-07-11
+
+**W2-6 — wizard chrome + stepped creation + activation honesty (F6 full / F7-ceremony /
+WALK-manager #2 full).** One ceremony shell with an escape on every step, the creation flow gets
+real URLs, and creating a vault stops silently switching you into it. Minor bump: the route table
+gains `/add-vault/create` + `/add-vault/ready` and `createHostedVault()` changes contract
+(mints only — no local store writes).
+
+- **New `src/components/WizardShell.tsx` (DESIGN-SPEC §4.1, verbatim contract)** — the ONE
+  full-screen ceremony chrome. The four duplicated local `Shell` components (Welcome,
+  AddVaultChooser, AddVault, OAuthCallback) collapse into it. Rules enforced by the shell:
+  wordmark is always a link; a quiet escape on every step (`escape: none` legal only for <3s
+  auto-advancing beats — SigningIn, WelcomeBack, OAuthCallback's working beat, the creating
+  tick); 3-segment progress (`Name · Making it · Ready`) renders ONLY on the creation ceremony;
+  no spinner, ever. **Every escape is history-aware** (`useHistoryAwareBack`, W2-2's hook):
+  "← Back"/"Maybe later" land wherever the person actually came from, degrading to a named
+  fallback on a deep link — never a forward push-loop, never off-app. "← Back" sits in the top
+  strip; "Maybe later" renders under the content (the prototype's "Skip for now" placement).
+- **Stepped creation URLs (§4.2), new `src/app/routes/AddVaultCreate.tsx`:** the naming form
+  lives at `/add-vault/create` (`?first=1` = onboarding copy, reached from /welcome's
+  first-vault branch); submit runs the creating beat **in-shell at the same URL** (a process,
+  not a place); success **replaces** to `/add-vault/ready?vault=<name>` (consumes the naming
+  entry); failure re-renders the form inline with the F12 friendly copy. Back from naming → the
+  chooser; **Back from ready → the chooser** — the WALK-manager `desktop-33` stale-context repro
+  is dead, locked by a real-BrowserRouter history-shape suite (`src/app/wizard-history.test.tsx`).
+- **THE CORRECTNESS FIX — activation honesty (`lib/account/hosted-vault.ts`):**
+  `createHostedVault()` no longer composes `openHostedVault()` — it **mints only** (the
+  account-side create call; no VaultRecord, no stored token, no active-vault switch; cloud's
+  inline `vault_token` is deliberately discarded so "Maybe later" leaves zero unused credentials
+  behind). The ready beat's **"Open {name} →"** is where activation actually happens
+  (`openHostedVault` + the §4.4 "Now in {name}" toast + push to `/`); **"Maybe later"** (absent
+  in `?first=1` onboarding) declines with no switch and no toast — every page behind the
+  ceremony stays truthful. Returns the door's canonical vault name.
+- **`Welcome.tsx` slims to dispatcher + picker:** first-vault → replace
+  `/add-vault/create?first=1`; welcome-back → auto-open beat → replace `/`; many → picker in
+  place; `?new=1` → pure shim to `/add-vault/create` (old bookmarks keep working); `?pick=1`
+  unchanged. The W2-2 param-keyed dispatch-resync guard is preserved.
+- **`CheckEmail.tsx`** gains its named escape — "← Back to sign in" (route-map row 27).
+- **Footer gating (§4.1 rule 5 / F21):** the App.tsx AGPL footer no longer renders under
+  ceremony routes (route-list gate in `AppFooter`; `/` — Home or the marketing Landing — keeps
+  it: the marketing front door's ecosystem footer stays deliberate).
+- **Inbound links retargeted:** the chooser's Create card, the switcher's "Create a vault" verb,
+  the picker's "＋ Create a new vault", and Account's two create links all point at
+  `/add-vault/create` (no double-shim hop). `NAVIGATION.md` gains the new rows (creation
+  success replace, ready-Open push, the `?new=1` shim) and every touched `navigate()` carries
+  its rule citation.
+- Tests: new `WizardShell.test.tsx` (chrome rules, escape kinds, history-aware behavior,
+  progress) + `AddVaultCreate.test.tsx` (both copy contexts, creating beat, replace-to-ready,
+  **create-mints-only**, F12 copy, escapes) + `wizard-history.test.tsx` (the Back-shape proofs,
+  BrowserRouter) + hosted-vault mints-only unit tests + App footer-gating tests; Welcome /
+  chooser / CheckEmail / AddVault / switcher suites updated to the new shape.
+- **Closes F6 (full), F7 (ceremony half), WALK-manager #2 (fully).**
+
 ## [0.6.0] - 2026-07-11
 
 **W2-5 — two-zone rail + mobile NavSheet: the IA centerpiece (F14 / F15-structure / F21-header /

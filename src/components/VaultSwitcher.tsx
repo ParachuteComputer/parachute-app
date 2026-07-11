@@ -488,11 +488,11 @@ function SwitcherPanel({
             <span className="shrink-0 text-sm font-semibold text-accent">Upgrade →</span>
           </Link>
         ) : (
-          // NAVIGATION.md: "Chooser card → /welcome?new=1" — user-initiated,
-          // push. (The switcher inlines the chooser's Create card; W2-6 moves
-          // the target to /add-vault/create.)
+          // NAVIGATION.md: "Chooser card → /add-vault/create" — user-
+          // initiated, push (the switcher inlines the chooser's Create card;
+          // W2-6 gave the creation ceremony its own stepped URL).
           <Link
-            to="/welcome?new=1"
+            to="/add-vault/create"
             onClick={onAfterAction}
             className="focus-ring flex w-full items-center gap-2.5 px-3 py-1.5 hover:bg-bg-soft"
           >

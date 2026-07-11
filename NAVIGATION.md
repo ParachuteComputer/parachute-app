@@ -30,31 +30,34 @@ or misleading state (a consumed compose form, a session that no longer exists).
 | Transition | push / replace | Rule |
 |---|---|---|
 | Any rail / tab / sheet / footer / card link | **push** | user-initiated |
-| Redirect shims: `/all→/notes`(pre-W2-7: `/all` IS the canonical route), `/graph→/map`(pre-W2-7: N/A), `/pinned`/`/archived`/`/untagged`/`/orphaned`→`/all?view=`, `/capture→/new`, `/:id→/n/:id`, `/today`(no-param — post-W2-3), catch-all `*→/` (+toast) | **replace** | (a) shims leave no trace |
+| Redirect shims: `/all→/notes`(pre-W2-7: `/all` IS the canonical route), `/graph→/map`(pre-W2-7: N/A), `/pinned`/`/archived`/`/untagged`/`/orphaned`→`/all?view=`, `/capture→/new`, `/:id→/n/:id`, `/today`(no-param — post-W2-3), `/welcome?new=1→/add-vault/create` (W2-6), `/add-vault/ready` with no `?vault=`→`/add-vault`, catch-all `*→/` (+toast) | **replace** | (a) shims leave no trace |
 | BootGate `?add=` → `/add` | replace | (b) one-shot param |
 | Landing: submit email → `/check-email` | **push** | user-initiated |
 | CheckEmail poll success → `/welcome` | replace | (c) auto-advance; returning to a consumed check-email would be wrong |
-| `/welcome` dispatcher → any branch destination (naming / welcome-back / picker / net-error) | replace | (c) the dispatcher is transient |
+| `/welcome` dispatcher → any branch destination (first-vault → `/add-vault/create?first=1` / welcome-back / picker / net-error) | replace | (c) the dispatcher is transient |
 | Welcome-back beat (auto-opens the account's one vault) → `/` | replace | (d) the single post-auth landing |
 | Landing "already signed in" card: Open {vault} → `/` | **push** | user-initiated |
 | Landing "already signed in" card: Open fails → `/welcome` (fallback to dispatcher) | replace | (c) dispatcher re-entry, not a new place |
 | Sign out → `/` | replace | session context is gone; Back into a signed-in page would lie |
 | Picker: user picks a vault → `/` | **push** | user-initiated (Back to the picker is harmless and useful) |
-| Picker: "＋ Create a new vault" → naming form | **push** | user-initiated (picker → naming) |
-| Chooser card (`/add-vault`) → `/welcome?pick=1` / `/welcome?new=1` / `/add` | **push** | user-initiated |
-| Switcher verbs (W2-4 — the chooser's cards inlined): Create → `/welcome?new=1` · Connect your own → `/add` · at-limit Upgrade / trial line → `/account` · Manage vaults → `/vaults` | **push** | user-initiated |
-| Ready beat "Open my vault →" → `/` | **push** | user-initiated |
+| Picker: "＋ Create a new vault" → `/add-vault/create` | **push** | user-initiated (picker → naming) |
+| Chooser card (`/add-vault`) → `/welcome?pick=1` / `/add-vault/create` / `/add` | **push** | user-initiated |
+| Switcher verbs (W2-4 — the chooser's cards inlined): Create → `/add-vault/create` · Connect your own → `/add` · at-limit Upgrade / trial line → `/account` · Manage vaults → `/vaults` | **push** | user-initiated |
+| Creation success → `/add-vault/ready?vault=<name>` (W2-6, §4.2) | replace | (b) consumes the naming form — you can't Back into re-creating a vault that now exists; Back from ready lands on the chooser |
+| Creation failure → the naming form, same URL (`/add-vault/create`), error inline | — | no navigation at all — the creating beat is a process, not a place |
+| Ready beat "Open {name} →" → `/` | **push** | user-initiated — and this is where activation actually happens (create mints only; Open switches + toasts, §4.2/§4.4) |
 | `Account.tsx` VaultsBlock: Open {vault} → `/` | **push** | user-initiated |
 | NoteNew save (text or audio) → `/n/<id>` | replace | (b) consumes the compose form (Back to a ghost draft would lie) |
 | Note delete (confirmed) → `/` | replace | going back to the deleted note's now-dead `/n/<id>` view would show a stale/not-found note |
 | `?link=expired` carry-through, OAuth callback → target | replace | (b) one-shot params |
 | Route guard: no active vault → `/` (Settings, NoteView, Today, Tags, Home, Activity, NoteEditor, Notes, VaultGraph, ConnectAI) | replace | (a) the guarded route was never really shown — a shim in spirit |
-| **Accepted limit** | — | a magic-link tab will always have an empty stack behind Home, and a returning single-vault user's same-tab sign-in nets a thin `[/, /]` stack — every transition in that specific chain (CheckEmail poll, dispatcher, welcome-back beat) is independently correct as `replace` per the rules above. The cure is **not** history surgery — it's making sure Back is never the *only* escape (the wizard-chrome rule: linked Wordmark + "← Back"/"Maybe later" on every ceremony step, DESIGN-SPEC §4.1 — W2-6's scope). |
+| **Accepted limit** | — | a magic-link tab will always have an empty stack behind Home, and a returning single-vault user's same-tab sign-in nets a thin `[/, /]` stack — every transition in that specific chain (CheckEmail poll, dispatcher, welcome-back beat) is independently correct as `replace` per the rules above. The cure is **not** history surgery — it's making sure Back is never the *only* escape (the wizard-chrome rule: linked Wordmark + "← Back"/"Maybe later" on every ceremony step, DESIGN-SPEC §4.1 — shipped in W2-6 as `WizardShell`, whose escapes are all history-aware per the rule below). |
 
 ## The history-aware escape rule
 
-Used by "Maybe later," a day-view's back link, and any leaf back-affordance that wants to
-prefer "go back in history" but degrade gracefully when there's nothing behind it:
+Used by every `WizardShell` escape ("← Back" and "Maybe later" both — W2-6), a day-view's
+back link, and any leaf back-affordance that wants to prefer "go back in history" but
+degrade gracefully when there's nothing behind it:
 
 ```ts
 const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;

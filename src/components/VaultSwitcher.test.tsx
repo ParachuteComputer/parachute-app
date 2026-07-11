@@ -457,12 +457,14 @@ describe("VaultSwitcher (component)", () => {
     expect(screen.queryByText(/on your plan/)).not.toBeInTheDocument();
   });
 
-  it("Create verb navigates to the create flow (push door — /welcome?new=1)", async () => {
+  it("Create verb navigates to the create flow (push door — /add-vault/create, W2-6)", async () => {
     seedDefaultVault();
     renderSwitcher();
     fireEvent.click(screen.getByRole("button", { name: /active vault/i }));
     fireEvent.click(await screen.findByText("Create a vault"));
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/welcome?new=1"));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("/add-vault/create"),
+    );
   });
 
   it("Connect your own navigates to /add", async () => {
