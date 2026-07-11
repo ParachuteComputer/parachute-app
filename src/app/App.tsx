@@ -30,6 +30,7 @@ import { Today } from "./routes/Today";
 // splitting them would block FCP on a network round-trip. Every other route
 // gets its own chunk so the editor's CodeMirror, the graph's force-graph
 // layer, settings, etc. don't pile into the initial download.
+const Account = lazy(() => import("./routes/Account").then((m) => ({ default: m.Account })));
 const Activity = lazy(() => import("./routes/Activity").then((m) => ({ default: m.Activity })));
 const AddVault = lazy(() => import("./routes/AddVault").then((m) => ({ default: m.AddVault })));
 const AddVaultChooser = lazy(() =>
@@ -268,6 +269,7 @@ export function App() {
                       <Route path="/welcome" element={<Welcome />} />
                       <Route path="/oauth/callback" element={<OAuthCallback />} />
                       <Route path="/vaults" element={<Vaults />} />
+                      <Route path="/account" element={<Account />} />
                       <Route path="/settings" element={<Settings />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>

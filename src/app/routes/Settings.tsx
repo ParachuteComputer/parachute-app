@@ -18,7 +18,6 @@ import {
   useTags,
   useVaultStore,
 } from "@/lib/vault";
-import { cloudConsoleUrl } from "@/lib/vault";
 import {
   useAudioRetention,
   useRetentionChoiceMade,
@@ -50,7 +49,7 @@ export function Settings() {
       </header>
 
       <div className="space-y-8">
-        <ManageSection vaultUrl={activeVault.url} />
+        <ManageSection />
         <ImportSection />
         <VoiceRetentionSection vaultId={activeVault.id} />
         <TextSizeSection />
@@ -62,20 +61,23 @@ export function Settings() {
   );
 }
 
-// The dissolved console (SYNTHESIS D5): Settings is where the console's
-// surface area comes home. Connections and Vaults live on both doors; Account
-// and Plan & Billing are cloud-only and link out to the console FOR NOW — an
-// honest door, clearly labelled, swapped for in-app management when the
-// `/account/*` contract lands (Phase 3b). Self-host shows neither: there's no
-// billing and no separate account there (account ≡ operator ≡ box), so we
-// paint no grey ghost — the rows simply don't exist.
-function ManageSection({ vaultUrl }: { vaultUrl: string }) {
-  const consoleUrl = cloudConsoleUrl(vaultUrl);
-  const isCloud = consoleUrl !== null;
+// The dissolved console (SYNTHESIS D5): Settings is where the console's surface
+// area comes home. Account is now managed IN the app (the `/account` surface —
+// plan, billing, hosted vaults, sign-in), so this links there rather than
+// bouncing to the console; the one true trip out (Stripe billing) lives behind
+// Account's own button. The Account row degrades gracefully on a self-host
+// device (no cloud account → a "manage this device" view), so it's honest on
+// both doors.
+function ManageSection() {
   return (
     <section aria-label="Manage">
       <h2 className="eyebrow mb-3">Manage</h2>
       <div className="card divide-y divide-border rounded-xl shadow-soft">
+        <ManageRow
+          to="/account"
+          title="Account"
+          description="Your plan, billing, hosted vaults, and sign-in — managed in the app."
+        />
         <ManageRow
           to="/connect"
           title="Connections"
@@ -86,20 +88,6 @@ function ManageSection({ vaultUrl }: { vaultUrl: string }) {
           title="Vaults"
           description="Add a vault, switch between them, or export."
         />
-        {isCloud ? (
-          <>
-            <ManageRow
-              href={consoleUrl}
-              title="Account"
-              description="Manage your account and sign-in on the console."
-            />
-            <ManageRow
-              href={consoleUrl}
-              title="Plan & Billing"
-              description="Your plan, usage, and payment — on the console."
-            />
-          </>
-        ) : null}
       </div>
     </section>
   );

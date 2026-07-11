@@ -1,11 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SessionExpiredError, createVault, listVaults, logout, mintVaultToken } from "./client";
+import {
+  SessionExpiredError,
+  createVault,
+  getAccountSummary,
+  listVaults,
+  logout,
+  mintVaultToken,
+} from "./client";
 import { loadAccountToken } from "./store";
+import type { AccountSummary } from "./types";
 
 // Round-trips the REAL cloud wire (workers/identity/src/account-api.ts +
 // account-auth.ts), NOT mocked assumptions — the class of test that hid the P0
-// "401 on the first vault call" bug: the `/account/vaults*` (C3) surface is
-// BEARER-gated (account token, aud="account"), so every C3 call MUST carry
+// "401 on the first vault call" bug: the `/account/*` C3 surface is BEARER-gated
+// (account token, aud="account"), so every C3 call MUST carry
 // `Authorization: Bearer <account token>`. These tests assert that header IS
 // sent, that the account token is minted (C2 `{token}`) + cached + re-minted on
 // 401, and that logout is form-encoded (cloud's logout is form-only).
@@ -69,6 +77,23 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
     // Exactly one call — straight to the C3 GET, no session/mint round-trips.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(headersOf(fetchImpl.mock.calls[0]?.[1]).authorization).toBe("Bearer cached-tok");
+  });
+
+  it("de-dupes concurrent mints — two parallel C3 calls mint the token ONCE", async () => {
+    let mints = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const path = String(input);
+      if (path === "/account/session") return res(SESSION_OK);
+      if (path === "/account/token") {
+        mints++;
+        return res({ token: "acct-tok" });
+      }
+      if (path === "/account/vaults") return res({ vaults: [] });
+      return res("unexpected", 500);
+    });
+
+    await Promise.all([listVaults(fetchImpl), listVaults(fetchImpl)]);
+    expect(mints).toBe(1);
   });
 
   it("re-mints once on a 401 and retries with the fresh token", async () => {
@@ -137,6 +162,55 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
 
     await expect(listVaults(fetchImpl)).rejects.toBeInstanceOf(SessionExpiredError);
     expect(fetchImpl.mock.calls.some(([p]) => String(p) === "/account/vaults")).toBe(false);
+  });
+});
+
+describe("getAccountSummary — Bearer-gated (account:<id>:read) + seamed", () => {
+  const summary: AccountSummary = {
+    email: "a@b.c",
+    account_created_at: "2026-01-01T00:00:00Z",
+    plan: { tier: "standard", label: "Standard", price_monthly_usd: 5, vault_limit: 3 },
+  };
+
+  it("returns the summary on 200, riding the account Bearer (no cookie)", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      if (String(input) === "/account/summary") return res(summary);
+      return res("unexpected", 500);
+    });
+
+    await expect(getAccountSummary(fetchImpl)).resolves.toEqual(summary);
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(headersOf(init).authorization).toBe("Bearer acct-tok");
+    expect(init?.credentials).toBeUndefined(); // no cookie on the Bearer layer
+  });
+
+  it("returns null on 404 (endpoint not built yet) — graceful absent", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () => res("not found", 404));
+    await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
+  });
+
+  it("returns null on 403 (underscoped)", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () => res("", 403));
+    await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
+  });
+
+  it("returns null when signed out (no bearer to mint) — no-cloud-door degrade", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      if (String(input) === "/account/session") return res({ signed_in: false, csrf: "x" });
+      return res("unexpected", 500);
+    });
+    await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
+  });
+
+  it("returns null on a network failure (never throws)", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      throw new Error("offline");
+    });
+    await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
   });
 });
 

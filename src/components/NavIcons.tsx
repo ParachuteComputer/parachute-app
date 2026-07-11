@@ -62,6 +62,15 @@ export function IconSearch(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconUser(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1" />
+    </svg>
+  );
+}
+
 export function IconCog(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...BASE} aria-hidden="true" {...props}>

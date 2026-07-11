@@ -1,5 +1,36 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.3.3] - 2026-07-10
+
+**The Account surface — the app AS the manager** (SYNTHESIS "The shape"). The
+person lives in the app and drives their whole account through the account
+bearer; Cloud shrinks to the counter you visit only to sign up, pay, or change
+plan.
+
+- **`/account`** (new route, in Rail foot + mobile menu): "Signed in as {email}"
+  + a plan/usage line, your Cloud vaults (from `GET /account/vaults`, each with a
+  `Cloud` chip + Open →, plus Create / Connect-self-hosted), and an AI-connections
+  pointer. Door-agnostic (reads the account API at the serving origin) and
+  **graceful**: no cloud door / signed out → a calm "this device" view (local
+  vaults + connect), never a crash.
+- **`AccountSummary` canonical contract** (`GET /account/summary`,
+  Bearer-gated `account:<id>:read`) + `getAccountSummary()` client through the
+  same `bearerFetch`. **Seamed**: cloud may not have shipped it yet, so the
+  plan/usage line renders only when present — never fabricated numbers. The
+  `[Manage plan & billing →]` target prefers the door's `manage_billing_url` and
+  falls back to the cloud console derived from a vault host (door-agnostic seam,
+  TODO to derive purely from a door descriptor).
+- **Provenance vocabulary** (`vaultProvenance`): `Cloud` (home-door) vs
+  `Self-hosted · host` (/add) chips — now on both the Account list (all `Cloud`)
+  and `Vaults.tsx` (both kinds; the raw dev scope string is gone). Vault removal
+  copy is honest: **"Remove from this device"** (notes stay in the vault).
+- **Settings** "Manage" now links **Account → in-app `/account`** (was a console
+  bounce); the one true trip out (Stripe billing) lives behind Account's button.
+- Reviewer nits folded (same files): the account bearer's in-flight C2 mint is
+  memoized (concurrent-C3 dedup — the Account screen fires listVaults +
+  getAccountSummary at once); the Bearer layer drops `credentials:"include"` (C3
+  reads only the header); a stale dead re-export in `hosted-vault.ts` removed.
+
 ## [0.3.2] - 2026-07-10
 
 **P0 wire fix — the account client now attaches the account bearer on every

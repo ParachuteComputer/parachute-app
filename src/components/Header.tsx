@@ -75,6 +75,7 @@ export function Header() {
               {/* Settings leads — it's the dissolved console, the primary
                   secondary destination now that the bottom bar is the 4-slot
                   D6 set (Home · Notes · + · Search). */}
+              <MenuLink to="/account">Account</MenuLink>
               <MenuLink to="/settings">Settings</MenuLink>
               <MenuLink to="/connect">Connect your AI</MenuLink>
               <MenuLink to="/graph">Map</MenuLink>

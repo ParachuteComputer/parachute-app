@@ -1,3 +1,4 @@
+import { vaultProvenance } from "@/lib/account";
 import { isLegacyVaultUrl, useVaultStore } from "@/lib/vault";
 import { Link } from "react-router";
 
@@ -36,6 +37,7 @@ export function Vaults() {
           {list.map((vault) => {
             const isActive = vault.id === activeVaultId;
             const isLegacy = isLegacyVaultUrl(vault.url);
+            const prov = vaultProvenance(vault);
             return (
               <li key={vault.id} className="card rounded-xl p-5 shadow-soft">
                 <div className="flex items-center justify-between gap-4">
@@ -43,7 +45,9 @@ export function Vaults() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-serif text-lg text-fg">{vault.name}</span>
                       {isActive ? <span className="chip chip-tag-active">active</span> : null}
-                      <span className="chip">{vault.scope}</span>
+                      <span className="chip">
+                        {prov.kind === "cloud" ? "☁" : "⌂"} {prov.label}
+                      </span>
                       {isLegacy ? (
                         <span className="chip border-warning/40 bg-warning-soft text-warning">
                           needs reconnect
@@ -65,13 +69,17 @@ export function Vaults() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm(`Remove ${vault.name}? The access token will be deleted.`)) {
+                        if (
+                          confirm(
+                            `Remove ${vault.name} from this device? Your notes stay in the vault — only this device's stored access is removed. You can add it again anytime.`,
+                          )
+                        ) {
                           removeVault(vault.id);
                         }
                       }}
                       className="focus-ring text-danger hover:text-danger-hover"
                     >
-                      Remove
+                      Remove from this device
                     </button>
                   </div>
                 </div>
