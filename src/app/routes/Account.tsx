@@ -11,6 +11,7 @@ import {
 import type { DoorDescriptor } from "@/lib/account/descriptor";
 import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { markHubGateFromError } from "@/lib/account/dispatch";
+import { describeAccountError } from "@/lib/account/error-copy";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { formatBytes, formatUsageBytes } from "@/lib/account/provenance";
 import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
@@ -411,7 +412,9 @@ function VaultsBlock({
       navigate("/", { replace: true });
     } catch (err) {
       setBusyName(null);
-      setError(err instanceof Error ? err.message : "Couldn't open that vault.");
+      // F12 — same friendly-copy mapping as the create-vault naming form:
+      // never a raw wire code.
+      setError(describeAccountError(err, "Couldn't open that vault."));
     }
   }
 

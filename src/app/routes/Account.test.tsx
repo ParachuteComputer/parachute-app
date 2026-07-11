@@ -182,6 +182,29 @@ describe("Account — the app-as-manager surface", () => {
     await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
   });
 
+  // F12 — same friendly-copy mapping as the create-vault naming form: never a
+  // raw wire code.
+  it("maps a bare wire code to friendly copy when opening a vault fails", async () => {
+    vi.mocked(getSession).mockResolvedValue({
+      signed_in: true,
+      csrf: "c",
+      email: "ag@unforced.org",
+    });
+    vi.mocked(listVaults).mockResolvedValue({ vaults: [CLOUD_VAULT] });
+    vi.mocked(getAccountSummary).mockResolvedValue(null);
+    vi.mocked(openHostedVault).mockRejectedValue(new AccountApiError(403, "not_owner"));
+
+    renderAccount();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /open →/i })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /open →/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/isn't linked to this account/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("not_owner")).not.toBeInTheDocument();
+  });
+
   it("shows a retry card (NOT the empty-state) when the vault list fails to load", async () => {
     vi.mocked(getSession).mockResolvedValue({
       signed_in: true,

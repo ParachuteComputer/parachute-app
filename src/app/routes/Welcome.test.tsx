@@ -46,6 +46,7 @@ function renderWelcome(initial = "/welcome") {
         <Route path="/welcome" element={<Welcome />} />
         <Route path="/" element={<FrontDoorEcho />} />
         <Route path="/add" element={<div>Connect a vault</div>} />
+        <Route path="/add-vault" element={<div>Add-vault chooser</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -241,6 +242,104 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       renderWelcome("/welcome?new=1");
       await waitFor(() => expect(screen.getByText(/adding a vault/i)).toBeInTheDocument());
       expect(openHostedVault).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("?pick=1 — force the picker (F13, AddVaultChooser's Open card)", () => {
+    it("shows the picker instead of auto-opening, even with exactly one vault", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "csrf-6",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [{ name: "moss" }] });
+      renderWelcome("/welcome?pick=1");
+      await waitFor(() =>
+        expect(screen.getByRole("heading", { name: /which vault today/i })).toBeInTheDocument(),
+      );
+      // The welcome-back auto-open beat must NOT have run — that's the F13
+      // bug (silently reopening the only vault instead of showing the picker).
+      expect(openHostedVault).not.toHaveBeenCalled();
+    });
+
+    it("falls through to first-vault naming when the account has zero vaults", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "csrf-7",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      renderWelcome("/welcome?pick=1");
+      await waitFor(() => expect(screen.getByText(/let's make your first/i)).toBeInTheDocument());
+    });
+  });
+
+  describe("naming form — the Back link (F6)", () => {
+    it("onboarding (first vault) backs up to / (no other vault exists yet)", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "csrf-8",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      renderWelcome();
+      await waitFor(() => expect(screen.getByText(/let's make your first/i)).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("link", { name: /back/i }));
+      await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
+    });
+
+    it("addvault naming backs up to /add-vault (the chooser)", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "csrf-9",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [{ name: "moss" }] });
+      renderWelcome("/welcome?new=1");
+      await waitFor(() => expect(screen.getByText(/adding a vault/i)).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("link", { name: /back/i }));
+      await waitFor(() => expect(screen.getByText("Add-vault chooser")).toBeInTheDocument());
+    });
+  });
+
+  describe("a creation failure — friendly copy (F12) + the naming form's Back stays available (F6)", () => {
+    it("maps a bare wire code to human copy instead of showing it raw", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "csrf-10",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(createHostedVault).mockRejectedValue(new Error("vault_limit_reached"));
+      renderWelcome();
+      await waitFor(() => expect(screen.getByText(/let's make your first/i)).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
+      fireEvent.click(screen.getByRole("button", { name: /create moss →/i }));
+
+      await waitFor(() =>
+        expect(screen.getByText(/reached your plan's vault limit/i)).toBeInTheDocument(),
+      );
+      expect(screen.queryByText("vault_limit_reached")).not.toBeInTheDocument();
+    });
+
+    it("a failure returns to the SAME naming form (typed name preserved), Back still bails to /add-vault", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "csrf-11",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [{ name: "moss" }] });
+      vi.mocked(createHostedVault).mockRejectedValue(new Error("vault_taken"));
+      renderWelcome("/welcome?new=1");
+      await waitFor(() => expect(screen.getByText(/adding a vault/i)).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
+      fireEvent.click(screen.getByRole("button", { name: /create moss →/i }));
+
+      await waitFor(() => expect(screen.getByText(/already taken/i)).toBeInTheDocument());
+      // Still the addvault naming form (not a separate error screen) — the
+      // Back link (F6) is the escape hatch, and it's already on this screen.
+      fireEvent.click(screen.getByRole("link", { name: /back/i }));
+      await waitFor(() => expect(screen.getByText("Add-vault chooser")).toBeInTheDocument());
     });
   });
 

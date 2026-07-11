@@ -150,6 +150,16 @@ describe("AddVault self-hosted restyle (SYNTHESIS #11)", () => {
     expect(screen.getByRole("heading", { name: /connect your own vault\./i })).toBeInTheDocument();
   });
 
+  // F6 — the self-host connect form previously had NO way out short of the
+  // (often broken) browser Back button; a quiet Back link now sits beside
+  // the Wordmark.
+  it("has a Back link to / (F6)", async () => {
+    mockFetchOnce({ throwNetwork: true });
+    renderAddVault();
+    fireEvent.click(screen.getByRole("link", { name: /back/i }));
+    await waitFor(() => expect(screen.getByText("Today timeline")).toBeInTheDocument());
+  });
+
   it("shows no announced-hop box until the address looks valid, then names the live host", async () => {
     const fetchImpl = mockFetchOnce({ throwNetwork: true });
     renderAddVault();

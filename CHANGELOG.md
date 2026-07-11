@@ -1,5 +1,52 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.4.2] - 2026-07-11
+
+**Navigation dead-ends — the add-vault chooser wired in, wizard escape
+hatches, friendly errors.** A cohesive set of "you can't get back" fixes from
+the owner's experiential audit (F2/F6/F12/F13/F18) — all redesign-independent;
+the coming IA rework (two-zone nav, route renames, the push/replace history
+policy) is separate and unaffected.
+
+- **F2 — the orphaned add-vault chooser is wired in.** `/vaults`'s "Add vault"
+  buttons (header + empty-state) pointed at `/add` — the **self-hosted**
+  connect URL form, a dead-end for a cloud user with no path to "create" and
+  no way back. They now open `/add-vault` (`AddVaultChooser.tsx`), the
+  purpose-built Open/Create/Connect chooser that had **zero inbound links**
+  until now. `/add` stays exactly what it was: the leaf the chooser's
+  "Connect a self-hosted vault" card targets.
+- **F13 — the chooser's "Open" card no longer silently reopens your only
+  vault.** With exactly one account vault, `/welcome`'s dispatcher auto-runs
+  the welcome-back beat and opens the vault you're likely already in — "open a
+  vault not on this device" was a no-op bounce. The card now links to
+  `/welcome?pick=1`, which forces the picker regardless of vault count.
+- **F6 — the full-screen wizard screens have a way out.** The Wordmark
+  (`ParachuteMark.tsx`) is now a real `<Link to="/">` everywhere it renders
+  (Landing, Welcome, AddVault, AddVaultChooser, CheckEmail, OAuthCallback) —
+  with no active vault, none of these screens had ANY other chrome, so the
+  (often-broken) browser Back button was the only exit. The vault-naming
+  form, the self-hosted connect form (`/add`), the add-vault chooser, and
+  `/check-email` also gain an explicit quiet "← Back" beside it, each
+  resolving to a sensible destination (the chooser, `/vaults`, or `/` — which
+  itself degrades correctly whether or not a vault is already active on this
+  device).
+- **F12 — vault-creation and vault-open failures read as prose, not a wire
+  code.** Root cause: `client.ts`'s `jsonOrThrow` preferred the server's
+  machine `error` code (`vault_limit_reached`) over its accompanying friendly
+  `message` ("You've reached your plan's vault limit…") — a plan-limit hit
+  rendered as a bare snake_case string. `jsonOrThrow` now prefers `message`.
+  A new `lib/account/error-copy.ts` (`describeAccountError`) adds
+  belt-and-suspenders mapping for the cases the server-message fix doesn't
+  cover (a bare code with no message, or an unrecognized one) — used by the
+  vault-naming form's creation error and the Account surface's
+  `VaultsBlock.open` error.
+- **F18 — `STYLE.md` rewritten against the real palette.** It documented the
+  retired forest-green identity (`#4a7c59`); `src/styles/index.css` has been
+  the coral brand pass (`#bf4a2a`/`#e05d3c`, grass/sun/sage secondaries) for a
+  while. Rewritten against the actual tokens + component classes (including
+  the arrival/wizard classes added since — `.tile`, `.composer`, `.hero-title`,
+  `.nudge-sun`, …) so nobody styles from the stale reference.
+
 ## [0.4.1] - 2026-07-11
 
 **Billing section — Stripe-direct, no cloud-console re-login (Plan A).**

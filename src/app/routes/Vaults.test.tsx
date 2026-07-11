@@ -67,3 +67,27 @@ describe("Vaults — provenance chips + honest remove copy", () => {
     expect(screen.getByRole("button", { name: /remove from this device/i })).toBeInTheDocument();
   });
 });
+
+// F2 — "Add vault" used to point at /add (the self-hosted connect URL form, a
+// dead-end for a cloud user with no path to "create"). Both entries now open
+// the purpose-built Open/Create/Connect chooser instead.
+describe("Vaults — 'Add vault' opens the chooser (F2)", () => {
+  it("the header button links to /add-vault, not /add", () => {
+    useVaultStore.setState({ vaults: { "1": vaultRecord({}) }, activeVaultId: "1" });
+    renderVaults();
+    expect(screen.getByRole("link", { name: /^add vault$/i })).toHaveAttribute(
+      "href",
+      "/add-vault",
+    );
+  });
+
+  it("the empty-state button also links to /add-vault (both the header and empty-state CTAs)", () => {
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    renderVaults();
+    const links = screen.getAllByRole("link", { name: /^add vault$/i });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute("href", "/add-vault");
+    }
+  });
+});

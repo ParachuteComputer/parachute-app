@@ -30,6 +30,8 @@ function renderChooser() {
         />
         <Route path="/welcome" element={<LocationEcho />} />
         <Route path="/add" element={<LocationEcho />} />
+        <Route path="/vaults" element={<LocationEcho />} />
+        <Route path="/" element={<LocationEcho />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -62,11 +64,11 @@ describe("AddVaultChooser", () => {
     expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
   });
 
-  it("Open navigates to /welcome (the dispatcher shows the picker)", async () => {
+  it("Open navigates to /welcome?pick=1 — forces the picker even with one vault (F13)", async () => {
     renderChooser();
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     await waitFor(() => {
-      expect(screen.getByTestId("location-echo")).toHaveTextContent("/welcome");
+      expect(screen.getByTestId("location-echo")).toHaveTextContent("/welcome?pick=1");
     });
   });
 
@@ -116,5 +118,40 @@ describe("AddVaultChooser", () => {
   it("shows no plan-slots foot line (cloud has no plan-summary endpoint yet)", () => {
     renderChooser();
     expect(screen.queryByText(/plan slots used/i)).not.toBeInTheDocument();
+  });
+
+  // F6 — the chooser otherwise has zero exits (no active vault means no Rail/
+  // Header chrome either); the Back link is the escape hatch.
+  describe("Back link (F6)", () => {
+    it("points at /vaults when a vault is already active on this device", async () => {
+      useVaultStore.setState({
+        vaults: {
+          moss: {
+            id: "moss",
+            url: "https://u.parachute.computer/vault/moss",
+            name: "moss",
+            issuer: "https://cloud.parachute.computer",
+            clientId: "cloud-account",
+            scope: "vault:read vault:write",
+            addedAt: "2026-07-01T00:00:00.000Z",
+            lastUsedAt: "2026-07-01T00:00:00.000Z",
+          },
+        },
+        activeVaultId: "moss",
+      });
+      renderChooser();
+      fireEvent.click(screen.getByRole("link", { name: /back/i }));
+      await waitFor(() => {
+        expect(screen.getByTestId("location-echo")).toHaveTextContent("/vaults");
+      });
+    });
+
+    it("points at / when there's no active vault on this device", async () => {
+      renderChooser();
+      fireEvent.click(screen.getByRole("link", { name: /back/i }));
+      await waitFor(() => {
+        expect(screen.getByTestId("location-echo")).toHaveTextContent("/");
+      });
+    });
   });
 });

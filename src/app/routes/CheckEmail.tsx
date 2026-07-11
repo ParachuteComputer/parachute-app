@@ -2,7 +2,7 @@ import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { getSession, requestMagicLink } from "@/lib/account/client";
 import { loadLastSigninEmail, saveLastSigninEmail } from "@/lib/account/store";
 import { useEffect, useRef, useState } from "react";
-import { Navigate, useNavigate } from "react-router";
+import { Link, Navigate, useNavigate } from "react-router";
 
 const SIGNIN_NEXT = "/welcome";
 const POLL_MS = 3000;
@@ -59,8 +59,13 @@ export function CheckEmail() {
 
   return (
     <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col">
-      <div className="flex items-center px-6 pt-6 sm:px-10">
+      {/* F6 — a quiet way out; "/" drops back to the front door (this tab
+          isn't signed in yet, so the boot dispatcher shows the sign-in form). */}
+      <div className="flex items-center justify-between px-6 pt-6 sm:px-10">
         <Wordmark />
+        <Link to="/" className="focus-ring font-round text-sm text-fg-dim hover:text-accent">
+          ← Back
+        </Link>
       </div>
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
         <div className="mx-auto w-full max-w-md">
