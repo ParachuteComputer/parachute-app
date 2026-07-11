@@ -66,6 +66,50 @@ describe("getDoorDescriptor", () => {
     await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(descriptor);
   });
 
+  // A door we don't control could serve a well-formed body with a MALFORMED
+  // `auth` — the front door would then throw (white screen, no ErrorBoundary)
+  // or hop to "undefined?next=…". The guard DROPS a bad `auth` (keeping the rest
+  // of the descriptor) so the front door falls back to the magic-link form.
+  it("malformed auth (methods not an array) → auth dropped, rest kept", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ door: "hub", auth: { methods: 5, signin_path: "/login" }, signup_path: "/s" }),
+    );
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "hub", signup_path: "/s" });
+  });
+
+  it("empty auth object ({}) → auth dropped (no undefined signin_path hop)", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "hub", auth: {} }));
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "hub" });
+  });
+
+  it("auth.signin_path not an absolute path → auth dropped", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ door: "hub", auth: { methods: ["password"], signin_path: "login" } }),
+    );
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "hub" });
+  });
+
+  it("auth with an UNRECOGNIZED method (but valid shape) → kept (forward-compat: hop, don't fall back)", async () => {
+    // A door advertising a method we don't know (passkey) is still crash-safe
+    // (string methods + absolute signin_path), so we keep it — the front door
+    // hops to the door's own sign-in page rather than showing a magic-link form.
+    const descriptor = { door: "hub", auth: { methods: ["passkey"], signin_path: "/login" } };
+    const fetchImpl = vi.fn<typeof fetch>(async () => res(descriptor));
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(descriptor);
+  });
+
+  it("auth.methods containing a non-string → auth dropped", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ door: "hub", auth: { methods: ["password", 7], signin_path: "/login" } }),
+    );
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "hub" });
+  });
+
+  it("a non-object body (e.g. a JSON array) → null", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => res([1, 2, 3]));
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toBeNull();
+  });
+
   it("memoizes in-module — one fetch across concurrent + sequential callers", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "hub" }));
     const [a, b] = await Promise.all([getDoorDescriptor(fetchImpl), getDoorDescriptor(fetchImpl)]);

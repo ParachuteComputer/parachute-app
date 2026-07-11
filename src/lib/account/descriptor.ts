@@ -49,13 +49,49 @@ const STORAGE_KEY = "parachute:door-descriptor";
 let cache: DoorDescriptor | null | undefined;
 let inflight: Promise<DoorDescriptor | null> | null = null;
 
+/**
+ * Coerce an untrusted parsed descriptor into a safe shape. A door we don't
+ * control (a self-hosted hub, a future door) could serve a well-formed JSON
+ * body with a MALFORMED `auth` block — `methods` not an array, `signin_path`
+ * not a string, or `auth: {}`. The front door does `auth.methods.includes(...)`
+ * and hops to `signin_path`, so a bad shape would throw (white screen — the app
+ * has no ErrorBoundary) or hop to `"undefined?next=…"`. The fallback rule is
+ * "anything we can't trust ⇒ behave as the magic-link door", so we DROP a
+ * malformed `auth` (leaving the descriptor otherwise intact) rather than trust
+ * it. A non-object body coerces to `null` (pure magic-link fallback).
+ */
+function normalizeDescriptor(raw: unknown): DoorDescriptor | null {
+  // Arrays are `typeof === "object"` too — a JSON array body is not a descriptor.
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const src = raw as DoorDescriptor;
+  const auth = src.auth as Partial<DoorAuthDescriptor> | undefined;
+  // Crash-safety only, NOT a value allowlist: `methods` must be a non-empty
+  // array of strings (so `methods.includes(...)` and any downstream string op is
+  // safe) and `signin_path` an absolute path (so the ceremony hop can't become
+  // `"undefined?next=…"`). We deliberately do NOT require the method values to be
+  // `magic_link`/`password`: a door advertising a method we don't recognize
+  // (e.g. `passkey`) should still hop to its own sign-in page, not fall back to
+  // an email form posting to an `/auth/magic` it may not serve.
+  const authOk =
+    !!auth &&
+    Array.isArray(auth.methods) &&
+    auth.methods.length > 0 &&
+    auth.methods.every((m) => typeof m === "string") &&
+    typeof auth.signin_path === "string" &&
+    auth.signin_path.startsWith("/");
+  if (authOk) return src;
+  // Drop a malformed `auth`, keep the rest of the descriptor intact.
+  const { auth: _dropped, ...rest } = src;
+  return rest;
+}
+
 async function fetchDescriptor(fetchImpl: Fetch): Promise<DoorDescriptor | null> {
   try {
     // Same-origin, public: no credentials, no CSRF — this is a static/cheap
     // file the door publishes, not a session-gated endpoint.
     const res = await fetchImpl("/.well-known/parachute-account");
     if (!res.ok) return null;
-    return (await res.json()) as DoorDescriptor;
+    return normalizeDescriptor(await res.json());
   } catch {
     // Network failure, CORS, or a garbage (non-JSON) body — degrade to the
     // fallback rule above rather than throwing into the boot path.
@@ -92,7 +128,7 @@ export async function getDoorDescriptor(
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (raw != null) {
       try {
-        cache = raw === "null" ? null : (JSON.parse(raw) as DoorDescriptor);
+        cache = raw === "null" ? null : normalizeDescriptor(JSON.parse(raw));
         return cache;
       } catch {
         // corrupted cache entry — fall through and fetch fresh

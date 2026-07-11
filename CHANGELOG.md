@@ -11,7 +11,12 @@ without an `auth` block falls back to today's magic-link behavior byte-for-byte)
   public, memoized in-module + `sessionStorage` (`parachute:door-descriptor`)
   so boot pays one fetch. `null` on any non-200/network/parse failure. The app
   pins these shapes locally (its contract-of-record convention) — it does not
-  import `door-contract`.
+  import `door-contract`. A malformed `auth` block from a door we don't control
+  (`methods` not a string array, `signin_path` not an absolute path, `auth: {}`)
+  is DROPPED (→ magic-link fallback) rather than trusted, so an off-spec
+  self-hosted descriptor can't white-screen the app or hop to `"undefined?next"`;
+  an unrecognized-but-well-formed method (e.g. `passkey`) is kept so the app
+  still hops to the door's own sign-in page (forward-compat).
 - **The front door's ONE door-conditional branch** (`Landing.tsx`): a
   `magic_link` door (or no descriptor) renders the existing email form,
   byte-unchanged; a password-only door renders a ceremony-hop card
