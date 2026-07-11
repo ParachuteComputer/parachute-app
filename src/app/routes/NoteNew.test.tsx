@@ -754,7 +754,12 @@ describe("NoteNew — voice affordance", () => {
     });
     // NAVIGATION.md: "NoteNew save → /n/<id>" — replace, same as the text
     // path (the audio save shares the same compose-form-consumption rule).
-    expect(navLog.at(-1)?.type).toBe("REPLACE");
+    // The local id is generated inside the component, so assert the shape of
+    // the destination path rather than an exact id.
+    expect(navLog.at(-1)).toMatchObject({
+      type: "REPLACE",
+      pathname: expect.stringMatching(/^\/n\/.+/),
+    });
     const db = await openLensDB();
     const pending = await listPending(db, "dev");
     db.close();

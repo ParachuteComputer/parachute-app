@@ -45,6 +45,7 @@ or misleading state (a consumed compose form, a session that no longer exists).
 | Ready beat "Open my vault →" → `/` | **push** | user-initiated |
 | `Account.tsx` VaultsBlock: Open {vault} → `/` | **push** | user-initiated |
 | NoteNew save (text or audio) → `/n/<id>` | replace | (b) consumes the compose form (Back to a ghost draft would lie) |
+| Note delete (confirmed) → `/` | replace | going back to the deleted note's now-dead `/n/<id>` view would show a stale/not-found note |
 | `?link=expired` carry-through, OAuth callback → target | replace | (b) one-shot params |
 | Route guard: no active vault → `/` (Settings, NoteView, Today, Tags, Home, Activity, NoteEditor, Notes, VaultGraph, ConnectAI) | replace | (a) the guarded route was never really shown — a shim in spirit |
 | **Accepted limit** | — | a magic-link tab will always have an empty stack behind Home, and a returning single-vault user's same-tab sign-in nets a thin `[/, /]` stack — every transition in that specific chain (CheckEmail poll, dispatcher, welcome-back beat) is independently correct as `replace` per the rules above. The cure is **not** history surgery — it's making sure Back is never the *only* escape (the wizard-chrome rule: linked Wordmark + "← Back"/"Maybe later" on every ceremony step, DESIGN-SPEC §4.1 — W2-6's scope). |
@@ -55,14 +56,22 @@ Used by "Maybe later," a day-view's back link, and any leaf back-affordance that
 prefer "go back in history" but degrade gracefully when there's nothing behind it:
 
 ```ts
-if (location.key !== "default") navigate(-1);
+const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+if (idx > 0) navigate(-1);
 else navigate(fallbackTo);
 ```
 
-react-router marks a stack's very first entry with the `"default"` key, so this never exits
-the app — it either returns to wherever the user actually came from, or lands on a named
-fallback route. Shipped as `useHistoryAwareBack(fallbackTo: string)` in
-`src/lib/nav/history.ts`.
+**Why the `idx` check, not `location.key !== "default"`:** react-router mints a *fresh* key
+on every `replace`, so only the untouched initial entry is ever `"default"`. A first-entry
+`replace` (e.g. a magic-link tab whose only entry is replaced `/welcome`→`/`) leaves a
+non-default key with **no real history behind it** — a key-based check would believe there's
+somewhere to go and `navigate(-1)` would step *off-app* (back to the email client).
+react-router instead tracks a monotonic entry index on `window.history.state.idx`: it stays
+`0` for the first entry no matter how many times it's replaced, and is `> 0` only once a real
+push has stacked a prior in-app entry behind the current one. So `idx > 0` is the honest "is
+there in-app history behind me" test — it never exits the app. Shipped as
+`useHistoryAwareBack(fallbackTo: string)` in `src/lib/nav/history.ts` (reads the browser's
+real `window.history`, so it's correct under the app's `<BrowserRouter>`).
 
 ## Convention for call sites
 

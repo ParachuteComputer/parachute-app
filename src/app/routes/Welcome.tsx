@@ -69,18 +69,34 @@ export function Welcome() {
   const [searchParams] = useSearchParams();
   const [stage, setStage] = useState<Stage>({ kind: "checking" });
   const [runId, setRunId] = useState(0);
-  const processedRunId = useRef(-1);
+  // Guard the dispatch against redundant re-runs — keyed on BOTH the retry
+  // counter AND the URL params (not `runId` alone). The params matter because
+  // the picker/naming fork is URL-addressable (`/welcome` vs `?new=1` vs
+  // `?pick=1`): a browser POP that only changes the params (Back from the
+  // `?new=1` naming form to the no-param/`?pick=1` picker) MUST re-dispatch so
+  // the fork re-syncs to the URL, instead of stranding the stale naming form
+  // where the picker should return. A `runId`-only guard left that same-route
+  // param push with a wrong Back target — exactly the F7 failure this PR
+  // exists to kill (W2-2 review).
+  const processedKey = useRef<string | null>(null);
   const creatingRan = useRef<string | null>(null);
   const welcomeBackRan = useRef<string | null>(null);
 
-  // The dispatch: confirm the session, then branch on vault count. Re-run by
-  // bumping `runId` (the net-error card's "Try again"); a network failure
+  // The dispatch: confirm the session, then branch on vault count. Re-runs on
+  // a retry (`runId` bump — the net-error card's "Try again") OR a URL-param
+  // change (a POP between the picker and naming forks). A network failure
   // confirming the session degrades to the front door, mirroring
   // `resolveBoot`'s own degrade-on-failure (a signed-out-looking state is the
   // safe default — the person can still act from there).
   useEffect(() => {
-    if (processedRunId.current === runId) return;
-    processedRunId.current = runId;
+    const dispatchKey = `${runId}|${searchParams.toString()}`;
+    if (processedKey.current === dispatchKey) return;
+    processedKey.current = dispatchKey;
+    // A re-dispatch triggered by a param POP arrives with a STALE stage (e.g.
+    // "naming" while we're Back at the picker URL) — reset to the transient
+    // beat so the async below repaints the correct fork instead of flashing
+    // the previous screen. No-op on first mount (already "checking").
+    setStage((prev) => (prev.kind === "checking" ? prev : { kind: "checking" }));
     const wantsAddVault = searchParams.get("new") === "1";
     // F13 — AddVaultChooser's "Open" card links here with `?pick=1` to force
     // the picker even when the account has exactly one vault. Without this,
@@ -237,8 +253,10 @@ export function Welcome() {
           ready={stage.ready}
           error={stage.error}
           // NAVIGATION.md: "Ready 'Open my vault →' → /" — user-initiated,
-          // push. Back to the ready beat is harmless (the vault already
-          // exists; nothing re-fires).
+          // push. Back from Home lands on `/welcome`, which the dispatcher
+          // re-resolves against the now-created vault (welcome-back → replace
+          // → `/`): you end up right back in your vault, never on a stale or
+          // re-creating screen.
           onOpen={() => navigate("/")}
           onRetry={() => setStage({ kind: "naming", ...stage.back })}
         />
@@ -270,9 +288,14 @@ export function Welcome() {
           onCreateNew={() => {
             // NAVIGATION.md: "Picker: '＋ Create a new vault' → naming form"
             // — user-initiated (picker → naming), push. Keeps the URL in
-            // sync for back-button/bookmark honesty (see the comment on
-            // `Welcome()` above); the state transition below is immediate
-            // since the vault list is already in hand.
+            // sync for back-button/bookmark honesty; the state transition
+            // below is immediate since the vault list is already in hand (no
+            // refetch). Pre-mark the `?new=1` dispatch key as handled so the
+            // effect's searchParams-change re-run bails and keeps this direct
+            // `naming` stage — but a later POP back to the picker's DIFFERENT
+            // key (no-param / `?pick=1`) is NOT pre-marked, so it DOES
+            // re-dispatch and the picker returns (the F7 same-route fix).
+            processedKey.current = `${runId}|new=1`;
             navigate("/welcome?new=1");
             setStage({
               kind: "naming",

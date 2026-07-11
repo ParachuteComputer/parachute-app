@@ -14,18 +14,29 @@ navigation calls against.
   limit" (a magic-link tab's thin stack is a deliberate consequence of the table, not a bug —
   the cure is the wizard-chrome escape hatches, W2-6).
 - **New `useHistoryAwareBack(fallbackTo)` hook** (`src/lib/nav/history.ts`) — goes back in
-  history when a prior entry genuinely exists (`location.key !== "default"`), else falls back
-  to a named route. No consumers yet (W2-3/W2-6's job); ships now so those PRs import rather
-  than reinvent it.
+  history when there's genuinely a prior in-app entry, else falls back to a named route. It
+  keys off `window.history.state.idx` (react-router's monotonic entry index), *not*
+  `location.key !== "default"`: a first-entry `replace` mints a fresh non-default key while
+  leaving no real history behind, so a key-based check would let `navigate(-1)` step off-app
+  (back to the email client) — the `idx > 0` check never does. No consumers yet (W2-3/W2-6's
+  job); ships now so those PRs import rather than reinvent it.
 - **Fixed five gratuitous `replace`s → `push`** (F7 offenders, all named in PLAN.md): the
   post-auth "ready" beat's "Open my vault →" (Welcome.tsx), the vault picker's "Open →" and
   "＋ Create a new vault" (Welcome.tsx), the already-signed-in card's "Open {vault} →"
   (Landing.tsx), and `/account`'s VaultsBlock "Open →" (Account.tsx). Each used to collapse
   the history stack on a user-initiated forward step; Back from Home now returns to the
   picker/chooser/account page instead of skipping straight past it.
-- **Fixed a gratuitous `push` → `replace`**: NoteNew's save (text and audio) now replaces
-  `/n/<id>` instead of pushing — Back from a freshly-saved note no longer lands on a cleared,
-  ghost draft form.
+- **The `/welcome` dispatcher now re-syncs its picker/naming fork to the URL.** The one
+  same-route param push (picker → "＋ Create a new vault" → `/welcome?new=1`) exposed a stale
+  guard: the dispatch effect keyed on the retry counter alone, so a browser POP back to the
+  picker re-ran but bailed, stranding the naming form where the picker should have returned.
+  The guard now keys on the retry counter *and* the URL params, so a param POP re-dispatches
+  and the picker comes back (same fix for the `?pick=1` variant). The forward flow still skips
+  the refetch (the vault list is already in hand).
+- **Fixed a gratuitous `push` → `replace`**: NoteNew's save (text and audio) and
+  DeleteNoteButton's post-delete redirect now replace instead of pushing — Back from a
+  freshly-saved note no longer lands on a cleared ghost draft, and Back after a delete no
+  longer lands on the deleted note's dead `/n/<id>` view.
 - **The catch-all (`*` → `/`) now toasts** ("That page doesn't exist — brought you home.")
   instead of silently teleporting a typo'd/stale URL home with zero acknowledgment.
 - **Every navigation call this table governs carries a one-line `// NAVIGATION.md: ...`

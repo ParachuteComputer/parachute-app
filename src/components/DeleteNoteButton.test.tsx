@@ -2,6 +2,7 @@ import { DeleteNoteButton } from "@/components/DeleteNoteButton";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
+import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -73,9 +74,10 @@ const note: Note = {
   tags: [],
 };
 
-function renderButton() {
+function renderButton(navLog?: NavLogEntry[]) {
   return render(
     <MemoryRouter initialEntries={["/n/note-abc"]}>
+      {navLog ? <NavTypeLog log={navLog} /> : null}
       <Routes>
         <Route path="/n/note-abc" element={<DeleteNoteButton note={note} />} />
         <Route path="/" element={<div>NotesListPage</div>} />
@@ -137,11 +139,12 @@ describe("DeleteNoteButton", () => {
     expect(confirm).not.toBeDisabled();
   });
 
-  it("happy path: fires DELETE, navigates to /, pushes a success toast", async () => {
+  it("happy path: fires DELETE, REPLACE-navigates to /, pushes a success toast", async () => {
     const fetchImpl = installFetch({
       "DELETE /api/notes/": { body: { deleted: true, id: "note-abc" } },
     });
-    renderButton();
+    const navLog: NavLogEntry[] = [];
+    renderButton(navLog);
 
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
     fireEvent.change(screen.getByLabelText(/type note path to confirm/i), {
@@ -161,5 +164,8 @@ describe("DeleteNoteButton", () => {
     );
     expect(deleteCall?.[0]).toContain("/api/notes/note-abc");
     expect(useToastStore.getState().toasts[0]?.message).toContain("Deleted Canon/Aaron");
+    // NAVIGATION.md: "Note delete → /" — replace; Back into the deleted note's
+    // dead `/n/<id>` view would show a stale/not-found note.
+    expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/" });
   });
 });
