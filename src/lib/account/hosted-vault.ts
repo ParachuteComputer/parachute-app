@@ -93,10 +93,9 @@ function storeHomeDoorVault(name: string, resp: VaultTokenResponse): string {
  */
 export async function openHostedVault(
   name: string,
-  csrf: string,
   fetchImpl: Fetch = fetch.bind(globalThis),
 ): Promise<string> {
-  const resp = await mintVaultToken(name, csrf, fetchImpl);
+  const resp = await mintVaultToken(name, fetchImpl);
   return storeHomeDoorVault(name, resp);
 }
 
@@ -108,10 +107,9 @@ export async function openHostedVault(
  */
 export async function createHostedVault(
   name: string,
-  csrf: string,
   fetchImpl: Fetch = fetch.bind(globalThis),
 ): Promise<string> {
-  const created = await createVault(name, csrf, fetchImpl);
+  const created = await createVault(name, fetchImpl);
   const vaultName = created.name || name;
   if (created.vault_token && created.services) {
     return storeHomeDoorVault(vaultName, {
@@ -119,7 +117,7 @@ export async function createHostedVault(
       services: created.services,
     });
   }
-  return openHostedVault(vaultName, csrf, fetchImpl);
+  return openHostedVault(vaultName, fetchImpl);
 }
 
 /**
@@ -139,7 +137,9 @@ export async function remintHostedVault(
       useAccountSessionStore.getState().markExpired();
       throw new SessionExpiredError();
     }
-    const id = await openHostedVault(name, session.csrf, fetchImpl);
+    // The account bearer is sourced + re-minted inside the client; here we only
+    // needed the session read to confirm it's still alive (else markExpired).
+    const id = await openHostedVault(name, fetchImpl);
     useAccountSessionStore.getState().clearExpired();
     return id;
   } catch (err) {

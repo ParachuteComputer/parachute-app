@@ -29,7 +29,7 @@ describe("openHostedVault — door-agnostic (same-origin home door)", () => {
       services: { "vault:moss": { url: "https://u.parachute.computer/vault/moss" } },
     });
 
-    const id = await openHostedVault("moss", "csrf");
+    const id = await openHostedVault("moss");
     const rec = useVaultStore.getState().vaults[id];
     expect(rec?.issuer).toBe(window.location.origin); // same-origin home door
     expect(rec?.issuer).not.toContain("cloud.parachute.computer");
@@ -50,6 +50,6 @@ describe("openHostedVault — door-agnostic (same-origin home door)", () => {
       expires_at: "2026-07-11T00:00:00.000Z",
       // no services catalog → the door didn't tell us where the vault lives
     });
-    await expect(openHostedVault("moss", "csrf")).rejects.toThrow(/services\.vault\.url/);
+    await expect(openHostedVault("moss")).rejects.toThrow(/services\.vault\.url/);
   });
 });

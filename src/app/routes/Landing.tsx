@@ -162,8 +162,8 @@ function AlreadySignedIn({ email, vaults }: { email?: string; vaults: AccountVau
     if (!one || busy) return;
     setBusy(true);
     try {
-      const session = await getSession();
-      await openHostedVault(one.name, session.csrf);
+      // The account bearer is minted + cached inside the client; no csrf needed.
+      await openHostedVault(one.name);
       navigate("/", { replace: true });
     } catch {
       // fall back to the dispatcher, which surfaces weather
