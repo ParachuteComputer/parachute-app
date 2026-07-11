@@ -197,7 +197,7 @@ function MagicLinkFrontDoor() {
         password.
       </p>
       <p className="mx-auto mt-3 max-w-sm font-round text-xs text-fg-dim">
-        Free for 30 days, no card. From $1/mo after.
+        Free for 30 days, no card. Plans from $10 a year.
       </p>
 
       {error ? (

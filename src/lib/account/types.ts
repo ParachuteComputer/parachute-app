@@ -191,6 +191,25 @@ export type BillingTier = "entry" | "standard" | "plus" | "power";
 export type BillingInterval = "monthly" | "quarterly" | "yearly";
 
 /**
+ * One billing cycle's availability + price on a `DoorPlan` (F1/F3/F5 — the
+ * Entry-billing fix). ADDITIVE to the door-descriptor contract: a plan that
+ * omits `intervals` entirely (an older cloud, or a hub that hasn't shipped
+ * per-interval pricing) degrades to the pre-existing `price_month` display
+ * and an interval-less checkout call — exactly today's behavior.
+ * `available: false` entries carry no `price`/`label` (there's nothing
+ * honest to show for a cycle the tier doesn't sell — e.g. Entry has no
+ * monthly Price because Stripe's flat per-transaction fee eats a $1 charge).
+ */
+export interface DoorPlanInterval {
+  available: boolean;
+  /** USD price for this cycle. Present only when `available`. */
+  price?: number;
+  /** Door-authored display label (e.g. "$3/quarter") — render this verbatim
+   *  when present rather than reconstructing it from `price`. */
+  label?: string;
+}
+
+/**
  * One purchasable tier on the door's upgrade ladder, as advertised by the door
  * descriptor (`GET /.well-known/parachute-account`.plans — see
  * `descriptor.ts`). Distinct from `AccountPlan` above: `AccountPlan` is the
@@ -202,6 +221,9 @@ export interface DoorPlan {
   name: string;
   /** Max vaults this tier allows. */
   vaults?: number;
-  /** Monthly price in USD. */
+  /** Monthly price in USD. Retained for doors that don't publish `intervals`. */
   price_month?: number;
+  /** Per-interval availability + price (F1/F3/F5) — keyed by `BillingInterval`.
+   *  Optional/tolerant by design; see `DoorPlanInterval`. */
+  intervals?: Partial<Record<BillingInterval, DoorPlanInterval>>;
 }

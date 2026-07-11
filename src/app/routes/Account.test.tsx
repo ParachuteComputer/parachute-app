@@ -59,6 +59,49 @@ const PLANS: DoorPlan[] = [
   { id: "plus", name: "Plus", vaults: 10, price_month: 15 },
 ];
 
+// F1/F3/F5 — the live shape cloud now publishes: Entry has NO monthly Price
+// (Stripe's flat fee eats a $1 charge), Standard sells all three cycles.
+const PLANS_WITH_INTERVALS: DoorPlan[] = [
+  {
+    id: "entry",
+    name: "Entry",
+    vaults: 1,
+    price_month: 1,
+    intervals: {
+      monthly: { available: false },
+      quarterly: { available: true, price: 3, label: "$3/quarter" },
+      yearly: { available: true, price: 10, label: "$10/yr" },
+    },
+  },
+  {
+    id: "standard",
+    name: "Standard",
+    vaults: 3,
+    price_month: 5,
+    intervals: {
+      monthly: { available: true, price: 5, label: "$5/mo" },
+      quarterly: { available: true, price: 12, label: "$12/quarter" },
+      yearly: { available: true, price: 40, label: "$40/yr" },
+    },
+  },
+];
+
+// Only Entry offered — no plan in the ladder sells monthly, so the picker
+// must not show a "Monthly" pill at all (the union-across-tiers filter).
+const ENTRY_ONLY_INTERVALS: DoorPlan[] = [
+  {
+    id: "entry",
+    name: "Entry",
+    vaults: 1,
+    price_month: 1,
+    intervals: {
+      monthly: { available: false },
+      quarterly: { available: true, price: 3, label: "$3/quarter" },
+      yearly: { available: true, price: 10, label: "$10/yr" },
+    },
+  },
+];
+
 const SUMMARY: AccountSummary = {
   email: "ag@unforced.org",
   plan: {
@@ -434,14 +477,128 @@ describe("Account — the app-as-manager surface", () => {
       expect(
         screen.queryByRole("button", { name: /manage plan & billing/i }),
       ).not.toBeInTheDocument();
+      // F1/F5 — a descriptor with no `intervals` data anywhere degrades to the
+      // OLD display + behavior: no interval picker at all.
+      expect(screen.queryByRole("group", { name: /billing interval/i })).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: /upgrade to plus/i }));
+      // Interval-less call — exactly the pre-F1 signature — since this descriptor
+      // carries no per-interval data to choose from.
       await waitFor(() => expect(startCheckout).toHaveBeenCalledWith("plus"));
       await waitFor(() =>
         expect(window.location.assign).toHaveBeenCalledWith(
           "https://checkout.stripe.com/session/xyz",
         ),
       );
+    });
+
+    // F1/F3/F5 — the Entry-billing story: the interval picker, honest
+    // per-interval prices, and Entry's no-monthly matrix hole handled without
+    // ever sending a checkout call that will 400.
+    describe("the interval picker (F1/F3/F5)", () => {
+      function mockManagerWithPlans(plans: DoorPlan[]) {
+        vi.mocked(getSession).mockResolvedValue({
+          signed_in: true,
+          csrf: "c",
+          email: "ag@unforced.org",
+        });
+        vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+        vi.mocked(getAccountSummary).mockResolvedValue({
+          ...SUMMARY,
+          plan: { tier: "trial", label: "Free trial", trial_days_left: 5 },
+          billing_enabled: true,
+          has_billing_customer: false,
+        });
+        vi.mocked(getDoorDescriptor).mockResolvedValue({ plans });
+        vi.mocked(startCheckout).mockResolvedValue({
+          url: "https://checkout.stripe.com/session/xyz",
+        });
+      }
+
+      it("renders only the intervals available across the offered tiers (no Monthly pill when no tier sells it)", async () => {
+        mockManagerWithPlans(ENTRY_ONLY_INTERVALS);
+        renderAccount();
+        const group = await screen.findByRole("group", { name: /billing interval/i });
+        expect(within(group).getByRole("button", { name: "Quarterly" })).toBeInTheDocument();
+        expect(within(group).getByRole("button", { name: "Yearly" })).toBeInTheDocument();
+        expect(within(group).queryByRole("button", { name: "Monthly" })).not.toBeInTheDocument();
+      });
+
+      it("defaults to the cheapest available interval (quarterly, since Entry has no monthly) and Upgrade sends it", async () => {
+        mockManagerWithPlans(ENTRY_ONLY_INTERVALS);
+        renderAccount();
+        await screen.findByRole("group", { name: /billing interval/i });
+        expect(screen.getByRole("button", { name: "Quarterly" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        expect(screen.getByText("$3/quarter")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: /upgrade to entry/i }));
+        await waitFor(() => expect(startCheckout).toHaveBeenCalledWith("entry", "quarterly"));
+      });
+
+      it("honest per-interval price display: shows the door's own per-cycle label, not a bare price_month", async () => {
+        mockManagerWithPlans(PLANS_WITH_INTERVALS);
+        renderAccount();
+        await screen.findByRole("group", { name: /billing interval/i });
+        // Default selection is "Monthly" (Standard sells it — the cheapest cycle
+        // in the union), so Standard shows its monthly label…
+        expect(screen.getByText("$5/mo")).toBeInTheDocument();
+        // …and Entry (no monthly) shows the disabled hint with its own cheapest
+        // real cycle, never a bare "$1/mo" that would contradict checkout.
+        expect(screen.queryByText("$1/mo")).not.toBeInTheDocument();
+        expect(screen.getByText(/not available monthly/i)).toBeInTheDocument();
+        expect(screen.getByText(/available from \$3\/quarter/i)).toBeInTheDocument();
+      });
+
+      it('selecting Quarterly then clicking Upgrade-Entry calls startCheckout("entry", "quarterly") — never a 400-bound button', async () => {
+        mockManagerWithPlans(PLANS_WITH_INTERVALS);
+        renderAccount();
+        await screen.findByRole("group", { name: /billing interval/i });
+
+        // At the default ("Monthly"), Entry's own Upgrade button doesn't exist —
+        // it's a disabled placeholder, so there's nothing to accidentally click
+        // that would 400 the checkout call.
+        const entryCard = screen.getByText("Entry").closest("li") as HTMLElement;
+        expect(
+          within(entryCard).queryByRole("button", { name: /upgrade to entry/i }),
+        ).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Quarterly" }));
+        const upgradeEntry = await within(entryCard).findByRole("button", {
+          name: /upgrade to entry/i,
+        });
+        fireEvent.click(upgradeEntry);
+
+        await waitFor(() => expect(startCheckout).toHaveBeenCalledWith("entry", "quarterly"));
+        await waitFor(() =>
+          expect(window.location.assign).toHaveBeenCalledWith(
+            "https://checkout.stripe.com/session/xyz",
+          ),
+        );
+      });
+
+      it("Standard's Upgrade sends the default-selected interval (monthly — the cheapest across the ladder)", async () => {
+        mockManagerWithPlans(PLANS_WITH_INTERVALS);
+        renderAccount();
+        await screen.findByRole("group", { name: /billing interval/i });
+
+        const standardCard = screen.getByText("Standard").closest("li") as HTMLElement;
+        fireEvent.click(within(standardCard).getByRole("button", { name: /upgrade to standard/i }));
+        await waitFor(() => expect(startCheckout).toHaveBeenCalledWith("standard", "monthly"));
+      });
+
+      it("switching to Yearly before Upgrading Standard sends the yearly interval", async () => {
+        mockManagerWithPlans(PLANS_WITH_INTERVALS);
+        renderAccount();
+        await screen.findByRole("group", { name: /billing interval/i });
+
+        fireEvent.click(screen.getByRole("button", { name: "Yearly" }));
+        const standardCard = screen.getByText("Standard").closest("li") as HTMLElement;
+        fireEvent.click(within(standardCard).getByRole("button", { name: /upgrade to standard/i }));
+        await waitFor(() => expect(startCheckout).toHaveBeenCalledWith("standard", "yearly"));
+      });
     });
 
     it("checkout 409 already_subscribed → inline message, no redirect", async () => {

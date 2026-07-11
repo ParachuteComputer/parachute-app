@@ -186,4 +186,160 @@ describe("getDoorDescriptor", () => {
     await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "cloud" });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  // F1/F3/F5 — cloud now publishes per-interval pricing on each plan row.
+  // `UpgradePlans` reads `plan.intervals[cycle].available/.price/.label`, so a
+  // malformed sub-block is guarded the same way `auth`/`plans` are: dropped
+  // rather than trusted, but scoped to the ONE plan/cycle it's bad on.
+  describe("per-plan `intervals` (F1/F3/F5)", () => {
+    it("a plan with no `intervals` field at all → kept verbatim (the degrade-gracefully case)", async () => {
+      const descriptor = {
+        door: "cloud",
+        plans: [{ id: "entry", name: "Entry", vaults: 1, price_month: 1 }],
+      };
+      const fetchImpl = vi.fn<typeof fetch>(async () => res(descriptor));
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(descriptor);
+    });
+
+    it("a well-formed `intervals` block (mixed available/unavailable) → kept verbatim", async () => {
+      const descriptor = {
+        door: "cloud",
+        plans: [
+          {
+            id: "entry",
+            name: "Entry",
+            vaults: 1,
+            price_month: 1,
+            intervals: {
+              monthly: { available: false },
+              quarterly: { available: true, price: 3, label: "$3/quarter" },
+              yearly: { available: true, price: 10, label: "$10/yr" },
+            },
+          },
+        ],
+      };
+      const fetchImpl = vi.fn<typeof fetch>(async () => res(descriptor));
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(descriptor);
+    });
+
+    it("malformed `intervals` (not an object) → dropped, rest of the plan kept", async () => {
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        res({
+          door: "cloud",
+          plans: [{ id: "entry", name: "Entry", vaults: 1, price_month: 1, intervals: "nope" }],
+        }),
+      );
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({
+        door: "cloud",
+        plans: [{ id: "entry", name: "Entry", vaults: 1, price_month: 1 }],
+      });
+    });
+
+    it("malformed `intervals` (an array) → dropped, rest of the plan kept", async () => {
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        res({
+          door: "cloud",
+          plans: [{ id: "entry", name: "Entry", intervals: [{ available: true }] }],
+        }),
+      );
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({
+        door: "cloud",
+        plans: [{ id: "entry", name: "Entry" }],
+      });
+    });
+
+    it("one malformed cycle entry (bad `available` type) is dropped without losing sibling cycles", async () => {
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        res({
+          door: "cloud",
+          plans: [
+            {
+              id: "entry",
+              name: "Entry",
+              intervals: {
+                monthly: { available: "yes" }, // malformed — dropped
+                quarterly: { available: true, price: 3, label: "$3/quarter" }, // kept
+              },
+            },
+          ],
+        }),
+      );
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({
+        door: "cloud",
+        plans: [
+          {
+            id: "entry",
+            name: "Entry",
+            intervals: { quarterly: { available: true, price: 3, label: "$3/quarter" } },
+          },
+        ],
+      });
+    });
+
+    it("a non-numeric `price` on an otherwise-valid cycle entry → that cycle dropped", async () => {
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        res({
+          door: "cloud",
+          plans: [
+            {
+              id: "entry",
+              name: "Entry",
+              intervals: { quarterly: { available: true, price: "3" } },
+            },
+          ],
+        }),
+      );
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({
+        door: "cloud",
+        plans: [{ id: "entry", name: "Entry" }],
+      });
+    });
+
+    it("every cycle entry malformed → `intervals` drops entirely, plan otherwise intact", async () => {
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        res({
+          door: "cloud",
+          plans: [
+            {
+              id: "entry",
+              name: "Entry",
+              price_month: 1,
+              intervals: { monthly: "nope", quarterly: 5 },
+            },
+          ],
+        }),
+      );
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({
+        door: "cloud",
+        plans: [{ id: "entry", name: "Entry", price_month: 1 }],
+      });
+    });
+
+    it("sanitizes `intervals` independently per plan in a multi-plan ladder", async () => {
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        res({
+          door: "cloud",
+          plans: [
+            { id: "entry", name: "Entry", intervals: "nope" },
+            {
+              id: "standard",
+              name: "Standard",
+              intervals: { monthly: { available: true, price: 5, label: "$5/mo" } },
+            },
+          ],
+        }),
+      );
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({
+        door: "cloud",
+        plans: [
+          { id: "entry", name: "Entry" },
+          {
+            id: "standard",
+            name: "Standard",
+            intervals: { monthly: { available: true, price: 5, label: "$5/mo" } },
+          },
+        ],
+      });
+    });
+  });
 });

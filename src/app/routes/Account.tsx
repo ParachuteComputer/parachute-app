@@ -15,7 +15,13 @@ import { describeAccountError } from "@/lib/account/error-copy";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { formatBytes, formatUsageBytes } from "@/lib/account/provenance";
 import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
-import type { AccountSummary, AccountVault, DoorPlan } from "@/lib/account/types";
+import type {
+  AccountSummary,
+  AccountVault,
+  BillingInterval,
+  DoorPlan,
+  DoorPlanInterval,
+} from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -296,11 +302,74 @@ function ManageBilling({ summary }: { summary: AccountSummary }) {
   );
 }
 
+// F1/F3/F5 — the billing-interval ladder in cheapest-first order. Doubles as
+// the picker's render order and the "cheapest available" default rule below:
+// a plan's monthly price is (normal SaaS discounting) always its lowest raw
+// per-cycle number when the door sells it at all, so "prefer monthly, then
+// quarterly, then yearly" is the same thing as "prefer cheapest available".
+const INTERVAL_ORDER: readonly BillingInterval[] = ["monthly", "quarterly", "yearly"];
+const INTERVAL_LABEL: Record<BillingInterval, string> = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  yearly: "Yearly",
+};
+// Used only when a plan's interval entry has no door-authored `label` to
+// render verbatim (older/partial data) — reconstructed from `price`.
+const INTERVAL_SUFFIX: Record<BillingInterval, string> = {
+  monthly: "/mo",
+  quarterly: "/quarter",
+  yearly: "/yr",
+};
+
+/** The set of intervals available on ANY offered tier, cheapest-first — the
+ *  picker only ever shows a cycle at least one plan can actually sell. Empty
+ *  when no plan carries `intervals` data at all (the degrade-gracefully case:
+ *  no picker, no interval sent, exactly today's behavior). */
+function unionAvailableIntervals(plans: DoorPlan[]): BillingInterval[] {
+  const seen = new Set<BillingInterval>();
+  for (const plan of plans) {
+    for (const key of INTERVAL_ORDER) {
+      if (plan.intervals?.[key]?.available) seen.add(key);
+    }
+  }
+  return INTERVAL_ORDER.filter((key) => seen.has(key));
+}
+
+/** Render one interval entry's price, preferring the door's own label. */
+function formatIntervalPrice(entry: DoorPlanInterval, interval: BillingInterval): string | null {
+  if (entry.label) return entry.label;
+  return typeof entry.price === "number" ? `$${entry.price}${INTERVAL_SUFFIX[interval]}` : null;
+}
+
+/** A tier's own cheapest available cycle — the hint shown on a disabled
+ *  Upgrade button when the globally-selected interval isn't one this tier
+ *  sells (Entry + "Monthly", per F1's decision (a)). */
+function cheapestPlanInterval(
+  plan: DoorPlan,
+): { interval: BillingInterval; entry: DoorPlanInterval } | null {
+  for (const key of INTERVAL_ORDER) {
+    const entry = plan.intervals?.[key];
+    if (entry?.available) return { interval: key, entry };
+  }
+  return null;
+}
+
 // Trial/free state: the door's upgrade ladder as plan cards (from the door
 // descriptor — the app doesn't know pricing, it just renders what the door
 // advertised), current tier marked, each purchasable tier a straight trip to
-// Stripe Checkout.
+// Stripe Checkout. A GLOBAL segmented interval picker (monthly/quarterly/
+// yearly) sits above the grid — one selection for the whole ladder, since
+// Standard/Plus/Power sell all three cycles and a per-card picker would just
+// repeat the same three buttons three times. Entry (F1's matrix hole: no
+// monthly Price) disables its own button + shows its cheapest real cycle as a
+// hint rather than ever sending a checkout call that will 400.
 function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: DoorPlan[] }) {
+  const availableIntervals = unionAvailableIntervals(plans);
+  // `null` ⇒ no plan published `intervals` data at all — the legacy path:
+  // no picker, price_month display, interval-less checkout call.
+  const [selectedInterval, setSelectedInterval] = useState<BillingInterval | null>(
+    availableIntervals[0] ?? null,
+  );
   const [busyTier, setBusyTier] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -309,7 +378,9 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
     setBusyTier(tier);
     setError(null);
     try {
-      const { url } = await startCheckout(tier);
+      const { url } = selectedInterval
+        ? await startCheckout(tier, selectedInterval)
+        : await startCheckout(tier);
       window.location.assign(url);
     } catch (err) {
       setBusyTier(null);
@@ -330,23 +401,54 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
   return (
     <div className="mt-4">
       <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+      {selectedInterval && availableIntervals.length > 1 ? (
+        <fieldset className="mt-4 flex flex-wrap items-center gap-1.5">
+          <legend className="sr-only">Billing interval</legend>
+          {availableIntervals.map((key) => {
+            const active = key === selectedInterval;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSelectedInterval(key)}
+                aria-pressed={active}
+                className={`chip focus-ring ${active ? "chip-tag-active font-medium" : "chip-tag"}`}
+              >
+                {INTERVAL_LABEL[key]}
+              </button>
+            );
+          })}
+        </fieldset>
+      ) : null}
       {plans.length > 0 ? (
         <ul className="mt-4 grid gap-3 sm:grid-cols-2">
           {plans.map((plan) => {
             const isCurrent = plan.id === summary.plan.tier;
+            const selectedEntry = selectedInterval ? plan.intervals?.[selectedInterval] : undefined;
+            // Legacy plans (no `intervals` data anywhere) always "can checkout"
+            // — there's no cycle dimension to mismatch on.
+            const canCheckoutSelected =
+              availableIntervals.length === 0 || selectedEntry?.available === true;
+            const priceLine =
+              availableIntervals.length === 0
+                ? typeof plan.price_month === "number"
+                  ? `$${plan.price_month}/mo`
+                  : null
+                : selectedEntry?.available
+                  ? formatIntervalPrice(selectedEntry, selectedInterval as BillingInterval)
+                  : null;
+            const fallback = canCheckoutSelected ? null : cheapestPlanInterval(plan);
             return (
               <li key={plan.id} className="rounded-lg border border-border p-4">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-serif text-base text-fg">{plan.name}</span>
                   {isCurrent ? <span className="chip">Current</span> : null}
                 </div>
-                {typeof plan.price_month === "number" ? (
-                  <p className="mt-1 text-sm text-fg-muted">${plan.price_month}/mo</p>
-                ) : null}
+                {priceLine ? <p className="mt-1 text-sm text-fg-muted">{priceLine}</p> : null}
                 {typeof plan.vaults === "number" ? (
                   <p className="text-xs text-fg-dim">{plan.vaults} vaults</p>
                 ) : null}
-                {isCurrent ? null : (
+                {isCurrent ? null : canCheckoutSelected ? (
                   <button
                     type="button"
                     onClick={() => upgrade(plan.id)}
@@ -355,6 +457,22 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
                   >
                     {busyTier === plan.id ? "Starting…" : `Upgrade to ${plan.name}`}
                   </button>
+                ) : (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      disabled
+                      className="btn btn-secondary btn-sm btn-touch w-full"
+                    >
+                      Not available{" "}
+                      {INTERVAL_LABEL[selectedInterval as BillingInterval].toLowerCase()}
+                    </button>
+                    {fallback ? (
+                      <p className="mt-1 text-xs text-fg-dim">
+                        Available from {formatIntervalPrice(fallback.entry, fallback.interval)}
+                      </p>
+                    ) : null}
+                  </div>
                 )}
               </li>
             );

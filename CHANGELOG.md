@@ -1,5 +1,38 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.4.3] - 2026-07-11
+
+**Entry-billing story — the interval picker + honest pricing (F1 app half /
+F3, decision a).** Cloud now publishes per-interval pricing on each door plan
+(quarterly/yearly for Entry, all three cycles for Standard/Plus/Power); the
+app previously had no way to see or choose a cycle at all — `startCheckout`
+sent no `interval`, cloud defaulted to monthly, and Entry (which has no
+monthly Price — Stripe's flat per-transaction fee eats a $1 charge) 400'd
+every time, with the app folding that into a generic "Billing isn't available
+right now."
+
+- **A segmented billing-interval picker** on the Account surface's upgrade
+  cards (`UpgradePlans`, `Account.tsx`) — one global selector for the whole
+  ladder (Monthly · Quarterly · Yearly), showing only cycles at least one
+  offered tier actually sells, defaulting to the cheapest available. Entry
+  (no monthly) shows a disabled placeholder + its own cheapest real cycle as
+  a hint instead of ever presenting a button that would 400 — switching to
+  Quarterly or Yearly enables it normally.
+- **Honest per-interval prices (F3).** Each card renders the door's own
+  per-cycle label for the selected interval (e.g. "$3/quarter", "$10/yr")
+  instead of a bare "$1/mo" that contradicted checkout. A descriptor with no
+  `intervals` data (an older cloud, or a hub) degrades to the exact
+  pre-existing `price_month` display and an interval-less checkout call —
+  no picker, no behavior change.
+- **Landing copy (F3, decision a).** "From $1/mo after." → "Plans from $10 a
+  year." — Entry no longer advertises a cycle it doesn't sell.
+- **Contract:** `DoorPlan.intervals?: Partial<Record<"monthly"|"quarterly"|
+  "yearly", {available, price?, label?}>>` (`lib/account/types.ts`), additive
+  and tolerant. `normalizeDescriptor` sanitizes each plan's `intervals`
+  independently — a malformed cycle entry (or the whole block) is dropped
+  per-plan, mirroring the existing `auth`/`plans` shape-guarding, never
+  trusted wholesale.
+
 ## [0.4.2] - 2026-07-11
 
 **Navigation dead-ends — the add-vault chooser wired in, wizard escape
