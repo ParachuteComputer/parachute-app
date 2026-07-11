@@ -1,4 +1,4 @@
-import { Today } from "@/app/routes/Today";
+import { Home } from "@/app/routes/Home";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
 import { render, screen } from "@testing-library/react";
@@ -7,9 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // FIX 2 (error-over-data): the phone-first PWA must never blank what you're
 // reading because a background refetch failed. When the notes query is in an
-// error state but still holds the previously-loaded notes, Today renders them
+// error state but still holds the previously-loaded notes, Home renders them
 // (under a quiet offline ribbon) instead of the error block; the error block
 // only shows when there is genuinely no cached data.
+//
+// This coverage used to live on the Today route's no-param front-door
+// timeline; F8/W2-3 folded that timeline into Home (Today's `/today` no-param
+// case is now a redirect shim — see DayView.test.tsx), so the test moved with
+// the behavior it exercises.
 //
 // react-query's observer almost never surfaces `isError: true` WITH `data`
 // present on its own (a same-key refetch failure stays `status: success`),
@@ -48,17 +53,17 @@ function seedStore() {
   });
 }
 
-function renderTimeline() {
+function renderHome() {
   return render(
-    <MemoryRouter initialEntries={["/today"]}>
+    <MemoryRouter initialEntries={["/"]}>
       <Routes>
-        <Route path="/today" element={<Today />} />
+        <Route path="/" element={<Home />} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
-describe("Today — error-over-data rendering (FIX 2)", () => {
+describe("Home — error-over-data rendering (FIX 2)", () => {
   beforeEach(() => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     seedStore();
@@ -75,10 +80,10 @@ describe("Today — error-over-data rendering (FIX 2)", () => {
       isError: true,
       error: new Error("offline"),
     });
-    renderTimeline();
+    renderHome();
 
     expect(screen.getByText("kept")).toBeInTheDocument();
-    expect(screen.queryByText(/could not load notes/i)).toBeNull();
+    expect(screen.queryByText(/couldn't load recent notes/i)).toBeNull();
     expect(screen.getByText(/showing what's saved/i)).toBeInTheDocument();
   });
 
@@ -89,9 +94,9 @@ describe("Today — error-over-data rendering (FIX 2)", () => {
       isError: true,
       error: new Error("offline"),
     });
-    renderTimeline();
+    renderHome();
 
-    expect(screen.getByText(/could not load notes/i)).toBeInTheDocument();
+    expect(screen.getByText(/couldn't load recent notes/i)).toBeInTheDocument();
     expect(screen.queryByText(/showing what's saved/i)).toBeNull();
   });
 });

@@ -1,10 +1,9 @@
-import { Today, groupNotesByDay } from "@/app/routes/Today";
+import { DayView } from "@/app/routes/DayView";
 import { useVaultStore } from "@/lib/vault/store";
-import type { Note } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface Row {
@@ -76,7 +75,7 @@ function localIso(year: number, month: number, day: number, hour = 12): string {
   return new Date(year, month - 1, day, hour).toISOString();
 }
 
-describe("Today — single day (?date drill-in)", () => {
+describe("DayView — single day (?date drill-in)", () => {
   beforeEach(() => {
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
@@ -114,7 +113,7 @@ describe("Today — single day (?date drill-in)", () => {
     ]);
     render(
       <Wrap initial="/today?date=2026-04-18">
-        <Today />
+        <DayView />
       </Wrap>,
     );
 
@@ -138,20 +137,24 @@ describe("Today — single day (?date drill-in)", () => {
     ]);
     render(
       <Wrap initial="/today?date=2026-04-10">
-        <Today />
+        <DayView />
       </Wrap>,
     );
     await screen.findByText("Past");
     expect(screen.getByText(/created on 2026-04-10 \(1\)/i)).toBeInTheDocument();
-    // "Today" jump button is visible when not on today.
-    expect(screen.getByRole("link", { name: /^today$/i })).toBeInTheDocument();
+    // "Today" jump button is visible when not on today, and (F8/W2-3) points
+    // straight at `/` now — the canonical room — rather than round-tripping
+    // through the `/today` no-param shim.
+    const todayJump = screen.getByRole("link", { name: /^today$/i });
+    expect(todayJump).toBeInTheDocument();
+    expect(todayJump).toHaveAttribute("href", "/");
   });
 
   it("shows empty state with a create link when today is empty", async () => {
     installFetch([]);
     render(
       <Wrap initial="/today?date=2026-04-18">
-        <Today />
+        <DayView />
       </Wrap>,
     );
     expect(await screen.findByText(/nothing yet today — start capturing/i)).toBeInTheDocument();
@@ -163,7 +166,7 @@ describe("Today — single day (?date drill-in)", () => {
     installFetch([]);
     render(
       <Wrap initial="/today?date=2026-04-10">
-        <Today />
+        <DayView />
       </Wrap>,
     );
     expect(await screen.findByText(/nothing on 2026-04-10/i)).toBeInTheDocument();
@@ -174,7 +177,7 @@ describe("Today — single day (?date drill-in)", () => {
     installFetch([]);
     render(
       <Wrap initial="/today?date=2026-04-10">
-        <Today />
+        <DayView />
       </Wrap>,
     );
     await screen.findByText(/nothing on 2026-04-10/i);
@@ -192,18 +195,20 @@ describe("Today — single day (?date drill-in)", () => {
     installFetch([]);
     render(
       <Wrap initial="/today?date=not-a-date">
-        <Today />
+        <DayView />
       </Wrap>,
     );
     expect(await screen.findByText(/invalid date in url: not-a-date/i)).toBeInTheDocument();
+    // The invalid-date escape also points straight at `/` (F8/W2-3).
+    expect(screen.getByRole("link", { name: /back to today/i })).toHaveAttribute("href", "/");
   });
 
-  it("redirects home when no active vault", async () => {
+  it("redirects to / when there's no active vault", async () => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     installFetch([]);
     render(
-      <Wrap>
-        <Today />
+      <Wrap initial="/today?date=2026-04-18">
+        <DayView />
       </Wrap>,
     );
     await waitFor(() => {
@@ -212,92 +217,105 @@ describe("Today — single day (?date drill-in)", () => {
   });
 });
 
-describe("Today — front-door timeline (no date)", () => {
+// F8/W2-3: `/today` with NO `?date=` used to render an almost-duplicate
+// front-door timeline (the room Home absorbed — see Home.test.tsx and
+// Home.offline.test.tsx for that coverage now). It's a redirect shim.
+describe("DayView — /today (no date) shim", () => {
   beforeEach(() => {
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     seedStore();
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date(2026, 3, 18, 12, 0, 0));
   });
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.useRealTimers();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     localStorage.clear();
   });
 
-  it("groups recent notes by day, newest day first, with human titles", async () => {
-    installFetch([
-      {
-        id: "n1",
-        path: "journal/today-note.md",
-        preview: "Something from today.",
-        createdAt: localIso(2026, 4, 18, 9),
-        updatedAt: localIso(2026, 4, 18, 9),
-      },
-      {
-        id: "n2",
-        path: "journal/yesterday-note.md",
-        preview: "Something from yesterday.",
-        createdAt: localIso(2026, 4, 17, 9),
-        updatedAt: localIso(2026, 4, 17, 9),
-      },
-    ]);
-    render(
-      <Wrap>
-        <Today />
-      </Wrap>,
-    );
-
-    // Page title (level-1) reads "Today"; day-group headers are links.
-    expect(await screen.findByRole("heading", { level: 1, name: "Today" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Today" })).toHaveAttribute(
-      "href",
-      "/today?date=2026-04-18",
-    );
-    expect(screen.getByRole("link", { name: "Yesterday" })).toHaveAttribute(
-      "href",
-      "/today?date=2026-04-17",
-    );
-    // Human title headline (path leaf), full mono path as metadata, preview.
-    expect(screen.getByText("today-note")).toBeInTheDocument();
-    expect(screen.getByText("journal/today-note.md")).toBeInTheDocument();
-    expect(screen.getByText("Something from today.")).toBeInTheDocument();
-  });
-
-  it("invites the first capture when the vault is empty", async () => {
+  it("redirects a bare /today to / when a vault is active", async () => {
     installFetch([]);
     render(
-      <Wrap>
-        <Today />
+      <Wrap initial="/today">
+        <DayView />
       </Wrap>,
     );
-    expect(await screen.findByText(/a quiet, empty page/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /capture the first one/i })).toHaveAttribute(
-      "href",
-      "/new",
+    await waitFor(() => {
+      expect(screen.getByTestId("location").textContent).toBe("/");
+    });
+  });
+
+  it("redirects to / when there's no active vault either (guard takes precedence)", async () => {
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    installFetch([]);
+    render(
+      <Wrap initial="/today">
+        <DayView />
+      </Wrap>,
     );
+    await waitFor(() => {
+      expect(screen.getByTestId("location").textContent).toBe("/");
+    });
   });
 });
 
-describe("groupNotesByDay", () => {
-  // Build local-time timestamps at noon so day bucketing is host-timezone
-  // stable (the keys are local dates, matching the calendar surfaces).
-  const mk = (id: string, month: number, day: number, hour = 12): Note => {
-    const ts = new Date(2026, month - 1, day, hour).toISOString();
-    return { id, createdAt: ts, updatedAt: ts };
-  };
-
-  it("buckets by the updated day and sorts days newest-first", () => {
-    const groups = groupNotesByDay([mk("a", 4, 15, 10), mk("b", 4, 17, 10), mk("c", 4, 17, 8)]);
-    expect(groups.map((g) => g.key)).toEqual(["2026-04-17", "2026-04-15"]);
-    // Within a day, newest-first.
-    expect(groups[0]?.notes.map((n) => n.id)).toEqual(["b", "c"]);
+// The history-aware "← Back" (NAVIGATION.md § "the history-aware escape
+// rule", wired here per DESIGN-SPEC §4.3/§2.5 row 2). `useHistoryAwareBack`
+// reads the browser's REAL `window.history.state.idx`, which a MemoryRouter
+// can't drive (it keeps its own separate stack) — so, like
+// `src/lib/nav/history.test.tsx`, these run through a real BrowserRouter.
+describe("DayView — history-aware back (W2-3)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    seedStore();
+    installFetch([]);
+    window.history.replaceState(null, "", "/calendar");
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    localStorage.clear();
   });
 
-  it("skips notes with an unparseable date", () => {
-    const groups = groupNotesByDay([{ id: "a", createdAt: "not-a-date", updatedAt: "not-a-date" }]);
-    expect(groups).toEqual([]);
+  function CalendarStub() {
+    const navigate = useNavigate();
+    return (
+      <button type="button" onClick={() => navigate("/today?date=2026-04-10")}>
+        Open day
+      </button>
+    );
+  }
+
+  function BrowserWrap() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    return (
+      <BrowserRouter>
+        <QueryClientProvider client={qc}>
+          <Routes>
+            <Route path="/calendar" element={<CalendarStub />} />
+            <Route path="/today" element={<DayView />} />
+            <Route path="/" element={<LocationSpy />} />
+          </Routes>
+        </QueryClientProvider>
+      </BrowserRouter>
+    );
+  }
+
+  it("goes back to the real prior entry (e.g. Calendar) when one exists", async () => {
+    render(<BrowserWrap />);
+    fireEvent.click(screen.getByRole("button", { name: /open day/i }));
+    const back = await screen.findByRole("button", { name: /← back/i });
+    fireEvent.click(back);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /open day/i })).toBeInTheDocument(),
+    );
+  });
+
+  it("falls back to / when there's nothing behind (a direct deep link)", async () => {
+    window.history.replaceState(null, "", "/today?date=2026-04-10");
+    render(<BrowserWrap />);
+    const back = await screen.findByRole("button", { name: /← back/i });
+    fireEvent.click(back);
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/"));
   });
 });

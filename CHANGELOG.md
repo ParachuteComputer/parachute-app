@@ -1,5 +1,38 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.5.2] - 2026-07-11
+
+**W2-3 — merge `/today` into `/`: one room, one name on both form factors (F8).**
+A structure PR (depends on W2-2). `/` (Home) and `/today`'s no-param timeline were near-duplicate
+rooms — both rendered `page-prose` + `useNotesForDateViews()` + the same `RecentTimeline`, and the
+desktop rail called the route "Today" while the mobile tab called it "Home". This PR folds the
+duplicate room away and wires the first real consumer of W2-2's `useHistoryAwareBack` hook.
+
+- **`Today.tsx` → `DayView.tsx`.** The route (`/today`) no longer renders a front-door timeline —
+  that duplicate is gone, absorbed into Home (nothing in Home changed except a new Calendar link,
+  below). `/today` with no `?date=` is now a redirect shim → `/` (NAVIGATION.md: (a) shim, replace).
+  `/today?date=YYYY-MM-DD` survives unchanged as the day drill-in, reached from Calendar cells and
+  Home's day-header links. `DayView` moved from App.tsx's eager import set into the lazy-loaded set —
+  it's no longer on the FCP-critical boot path now that the no-param case is a shim.
+- **`DayView`'s "← Back" is wired to `useHistoryAwareBack("/")`** (W2-2's hook, unwired until now) —
+  goes back to wherever you actually came from (Calendar, another day, Home) when there's real
+  history behind the entry, else falls back to `/`. The prev/next-day links, the "Today" jump link,
+  and the invalid-date escape now all point at `/` directly (rather than round-tripping through the
+  `/today` shim).
+- **Home gained a Calendar link in its header.** The rail carries no Calendar row yet (that's
+  W2-5); Today's old timeline was the only desktop door to Calendar, so folding it away would have
+  silently removed that reachability. Home's header now carries the link on both form factors.
+- **The mobile bottom tab now reads "Today", not "Home"** (`BottomTabBar.tsx`) — matching the
+  desktop rail's label for the same `/` route (F8/F14: one room, one name everywhere).
+- Tests: `DayView.test.tsx` (renamed from `Today.test.tsx`) covers the `/today` shim (with and
+  without an active vault) and the history-aware back button (via a real `BrowserRouter`, same
+  pattern as `history.test.tsx` — a `MemoryRouter` can't drive `window.history.state.idx`);
+  `Home.offline.test.tsx` (renamed from `Today.offline.test.tsx`) ports the error-over-data
+  coverage to the room that now owns it; `groupNotesByDay`'s unit tests moved to a new
+  `RecentTimeline.test.tsx` next to the function; `Home.test.tsx` gained the Calendar-link,
+  day-header-hop, and genuinely-empty-vault cases; `BottomTabBar.test.tsx` updated for the label.
+- **Closes F8.**
+
 ## [0.5.1] - 2026-07-11
 
 **W2-2 — navigation history policy: Back no longer exits the app (F7 / DESIGN-SPEC §4.3).**

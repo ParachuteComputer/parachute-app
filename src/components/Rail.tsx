@@ -135,7 +135,9 @@ function NotesSection() {
   return (
     <div>
       <RailSectionLabel>Your notes</RailSectionLabel>
-      {/* Reading a note (/n/:id) and the single-day view live under Today. */}
+      {/* Reading a note (/n/:id) and the day drill-in (/today?date=) live
+          under Today. F8/W2-3: the mobile tab used to call this same room
+          "Home" — both form factors now agree it's "Today". */}
       <RailLink
         to="/"
         label="Today"

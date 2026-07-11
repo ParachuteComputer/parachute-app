@@ -43,10 +43,10 @@ describe("BottomTabBar (D6 four-slot)", () => {
     useQuickSwitchOpen.setState({ open: false });
   });
 
-  it("renders Home · Notes · [+] · Search when a vault is active (D6 slots)", () => {
+  it("renders Today · Notes · [+] · Search when a vault is active (D6 slots)", () => {
     renderAt("/");
     const nav = screen.getByRole("navigation", { name: /primary/i });
-    expect(within(nav).getByLabelText(/^home$/i)).toBeInTheDocument();
+    expect(within(nav).getByLabelText(/^today$/i)).toBeInTheDocument();
     expect(within(nav).getByLabelText(/^notes$/i)).toBeInTheDocument();
     // The centre capture action (the raised + disc).
     expect(within(nav).getByLabelText(/new note/i)).toBeInTheDocument();
@@ -76,12 +76,17 @@ describe("BottomTabBar (D6 four-slot)", () => {
     expect(nav.className).not.toMatch(/\bmd:hidden\b/);
   });
 
-  it("marks Home active on / and on a note (/n/:id stays under Home)", () => {
+  it("marks Today active on / and on a note (/n/:id stays under Today)", () => {
     renderAt("/");
-    expect(screen.getByLabelText(/^home$/i)).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText(/^today$/i)).toHaveAttribute("aria-current", "page");
     renderAt("/n/abc");
-    const homes = screen.getAllByLabelText(/^home$/i);
-    expect(homes.some((el) => el.getAttribute("aria-current") === "page")).toBe(true);
+    const todays = screen.getAllByLabelText(/^today$/i);
+    expect(todays.some((el) => el.getAttribute("aria-current") === "page")).toBe(true);
+  });
+
+  it("marks Today active on the day drill-in (/today?date=)", () => {
+    renderAt("/today?date=2026-04-18");
+    expect(screen.getByLabelText(/^today$/i)).toHaveAttribute("aria-current", "page");
   });
 
   it("marks Notes active on /all", () => {

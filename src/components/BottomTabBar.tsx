@@ -5,15 +5,19 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 
 // Mobile + tablet fixed bottom navigation — the D6 four-slot set (SYNTHESIS
-// D6, prototype scenes 4 & 6): Home · Notes · [ + ] · Search, where the centre
-// + is a raised capture action, not a peer tab. Hidden on >= lg where the
-// desktop Rail handles navigation. The `lg:hidden` gate MUST match the Rail's
-// `lg:flex` gate — at any width exactly one of them shows (the notes#147
-// contract, now Rail↔BottomTabBar).
+// D6, prototype scenes 4 & 6): Today · Notes · [ + ] · Search, where the
+// centre + is a raised capture action, not a peer tab. Hidden on >= lg where
+// the desktop Rail handles navigation. The `lg:hidden` gate MUST match the
+// Rail's `lg:flex` gate — at any width exactly one of them shows (the
+// notes#147 contract, now Rail↔BottomTabBar).
 //
 // Settings left the bottom bar with the D6 pass — it lives behind the header
 // ⋯ menu and in the desktop rail foot (the dissolved console is a room, not a
-// tab). Reading a note (/n/:id) and the day view (/today) stay under Home.
+// tab). Reading a note (/n/:id) and the day drill-in (/today?date=) stay
+// under Today.
+//
+// F8/W2-3: this tab used to read "Home" while the desktop rail called the
+// same `/` route "Today" — one room, two names. Both form factors now agree.
 export function BottomTabBar() {
   const hasActiveVault = useVaultStore((s) => s.activeVaultId !== null);
   const setSwitcherOpen = useQuickSwitchOpen((s) => s.setOpen);
@@ -22,7 +26,7 @@ export function BottomTabBar() {
   if (!hasActiveVault) return null;
 
   const path = location.pathname;
-  const isHome = path === "/" || path === "/today" || path.startsWith("/n/");
+  const isToday = path === "/" || path === "/today" || path.startsWith("/n/");
   const isNotes = path === "/all";
 
   return (
@@ -32,7 +36,7 @@ export function BottomTabBar() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-[--w-page] items-stretch justify-around px-2">
-        <Tab to="/" label="Home" active={isHome} icon={<IconHome />} />
+        <Tab to="/" label="Today" active={isToday} icon={<IconHome />} />
         <Tab to="/all" label="Notes" active={isNotes} icon={<IconNotes />} />
         <CenterCapture />
         <TabButton label="Search" icon={<IconSearch />} onClick={() => setSwitcherOpen(true)} />
