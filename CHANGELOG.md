@@ -39,10 +39,14 @@ menu) — every room stays reachable, no route changes.
   the wordmark (no vault) or the pill + sync dot (vault).
 - **BottomTabBar** unchanged in shape (Today · Notes · [+] · Search; [+] stays a direct hop to
   `/new`) — its active-state matching now imports the model's shared rules instead of a copy.
+- **a11y (review fold):** the NavSheet focus-trap now pulls focus back in whenever it sits outside
+  the sheet (the container itself or the scrim button) — Shift+Tab can no longer walk backwards out
+  to the page behind the scrim. Route-change close and the trap-backwards guard both gain tests.
 - Tests: new `src/lib/nav/model.test.tsx` (zones/order/gates/chip/shelf) + `NavSheet.test.tsx`
-  (bands, F14 reachability, active state, close gestures, no-vault foot); the breakpoint contract
-  extends with a **band-parity assertion** (Rail ≡ NavSheet, unearned + earned) and the NavSheet's
-  `lg:hidden` gate; Rail/Header/AmbientMapFab/VaultSwitcher suites updated to the new IA.
+  (bands, F14 reachability, active state, close gestures incl. route-change + trap-backwards,
+  no-vault foot); the breakpoint contract extends with a **band-parity assertion** (Rail ≡
+  NavSheet, unearned + earned) and the NavSheet's `lg:hidden` gate; Rail/Header/AmbientMapFab/
+  VaultSwitcher suites updated to the new IA.
 - **Closes F14 (full), F15 (structure), F21 (header-noise part), adopt #4 #9 (nav rows) #12
   (shelf collapse).**
 

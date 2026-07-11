@@ -3,8 +3,18 @@ import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// A test-only trigger for a route change, standing in for a nav-link tap.
+function GoElsewhere({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      go-elsewhere
+    </button>
+  );
+}
 
 function makeVault(partial: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url">): VaultRecord {
   return {
@@ -183,6 +193,25 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
     fireEvent.click(screen.getByRole("button", { name: /open menu/i }));
     await screen.findByRole("dialog", { name: /^menu$/i });
     fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: /^menu$/i })).not.toBeInTheDocument();
+  });
+
+  it("the sheet closes on route change — a nav tap must not leave it open over the destination (§2.3)", async () => {
+    seedVault();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/"]}>
+          <Header />
+          <GoElsewhere to="/tags" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /open menu/i }));
+    await screen.findByRole("dialog", { name: /^menu$/i });
+    // Navigating (as tapping a band link would) changes location.pathname —
+    // the owner's effect must close the sheet.
+    fireEvent.click(screen.getByRole("button", { name: /go-elsewhere/i }));
     expect(screen.queryByRole("dialog", { name: /^menu$/i })).not.toBeInTheDocument();
   });
 });

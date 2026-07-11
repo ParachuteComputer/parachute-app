@@ -76,6 +76,16 @@ function NavSheetPanel({ onClose, initialFocus }: Omit<NavSheetProps, "open">) {
       if (focusables.length === 0) return;
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
+      // If focus is currently OUTSIDE the trap — the panel container itself
+      // (tabIndex -1) or the scrim button, which lives outside panelRef — a
+      // Tab/Shift+Tab would walk out to the page behind the scrim. Pull it
+      // back in instead (B1: the trap must not leak backwards).
+      const activeEl = document.activeElement;
+      if (!(activeEl instanceof HTMLElement) || !focusables.includes(activeEl)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+        return;
+      }
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();

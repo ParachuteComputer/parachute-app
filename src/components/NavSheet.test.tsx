@@ -161,6 +161,17 @@ describe("NavSheet (mobile projection, W2-5)", () => {
     expect(active.closest('[data-nav-band="switcher"]')).not.toBeNull();
   });
 
+  it("Shift+Tab from the dialog container pulls focus back in — the trap never leaks to the scrim/page (B1)", async () => {
+    await renderSheet();
+    const dialog = screen.getByRole("dialog", { name: /^menu$/i });
+    // On mount the container itself holds focus (tabIndex -1, outside the
+    // focusable set). Shift+Tab from here must not walk out to the scrim.
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(dialog);
+  });
+
   it("with no vaults: no bands, no switcher — just the utility foot (the old no-vault ☰)", async () => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     await renderSheet();
