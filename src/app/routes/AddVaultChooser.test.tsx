@@ -29,6 +29,7 @@ function renderChooser() {
           }
         />
         <Route path="/welcome" element={<LocationEcho />} />
+        <Route path="/add-vault/create" element={<LocationEcho />} />
         <Route path="/add" element={<LocationEcho />} />
         <Route path="/vaults" element={<LocationEcho />} />
         <Route path="/" element={<LocationEcho />} />
@@ -72,11 +73,11 @@ describe("AddVaultChooser", () => {
     });
   });
 
-  it("Create navigates to /welcome?new=1 (the add-vault naming variant)", async () => {
+  it("Create navigates to /add-vault/create (the creation ceremony's own URL, W2-6)", async () => {
     renderChooser();
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => {
-      expect(screen.getByTestId("location-echo")).toHaveTextContent("/welcome?new=1");
+      expect(screen.getByTestId("location-echo")).toHaveTextContent("/add-vault/create");
     });
   });
 
@@ -120,10 +121,12 @@ describe("AddVaultChooser", () => {
     expect(screen.queryByText(/plan slots used/i)).not.toBeInTheDocument();
   });
 
-  // F6 — the chooser otherwise has zero exits (no active vault means no Rail/
-  // Header chrome either); the Back link is the escape hatch.
-  describe("Back link (F6)", () => {
-    it("points at /vaults when a vault is already active on this device", async () => {
+  // F6 / §4.1 — the chooser otherwise has zero exits (no active vault means
+  // no Rail/Header chrome either); the WizardShell's history-aware "← Back"
+  // is the escape hatch. MemoryRouter leaves window.history untouched, so
+  // these exercise the FALLBACK branch (the deep-link case).
+  describe("Back escape (F6/§4.1)", () => {
+    it("falls back to /vaults when a vault is already active on this device", async () => {
       useVaultStore.setState({
         vaults: {
           moss: {
@@ -140,15 +143,15 @@ describe("AddVaultChooser", () => {
         activeVaultId: "moss",
       });
       renderChooser();
-      fireEvent.click(screen.getByRole("link", { name: /back/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^← back$/i }));
       await waitFor(() => {
         expect(screen.getByTestId("location-echo")).toHaveTextContent("/vaults");
       });
     });
 
-    it("points at / when there's no active vault on this device", async () => {
+    it("falls back to / when there's no active vault on this device", async () => {
       renderChooser();
-      fireEvent.click(screen.getByRole("link", { name: /back/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^← back$/i }));
       await waitFor(() => {
         expect(screen.getByTestId("location-echo")).toHaveTextContent("/");
       });

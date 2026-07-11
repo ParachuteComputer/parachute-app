@@ -1,34 +1,13 @@
 import { InsecureContextBanner } from "@/components/InsecureContextBanner";
-import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
+import { ParachuteMark } from "@/components/ParachuteMark";
+import { WizardShell } from "@/components/WizardShell";
 import { beginOAuth, normalizeVaultUrl, useOriginVaultProbe } from "@/lib/vault";
 import { InsecureContextError } from "@/lib/vault/pkce";
 import { useVaultStore } from "@/lib/vault/store";
 import { switchVault } from "@/lib/vault/switch";
 import { safeInternalRedirect, vaultIdFromUrl } from "@/lib/vault/url";
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
-
-// The shared no-vault-yet layout — matches Landing.tsx / Welcome.tsx /
-// CheckEmail.tsx exactly, so the self-host hop reads as part of the same
-// visual world rather than a bolted-on developer screen. A quiet "← Back" (F6)
-// sits beside the Wordmark — "/" resolves correctly either way: Home if a
-// vault is already active on this device (adding a second, self-hosted vault),
-// or the front door / boot dispatcher otherwise.
-function Shell({ children }: { children: ReactNode }) {
-  return (
-    <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col">
-      <div className="flex items-center justify-between px-6 pt-6 sm:px-10">
-        <Wordmark />
-        <Link to="/" className="focus-ring font-round text-sm text-fg-dim hover:text-accent">
-          ← Back
-        </Link>
-      </div>
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
-        <div className="mx-auto w-full max-w-md">{children}</div>
-      </div>
-    </div>
-  );
-}
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 
 /**
  * The live hostname for the announced hop (SYNTHESIS #11) — recomputed on
@@ -189,7 +168,11 @@ export function AddVault() {
   const liveHost = liveHostFromInput(url);
 
   return (
-    <Shell>
+    // F6 — the quiet "← Back" is history-aware (WizardShell): back to
+    // wherever the connect ceremony was entered from (chooser, switcher,
+    // picker foot). The "/" fallback resolves correctly either way: Home if a
+    // vault is already active on this device, else the front door.
+    <WizardShell escape={{ kind: "back", to: "/" }}>
       <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
       <p className="eyebrow mb-3">Self-hosted</p>
       <h1 className="hero-title mb-4">
@@ -245,6 +228,6 @@ export function AddVault() {
           {submitting ? "Continuing…" : liveHost ? `Continue to ${liveHost} →` : "Continue"}
         </button>
       </form>
-    </Shell>
+    </WizardShell>
   );
 }

@@ -1,70 +1,34 @@
-import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
+import { ParachuteMark } from "@/components/ParachuteMark";
+import { WizardShell } from "@/components/WizardShell";
 import { getSession, listVaults } from "@/lib/account/client";
-import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { classifyVaults } from "@/lib/account/dispatch";
-import { describeAccountError } from "@/lib/account/error-copy";
-import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
+import { openHostedVault } from "@/lib/account/hosted-vault";
 import { formatUsageBytes } from "@/lib/account/provenance";
 import type { AccountVault } from "@/lib/account/types";
 import { announceVaultSwitch } from "@/lib/vault/switch";
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
-
-// Door-agnostic: the app never hardcodes a cloud vault host. A vault's real
-// address comes from the door (the `address` field on `GET /account/vaults`);
-// the pre-creation naming screen can't know the host yet (the home door assigns
-// it at mint time), so the echo shows the slug + the permanent-address promise
-// without asserting a specific host UNLESS the door descriptor advertises a
-// `vault_url_template` (HUB-PARITY P4) — then the echo substitutes the typed
-// name into it. Preview-only: the real, post-creation address always comes
-// from the create/list responses, never from this template.
-function sanitizeVaultName(raw: string): string {
-  return raw.toLowerCase().replace(/[^a-z0-9-]/g, "");
-}
-
-// The vault-naming context: onboarding (first vault, right after account
-// creation) vs. addvault (an ADDITIONAL vault, reached from the picker's
-// "＋ Create a new vault" row, or from the dedicated add-vault chooser's
-// "Create" card (AddVaultChooser.tsx, F2/SYNTHESIS #10). Both share the exact
-// same form; only the eyebrow/H1/sub copy differ.
-type NamingCtx = "onboarding" | "addvault";
-
-/** What the naming form needs to render again if creation fails. */
-interface NamingBack {
-  ctx: NamingCtx;
-  email?: string;
-  existingName?: string;
-}
 
 type Stage =
   | { kind: "checking" }
   | { kind: "redirect" }
   | { kind: "net-error"; message: string }
-  | (NamingBack & { kind: "naming"; attemptedName?: string; error?: string })
-  | { kind: "creating"; name: string; ready: boolean; error?: string; back: NamingBack }
+  | { kind: "first-vault" }
   | { kind: "welcome-back"; email?: string; vault: AccountVault; error?: string }
   | { kind: "picker"; email?: string; vaults: AccountVault[] };
 
 // The post-sign-in dispatcher (`/welcome`, SYNTHESIS #4) — where a fresh
 // magic-link click lands (Landing sets `next=/welcome`). Confirms the
 // session, shows the "Signing you in…" beat while it lists the account's
-// vaults, then branches by count (`classifyVaults`): none → first-vault
-// naming (#5) → the creation beat (#6) → Home; one → the welcome-back beat
-// (#7) → Home; many → the picker (#8).
+// vaults, then branches by count (`classifyVaults`): none → the creation
+// ceremony's onboarding form (`/add-vault/create?first=1`, W2-6 §4.2); one →
+// the welcome-back beat (#7) → Home; many → the picker (#8), which renders in
+// place.
 //
-// ADD-VAULT NAMING VARIANT (SYNTHESIS #10): the SAME naming form, reached to
-// create an ADDITIONAL vault, is triggered by `?new=1` on this route. A fresh
-// navigation to `/welcome?new=1` (bookmark, reload, or the add-vault
-// chooser's "Create" card, AddVaultChooser.tsx) mounts this component fresh,
-// so the dispatch effect below reads the param and routes straight to the
-// naming form in "addvault" context (skipping the classify branch) once the
-// vaults are in. The picker's own "＋ Create a new vault" row is the one
-// caller that does NOT remount (it's already on this route) — it keeps the
-// URL in sync via `navigate("/welcome?new=1")` (push — NAVIGATION.md,
-// "picker → naming" is user-initiated) for back-button/bookmark honesty,
-// but transitions `stage` directly (no refetch needed; it already has the
-// vault list in hand). `?pick=1` (F13) is the sibling variant for
-// AddVaultChooser's "Open" card — see `wantsPicker` below.
+// SLIMMED IN W2-6: the naming/creating/ready beats moved out to their own
+// stepped URLs (AddVaultCreate.tsx). `?new=1` — the old same-route naming
+// variant — is now a plain shim to `/add-vault/create`. `?pick=1` (F13) still
+// forces the picker (AddVaultChooser's "Open" card).
 export function Welcome() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -72,33 +36,32 @@ export function Welcome() {
   const [runId, setRunId] = useState(0);
   // Guard the dispatch against redundant re-runs — keyed on BOTH the retry
   // counter AND the URL params (not `runId` alone). The params matter because
-  // the picker/naming fork is URL-addressable (`/welcome` vs `?new=1` vs
-  // `?pick=1`): a browser POP that only changes the params (Back from the
-  // `?new=1` naming form to the no-param/`?pick=1` picker) MUST re-dispatch so
-  // the fork re-syncs to the URL, instead of stranding the stale naming form
-  // where the picker should return. A `runId`-only guard left that same-route
-  // param push with a wrong Back target — exactly the F7 failure this PR
-  // exists to kill (W2-2 review).
+  // the picker fork is URL-addressable (`/welcome` vs `?pick=1`): a browser
+  // POP that only changes the params MUST re-dispatch so the fork re-syncs to
+  // the URL instead of stranding a stale stage — the F7 same-route failure
+  // W2-2 fixed (its review). Preserved through the W2-6 slimming.
   const processedKey = useRef<string | null>(null);
-  const creatingRan = useRef<string | null>(null);
   const welcomeBackRan = useRef<string | null>(null);
+  // `?new=1` — the pre-W2-6 add-vault naming entry. Handled as a pure shim in
+  // render (below); the dispatch effect must not race it.
+  const wantsAddVault = searchParams.get("new") === "1";
 
   // The dispatch: confirm the session, then branch on vault count. Re-runs on
   // a retry (`runId` bump — the net-error card's "Try again") OR a URL-param
-  // change (a POP between the picker and naming forks). A network failure
-  // confirming the session degrades to the front door, mirroring
-  // `resolveBoot`'s own degrade-on-failure (a signed-out-looking state is the
-  // safe default — the person can still act from there).
+  // change (a POP between param variants). A network failure confirming the
+  // session degrades to the front door, mirroring `resolveBoot`'s own
+  // degrade-on-failure (a signed-out-looking state is the safe default — the
+  // person can still act from there).
   useEffect(() => {
+    if (wantsAddVault) return; // the ?new=1 shim renders instead
     const dispatchKey = `${runId}|${searchParams.toString()}`;
     if (processedKey.current === dispatchKey) return;
     processedKey.current = dispatchKey;
-    // A re-dispatch triggered by a param POP arrives with a STALE stage (e.g.
-    // "naming" while we're Back at the picker URL) — reset to the transient
-    // beat so the async below repaints the correct fork instead of flashing
-    // the previous screen. No-op on first mount (already "checking").
+    // A re-dispatch triggered by a param POP arrives with a STALE stage —
+    // reset to the transient beat so the async below repaints the correct
+    // fork instead of flashing the previous screen. No-op on first mount
+    // (already "checking").
     setStage((prev) => (prev.kind === "checking" ? prev : { kind: "checking" }));
-    const wantsAddVault = searchParams.get("new") === "1";
     // F13 — AddVaultChooser's "Open" card links here with `?pick=1` to force
     // the picker even when the account has exactly one vault. Without this,
     // classifyVaults' welcome-back auto-open silently reopens the vault the
@@ -121,22 +84,13 @@ export function Welcome() {
 
       try {
         const { vaults } = await listVaults();
-        if (wantsAddVault && vaults.length > 0) {
-          setStage({
-            kind: "naming",
-            ctx: "addvault",
-            email: session.email,
-            existingName: vaults[0]?.name,
-          });
-          return;
-        }
         if (wantsPicker && vaults.length > 0) {
           setStage({ kind: "picker", email: session.email, vaults });
           return;
         }
         const branch = classifyVaults(vaults);
         if (branch.kind === "first-vault") {
-          setStage({ kind: "naming", ctx: "onboarding", email: session.email });
+          setStage({ kind: "first-vault" });
         } else if (branch.kind === "welcome-back") {
           setStage({ kind: "welcome-back", email: session.email, vault: branch.vault });
         } else {
@@ -149,40 +103,7 @@ export function Welcome() {
         });
       }
     })();
-  }, [runId, searchParams]);
-
-  // The creation beat (SYNTHESIS #6): fires once per attempted name. Mints
-  // the vault (which also opens it — createHostedVault composes
-  // openHostedVault — so it's already the active local vault by the time
-  // "ready" shows). A failure returns to the naming form with the typed name
-  // preserved so the person can fix a typo rather than retype it.
-  useEffect(() => {
-    if (stage.kind !== "creating" || stage.ready || stage.error) return;
-    if (creatingRan.current === stage.name) return;
-    creatingRan.current = stage.name;
-    const { name, back } = stage;
-    (async () => {
-      try {
-        // The account bearer is minted + cached inside the client (the dispatch
-        // above already confirmed the session), so no csrf is threaded here.
-        await createHostedVault(name);
-        setStage((prev) =>
-          prev.kind === "creating" && prev.name === name ? { ...prev, ready: true } : prev,
-        );
-      } catch (err) {
-        creatingRan.current = null;
-        setStage({
-          kind: "naming",
-          ...back,
-          attemptedName: name,
-          // F12 — never the raw wire code (`vault_limit_reached`, …): map
-          // known account-error codes to calm copy, generic fallback for the
-          // rest.
-          error: describeAccountError(err, "Couldn't create your vault. Try a different name."),
-        });
-      }
-    })();
-  }, [stage]);
+  }, [runId, searchParams, wantsAddVault]);
 
   // The welcome-back beat (SYNTHESIS #7): auto-opens the account's one vault,
   // then lands Home. The beat IS the "you signed in, not up" statement — no
@@ -211,6 +132,10 @@ export function Welcome() {
     })();
   }, [stage, navigate]);
 
+  // NAVIGATION.md: (a) redirect shim — `/welcome?new=1` (the pre-W2-6 naming
+  // entry: old bookmarks, stale UI) → the creation ceremony's own URL.
+  if (wantsAddVault) return <Navigate to="/add-vault/create" replace />;
+
   switch (stage.kind) {
     case "checking":
       return <SigningInBeat />;
@@ -222,6 +147,10 @@ export function Welcome() {
       return (
         <Navigate to={searchParams.get("link") === "expired" ? "/?link=expired" : "/"} replace />
       );
+    case "first-vault":
+      // NAVIGATION.md: (c) the dispatcher is transient — replace. The
+      // onboarding naming form owns the rest of the ceremony (§4.2).
+      return <Navigate to="/add-vault/create?first=1" replace />;
     case "net-error":
       return (
         <NetErrorCard
@@ -230,45 +159,6 @@ export function Welcome() {
             setStage({ kind: "checking" });
             setRunId((n) => n + 1);
           }}
-        />
-      );
-    case "naming":
-      return (
-        <VaultNamingForm
-          ctx={stage.ctx}
-          email={stage.email}
-          existingName={stage.existingName}
-          initialName={stage.attemptedName}
-          error={stage.error}
-          onCreate={(name) =>
-            setStage({
-              kind: "creating",
-              name,
-              ready: false,
-              back: { ctx: stage.ctx, email: stage.email, existingName: stage.existingName },
-            })
-          }
-        />
-      );
-    case "creating":
-      return (
-        <CreationBeatView
-          name={stage.name}
-          ready={stage.ready}
-          error={stage.error}
-          // NAVIGATION.md: "Ready 'Open my vault →' → /" — user-initiated,
-          // push. Back from Home lands on `/welcome`, which the dispatcher
-          // re-resolves against the now-created vault (welcome-back → replace
-          // → `/`): you end up right back in your vault, never on a stale or
-          // re-creating screen.
-          // §4.4: the ready beat's Open confirms with the toast. (Truthful
-          // today because createHostedVault already activated the vault;
-          // W2-6's create≠activate split moves the activation here.)
-          onOpen={() => {
-            announceVaultSwitch(stage.name);
-            navigate("/");
-          }}
-          onRetry={() => setStage({ kind: "naming", ...stage.back })}
         />
       );
     case "welcome-back":
@@ -298,23 +188,11 @@ export function Welcome() {
             navigate("/");
           }}
           onCreateNew={() => {
-            // NAVIGATION.md: "Picker: '＋ Create a new vault' → naming form"
-            // — user-initiated (picker → naming), push. Keeps the URL in
-            // sync for back-button/bookmark honesty; the state transition
-            // below is immediate since the vault list is already in hand (no
-            // refetch). Pre-mark the `?new=1` dispatch key as handled so the
-            // effect's searchParams-change re-run bails and keeps this direct
-            // `naming` stage — but a later POP back to the picker's DIFFERENT
-            // key (no-param / `?pick=1`) is NOT pre-marked, so it DOES
-            // re-dispatch and the picker returns (the F7 same-route fix).
-            processedKey.current = `${runId}|new=1`;
-            navigate("/welcome?new=1");
-            setStage({
-              kind: "naming",
-              ctx: "addvault",
-              email: stage.email,
-              existingName: stage.vaults[0]?.name,
-            });
+            // NAVIGATION.md: "Picker: '＋ Create a new vault' →
+            // /add-vault/create" — user-initiated, push. The naming form is
+            // its own route now (W2-6), so this is a plain cross-route hop —
+            // no same-route stage juggling.
+            navigate("/add-vault/create");
           }}
         />
       );
@@ -323,52 +201,11 @@ export function Welcome() {
   }
 }
 
-// The shared no-vault-yet layout — a Wordmark strip + a centered column
-// (matches Landing.tsx / CheckEmail.tsx exactly, since desktop's Rail spine
-// doesn't show without a vault). `backTo` (F6) renders a quiet "← Back" beside
-// the (now-linked) Wordmark — only the naming form passes it (it's also
-// what's shown on a creation failure, so it doubles as that escape hatch);
-// the transient/auto-advancing beats rely on the linked Wordmark alone.
-function Shell({
-  children,
-  wide = false,
-  backTo,
-}: {
-  children: ReactNode;
-  wide?: boolean;
-  backTo?: string;
-}) {
-  return (
-    <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col">
-      <div className="flex items-center justify-between px-6 pt-6 sm:px-10">
-        <Wordmark />
-        {backTo ? (
-          <Link to={backTo} className="focus-ring font-round text-sm text-fg-dim hover:text-accent">
-            ← Back
-          </Link>
-        ) : null}
-      </div>
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
-        <div className={`mx-auto w-full ${wide ? "max-w-xl" : "max-w-md"}`}>{children}</div>
-      </div>
-    </div>
-  );
-}
-
-// The "✓ Signed in as X" chip (SYNTHESIS #5 / #10) — the tell-don't-ask
-// statement that opens every post-sign-in screen once we know who they are.
-function SignedInChip({ email }: { email?: string }) {
-  if (!email) return null;
-  return (
-    <p className="chip mb-4 inline-flex border-grass/40 bg-grass-soft text-grass-ink">
-      <span aria-hidden="true">✓</span>&nbsp;Signed in as {email}
-    </p>
-  );
-}
-
 function SigningInBeat() {
   return (
-    <Shell>
+    // §4.1: an auto-advancing beat (<3s) — escape "none" is legal here; the
+    // linked wordmark stays as the always-on way out.
+    <WizardShell escape={{ kind: "none" }}>
       <ParachuteMark size={72} className="mx-auto mb-4 animate-pulse" />
       <p className="eyebrow mb-3">One moment</p>
       <h1 className="hero-title mb-2" style={{ fontSize: "clamp(1.8rem, 4vw, 2.3rem)" }}>
@@ -377,14 +214,15 @@ function SigningInBeat() {
       <output aria-live="polite" className="font-round text-sm text-fg-muted">
         Checking your vaults…
       </output>
-    </Shell>
+    </WizardShell>
   );
 }
 
-// SYNTHESIS #12 — signed in, but the vault list couldn't be fetched.
+// SYNTHESIS #12 — signed in, but the vault list couldn't be fetched. This one
+// can stall (it waits on the person), so it carries the §4.1 escape.
 function NetErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <Shell>
+    <WizardShell escape={{ kind: "back", to: "/" }}>
       <ParachuteMark size={56} className="mx-auto mb-6" />
       <p className="eyebrow mb-3">Almost there</p>
       <h1 className="hero-title mb-4" style={{ fontSize: "clamp(1.8rem, 4vw, 2.2rem)" }}>
@@ -398,223 +236,7 @@ function NetErrorCard({ message, onRetry }: { message: string; onRetry: () => vo
       >
         Try again
       </button>
-    </Shell>
-  );
-}
-
-// The shared naming form (SYNTHESIS #5 first-vault / #10 add-vault). ONE
-// form, two copy contexts — no "skip", no "you can change it later": the
-// name is the immutable slug, so that copy would be a lie.
-function VaultNamingForm({
-  ctx,
-  email,
-  existingName,
-  initialName,
-  error,
-  onCreate,
-}: {
-  ctx: NamingCtx;
-  email?: string;
-  existingName?: string;
-  initialName?: string;
-  error?: string;
-  onCreate: (name: string) => void;
-}) {
-  const [name, setName] = useState(() => sanitizeVaultName(initialName ?? ""));
-  const [vaultUrlTemplate, setVaultUrlTemplate] = useState<string | null>(null);
-  const trimmed = name.trim();
-  const isAdd = ctx === "addvault";
-  // F6 — a quiet way out. An add-vault naming (reached via the chooser or the
-  // picker's "＋ Create a new vault") backs up to the chooser; first-vault
-  // onboarding (no other vault exists yet) backs up to "/" — the front door /
-  // "already signed in, choose a vault or sign out" card.
-  const backTo = isAdd ? "/add-vault" : "/";
-
-  // HUB-PARITY P4 (SYNTHESIS screen 5's live address echo): the door
-  // descriptor's `vault_url_template` lets the naming form preview the real
-  // address instead of just the slug, once a door advertises one.
-  useEffect(() => {
-    let live = true;
-    getDoorDescriptor().then((d) => {
-      if (live) setVaultUrlTemplate(d?.vault_url_template ?? null);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!trimmed) return;
-    onCreate(trimmed);
-  }
-
-  return (
-    <Shell backTo={backTo}>
-      <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
-      <SignedInChip email={email} />
-      <p className="eyebrow mb-3">{isAdd ? "Adding a vault" : "Account created ✓"}</p>
-      <h1 className="hero-title mb-4">
-        {isAdd ? "Let's make your new" : "Let's make your first"}{" "}
-        <span className="accent-word">vault.</span>
-      </h1>
-      <p className="mx-auto mb-8 max-w-md text-lg leading-relaxed text-fg-muted">
-        {isAdd ? (
-          <>
-            This one's separate from{" "}
-            <b className="font-semibold text-fg">{existingName ?? "your other vault"}</b> — its own
-            private space, nothing shared.
-          </>
-        ) : (
-          <>
-            A vault is the private home for your notes — any AI you invite can read it, always yours
-            to export. <b className="font-semibold text-fg">This creates a brand-new, empty one.</b>
-          </>
-        )}
-      </p>
-
-      <form onSubmit={handleSubmit}>
-        <input
-          // biome-ignore lint/a11y/noAutofocus: this screen's single purpose is this field.
-          autoFocus
-          value={name}
-          onChange={(e) => setName(sanitizeVaultName(e.target.value))}
-          placeholder="moss"
-          autoComplete="off"
-          spellCheck={false}
-          aria-label="Vault name"
-          className="mx-auto mb-2 block w-full max-w-sm border-0 border-b-2 border-border bg-transparent pb-2 text-center font-serif text-3xl text-fg outline-none transition-colors focus:border-accent-light"
-        />
-        <p className="mb-6 min-h-6 font-round text-sm text-fg-muted">
-          {trimmed ? (
-            <span>
-              Your vault:{" "}
-              <b className="rounded-md bg-grass-soft px-2 py-0.5 text-grass-ink">{trimmed}</b>
-              {vaultUrlTemplate ? (
-                <>
-                  {" — it will live at "}
-                  <span className="font-mono text-xs">
-                    {vaultUrlTemplate.replace("{name}", trimmed)}
-                  </span>
-                </>
-              ) : null}
-            </span>
-          ) : (
-            "Letters, numbers, hyphens — pick a word you like."
-          )}
-        </p>
-        <p className="mx-auto mb-8 max-w-sm font-round text-xs text-fg-dim">
-          <span className="font-semibold text-fg-muted">The address is permanent</span>, so pick a
-          word you like. Letters, numbers, hyphens.
-        </p>
-
-        {error ? (
-          <p className="mx-auto mb-6 max-w-sm rounded-lg border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
-
-        <button
-          type="submit"
-          disabled={!trimmed}
-          className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
-        >
-          {trimmed ? `Create ${trimmed} →` : "Create →"}
-        </button>
-      </form>
-    </Shell>
-  );
-}
-
-const CREATING_TICKS = ["Setting up your vault…", "Preparing your keys…", "Almost there…"];
-
-// Cosmetic-only ticking status text — cycles on its own timer while the real
-// createHostedVault() call (owned by the parent) is in flight; doesn't gate
-// anything, so a fast network just shows the first tick briefly.
-function CreatingTick() {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    if (index >= CREATING_TICKS.length - 1) return;
-    const t = setTimeout(() => setIndex((i) => Math.min(i + 1, CREATING_TICKS.length - 1)), 650);
-    return () => clearTimeout(t);
-  }, [index]);
-  return (
-    <output aria-live="polite" className="font-round text-sm text-fg-muted">
-      {CREATING_TICKS[index]}
-    </output>
-  );
-}
-
-// SYNTHESIS #6 — the creation beat: "Making a place for X…" → ticks →
-// "X is ready." → [Open my vault →] → Home.
-function CreationBeatView({
-  name,
-  ready,
-  error,
-  onOpen,
-  onRetry,
-}: {
-  name: string;
-  ready: boolean;
-  error?: string;
-  onOpen: () => void;
-  onRetry: () => void;
-}) {
-  // NOTE: this branch is currently unreachable — the creation-failure catch
-  // (above, in `Welcome()`) transitions back to the `naming` stage (with
-  // `error` set there) rather than keeping `creating`'s own `error` field, so
-  // the naming form's inline error banner is what a real failure shows, not
-  // this card. Its Back link (F6, VaultNamingForm) is the actual escape hatch
-  // for that path. Left as-is (pre-existing) — reconciling the two is a
-  // separate cleanup, not this navigation fix.
-  if (error) {
-    return (
-      <Shell>
-        <ParachuteMark size={60} className="mx-auto mb-6" />
-        <p className="eyebrow mb-3">Couldn't create it</p>
-        <h1 className="hero-title mb-4" style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.1rem)" }}>
-          Something went <span className="accent-word">sideways.</span>
-        </h1>
-        <p className="mx-auto mb-6 max-w-sm text-fg-muted">{error}</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
-        >
-          Try again
-        </button>
-      </Shell>
-    );
-  }
-  if (ready) {
-    return (
-      <Shell>
-        <ParachuteMark size={90} className="mx-auto mb-6 fade-up" />
-        <p className="eyebrow mb-3">Ready</p>
-        <h1 className="hero-title mb-3" style={{ fontSize: "clamp(1.8rem, 4vw, 2.3rem)" }}>
-          {name} is <span className="accent-word">ready.</span>
-        </h1>
-        <p className="mx-auto mb-8 max-w-sm text-fg-muted">
-          Everything inside is yours. Open format. Export anytime.
-        </p>
-        <button
-          type="button"
-          onClick={onOpen}
-          className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
-        >
-          Open my vault →
-        </button>
-      </Shell>
-    );
-  }
-  return (
-    <Shell>
-      <ParachuteMark size={96} className="mx-auto mb-6 animate-pulse" />
-      <h1 className="hero-title mb-3" style={{ fontSize: "clamp(1.6rem, 3.5vw, 1.9rem)" }}>
-        Making a place for <span className="accent-word">{name}…</span>
-      </h1>
-      <CreatingTick />
-    </Shell>
+    </WizardShell>
   );
 }
 
@@ -632,7 +254,9 @@ function WelcomeBackBeat({
 }) {
   if (error) {
     return (
-      <Shell>
+      // The failure state stalls — it gets the escape the auto-beat doesn't
+      // need (§4.1 rule 2).
+      <WizardShell escape={{ kind: "back", to: "/" }}>
         <ParachuteMark size={60} className="mx-auto mb-6" />
         <p className="eyebrow mb-3">One moment</p>
         <h1 className="hero-title mb-4" style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.1rem)" }}>
@@ -646,11 +270,12 @@ function WelcomeBackBeat({
         >
           Try again
         </button>
-      </Shell>
+      </WizardShell>
     );
   }
   return (
-    <Shell>
+    // §4.1: auto-advancing beat — escape "none".
+    <WizardShell escape={{ kind: "none" }}>
       <ParachuteMark size={76} className="mx-auto mb-4 animate-pulse" />
       <p className="eyebrow mb-3">Welcome back</p>
       <h1 className="hero-title mb-3" style={{ fontSize: "clamp(1.8rem, 4vw, 2.1rem)" }}>
@@ -659,7 +284,7 @@ function WelcomeBackBeat({
       <output aria-live="polite" className="mx-auto max-w-sm text-fg-muted">
         Signed in as {email ?? "you"} — opening {vaultName}…
       </output>
-    </Shell>
+    </WizardShell>
   );
 }
 
@@ -704,7 +329,9 @@ function VaultCard({
   );
 }
 
-// SYNTHESIS #8 — the picker: many vaults, every card verb is Open.
+// SYNTHESIS #8 — the picker: many vaults, every card verb is Open. It stalls
+// (a decision screen), so it carries the §4.1 escape: history-aware back with
+// the front door as the deep-link fallback.
 function PickerView({
   email,
   vaults,
@@ -732,7 +359,7 @@ function PickerView({
   }
 
   return (
-    <Shell wide>
+    <WizardShell wide escape={{ kind: "back", to: "/" }}>
       <ParachuteMark size={56} className="mx-auto mb-6" />
       <p className="eyebrow mb-3">Which vault</p>
       <h1 className="hero-title mb-3" style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>
@@ -777,6 +404,6 @@ function PickerView({
           Connect a self-hosted vault
         </Link>
       </p>
-    </Shell>
+    </WizardShell>
   );
 }

@@ -1,8 +1,14 @@
 import { loadToken } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
+import { vaultIdFromUrl } from "@/lib/vault/url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as client from "./client";
-import { HOSTED_CLIENT_ID, isHostedVaultRecord, openHostedVault } from "./hosted-vault";
+import {
+  HOSTED_CLIENT_ID,
+  createHostedVault,
+  isHostedVaultRecord,
+  openHostedVault,
+} from "./hosted-vault";
 
 // Locks the DOOR-AGNOSTIC contract (Aaron's home-door principle): a home-door
 // vault's issuer is the app's OWN serving origin (never a hardcoded cloud host),
@@ -51,5 +57,71 @@ describe("openHostedVault — door-agnostic (same-origin home door)", () => {
       // no services catalog → the door didn't tell us where the vault lives
     });
     await expect(openHostedVault("moss")).rejects.toThrow(/services\.vault\.url/);
+  });
+});
+
+// The activation-honesty split (W2-6, DESIGN-SPEC §4.2 / WALK-manager #2):
+// creating a vault used to compose openHostedVault, silently switching the
+// active vault mid-"creating". Now the create call MINTS ONLY — the local
+// vault store must be byte-identical before and after.
+describe("createHostedVault — mints only (create ≠ activate)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    localStorage.clear();
+  });
+
+  it("creates account-side but touches NOTHING on this device — even when the door hands back an inline token", async () => {
+    // Seed a prior active vault — the person mid-ceremony is "in" moss.
+    useVaultStore.setState({
+      vaults: {
+        "moss-id": {
+          id: "moss-id",
+          url: "https://u.parachute.computer/vault/moss",
+          name: "moss",
+          issuer: window.location.origin,
+          clientId: HOSTED_CLIENT_ID,
+          scope: "vault:moss:read vault:moss:write",
+          addedAt: "2026-07-01T00:00:00.000Z",
+          lastUsedAt: "2026-07-01T00:00:00.000Z",
+        },
+      },
+      activeVaultId: "moss-id",
+    });
+    const before = useVaultStore.getState();
+
+    // Cloud's REAL create shape — inline token + services included. The split
+    // deliberately DISCARDS them (no stored credentials until Open).
+    const createSpy = vi.spyOn(client, "createVault").mockResolvedValue({
+      name: "fieldnotes",
+      url: "https://u.parachute.computer/vault/fieldnotes",
+      vault_token: "inline-tok",
+      services: {
+        "vault:fieldnotes": { url: "https://u.parachute.computer/vault/fieldnotes" },
+      },
+    });
+    const mintSpy = vi.spyOn(client, "mintVaultToken");
+
+    const canonical = await createHostedVault("fieldnotes");
+    expect(canonical).toBe("fieldnotes");
+    expect(createSpy).toHaveBeenCalledWith("fieldnotes", expect.anything());
+    // No C3 mint, no record, no token, no active-vault change.
+    expect(mintSpy).not.toHaveBeenCalled();
+    const after = useVaultStore.getState();
+    expect(after.activeVaultId).toBe("moss-id");
+    expect(Object.keys(after.vaults)).toEqual(Object.keys(before.vaults));
+    // The discarded inline token left no stored credential behind (tokens are
+    // keyed by the URL-derived vault id).
+    expect(loadToken(vaultIdFromUrl("https://u.parachute.computer/vault/fieldnotes"))).toBeNull();
+  });
+
+  it("returns the requested name when the door omits its canonical echo", async () => {
+    vi.spyOn(client, "createVault").mockResolvedValue({ name: "" });
+    await expect(createHostedVault("moss")).resolves.toBe("moss");
+    expect(useVaultStore.getState().activeVaultId).toBeNull();
   });
 });
