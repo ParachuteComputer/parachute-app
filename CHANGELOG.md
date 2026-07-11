@@ -1,5 +1,65 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.5.0] - 2026-07-11
+
+**W2-1 — the hybrid skin: cream/sage palette + Fraunces/Figtree (DESIGN-SPEC
+§1, ratified decision c).** The visual foundation of the Wave-2 IA redesign.
+Value-edits to the existing token architecture — every token NAME and the
+component classes that read them are preserved; the app looks warmer/serif
+immediately but keeps its current structure (component restyling trails in
+later Wave-2 PRs).
+
+- **Palette (light).** The blush paper becomes the prototype's cream/sage
+  world: canvas `#fdfaf4→#fafaf6`, recessed `#f7f1e6→#f7f5ec`, card
+  `#ffffff→#fefefa` (a breath off the canvas, not hard white); ink moves from
+  warm brown to **forest** (`#2a2521→#233c2a`, 11.46:1) with sage-cast
+  secondary text; hairlines go sage (`#e2d9c8→#d6e2d6`). **Coral stays the
+  accent, unchanged** (`#bf4a2a` — 4.75:1 on the new canvas). The
+  `.app-canvas` wash flips coral→grass (the "blush wash → misty sage morning"
+  move, via the new `--canvas-wash` token: 7% light / 5% dark).
+- **Dark = "forest night" (net-new design).** The warm-brown night becomes
+  the cream/sage world's complement: deep green-cast near-blacks
+  (`#1a1917→#161d18` etc.), sage-tinted secondary text, the lightened coral
+  `#ec7a5c` kept as accent (6.14:1 on the new ground). Same `--_d-*`
+  single-source architecture, value edits only; both dark gates
+  (`prefers-color-scheme` and `data-theme`) untouched structurally. The dark
+  prose code/`.hljs` surfaces drop their stale warm-brown hex for
+  `--color-bg-soft` so they ride the theme.
+- **The sage/sky naming fix.** `--color-sage` was a *blue* (== `--color-sky`)
+  — a trap for anyone building "the sage world." The five inline
+  `var(--color-sage)` call sites (Account, Welcome, CheckEmail, Landing ×2 —
+  all blue side-door links) repoint to `var(--color-sky)`; `--color-sage` now
+  means the prototype's **green** (`#527e5d` light / `#8fb096` dark). End
+  state: sage = green, sky = blue, as any reader would assume.
+- **Type — Fraunces + Figtree, self-hosted.** `@fontsource-variable/fraunces`
+  (opsz + opsz-italic — the optical-size axis is the display voice, and the
+  `.accent-word` device needs real italics) + `@fontsource-variable/figtree`,
+  bundled by Vite, `woff2` added to the workbox precache glob so type works
+  offline (~344 KiB of fonts, within the spec's ~350 KB budget).
+  `font-display: swap`; the tuned system stacks remain as fallbacks. The
+  stacks keep their var names (`--font-serif`/`--font-sans`); `--font-round`
+  retires to an alias of `--font-sans` — Figtree carries chrome.
+- **Shadows, radii, glass.** `--shadow-soft`/`-lift` retune to the
+  prototype's sage-tinted negative-spread geometry; the `--shadow-sm/-md/-lg`
+  ramp keeps its geometry with the tint moved warm-brown→forest. Radii:
+  `--radius-lg` 10→12px, `--radius-xl` 14→16px, **new `--radius-2xl` 24px**;
+  `.btn`/`.input`/`.select` become pills, `.textarea` → xl, `.card`/
+  `.dialog-panel` → 2xl (dialog also steps up to `--shadow-lift`). New
+  `.glass-panel` class (translucent cream over blur) for the coming
+  rail/sheet/palette. `.btn-primary` gains the springy scale(1.02) hover
+  lift behind `prefers-reduced-motion`. Button/input inline padding stepped
+  up slightly so labels breathe inside the pill curve.
+- **Eyebrows.** `.eyebrow` moves `--color-fg-dim`→`--color-sage` (the
+  prototype's in-app label rule); new `.eyebrow-accent` (coral) reserved for
+  the marketing Landing.
+- **PWA manifest.** `background_color` `#fdfaf4→#fafaf6` (splash matches the
+  new canvas); `theme_color` stays coral.
+- **Docs.** STYLE.md retuned to the hybrid tokens; documents `.accent-word`'s
+  rule of use (one italic accent word per headline, serif headings only),
+  `.glass-panel`, the sage/sky rename, and the eyebrow rule.
+- All 35 DESIGN-SPEC §1 contrast claims reproduced with the WCAG
+  relative-luminance formula (script + table in the PR).
+
 ## [0.4.3] - 2026-07-11
 
 **Entry-billing story — the interval picker + honest pricing (F1 app half /

@@ -137,7 +137,9 @@ export default defineConfig({
         // so the installed SW never swallows a navigation to them (load-bearing
         // once the SPA is served same-origin — see pwa-navigation-denylist.ts).
         navigateFallbackDenylist: [...navigationDenylist],
-        globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
+        // woff2: the self-hosted Fraunces/Figtree variable fonts (bundled from
+        // @fontsource-variable) must be precached so type renders offline.
+        globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest,woff2}"],
         // A fresh SW takes over immediately (skipWaiting) and claims open pages
         // (clientsClaim) so a new deploy activates on next load; the app reloads
         // on controllerchange to swap in the new assets atomically. Old precaches
@@ -145,8 +147,8 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        // No runtimeCaching: fonts are system stacks now (0.1.21 brand pass), so
-        // there's nothing external to cache. The old google-fonts rule was dead.
+        // No runtimeCaching: fonts are self-hosted and precached (above), so
+        // there's nothing external to cache.
       },
       devOptions: { enabled: false },
     }),
