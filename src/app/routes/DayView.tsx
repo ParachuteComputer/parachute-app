@@ -1,102 +1,45 @@
-import {
-  NoteTimelineRow,
-  RecentTimeline,
-  SectionLabel,
-  groupNotesByDay,
-} from "@/components/RecentTimeline";
+import { NoteTimelineRow, SectionLabel } from "@/components/RecentTimeline";
 import { EmptyState, ErrorState, OfflineRibbon, Skeleton } from "@/components/ui";
 import { formatLongDate, parseDateKey, shiftDay, toDateKey, todayKey } from "@/lib/dates";
+import { useHistoryAwareBack } from "@/lib/nav/history";
 import { useNotesForDateViews, useVaultStore } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
 import type { Note } from "@/lib/vault/types";
 import { useMemo } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 
-// Re-exported so existing importers of the grouping helper (and its unit test)
-// keep resolving it from this module after the list itself moved into the
-// shared RecentTimeline component.
-export { groupNotesByDay };
-
-// The front door. With no `?date` it renders a day-grouped timeline of recent
-// notes (the calm daily driver at `/`); with `?date=YYYY-MM-DD` it renders the
-// single-day view a Calendar cell drills into. Empty days never render — the
-// timeline only shows days that actually hold notes.
-export function Today() {
+// The day drill-in (F8 / W2-3): notes created or edited on one target day,
+// reached from Calendar cells and Home's day-header links
+// (`/today?date=YYYY-MM-DD`). This route used to ALSO render a no-param
+// front-door timeline that duplicated Home almost note-for-note (two rooms,
+// two names — DESIGN-SPEC F8); that timeline now lives solely at `/` (Home
+// absorbed it), so a bare `/today` is a redirect shim, not a page of its own.
+export function DayView() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.get("date");
 
   // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
-  if (dateParam !== null) return <SingleDay dateParam={dateParam} />;
-  return <Timeline vaultName={activeVault.name} />;
+  // NAVIGATION.md: `/today` (no-param) shim → `/` — replace. (a) The
+  // front-door timeline this used to render now lives solely at Home; a bare
+  // `/today` was never really "a place" of its own once the merge landed.
+  if (dateParam === null) return <Navigate to="/" replace />;
+
+  return <SingleDay dateParam={dateParam} />;
 }
 
 // ---------------------------------------------------------------------------
-// Front-door timeline: recent notes grouped by their most-recent-activity day.
-// The grouped list itself lives in the shared RecentTimeline component (also
-// used by the guided home at `/`); this wrapper adds Today's header + states.
-// ---------------------------------------------------------------------------
-
-function Timeline({ vaultName }: { vaultName: string }) {
-  const notes = useNotesForDateViews();
-  const groups = useMemo(() => groupNotesByDay(notes.data ?? []), [notes.data]);
-
-  return (
-    <div className="page-prose">
-      <header className="mb-8">
-        <p className="eyebrow">{vaultName}</p>
-        <h1 className="page-title">Today</h1>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg-muted">
-          <Link to="/new" className="text-accent hover:underline">
-            + Capture
-          </Link>
-          <Link to="/all" className="hover:text-accent">
-            All notes
-          </Link>
-          <Link to="/calendar" className="hover:text-accent">
-            Calendar
-          </Link>
-        </div>
-      </header>
-
-      {notes.isPending ? (
-        <TimelineSkeleton />
-      ) : notes.isError && !notes.data ? (
-        // Only a genuinely empty cache falls through to the error block — when
-        // a background refetch fails but we still hold notes, keep showing them.
-        <ErrorBlock error={notes.error} />
-      ) : groups.length === 0 ? (
-        <TimelineEmpty />
-      ) : (
-        <>
-          {notes.isError ? <OfflineRibbon /> : null}
-          <RecentTimeline notes={notes.data ?? []} />
-        </>
-      )}
-    </div>
-  );
-}
-
-function TimelineEmpty() {
-  return (
-    <EmptyState
-      title={<span className="font-serif text-lg text-fg">A quiet, empty page.</span>}
-      description="Your notes will gather here, newest day first."
-      action={
-        <Link to="/new" className="btn btn-primary btn-touch">
-          Capture the first one
-        </Link>
-      }
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Single day (Calendar drill-in): notes created / edited on the target day.
+// Single day: notes created / edited on the target day.
 // ---------------------------------------------------------------------------
 
 function SingleDay({ dateParam }: { dateParam: string }) {
+  // The history-aware escape (NAVIGATION.md § "The history-aware escape
+  // rule"): prefers landing back wherever the user actually came from
+  // (Calendar, Home's day headers, another day) and only falls back to Home
+  // when there's genuinely nothing behind this entry (a deep link).
+  const back = useHistoryAwareBack("/");
+
   const todayStr = todayKey();
   const targetKey = dateParam || todayStr;
   const parsed = parseDateKey(targetKey);
@@ -120,7 +63,7 @@ function SingleDay({ dateParam }: { dateParam: string }) {
     return (
       <div className="page-prose">
         <p className="text-sm text-danger">Invalid date in URL: {targetKey}</p>
-        <Link to="/today" className="text-sm text-accent hover:underline">
+        <Link to="/" className="text-sm text-accent hover:underline">
           Back to today
         </Link>
       </div>
@@ -134,6 +77,12 @@ function SingleDay({ dateParam }: { dateParam: string }) {
 
   return (
     <div className="page-prose">
+      <nav className="mb-6 text-sm text-fg-dim">
+        <button type="button" onClick={back} className="hover:text-accent">
+          ← Back
+        </button>
+      </nav>
+
       <header className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <p className="eyebrow">{isToday ? "Today" : "On"}</p>
@@ -148,7 +97,7 @@ function SingleDay({ dateParam }: { dateParam: string }) {
             ← {prev}
           </Link>
           {!isToday ? (
-            <Link to="/today" className="btn btn-secondary btn-sm">
+            <Link to="/" className="btn btn-secondary btn-sm">
               Today
             </Link>
           ) : null}

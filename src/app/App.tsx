@@ -24,13 +24,16 @@ import { BrowserRouter, Navigate, Route, Routes, useParams, useSearchParams } fr
 import { Home } from "./routes/Home";
 import { Landing } from "./routes/Landing";
 import { Notes } from "./routes/Notes";
-import { Today } from "./routes/Today";
 
-// Home + Landing + Today + Notes stay eager: the index dispatcher paints the
-// guided Home (with a vault) or the Landing (without) on first load, so
-// splitting them would block FCP on a network round-trip. Every other route
-// gets its own chunk so the editor's CodeMirror, the graph's force-graph
-// layer, settings, etc. don't pile into the initial download.
+// Home + Landing + Notes stay eager: the index dispatcher paints the guided
+// Home (with a vault) or the Landing (without) on first load, so splitting
+// them would block FCP on a network round-trip. Every other route gets its
+// own chunk so the editor's CodeMirror, the graph's force-graph layer,
+// settings, etc. don't pile into the initial download. DayView (the day
+// drill-in, formerly Today's dual-purpose route) moved into this lazy set in
+// W2-3 — the no-param front-door timeline it used to render (which DID need
+// to be eager) is gone, absorbed into Home; what's left is a secondary
+// destination reached from Calendar / day headers, same as any other room.
 const Account = lazy(() => import("./routes/Account").then((m) => ({ default: m.Account })));
 const Activity = lazy(() => import("./routes/Activity").then((m) => ({ default: m.Activity })));
 const AddVault = lazy(() => import("./routes/AddVault").then((m) => ({ default: m.AddVault })));
@@ -39,6 +42,7 @@ const AddVaultChooser = lazy(() =>
 );
 const Calendar = lazy(() => import("./routes/Calendar").then((m) => ({ default: m.Calendar })));
 const ConnectAI = lazy(() => import("./routes/ConnectAI").then((m) => ({ default: m.ConnectAI })));
+const DayView = lazy(() => import("./routes/DayView").then((m) => ({ default: m.DayView })));
 const Import = lazy(() => import("./routes/Import").then((m) => ({ default: m.Import })));
 const NoteEditor = lazy(() =>
   import("./routes/NoteEditor").then((m) => ({ default: m.NoteEditor })),
@@ -294,7 +298,7 @@ export function App() {
                       <Route path="/import" element={<Import />} />
                       <Route path="/connect" element={<ConnectAI />} />
                       <Route path="/graph" element={<VaultGraph />} />
-                      <Route path="/today" element={<Today />} />
+                      <Route path="/today" element={<DayView />} />
                       <Route path="/calendar" element={<Calendar />} />
                       <Route path="/activity" element={<Activity />} />
                       <Route path="/n/:id" element={<NoteView />} />

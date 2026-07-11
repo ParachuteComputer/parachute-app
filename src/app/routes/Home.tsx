@@ -14,7 +14,7 @@ import type { Note } from "@/lib/vault/types";
 import { useMemo } from "react";
 import { Link, Navigate } from "react-router";
 
-// The guided home — the surface a connected vault opens on (App.tsx's NotesIndex
+// The guided home — the surface a connected vault opens on (App.tsx's BootGate
 // renders this at `/`; the no-vault case renders the arrival `Landing`).
 //
 // Rebuilt to the synthesized prototype (Scene 4/6): the vault NAME leads as the
@@ -22,6 +22,12 @@ import { Link, Navigate } from "react-router";
 // hero affordance, warm quick doors + one quiet sun nudge carry setup, and the
 // recent timeline gathers below. It leans warm for a fresh vault and recedes to
 // a quiet version once the vault feels lived-in.
+//
+// F8/W2-3: this room absorbed `/today`'s no-param timeline, which used to
+// render an almost-identical day-grouped list under a different name (the
+// desktop rail called `/` "Today" while the mobile tab called it "Home" —
+// two names for one room). `/today` with no `?date=` is now a redirect shim
+// to here; `/today?date=` survives as the day drill-in (`DayView.tsx`).
 export function Home() {
   const vault = useVaultStore((s) => s.getActiveVault());
   const notes = useNotesForDateViews();
@@ -54,13 +60,22 @@ export function Home() {
 
   return (
     <div className="page-prose">
-      <header className="mb-6">
-        <h1 className="page-title" style={{ fontSize: "clamp(2rem, 4vw, 2.6rem)" }}>
-          {vault.name}
-        </h1>
-        <p className="mt-1.5 text-fg-muted">
-          Everything here is yours. Open format. Export anytime.
-        </p>
+      <header className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <h1 className="page-title" style={{ fontSize: "clamp(2rem, 4vw, 2.6rem)" }}>
+            {vault.name}
+          </h1>
+          <p className="mt-1.5 text-fg-muted">
+            Everything here is yours. Open format. Export anytime.
+          </p>
+        </div>
+        {/* F8/W2-3: Home absorbed /today's no-param timeline, which was the
+            only desktop door to Calendar (the rail carries no Calendar row
+            yet — that's W2-5). This link keeps Calendar reachable from the
+            front door on both form factors. */}
+        <Link to="/calendar" className="text-sm text-fg-dim hover:text-accent">
+          Calendar
+        </Link>
       </header>
 
       <Composer vaultName={vault.name} focused={mode === "fresh"} />
