@@ -30,6 +30,7 @@ export function VaultGraph() {
     return new Set(graph.nodes.filter((n) => matchesFilter(n, filter)).map((n) => n.id));
   }, [graph, filter]);
 
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
   return (

@@ -214,7 +214,9 @@ export function NoteNew() {
         }
         if (composeVaultId) clearDraft(composeVaultId, NEW_NOTE_SCOPE);
         pushToast(`Created ${created.path ?? created.id}`, "success");
-        navigate(`/n/${encodeURIComponent(created.id)}`);
+        // NAVIGATION.md: "NoteNew save → /n/<id>" — (b) consumes the compose
+        // form; replace (Back to a cleared, ghost draft would lie).
+        navigate(`/n/${encodeURIComponent(created.id)}`, { replace: true });
       },
       onError: (err) => {
         if (err instanceof VaultAuthError) {
@@ -341,7 +343,9 @@ export function NoteNew() {
       if (composeVaultId) clearDraft(composeVaultId, NEW_NOTE_SCOPE);
       pushToast("Captured — syncing audio.", "success");
       voice.discardAudio();
-      navigate(`/n/${encodeURIComponent(localId)}`);
+      // NAVIGATION.md: "NoteNew save → /n/<id>" — (b) consumes the compose
+      // form; replace (Back to a cleared, ghost draft would lie).
+      navigate(`/n/${encodeURIComponent(localId)}`, { replace: true });
     } catch (e) {
       pushToast(e instanceof Error ? `Capture failed: ${e.message}` : "Capture failed.", "error");
       setSaveError(e instanceof Error ? e.message : "Capture failed");

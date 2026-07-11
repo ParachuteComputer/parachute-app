@@ -33,6 +33,8 @@ import { Link, Navigate } from "react-router";
 // air between them; add more as the per-vault customization surface grows.
 export function Settings() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
+  // NAVIGATION.md: route guard, no active vault — replace (this route was
+  // never really shown, a shim in spirit).
   if (!activeVault) return <Navigate to="/" replace />;
 
   return (

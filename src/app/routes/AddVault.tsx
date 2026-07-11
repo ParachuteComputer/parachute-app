@@ -169,6 +169,8 @@ export function AddVault() {
     const existing = store.vaults[vaultIdFromUrl(normalized)];
     if (existing) {
       store.setActiveVault(existing.id);
+      // NAVIGATION.md: this consumes the ?add= auto-begin one-shot param
+      // (already stripped from history above) — replace.
       navigate(redirect ?? "/", { replace: true });
       return;
     }

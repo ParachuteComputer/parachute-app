@@ -59,9 +59,10 @@ type Stage =
 // naming form in "addvault" context (skipping the classify branch) once the
 // vaults are in. The picker's own "＋ Create a new vault" row is the one
 // caller that does NOT remount (it's already on this route) — it keeps the
-// URL in sync via `navigate(..., { replace: true })` for back-button/bookmark
-// honesty, but transitions `stage` directly (no refetch needed; it already
-// has the vault list in hand). `?pick=1` (F13) is the sibling variant for
+// URL in sync via `navigate("/welcome?new=1")` (push — NAVIGATION.md,
+// "picker → naming" is user-initiated) for back-button/bookmark honesty,
+// but transitions `stage` directly (no refetch needed; it already has the
+// vault list in hand). `?pick=1` (F13) is the sibling variant for
 // AddVaultChooser's "Open" card — see `wantsPicker` below.
 export function Welcome() {
   const navigate = useNavigate();
@@ -177,6 +178,7 @@ export function Welcome() {
     (async () => {
       try {
         await openHostedVault(vaultName);
+        // NAVIGATION.md: (d) the single post-auth landing — replace.
         navigate("/", { replace: true });
       } catch (err) {
         welcomeBackRan.current = null;
@@ -196,6 +198,7 @@ export function Welcome() {
       // Preserve the expired-link cue: cloud 302s a dead/used link to
       // /welcome?link=expired, but the recovery UI lives on the front door
       // (Landing reads ?link=expired). Carry the param through the redirect.
+      // NAVIGATION.md: (b) one-shot param carry-through — replace.
       return (
         <Navigate to={searchParams.get("link") === "expired" ? "/?link=expired" : "/"} replace />
       );
@@ -233,7 +236,10 @@ export function Welcome() {
           name={stage.name}
           ready={stage.ready}
           error={stage.error}
-          onOpen={() => navigate("/", { replace: true })}
+          // NAVIGATION.md: "Ready 'Open my vault →' → /" — user-initiated,
+          // push. Back to the ready beat is harmless (the vault already
+          // exists; nothing re-fires).
+          onOpen={() => navigate("/")}
           onRetry={() => setStage({ kind: "naming", ...stage.back })}
         />
       );
@@ -257,10 +263,17 @@ export function Welcome() {
           vaults={stage.vaults}
           onOpenVault={async (vault) => {
             await openHostedVault(vault.name);
-            navigate("/", { replace: true });
+            // NAVIGATION.md: "Picker: user picks a vault → /" — user-
+            // initiated, push. Back to the picker is harmless and useful.
+            navigate("/");
           }}
           onCreateNew={() => {
-            navigate("/welcome?new=1", { replace: true });
+            // NAVIGATION.md: "Picker: '＋ Create a new vault' → naming form"
+            // — user-initiated (picker → naming), push. Keeps the URL in
+            // sync for back-button/bookmark honesty (see the comment on
+            // `Welcome()` above); the state transition below is immediate
+            // since the vault list is already in hand.
+            navigate("/welcome?new=1");
             setStage({
               kind: "naming",
               ctx: "addvault",

@@ -2,6 +2,7 @@ import { Welcome } from "@/app/routes/Welcome";
 import { getSession, listVaults } from "@/lib/account/client";
 import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
+import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,9 +40,10 @@ function FrontDoorEcho() {
   return <div>Home surface{location.search}</div>;
 }
 
-function renderWelcome(initial = "/welcome") {
+function renderWelcome(initial = "/welcome", navLog?: NavLogEntry[]) {
   return render(
     <MemoryRouter initialEntries={[initial]}>
+      {navLog ? <NavTypeLog log={navLog} /> : null}
       <Routes>
         <Route path="/welcome" element={<Welcome />} />
         <Route path="/" element={<FrontDoorEcho />} />
@@ -153,6 +155,24 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       fireEvent.click(screen.getByRole("button", { name: /open my vault/i }));
       await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
     });
+
+    // NAVIGATION.md: "Ready 'Open my vault →' → /" is user-initiated — push,
+    // not replace (F7 offender: this used to be a gratuitous replace, which
+    // meant Back from Home skipped straight past the ready beat).
+    it("the ready beat's 'Open my vault →' PUSHes / (NAVIGATION.md), not replace", async () => {
+      const navLog: NavLogEntry[] = [];
+      renderWelcome("/welcome", navLog);
+      await waitFor(() => expect(screen.getByText(/let's make your first/i)).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
+      fireEvent.click(screen.getByRole("button", { name: /create moss →/i }));
+      await waitFor(() =>
+        expect(screen.getByRole("heading", { name: /moss is ready/i })).toBeInTheDocument(),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /open my vault/i }));
+      await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
+      expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" });
+    });
   });
 
   describe("picker (many vaults)", () => {
@@ -198,6 +218,21 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("journal"));
     });
 
+    // NAVIGATION.md: "Picker: user picks a vault → /" — user-initiated, push
+    // (F7 offender: this used to be a gratuitous replace, so Back from Home
+    // couldn't return to "which vault today?").
+    it("opening a picked vault PUSHes / (NAVIGATION.md), so Back can return to the picker", async () => {
+      const navLog: NavLogEntry[] = [];
+      renderWelcome("/welcome", navLog);
+      await waitFor(() =>
+        expect(screen.getByRole("heading", { name: /which vault today/i })).toBeInTheDocument(),
+      );
+      const opens = screen.getAllByRole("button", { name: /open →/i });
+      fireEvent.click(opens[1] as HTMLElement);
+      await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
+      expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" });
+    });
+
     it("offers Create a new vault (addvault naming) and Connect a self-hosted vault", async () => {
       renderWelcome();
       await waitFor(() =>
@@ -215,6 +250,20 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       expect(screen.getByText(/separate from/i)).toBeInTheDocument();
       expect(screen.getByText(/moss/)).toBeInTheDocument();
     });
+
+    // NAVIGATION.md: "Picker: '＋ Create a new vault' → naming form" — the
+    // overview principle's own "picker → naming" example, push (F7 offender:
+    // this was a gratuitous replace).
+    it("Create a new vault PUSHes /welcome?new=1 (NAVIGATION.md)", async () => {
+      const navLog: NavLogEntry[] = [];
+      renderWelcome("/welcome", navLog);
+      await waitFor(() =>
+        expect(screen.getByRole("heading", { name: /which vault today/i })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: /create a new vault/i }));
+      await waitFor(() => expect(screen.getByText(/adding a vault/i)).toBeInTheDocument());
+      expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/welcome?new=1" });
+    });
   });
 
   describe("welcome-back (1 vault)", () => {
@@ -228,6 +277,24 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       renderWelcome();
       await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
       await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
+    });
+
+    // NAVIGATION.md: "Welcome-back beat → /" — (d) the single post-auth
+    // landing, replace. Unlike the picker/ready-open fixes above, this beat
+    // is auto-advancing (no button, no user decision to push for) — the
+    // accepted-limit row names exactly this shape as the residual thin-stack
+    // case the wizard-chrome escape hatches (W2-6), not history surgery, fix.
+    it("REPLACEs (not pushes) — this is the deliberate, table-correct exception", async () => {
+      const navLog: NavLogEntry[] = [];
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "csrf-3b",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [{ name: "moss" }] });
+      renderWelcome("/welcome", navLog);
+      await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
+      expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/" });
     });
   });
 

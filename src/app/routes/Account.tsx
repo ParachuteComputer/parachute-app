@@ -186,6 +186,8 @@ function ManagerView({
       await logout(csrf);
     } finally {
       clearAccountToken();
+      // NAVIGATION.md: "Sign out → /" — replace; the session context is
+      // gone, so Back into a signed-in page would lie.
       navigate("/", { replace: true });
     }
   }
@@ -527,7 +529,9 @@ function VaultsBlock({
     setError(null);
     try {
       await openHostedVault(vault.name);
-      navigate("/", { replace: true });
+      // NAVIGATION.md: "Account.tsx VaultsBlock: Open {vault} → /" — user-
+      // initiated, push (was a gratuitous replace — F7 offender).
+      navigate("/");
     } catch (err) {
       setBusyName(null);
       // F12 — same friendly-copy mapping as the create-vault naming form:

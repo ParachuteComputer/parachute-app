@@ -1,6 +1,8 @@
 import { Landing } from "@/app/routes/Landing";
 import { getSession, requestMagicLink } from "@/lib/account/client";
 import { getDoorDescriptor } from "@/lib/account/descriptor";
+import { openHostedVault } from "@/lib/account/hosted-vault";
+import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,9 +26,14 @@ vi.mock("@/lib/account/descriptor", () => ({
   getDoorDescriptor: vi.fn().mockResolvedValue(null),
 }));
 
-function renderLanding(ui = <Landing />, initial = "/") {
+vi.mock("@/lib/account/hosted-vault", () => ({
+  openHostedVault: vi.fn().mockResolvedValue("v1"),
+}));
+
+function renderLanding(ui = <Landing />, initial = "/", navLog?: NavLogEntry[]) {
   return render(
     <MemoryRouter initialEntries={[initial]}>
+      {navLog ? <NavTypeLog log={navLog} /> : null}
       <Routes>
         <Route path="/" element={ui} />
         <Route path="/add" element={<div>Add form</div>} />
@@ -45,6 +52,11 @@ describe("Landing — the front door", () => {
     vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
     vi.mocked(requestMagicLink).mockReset().mockResolvedValue(undefined);
     vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
+    vi.mocked(openHostedVault).mockReset().mockResolvedValue("v1");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("leads with one email field that signs in OR creates (not vault-naming)", () => {
@@ -101,6 +113,36 @@ describe("Landing — the front door", () => {
     expect(screen.getByText(/ag@unforced\.org/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open moss/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
+  });
+
+  // NAVIGATION.md: "Landing 'already signed in' card: Open {vault} → /" —
+  // user-initiated, push (F7 offender: this used to be a gratuitous replace).
+  it("Open {vault} on the already-signed-in card PUSHes / (NAVIGATION.md)", async () => {
+    const navLog: NavLogEntry[] = [];
+    renderLanding(
+      <Landing signedIn={{ email: "ag@unforced.org", vaults: [{ name: "moss" }] }} />,
+      "/",
+      navLog,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /open moss/i }));
+    await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
+    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" }));
+  });
+
+  // NAVIGATION.md: "Sign out → /" — replace; the session context is gone, so
+  // Back into a signed-in page would lie.
+  it("Sign out REPLACEs / (NAVIGATION.md)", async () => {
+    const navLog: NavLogEntry[] = [];
+    renderLanding(
+      <Landing signedIn={{ email: "ag@unforced.org", vaults: [{ name: "moss" }] }} />,
+      "/",
+      navLog,
+    );
+    // window.location.assign isn't implemented in jsdom navigation — stub it
+    // so the post-signOut hard reload doesn't throw.
+    vi.stubGlobal("location", { ...window.location, assign: vi.fn() });
+    fireEvent.click(screen.getByRole("button", { name: /not you\? sign out/i }));
+    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/" }));
   });
 
   // HUB-PARITY P4: a hub-shaped session carries `username`, not `email` — the

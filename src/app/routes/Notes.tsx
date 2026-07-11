@@ -269,6 +269,7 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
     return list;
   }, [notes.data, preset, showArchived, roles.archived, roles.pinned]);
 
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
   const title = preset ? PRESET_TITLES[preset] : "All notes";

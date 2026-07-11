@@ -14,6 +14,7 @@ import { openHostedVault } from "@/lib/account/hosted-vault";
 import { useAccountSessionStore } from "@/lib/account/store";
 import type { AccountSummary, DoorPlan } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault";
+import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -117,9 +118,10 @@ const SUMMARY: AccountSummary = {
 
 const CLOUD_VAULT = { name: "moss", url: "https://u.parachute.computer/vault/moss" };
 
-function renderAccount() {
+function renderAccount(navLog?: NavLogEntry[]) {
   return render(
     <MemoryRouter initialEntries={["/account"]}>
+      {navLog ? <NavTypeLog log={navLog} /> : null}
       <Routes>
         <Route path="/account" element={<Account />} />
         <Route path="/" element={<div>Home surface</div>} />
@@ -170,6 +172,24 @@ describe("Account — the app-as-manager surface", () => {
     expect(screen.getByRole("button", { name: /open →/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /manage plan & billing/i })).toBeInTheDocument();
     expect(screen.getByText("AI connections")).toBeInTheDocument();
+  });
+
+  // NAVIGATION.md: "Sign out → /" — replace; the session context is gone, so
+  // Back into a signed-in page would lie.
+  it("Sign out REPLACEs / (NAVIGATION.md)", async () => {
+    const navLog: NavLogEntry[] = [];
+    vi.mocked(getSession).mockResolvedValue({
+      signed_in: true,
+      csrf: "c",
+      email: "ag@unforced.org",
+    });
+    vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+    vi.mocked(getAccountSummary).mockResolvedValue(null);
+
+    renderAccount(navLog);
+    await waitFor(() => expect(screen.getByText("ag@unforced.org")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /^sign out$/i }));
+    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/" }));
   });
 
   it("degrades gracefully when the summary is absent (no fabricated numbers, no Billing section)", async () => {
@@ -223,6 +243,28 @@ describe("Account — the app-as-manager surface", () => {
     fireEvent.click(screen.getByRole("button", { name: /open →/i }));
     await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
     await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
+  });
+
+  // NAVIGATION.md: "Account.tsx VaultsBlock: Open {vault} → /" — user-
+  // initiated, push (F7 offender: this used to be a gratuitous replace, one
+  // of the explicitly-named offenders in the W2-2 brief).
+  it("opening a Cloud vault PUSHes / (NAVIGATION.md)", async () => {
+    const navLog: NavLogEntry[] = [];
+    vi.mocked(getSession).mockResolvedValue({
+      signed_in: true,
+      csrf: "c",
+      email: "ag@unforced.org",
+    });
+    vi.mocked(listVaults).mockResolvedValue({ vaults: [CLOUD_VAULT] });
+    vi.mocked(getAccountSummary).mockResolvedValue(null);
+
+    renderAccount(navLog);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /open →/i })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /open →/i }));
+    await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
+    expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" });
   });
 
   // F12 — same friendly-copy mapping as the create-vault naming form: never a

@@ -26,6 +26,7 @@ export function Today() {
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.get("date");
 
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
   if (dateParam !== null) return <SingleDay dateParam={dateParam} />;
   return <Timeline vaultName={activeVault.name} />;

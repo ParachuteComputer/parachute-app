@@ -1,5 +1,44 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.5.1] - 2026-07-11
+
+**W2-2 — navigation history policy: Back no longer exits the app (F7 / DESIGN-SPEC §4.3).**
+A structure PR against the ratified push/replace decision table — no UI redesign, no wizard-
+chrome changes (those are W2-6). Fixes the specific "gratuitous replace" bugs that collapsed
+the browser history stack, and writes the policy down so future PRs have one table to check
+navigation calls against.
+
+- **New `NAVIGATION.md`** (repo root) — the §4.3 decision table verbatim: user-initiated
+  transitions push; `replace` is reserved for redirect shims, one-shot param consumption,
+  transient auto-advancing beats, and the single post-auth landing. Documents the "accepted
+  limit" (a magic-link tab's thin stack is a deliberate consequence of the table, not a bug —
+  the cure is the wizard-chrome escape hatches, W2-6).
+- **New `useHistoryAwareBack(fallbackTo)` hook** (`src/lib/nav/history.ts`) — goes back in
+  history when a prior entry genuinely exists (`location.key !== "default"`), else falls back
+  to a named route. No consumers yet (W2-3/W2-6's job); ships now so those PRs import rather
+  than reinvent it.
+- **Fixed five gratuitous `replace`s → `push`** (F7 offenders, all named in PLAN.md): the
+  post-auth "ready" beat's "Open my vault →" (Welcome.tsx), the vault picker's "Open →" and
+  "＋ Create a new vault" (Welcome.tsx), the already-signed-in card's "Open {vault} →"
+  (Landing.tsx), and `/account`'s VaultsBlock "Open →" (Account.tsx). Each used to collapse
+  the history stack on a user-initiated forward step; Back from Home now returns to the
+  picker/chooser/account page instead of skipping straight past it.
+- **Fixed a gratuitous `push` → `replace`**: NoteNew's save (text and audio) now replaces
+  `/n/<id>` instead of pushing — Back from a freshly-saved note no longer lands on a cleared,
+  ghost draft form.
+- **The catch-all (`*` → `/`) now toasts** ("That page doesn't exist — brought you home.")
+  instead of silently teleporting a typo'd/stale URL home with zero acknowledgment.
+- **Every navigation call this table governs carries a one-line `// NAVIGATION.md: ...`
+  citation** — the ceremony/auth flow (Landing, CheckEmail, Welcome, AddVaultChooser,
+  AddVault, OAuthCallback, Import, NoteNew, NoteEditor), the App.tsx route table (all shims
+  + the catch-all + the boot `?add=` one-shot), and the ten "no active vault" route guards
+  (Settings, NoteView, Today, Tags, Home, Activity, NoteEditor, Notes, VaultGraph, ConnectAI).
+- **Tests**: `useNavigationType()`-probe assertions (new `src/test/nav-probe.tsx` harness)
+  pin push-vs-replace at the component level for every fixed call; a new
+  `src/app/nav-history.test.tsx` drives the full `<App/>` (real `BrowserRouter`, real
+  `window.history`) through both golden flows and asserts real `history.length` deltas,
+  mirroring WALK-nav.md's own live-browser methodology.
+
 ## [0.5.0] - 2026-07-11
 
 **W2-1 — the hybrid skin: cream/sage palette + Fraunces/Figtree (DESIGN-SPEC

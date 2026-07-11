@@ -24,6 +24,8 @@ export function CheckEmail() {
     const tick = async () => {
       try {
         const session = await getSession();
+        // NAVIGATION.md: "CheckEmail poll success → /welcome" — (c) auto-
+        // advance; returning to a consumed check-email would be wrong.
         if (!cancelled && session.signed_in) navigate(SIGNIN_NEXT, { replace: true });
       } catch {
         // keep polling — a transient failure shouldn't strand the tab

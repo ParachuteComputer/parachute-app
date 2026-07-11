@@ -1,3 +1,4 @@
+import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,7 @@ describe("App", () => {
     localStorage.clear();
     sessionStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
     // BrowserRouter is mounted with basename="/notes" (BASE_URL from Vite).
     // Tests simulate the external mount by placing the browser under /notes/.
     window.history.replaceState({}, "", "/notes/");
@@ -71,6 +73,22 @@ describe("App", () => {
     return waitFor(() => {
       expect(window.location.pathname).toMatch(/^\/notes\/?$/);
     });
+  });
+
+  it("a genuinely unmatched (multi-segment) URL hits the `*` catch-all and toasts (F7-adjacent)", async () => {
+    // A single bare segment (the case above) matches the legacy `/:id`
+    // bookmark shim, not `*`. A multi-segment path matches nothing else in
+    // the route table, so it's the one that actually exercises `*` →
+    // NotFoundRedirect. Per NAVIGATION.md: still a replace shim, but now with
+    // a quiet toast naming what happened instead of a silent teleport.
+    window.history.replaceState({}, "", "/notes/some/deeply/unknown/path");
+    render(<App />);
+    await waitFor(() => {
+      expect(window.location.pathname).toMatch(/^\/notes\/?$/);
+    });
+    expect(
+      await screen.findByText(/that page doesn't exist — brought you home/i),
+    ).toBeInTheDocument();
   });
 
   it("forwards a root-path ?add= deep link to /add, preserving companions (cloud console link)", async () => {
