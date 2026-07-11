@@ -1,5 +1,44 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.4.1] - 2026-07-11
+
+**Billing section — Stripe-direct, no cloud-console re-login (Plan A).**
+"Manage plan & billing" now goes STRAIGHT to Stripe instead of hopping to
+`cloud.parachute.computer/console` (a different origin, host-scoped cookies —
+that hop forced a re-login before the console's own second hop to Stripe).
+Pairs with cloud rc.74's new Bearer billing endpoints — deploy together.
+
+- **`AccountSummary` gains `billing_enabled` + `has_billing_customer`, drops
+  `manage_billing_url`** (types.ts). The Account surface's Billing section is
+  gated purely on this data: `billing_enabled: false` (self-hosted hub / no
+  Stripe configured) ⇒ the section doesn't exist at all — never a false door to
+  a plan that isn't there.
+- **NEW `openBillingPortal()` / `startCheckout(tier, interval?)`** (client.ts) —
+  Bearer-gated POSTs to cloud's `POST /account/billing/{portal,checkout}`,
+  riding the same account-bearer plumbing (mint, cache, re-mint-once-on-401) as
+  every other `/account/*` call. Both return `{ url }` on 200; a typed
+  `BillingApiError` (with a `code`: `no_billing_customer` /
+  `already_subscribed` / `invalid_tier` / `invalid_interval` / `invalid_plan` /
+  `unconfigured`) on 409/400/503 so the UI can show a small inline message
+  instead of crashing.
+- **The Billing section** (`Account.tsx`, replacing the old inline billing
+  button): an **existing subscriber** (`has_billing_customer: true`) sees the
+  current-plan line + a **"Manage plan & billing ↗"** button that calls
+  `openBillingPortal()` and redirects straight to the returned Stripe URL
+  (`window.location.assign` — cross-origin, so a top-level nav, not a
+  fetch-follow). A **trial/free account** sees the door's upgrade ladder as
+  plan cards (from `descriptor.plans`, the door descriptor — P4), current tier
+  marked, each purchasable tier an **"Upgrade to \<name\>"** button that calls
+  `startCheckout(tier)` and redirects the same way. The app renders plan DATA
+  it's already handed and makes two typed redirect calls — zero Stripe
+  knowledge, zero pricing math, zero cloud-origin imports.
+- **Identity card simplified**: "Signed in as X" + Sign out only — plan/billing
+  now lives entirely in its own Billing section.
+- The old host-sniffed `manageBillingUrl` fallback (deriving
+  `cloud.parachute.computer/console` from a cloud vault's host) is gone.
+  `src/lib/vault/console-url.ts` itself stays — `Home.tsx`'s separate "Manage
+  your vault plan →" backlink still uses it and is unaffected by this change.
+
 ## [0.4.0] - 2026-07-11
 
 **Descriptor-driven, door-agnostic front door — HUB-PARITY P4.** The same app

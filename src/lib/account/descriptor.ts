@@ -15,6 +15,8 @@
  * switch the front door to the password-ceremony-hop branch (Landing.tsx).
  */
 
+import type { DoorPlan } from "./types";
+
 /** One door's advertised sign-in surface. `methods` may list more than one;
  *  the app only distinguishes "has magic_link" vs "password-only" today. */
 export interface DoorAuthDescriptor {
@@ -35,7 +37,9 @@ export interface DoorDescriptor {
    *  never the source of truth for a URL after creation (Welcome.tsx). */
   vault_url_template?: string;
   capabilities?: { vault_create?: boolean; vault_delete?: boolean };
-  plans?: unknown[];
+  /** The upgrade-tier ladder for the Account surface's Billing section (see
+   *  `Account.tsx`'s plan cards) — omitted on a door with no billing. */
+  plans?: DoorPlan[];
 }
 
 type Fetch = typeof fetch;

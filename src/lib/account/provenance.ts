@@ -1,7 +1,6 @@
-import { cloudConsoleUrl } from "@/lib/vault";
 import type { VaultRecord } from "@/lib/vault/types";
 import { isHostedVaultRecord } from "./hosted-vault";
-import type { AccountSummary, AccountVaultUsage } from "./types";
+import type { AccountVaultUsage } from "./types";
 
 /**
  * Provenance vocabulary shared by the Account manager surface and the Vaults
@@ -75,21 +74,4 @@ export function formatBytes(bytes: number): string | null {
 export function formatUsageBytes(usage?: AccountVaultUsage | null): string | null {
   if (!usage) return null;
   return formatBytes((usage.notes_bytes ?? 0) + (usage.attachment_bytes ?? 0));
-}
-
-/**
- * The [Manage plan & billing →] target. Prefer the door's advertised deep-link
- * (`AccountSummary.manage_billing_url` — a Stripe billing-portal session or the
- * console); otherwise derive the cloud console from a known cloud vault host.
- *
- * TODO(door-descriptor): the fallback host-sniff goes away once the door
- * contract carries a billing/console origin the app can read directly.
- */
-export function manageBillingUrl(
-  summary: AccountSummary | null,
-  cloudVaultUrl: string | null,
-): string | null {
-  if (summary?.manage_billing_url) return summary.manage_billing_url;
-  if (cloudVaultUrl) return cloudConsoleUrl(cloudVaultUrl);
-  return null;
 }

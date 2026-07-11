@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HOSTED_CLIENT_ID } from "./hosted-vault";
-import {
-  formatBytes,
-  formatUsageBytes,
-  homeDoorLabel,
-  manageBillingUrl,
-  vaultProvenance,
-} from "./provenance";
-import type { AccountSummary } from "./types";
+import { formatBytes, formatUsageBytes, homeDoorLabel, vaultProvenance } from "./provenance";
 
 describe("vaultProvenance", () => {
   it("classifies a home-door vault as Cloud", () => {
@@ -91,33 +84,5 @@ describe("formatUsageBytes", () => {
     expect(formatUsageBytes(null)).toBeNull();
     expect(formatUsageBytes({})).toBeNull();
     expect(formatUsageBytes({ notes_bytes: 0, attachment_bytes: 0 })).toBeNull();
-  });
-});
-
-describe("manageBillingUrl", () => {
-  const summaryWithLink: AccountSummary = {
-    email: "a@b.c",
-    plan: { tier: "standard", label: "Standard" },
-    manage_billing_url: "https://cloud.parachute.computer/billing/portal?session=abc",
-  };
-
-  it("prefers the door's advertised deep-link", () => {
-    expect(manageBillingUrl(summaryWithLink, "https://u.parachute.computer/vault/moss")).toBe(
-      "https://cloud.parachute.computer/billing/portal?session=abc",
-    );
-  });
-
-  it("falls back to the cloud console derived from a cloud vault host", () => {
-    expect(
-      manageBillingUrl(
-        { email: "a@b.c", plan: { tier: "standard", label: "Standard" } },
-        "https://u.parachute.computer/vault/moss",
-      ),
-    ).toBe("https://cloud.parachute.computer/console");
-  });
-
-  it("returns null with no link and no cloud vault (self-hosted / unknown)", () => {
-    expect(manageBillingUrl(null, null)).toBeNull();
-    expect(manageBillingUrl(null, "https://self.hosted/vault/x")).toBeNull();
   });
 });
