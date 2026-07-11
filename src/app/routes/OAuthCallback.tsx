@@ -131,6 +131,8 @@ export function OAuthCallback() {
         // state rode through sessionStorage and an attacker who can plant
         // there must never steer navigate() off-origin. Falls back to `/`.
         const dest = safeInternalRedirect(pending.redirect) ?? "/";
+        // NAVIGATION.md: "OAuth callback → target" — (b) one-shot params,
+        // replace.
         navigate(dest, { replace: true });
       } catch (err) {
         if (err instanceof PendingApprovalError) {
@@ -184,6 +186,10 @@ export function OAuthCallback() {
           </a>
           <button
             type="button"
+            // NAVIGATION.md: not a named row — this retry re-enters the
+            // connect ceremony (the callback's one-shot code/state are
+            // already spent), so it's the same "re-entering a transient
+            // screen" shape as the dispatcher-fallback row — replace.
             onClick={() => navigate("/add", { replace: true })}
             className="font-round text-sm font-semibold text-fg-dim hover:text-accent"
           >
@@ -204,6 +210,8 @@ export function OAuthCallback() {
       <p className="mx-auto mb-8 max-w-sm text-fg-muted">{status.message}</p>
       <button
         type="button"
+        // NAVIGATION.md: same reasoning as the "Retry now" case above —
+        // re-entering a transient ceremony step, replace.
         onClick={() => navigate("/add", { replace: true })}
         className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
       >

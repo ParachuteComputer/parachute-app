@@ -59,27 +59,44 @@ type Stage =
 // naming form in "addvault" context (skipping the classify branch) once the
 // vaults are in. The picker's own "＋ Create a new vault" row is the one
 // caller that does NOT remount (it's already on this route) — it keeps the
-// URL in sync via `navigate(..., { replace: true })` for back-button/bookmark
-// honesty, but transitions `stage` directly (no refetch needed; it already
-// has the vault list in hand). `?pick=1` (F13) is the sibling variant for
+// URL in sync via `navigate("/welcome?new=1")` (push — NAVIGATION.md,
+// "picker → naming" is user-initiated) for back-button/bookmark honesty,
+// but transitions `stage` directly (no refetch needed; it already has the
+// vault list in hand). `?pick=1` (F13) is the sibling variant for
 // AddVaultChooser's "Open" card — see `wantsPicker` below.
 export function Welcome() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [stage, setStage] = useState<Stage>({ kind: "checking" });
   const [runId, setRunId] = useState(0);
-  const processedRunId = useRef(-1);
+  // Guard the dispatch against redundant re-runs — keyed on BOTH the retry
+  // counter AND the URL params (not `runId` alone). The params matter because
+  // the picker/naming fork is URL-addressable (`/welcome` vs `?new=1` vs
+  // `?pick=1`): a browser POP that only changes the params (Back from the
+  // `?new=1` naming form to the no-param/`?pick=1` picker) MUST re-dispatch so
+  // the fork re-syncs to the URL, instead of stranding the stale naming form
+  // where the picker should return. A `runId`-only guard left that same-route
+  // param push with a wrong Back target — exactly the F7 failure this PR
+  // exists to kill (W2-2 review).
+  const processedKey = useRef<string | null>(null);
   const creatingRan = useRef<string | null>(null);
   const welcomeBackRan = useRef<string | null>(null);
 
-  // The dispatch: confirm the session, then branch on vault count. Re-run by
-  // bumping `runId` (the net-error card's "Try again"); a network failure
+  // The dispatch: confirm the session, then branch on vault count. Re-runs on
+  // a retry (`runId` bump — the net-error card's "Try again") OR a URL-param
+  // change (a POP between the picker and naming forks). A network failure
   // confirming the session degrades to the front door, mirroring
   // `resolveBoot`'s own degrade-on-failure (a signed-out-looking state is the
   // safe default — the person can still act from there).
   useEffect(() => {
-    if (processedRunId.current === runId) return;
-    processedRunId.current = runId;
+    const dispatchKey = `${runId}|${searchParams.toString()}`;
+    if (processedKey.current === dispatchKey) return;
+    processedKey.current = dispatchKey;
+    // A re-dispatch triggered by a param POP arrives with a STALE stage (e.g.
+    // "naming" while we're Back at the picker URL) — reset to the transient
+    // beat so the async below repaints the correct fork instead of flashing
+    // the previous screen. No-op on first mount (already "checking").
+    setStage((prev) => (prev.kind === "checking" ? prev : { kind: "checking" }));
     const wantsAddVault = searchParams.get("new") === "1";
     // F13 — AddVaultChooser's "Open" card links here with `?pick=1` to force
     // the picker even when the account has exactly one vault. Without this,
@@ -177,6 +194,7 @@ export function Welcome() {
     (async () => {
       try {
         await openHostedVault(vaultName);
+        // NAVIGATION.md: (d) the single post-auth landing — replace.
         navigate("/", { replace: true });
       } catch (err) {
         welcomeBackRan.current = null;
@@ -196,6 +214,7 @@ export function Welcome() {
       // Preserve the expired-link cue: cloud 302s a dead/used link to
       // /welcome?link=expired, but the recovery UI lives on the front door
       // (Landing reads ?link=expired). Carry the param through the redirect.
+      // NAVIGATION.md: (b) one-shot param carry-through — replace.
       return (
         <Navigate to={searchParams.get("link") === "expired" ? "/?link=expired" : "/"} replace />
       );
@@ -233,7 +252,12 @@ export function Welcome() {
           name={stage.name}
           ready={stage.ready}
           error={stage.error}
-          onOpen={() => navigate("/", { replace: true })}
+          // NAVIGATION.md: "Ready 'Open my vault →' → /" — user-initiated,
+          // push. Back from Home lands on `/welcome`, which the dispatcher
+          // re-resolves against the now-created vault (welcome-back → replace
+          // → `/`): you end up right back in your vault, never on a stale or
+          // re-creating screen.
+          onOpen={() => navigate("/")}
           onRetry={() => setStage({ kind: "naming", ...stage.back })}
         />
       );
@@ -257,10 +281,22 @@ export function Welcome() {
           vaults={stage.vaults}
           onOpenVault={async (vault) => {
             await openHostedVault(vault.name);
-            navigate("/", { replace: true });
+            // NAVIGATION.md: "Picker: user picks a vault → /" — user-
+            // initiated, push. Back to the picker is harmless and useful.
+            navigate("/");
           }}
           onCreateNew={() => {
-            navigate("/welcome?new=1", { replace: true });
+            // NAVIGATION.md: "Picker: '＋ Create a new vault' → naming form"
+            // — user-initiated (picker → naming), push. Keeps the URL in
+            // sync for back-button/bookmark honesty; the state transition
+            // below is immediate since the vault list is already in hand (no
+            // refetch). Pre-mark the `?new=1` dispatch key as handled so the
+            // effect's searchParams-change re-run bails and keeps this direct
+            // `naming` stage — but a later POP back to the picker's DIFFERENT
+            // key (no-param / `?pick=1`) is NOT pre-marked, so it DOES
+            // re-dispatch and the picker returns (the F7 same-route fix).
+            processedKey.current = `${runId}|new=1`;
+            navigate("/welcome?new=1");
             setStage({
               kind: "naming",
               ctx: "addvault",

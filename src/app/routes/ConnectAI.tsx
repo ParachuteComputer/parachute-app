@@ -20,7 +20,7 @@ export function ConnectAI() {
   const navigate = useNavigate();
 
   // No vault → nothing to connect to. Bounce to the index (which shows the
-  // no-vault landing).
+  // no-vault landing). NAVIGATION.md: route guard, no active vault — replace.
   if (!vault) return <Navigate to="/" replace />;
 
   const mcpUrl = mcpEndpoint(vault.url);
@@ -30,6 +30,8 @@ export function ConnectAI() {
   const markConnected = () => {
     setOverride("connect", true);
     pushToast("Marked as connected.", "success");
+    // User-initiated ("I've connected it") — push (NAVIGATION.md's default
+    // rule; not one of the table's named exceptions).
     navigate("/");
   };
 

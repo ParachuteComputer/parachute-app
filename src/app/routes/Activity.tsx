@@ -34,6 +34,7 @@ export function Activity() {
   const grouped = useMemo(() => groupEventsByBucket(visibleEvents), [visibleEvents]);
   const remaining = events.length - visibleEvents.length;
 
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
   return (

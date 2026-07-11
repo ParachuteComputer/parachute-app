@@ -47,6 +47,7 @@ export function AddVaultChooser() {
           // vault (F13) — without it the dispatcher's welcome-back auto-open
           // (classifyVaults) silently reopens the vault you're likely already
           // in, turning "open a vault not on this device" into a no-op bounce.
+          // NAVIGATION.md: "Chooser card → ... /welcome?pick=1 ..." — push.
           onClick={() => navigate("/welcome?pick=1")}
         />
         <ChooserCard
@@ -63,12 +64,14 @@ export function AddVaultChooser() {
             )
           }
           foot={slots}
+          // NAVIGATION.md: "Chooser card → /welcome?new=1 ..." — push.
           onClick={() => navigate("/welcome?new=1")}
         />
         <ChooserCard
           icon="⌂"
           verb="Connect"
           description="A self-hosted vault on your own server."
+          // NAVIGATION.md: "Chooser card → ... /add" — push.
           onClick={() => navigate("/add")}
         />
       </div>

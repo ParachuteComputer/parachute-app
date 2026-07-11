@@ -7,6 +7,7 @@ import { useVaultReachabilityStore } from "@/lib/vault/reachability-store";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
 import { SyncProvider } from "@/providers/SyncProvider";
+import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -246,9 +247,10 @@ function Wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-function renderAt(path: string) {
+function renderAt(path: string, navLog?: NavLogEntry[]) {
   return render(
     <MemoryRouter initialEntries={[path]}>
+      {navLog ? <NavTypeLog log={navLog} /> : null}
       <Routes>
         <Route path="/new" element={<NoteNew />} />
         <Route path="/n/:id" element={<div>NoteViewPage</div>} />
@@ -365,6 +367,30 @@ describe("NoteNew route — unified create surface", () => {
     expect(vi.mocked(ensureNotesSchema)).toHaveBeenCalledWith("dev", expect.anything());
 
     expect(useToastStore.getState().toasts[0]?.message).toContain("Created");
+  });
+
+  // NAVIGATION.md: "NoteNew save → /n/<id>" — (b) consumes the compose form,
+  // replace (Back to a cleared, ghost draft would lie). This was pushing by
+  // default before the fix — a named "verify" item in the W2-2 brief.
+  it("REPLACEs (not pushes) /n/<new-id> on save (NAVIGATION.md)", async () => {
+    installFetch({
+      "POST /api/notes": {
+        status: 201,
+        body: { id: "new-note-id", path: "Projects/README", content: "# hi" },
+      },
+    });
+    const navLog: NavLogEntry[] = [];
+    renderAt("/new", navLog);
+    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "# hi" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    });
+    expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/n/new-note-id" });
   });
 
   it("extracts #hashtags from body content alongside explicit tag chips", async () => {
@@ -701,7 +727,8 @@ describe("NoteNew — voice affordance", () => {
 
   it("voice + Create → enqueues create-note + upload-attachment + link-attachment{transcribe}", async () => {
     installFetch({});
-    renderAt("/new");
+    const navLog: NavLogEntry[] = [];
+    renderAt("/new", navLog);
 
     const recordBtn = await screen.findByRole("button", { name: /record voice memo/i });
     await act(async () => {
@@ -724,6 +751,14 @@ describe("NoteNew — voice affordance", () => {
     // Navigated away — open the queue and inspect what we enqueued.
     await waitFor(() => {
       expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    });
+    // NAVIGATION.md: "NoteNew save → /n/<id>" — replace, same as the text
+    // path (the audio save shares the same compose-form-consumption rule).
+    // The local id is generated inside the component, so assert the shape of
+    // the destination path rather than an exact id.
+    expect(navLog.at(-1)).toMatchObject({
+      type: "REPLACE",
+      pathname: expect.stringMatching(/^\/n\/.+/),
     });
     const db = await openLensDB();
     const pending = await listPending(db, "dev");

@@ -53,6 +53,7 @@ export function Tags() {
 
   const clearSelection = () => setSelected(new Set());
 
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
   const selectedCount = selected.size;

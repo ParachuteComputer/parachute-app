@@ -11,6 +11,7 @@ import { VaultStatusBanner } from "@/components/VaultStatusBanner";
 import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
+import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault";
 import { useCrossTabVaultSync } from "@/lib/vault/cross-tab-sync";
 import { useActiveVaultClient } from "@/lib/vault/queries";
@@ -91,6 +92,7 @@ function BootGate() {
     run();
   }, [activeVault, run]);
 
+  // NAVIGATION.md: "BootGate ?add= → /add" — (b) one-shot param, replace.
   if (searchParams.get("add")) {
     return <Navigate to={`/add?${searchParams.toString()}`} replace />;
   }
@@ -166,6 +168,8 @@ export function RouteFallback() {
 // evaluates — so the guard is mount-aware: under a `/notes` or `/surface/<slug>`
 // mount the same note sits at `/notes/login`, which is not a ceremony, and
 // still redirects. Only ordinary bare paths (`/MyNote`) keep the legacy shim.
+// NAVIGATION.md: (a) redirect shims — replace throughout (a bare-path guess
+// or a denylist bounce never really "was" a page the user should Back into).
 function NoteIdRedirect({ suffix = "" }: { suffix?: string }) {
   const { id } = useParams<{ id: string }>();
   if (!id) return <Navigate to="/" replace />;
@@ -173,6 +177,25 @@ function NoteIdRedirect({ suffix = "" }: { suffix?: string }) {
     return <Navigate to="/" replace />;
   }
   return <Navigate to={`/n/${encodeURIComponent(id)}${suffix}`} replace />;
+}
+
+// The catch-all (`*` route — DESIGN-SPEC §2.5's route table: "keep the shim,
+// plus a quiet toast", F7-adjacent): a typo'd or stale URL silently teleported
+// home with zero acknowledgment before this fix — no different, from the
+// user's seat, than the app just ignoring what they typed. One toast names
+// what happened instead of a silent bounce. Fires at most once per mount
+// (StrictMode double-invokes effects in dev; the ref guards a duplicate
+// toast, not the redirect itself, which is idempotent either way).
+function NotFoundRedirect() {
+  const pushToast = useToastStore((s) => s.push);
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    pushToast("That page doesn't exist — brought you home.", "info");
+  }, [pushToast]);
+  // NAVIGATION.md: (a) redirect shim — replace.
+  return <Navigate to="/" replace />;
 }
 
 // Mounted under SyncProvider (which is under QueryProvider) so the
@@ -243,6 +266,7 @@ export function App() {
                     The four built-in views are filters inside /all now (a
                     ?view= chip), not their own routes. Old bookmarks redirect
                     into the filtered list so links keep working.
+                    NAVIGATION.md: (a) redirect shims — replace throughout.
                   */}
                       <Route path="/pinned" element={<Navigate to="/all?view=pinned" replace />} />
                       <Route
@@ -264,6 +288,7 @@ export function App() {
                     into NoteNew per Aaron's "serious pass": one creation
                     screen with title up front, voice as an affordance.
                     Legacy `/capture` bookmarks redirect into the new flow.
+                    NAVIGATION.md: (a) redirect shim — replace.
                   */}
                       <Route path="/capture" element={<Navigate to="/new" replace />} />
                       <Route path="/import" element={<Import />} />
@@ -283,7 +308,7 @@ export function App() {
                       <Route path="/vaults" element={<Vaults />} />
                       <Route path="/account" element={<Account />} />
                       <Route path="/settings" element={<Settings />} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
+                      <Route path="*" element={<NotFoundRedirect />} />
                     </Routes>
                   </Suspense>
                 </main>

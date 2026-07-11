@@ -30,6 +30,7 @@ export function Home() {
 
   // NotesIndex only mounts Home when a vault is active, but guard anyway: a
   // vault removed mid-session falls back to the arrival (via the index).
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!vault) return <Navigate to="/" replace />;
 
   // `settled` gates the "fresh" warmth on notes having loaded, so a returning

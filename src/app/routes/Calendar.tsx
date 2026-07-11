@@ -41,6 +41,7 @@ export function Calendar() {
     return map;
   }, [notes.data]);
 
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
   const prev = shiftMonth(parsed.year, parsed.month, -1);

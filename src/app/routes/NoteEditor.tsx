@@ -28,6 +28,7 @@ export function NoteEditor() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const note = useNote(decodedId);
 
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
   return (
@@ -171,6 +172,8 @@ function EditorSurface({ note }: { note: Note }) {
             // Finish editing: return to the note's read view. `replace` keeps
             // "back" from dropping the user into the editor they just left.
             // The id may have changed if a path edit moved the note.
+            // NAVIGATION.md: same "consumes the compose form" shape as
+            // NoteNew's save — replace.
             navigate(`/n/${encodeURIComponent(updated.id)}`, { replace: true });
           } else if (updated.id !== note.id) {
             // Checkpoint save that stays put — but if a path edit renamed the

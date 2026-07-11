@@ -58,9 +58,11 @@ export function Import() {
     // /add validates it via normalizeVaultUrl before any OAuth runs.
     const urlParam = searchParams.get("url");
     if (urlParam) {
+      // NAVIGATION.md: (b) one-shot param carry-through — replace.
       const target = `/add?url=${encodeURIComponent(urlParam)}&redirect=${encodeURIComponent("/import")}`;
       return <Navigate to={target} replace />;
     }
+    // NAVIGATION.md: route guard, no active vault — replace.
     return <Navigate to="/" replace />;
   }
 
@@ -178,6 +180,7 @@ export function Import() {
           report={stage.report}
           parsed={stage.parsed}
           onAnother={onReset}
+          // User-initiated — push (NAVIGATION.md's default rule).
           onHome={() => navigate("/")}
         />
       ) : null}

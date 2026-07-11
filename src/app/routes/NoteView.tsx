@@ -27,6 +27,7 @@ export function NoteView() {
     if (activeVault && decodedId) pushRecent(activeVault.id, decodedId);
   }, [activeVault, decodedId]);
 
+  // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
   return (

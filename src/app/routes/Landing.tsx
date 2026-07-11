@@ -138,6 +138,8 @@ function MagicLinkFrontDoor() {
       const session = await getSession();
       await requestMagicLink(email.trim(), session.csrf, SIGNIN_NEXT);
       saveLastSigninEmail(email.trim());
+      // NAVIGATION.md: "Landing: submit email → /check-email" — user-
+      // initiated, push.
       navigate("/check-email");
     } catch (err) {
       setBusy(false);
@@ -293,9 +295,13 @@ function AlreadySignedIn({
     try {
       // The account bearer is minted + cached inside the client; no csrf needed.
       await openHostedVault(one.name);
-      navigate("/", { replace: true });
+      // NAVIGATION.md: "Landing 'already signed in' card: Open {vault} → /"
+      // — user-initiated, push.
+      navigate("/");
     } catch {
-      // fall back to the dispatcher, which surfaces weather
+      // NAVIGATION.md: (c) fall back to the dispatcher, which surfaces
+      // weather — re-entering a transient screen, not a new place, so
+      // replace.
       navigate("/welcome", { replace: true });
     }
   }
@@ -306,6 +312,8 @@ function AlreadySignedIn({
       await logout(session.csrf);
     } finally {
       clearAccountToken();
+      // NAVIGATION.md: "Sign out → /" — replace; the session context is
+      // gone, so Back into a signed-in page would lie.
       navigate("/", { replace: true });
       // A hard reload re-runs the boot dispatcher cleanly against the now
       // signed-out session.
