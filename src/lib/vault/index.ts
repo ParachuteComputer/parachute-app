@@ -5,7 +5,6 @@ export * from "./console-url";
 export * from "./cross-tab-sync";
 export * from "./discovery";
 export * from "./graph";
-export * from "./hosted-door";
 export * from "./hub-discovery";
 export * from "./map-earned";
 export * from "./neighborhood";

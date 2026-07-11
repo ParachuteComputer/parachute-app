@@ -1,3 +1,4 @@
+import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import {
   PendingApprovalError,
   completeOAuth,
@@ -7,13 +8,41 @@ import {
 } from "@/lib/vault";
 import { useAuthHaltStore } from "@/lib/vault/auth-halt-store";
 import { safeInternalRedirect } from "@/lib/vault/url";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 type Status =
   | { kind: "working" }
   | { kind: "error"; message: string }
   | { kind: "pending-approval"; approveUrl: string };
+
+// The shared no-vault-yet layout — matches Landing.tsx / Welcome.tsx /
+// CheckEmail.tsx / AddVault.tsx exactly, so the return trip from the hub
+// hand-off reads as part of the same visual world.
+function Shell({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col">
+      <div className="flex items-center px-6 pt-6 sm:px-10">
+        <Wordmark />
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
+        <div className="mx-auto w-full max-w-md">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** The hub/vault host named in an approve_url, for the "Approving Parachute
+ *  on {host}" headline (sceneHubHandoff). Falls back to a generic phrase if
+ *  the URL is somehow unparseable — it's already been validated as http(s)
+ *  by `safeApproveUrl` before it reaches here, so this is defense-in-depth. */
+function hostFromUrl(raw: string): string {
+  try {
+    return new URL(raw).host;
+  } catch {
+    return "your hub";
+  }
+}
 
 export function OAuthCallback() {
   const [params] = useSearchParams();
@@ -118,53 +147,68 @@ export function OAuthCallback() {
 
   if (status.kind === "working") {
     return (
-      <div className="mx-auto max-w-xl px-6 py-24 text-center">
-        <h1 className="mb-3 font-serif text-3xl">Connecting…</h1>
-        <p className="text-fg-muted">Exchanging the authorization code with your vault.</p>
-      </div>
+      <Shell>
+        <ParachuteMark size={72} className="mx-auto mb-4 animate-pulse" />
+        <p className="eyebrow mb-3">One moment</p>
+        <h1 className="hero-title mb-2" style={{ fontSize: "clamp(1.8rem, 4vw, 2.3rem)" }}>
+          Connecting<span className="accent-word">…</span>
+        </h1>
+        <output aria-live="polite" className="font-round text-sm text-fg-muted">
+          Exchanging the authorization code with your vault.
+        </output>
+      </Shell>
     );
   }
 
   if (status.kind === "pending-approval") {
+    const host = hostFromUrl(status.approveUrl);
     return (
-      <div className="mx-auto max-w-xl px-6 py-24 text-center">
-        <h1 className="mb-3 font-serif text-3xl">Waiting for hub approval</h1>
-        <p className="mb-8 text-fg-muted">
+      <Shell>
+        <ParachuteMark size={60} className="mx-auto mb-6" />
+        <p className="eyebrow mb-3">Redirected</p>
+        <h1 className="hero-title mb-4" style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.1rem)" }}>
+          Approving Parachute on <span className="accent-word">{host}</span>
+        </h1>
+        <p className="mx-auto mb-8 max-w-sm text-fg-muted">
           Your hub admin needs to approve this app before sign-in can complete. Open the approval
           page in your hub, approve, then try again.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-4">
           <a
             href={status.approveUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block rounded-md bg-accent px-4 py-2 text-sm text-on-accent hover:bg-accent-hover"
+            className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
           >
-            Open approval page
+            Open approval page →
           </a>
           <button
             type="button"
             onClick={() => navigate("/add", { replace: true })}
-            className="inline-block rounded-md border border-border bg-card px-4 py-2 text-sm text-fg-muted hover:text-accent"
+            className="font-round text-sm font-semibold text-fg-dim hover:text-accent"
           >
             Retry now
           </button>
         </div>
-      </div>
+      </Shell>
     );
   }
 
   return (
-    <div className="mx-auto max-w-xl px-6 py-24 text-center">
-      <h1 className="mb-3 font-serif text-3xl text-danger">Connection failed</h1>
-      <p className="mb-8 text-fg-muted">{status.message}</p>
+    <Shell>
+      <ParachuteMark size={60} className="mx-auto mb-6" />
+      <p className="eyebrow mb-3">Connection failed</p>
+      <h1 className="hero-title mb-4" style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.1rem)" }}>
+        Something went <span className="accent-word">sideways.</span>
+      </h1>
+      <p className="mx-auto mb-8 max-w-sm text-fg-muted">{status.message}</p>
       <button
         type="button"
         onClick={() => navigate("/add", { replace: true })}
-        className="rounded-md bg-accent px-4 py-2 text-sm text-on-accent hover:bg-accent-hover"
+        className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
       >
-        Try again
+        Try again →
       </button>
-    </div>
+    </Shell>
   );
 }

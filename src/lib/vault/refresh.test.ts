@@ -5,6 +5,17 @@ import { loadToken, saveToken } from "./storage";
 import { useVaultStore } from "./store";
 import type { StoredToken, VaultRecord } from "./types";
 
+// Home-door (Cloud) vaults recover via the account SESSION re-mint, not OAuth.
+// `refresh.ts` dynamically imports this module on a 401; mock it so the
+// home-door branch is deterministic and the OAuth-path tests (clientId
+// "client-123" → isHostedVaultRecord=false) are unaffected.
+import { remintHostedVault } from "@/lib/account/hosted-vault";
+vi.mock("@/lib/account/hosted-vault", () => ({
+  HOSTED_CLIENT_ID: "home-door",
+  isHostedVaultRecord: (clientId: string) => clientId === "home-door",
+  remintHostedVault: vi.fn(),
+}));
+
 function seedVault(record: Partial<VaultRecord> & { id: string }): VaultRecord {
   const full: VaultRecord = {
     id: record.id,
@@ -257,5 +268,35 @@ describe("forceRefresh", () => {
     expect(a).toBe("eyJ.new");
     expect(b).toBe("eyJ.new");
     expect(calls).toBe(1);
+  });
+
+  it("recovers a home-door vault by RE-MINTING from the session (not OAuth) on 401", async () => {
+    // A home-door (Cloud) vault has no OAuth refresh token — a 401 must re-mint
+    // via the account session, not fall straight to a halt.
+    seedVault({ id: "v1", clientId: "home-door", tokenEndpoint: undefined });
+    seedToken("v1", { accessToken: "eyJ.stale" }); // no refreshToken
+    vi.mocked(remintHostedVault).mockImplementation(async () => {
+      // The real re-mint saves a fresh per-vault token under the same id.
+      saveToken("v1", {
+        accessToken: "eyJ.reminted",
+        scope: "vault:read vault:write",
+        vault: "default",
+      });
+      return "v1";
+    });
+
+    const token = await forceRefresh("v1");
+    expect(remintHostedVault).toHaveBeenCalledWith("default");
+    expect(token).toBe("eyJ.reminted");
+    expect(loadToken("v1")?.accessToken).toBe("eyJ.reminted");
+  });
+
+  it("returns null (falls to the non-blocking banner) when the home-door session is gone", async () => {
+    seedVault({ id: "v1", clientId: "home-door", tokenEndpoint: undefined });
+    seedToken("v1", { accessToken: "eyJ.stale" });
+    vi.mocked(remintHostedVault).mockRejectedValue(new Error("Your session has ended."));
+
+    const token = await forceRefresh("v1");
+    expect(token).toBeNull(); // reading stays local; the session-expired banner is raised by remint
   });
 });

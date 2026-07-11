@@ -1,3 +1,4 @@
+import { AccountSessionBanner } from "@/components/AccountSessionBanner";
 import { AmbientMapFab } from "@/components/AmbientMapFab";
 import { BottomTabBar } from "@/components/BottomTabBar";
 import { Header } from "@/components/Header";
@@ -7,6 +8,7 @@ import { TextSizeShortcutsMount } from "@/components/TextSizeControl";
 import { Toaster } from "@/components/Toaster";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { VaultStatusBanner } from "@/components/VaultStatusBanner";
+import { type BootDecision, resolveBoot } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useVaultStore } from "@/lib/vault";
@@ -16,7 +18,7 @@ import { useReachabilityProbe } from "@/lib/vault/reachability-probe";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { SyncProvider } from "@/providers/SyncProvider";
 import { matchesNavigationDenylist } from "@/pwa-navigation-denylist";
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams, useSearchParams } from "react-router";
 import { Home } from "./routes/Home";
 import { Landing } from "./routes/Landing";
@@ -30,6 +32,9 @@ import { Today } from "./routes/Today";
 // layer, settings, etc. don't pile into the initial download.
 const Activity = lazy(() => import("./routes/Activity").then((m) => ({ default: m.Activity })));
 const AddVault = lazy(() => import("./routes/AddVault").then((m) => ({ default: m.AddVault })));
+const AddVaultChooser = lazy(() =>
+  import("./routes/AddVaultChooser").then((m) => ({ default: m.AddVaultChooser })),
+);
 const Calendar = lazy(() => import("./routes/Calendar").then((m) => ({ default: m.Calendar })));
 const ConnectAI = lazy(() => import("./routes/ConnectAI").then((m) => ({ default: m.ConnectAI })));
 const Import = lazy(() => import("./routes/Import").then((m) => ({ default: m.Import })));
@@ -48,24 +53,65 @@ const VaultGraph = lazy(() =>
 );
 const Vaults = lazy(() => import("./routes/Vaults").then((m) => ({ default: m.Vaults })));
 const Welcome = lazy(() => import("./routes/Welcome").then((m) => ({ default: m.Welcome })));
+const CheckEmail = lazy(() =>
+  import("./routes/CheckEmail").then((m) => ({ default: m.CheckEmail })),
+);
 
-// Index dispatcher: the front door is the guided Home when a vault is
-// connected, else the landing page. Both live at internal `/`, which maps to
-// external `/notes/` via BrowserRouter's basename. The full notes browser is
-// `/all`; the pure day-grouped timeline (+ single-day drill-in) is `/today`.
-// Keeps Landing free of connected-vault concerns and Home free of any redirect
-// logic.
-function NotesIndex() {
+// The boot dispatcher (`/`) — SYNTHESIS "boot dispatcher"; Aaron's confusion #2
+// (a signed-in person never gets sent to an auth screen). Precedence: a vault
+// connected on THIS device → Home immediately (no network); else ask the hosted
+// door for the session and render the front door (signed-out), the "already
+// signed in" card (signed-in, #9), or the net-error weather (#12). The session
+// check gates first paint on `/` only — deep routes with a local vault are
+// unaffected. `?add=<url>` stays a connect deep-link into `/add`.
+function BootGate() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const [searchParams] = useSearchParams();
-  // `?add=<vault url>` connect deep link — the cloud console links the
-  // origin root (`/?add=…`), but /add owns the connect flow. Forward the
-  // full search string so companions like `redirect=` ride along; AddVault
-  // strips the param from history once consumed.
+  const [decision, setDecision] = useState<BootDecision | null>(null);
+  const startedRef = useRef(false);
+
+  const run = useCallback(() => {
+    startedRef.current = true;
+    setDecision(null);
+    resolveBoot({ hasLocalActiveVault: false })
+      .then(setDecision)
+      .catch(() => setDecision({ kind: "front-door" }));
+  }, []);
+
+  useEffect(() => {
+    if (activeVault || startedRef.current) return;
+    run();
+  }, [activeVault, run]);
+
   if (searchParams.get("add")) {
     return <Navigate to={`/add?${searchParams.toString()}`} replace />;
   }
-  return activeVault ? <Home /> : <Landing />;
+  // A vault already lives on this device — the notes layer owns it.
+  if (activeVault) return <Home />;
+  // Resolving the session (brief) — a calm neutral loader, not "signing you in"
+  // (we don't yet know who they are).
+  if (!decision) return <BootLoading />;
+  switch (decision.kind) {
+    case "home":
+      return <Home />;
+    case "signed-in":
+      return <Landing signedIn={{ email: decision.email, vaults: decision.vaults }} />;
+    case "net-error":
+      return <Landing netError={decision.message} onRetry={run} />;
+    default:
+      return <Landing />;
+  }
+}
+
+function BootLoading() {
+  return (
+    <output
+      aria-live="polite"
+      className="mx-auto flex min-h-[50dvh] items-center justify-center text-sm text-fg-dim"
+    >
+      <span className="animate-pulse">Loading…</span>
+    </output>
+  );
 }
 
 // Fallback while a lazy route's chunk loads. Routes are tiny once split, so
@@ -162,6 +208,7 @@ export function App() {
             <Toaster />
             <UpdateBanner />
             <VaultStatusBanner />
+            <AccountSessionBanner />
             {/*
               The shell: a left Rail (desktop spine, hidden lg:flex) beside the
               content column. Below lg the Rail collapses and the mobile Header
@@ -176,7 +223,8 @@ export function App() {
                 <main className="flex-1">
                   <Suspense fallback={<RouteFallback />}>
                     <Routes>
-                      <Route path="/" element={<NotesIndex />} />
+                      <Route path="/" element={<BootGate />} />
+                      <Route path="/check-email" element={<CheckEmail />} />
                       <Route path="/all" element={<Notes />} />
                       {/*
                     The four built-in views are filters inside /all now (a
@@ -216,6 +264,7 @@ export function App() {
                       <Route path="/:id" element={<NoteIdRedirect />} />
                       <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
                       <Route path="/add" element={<AddVault />} />
+                      <Route path="/add-vault" element={<AddVaultChooser />} />
                       <Route path="/welcome" element={<Welcome />} />
                       <Route path="/oauth/callback" element={<OAuthCallback />} />
                       <Route path="/vaults" element={<Vaults />} />

@@ -1,10 +1,44 @@
 import { InsecureContextBanner } from "@/components/InsecureContextBanner";
+import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { beginOAuth, normalizeVaultUrl, useOriginVaultProbe } from "@/lib/vault";
 import { InsecureContextError } from "@/lib/vault/pkce";
 import { useVaultStore } from "@/lib/vault/store";
 import { safeInternalRedirect, vaultIdFromUrl } from "@/lib/vault/url";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
+
+// The shared no-vault-yet layout — matches Landing.tsx / Welcome.tsx /
+// CheckEmail.tsx exactly, so the self-host hop reads as part of the same
+// visual world rather than a bolted-on developer screen.
+function Shell({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col">
+      <div className="flex items-center px-6 pt-6 sm:px-10">
+        <Wordmark />
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
+        <div className="mx-auto w-full max-w-md">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The live hostname for the announced hop (SYNTHESIS #11) — recomputed on
+ * every keystroke against the SAME normalization `beginOAuth` will actually
+ * use, so the box never promises a different host than the one the browser
+ * is about to be sent to. Returns `null` until the field holds something
+ * `normalizeVaultUrl` can parse (empty/whitespace-only input).
+ */
+function liveHostFromInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(normalizeVaultUrl(trimmed)).host;
+  } catch {
+    return null;
+  }
+}
 
 export function AddVault() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -141,60 +175,65 @@ export function AddVault() {
     void connect(url);
   }
 
+  const liveHost = liveHostFromInput(url);
+
   return (
-    <div className="page-prose">
-      <nav className="mb-4 text-sm text-fg-dim">
-        <Link to="/" className="focus-ring hover:text-accent">
-          ← Back
-        </Link>
-      </nav>
+    <Shell>
+      <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
+      <p className="eyebrow mb-3">Self-hosted</p>
+      <h1 className="hero-title mb-4">
+        Connect your <span className="accent-word">own</span> vault.
+      </h1>
+      <p className="mx-auto mb-8 max-w-sm text-lg leading-relaxed text-fg-muted">
+        Point Parachute at a vault running on your own server.
+      </p>
 
-      <header className="mb-8">
-        <h1 className="page-title">Connect a vault</h1>
-        <p className="mt-3 text-fg-muted">
-          Paste your vault address. You'll be taken to its consent page to authorize Parachute.
+      <form onSubmit={onSubmit} className="mx-auto w-full max-w-sm text-left">
+        <label htmlFor="vault-url" className="eyebrow mb-2 block">
+          Vault address
+        </label>
+        <input
+          id="vault-url"
+          ref={inputRef}
+          type="url"
+          required
+          placeholder="hub.your-domain.com"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          disabled={submitting}
+          className="input input-on-bg font-mono"
+        />
+        <p className="mt-1.5 text-xs text-fg-dim">
+          A local install lives at <code className="note-id">http://localhost:1939</code>.
         </p>
-      </header>
 
-      <form onSubmit={onSubmit} className="card space-y-5 rounded-xl p-6 shadow-soft">
-        <div>
-          <label htmlFor="vault-url" className="mb-1.5 block text-sm font-medium text-fg">
-            Vault address
-          </label>
-          <input
-            id="vault-url"
-            ref={inputRef}
-            type="url"
-            required
-            placeholder="https://u.parachute.computer/vault/your-name"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            disabled={submitting}
-            className="input input-on-bg font-mono"
-          />
-          <p className="mt-1.5 text-xs text-fg-dim">
-            From your cloud console at <code className="note-id">cloud.parachute.computer</code>, or
-            your own Parachute hub — a local install lives at{" "}
-            <code className="note-id">http://localhost:1939</code>.
-          </p>
-        </div>
-
-        {insecureContext ? <InsecureContextBanner /> : null}
+        {insecureContext ? (
+          <div className="mt-3">
+            <InsecureContextBanner />
+          </div>
+        ) : null}
 
         {error ? (
-          <div className="rounded-xl border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
+          <p className="mt-3 rounded-xl border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
             {error}
+          </p>
+        ) : null}
+
+        {liveHost ? (
+          <div className="mt-5 rounded-2xl border border-sun bg-sun-soft px-4 py-3 text-left font-round text-sm leading-relaxed text-sun-ink">
+            Next, <b className="font-semibold text-fg">{liveHost}</b> — your server, not ours — will
+            ask you to sign in and approve this app. Then you land right back here.
           </div>
         ) : null}
 
         <button
           type="submit"
           disabled={submitting || !url}
-          className="btn btn-primary btn-lg w-full"
+          className="btn btn-primary btn-lg mt-5 w-full justify-center rounded-full shadow-soft"
         >
-          {submitting ? "Starting OAuth…" : "Continue"}
+          {submitting ? "Continuing…" : liveHost ? `Continue to ${liveHost} →` : "Continue"}
         </button>
       </form>
-    </div>
+    </Shell>
   );
 }
