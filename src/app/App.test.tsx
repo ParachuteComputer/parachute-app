@@ -26,15 +26,16 @@ describe("App", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the wordmark and the hosted sign-in entry fork when no vaults exist", async () => {
+  it("boots to the front door (one email field) when signed out and no local vault", async () => {
     render(<App />);
     expect(screen.getByRole("link", { name: /^parachute$/i })).toBeInTheDocument();
-    // The arrival is now an entry fork: hosted email sign-in (primary) + a
-    // quieter self-hosted connect path — not vault-naming, not a bare "connect".
+    // The boot dispatcher resolves the (signed-out) session, then paints the
+    // front door: one email field that signs in OR creates + the self-hosted
+    // side door. No vault-naming, no verb-soup.
     await waitFor(() => {
       expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/sign in or create your parachute/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in or create your account/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /connect your own vault/i })).toBeInTheDocument();
   });
 
