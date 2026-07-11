@@ -1,10 +1,20 @@
 import { Account } from "@/app/routes/Account";
-import { AccountApiError, getAccountSummary, getSession, listVaults } from "@/lib/account/client";
+import {
+  AccountApiError,
+  BillingApiError,
+  SessionExpiredError,
+  getAccountSummary,
+  getSession,
+  listVaults,
+  openBillingPortal,
+  startCheckout,
+} from "@/lib/account/client";
+import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { useAccountSessionStore } from "@/lib/account/store";
-import type { AccountSummary } from "@/lib/account/types";
+import type { AccountSummary, DoorPlan } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,11 +36,28 @@ vi.mock("@/lib/account/client", async () => {
     listVaults: vi.fn(),
     getAccountSummary: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
+    openBillingPortal: vi.fn(),
+    startCheckout: vi.fn(),
   };
 });
 vi.mock("@/lib/account/hosted-vault", () => ({
   openHostedVault: vi.fn().mockResolvedValue("v1"),
 }));
+vi.mock("@/lib/account/descriptor", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/account/descriptor")>(
+    "@/lib/account/descriptor",
+  );
+  return {
+    ...actual,
+    getDoorDescriptor: vi.fn().mockResolvedValue(null),
+  };
+});
+
+const PLANS: DoorPlan[] = [
+  { id: "entry", name: "Entry", vaults: 1, price_month: 0 },
+  { id: "standard", name: "Standard", vaults: 3, price_month: 5 },
+  { id: "plus", name: "Plus", vaults: 10, price_month: 15 },
+];
 
 const SUMMARY: AccountSummary = {
   email: "ag@unforced.org",
@@ -41,6 +68,8 @@ const SUMMARY: AccountSummary = {
     vault_limit: 3,
     vaults_used: 1,
   },
+  billing_enabled: true,
+  has_billing_customer: true,
 };
 
 const CLOUD_VAULT = { name: "moss", url: "https://u.parachute.computer/vault/moss" };
@@ -67,6 +96,9 @@ beforeEach(() => {
   vi.mocked(listVaults).mockReset();
   vi.mocked(getAccountSummary).mockReset();
   vi.mocked(openHostedVault).mockReset().mockResolvedValue("v1");
+  vi.mocked(openBillingPortal).mockReset();
+  vi.mocked(startCheckout).mockReset();
+  vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
 });
 afterEach(() => {
   useVaultStore.setState({ vaults: {}, activeVaultId: null });
@@ -93,11 +125,11 @@ describe("Account — the app-as-manager surface", () => {
     expect(screen.getByText(/☁ Cloud/)).toBeInTheDocument();
     expect(screen.getByText(/68 MB/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open →/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /manage plan & billing/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /manage plan & billing/i })).toBeInTheDocument();
     expect(screen.getByText("AI connections")).toBeInTheDocument();
   });
 
-  it("degrades gracefully when the summary is absent (no fabricated numbers)", async () => {
+  it("degrades gracefully when the summary is absent (no fabricated numbers, no Billing section)", async () => {
     vi.mocked(getSession).mockResolvedValue({
       signed_in: true,
       csrf: "c",
@@ -108,13 +140,13 @@ describe("Account — the app-as-manager surface", () => {
 
     renderAccount();
     await waitFor(() => expect(screen.getByText("ag@unforced.org")).toBeInTheDocument());
-    expect(screen.getByText(/your plan lives on the door/i)).toBeInTheDocument();
     expect(screen.queryByText(/\d+ of \d+ vaults/)).not.toBeInTheDocument(); // no fake meter
-    // Billing still derives from a cloud vault host (the door-agnostic fallback).
-    expect(screen.getByRole("link", { name: /manage plan & billing/i })).toHaveAttribute(
-      "href",
-      "https://cloud.parachute.computer/console",
-    );
+    // No summary ⇒ billing_enabled can't be known truthy ⇒ the Billing section
+    // doesn't exist (never a false door to a plan/billing state we can't verify).
+    expect(screen.queryByText("Billing")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /manage plan & billing/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the device view when signed out — no account/plan sections", async () => {
@@ -182,26 +214,13 @@ describe("Account — the app-as-manager surface", () => {
     vi.mocked(getAccountSummary).mockResolvedValue({
       email: "ag@unforced.org",
       plan: { tier: "standard", label: "Standard", vault_limit: 3 }, // no vaults_used
+      billing_enabled: true,
+      has_billing_customer: true,
     });
 
     renderAccount();
     await waitFor(() => expect(screen.getByText(/Standard/)).toBeInTheDocument());
     expect(screen.queryByText(/of 3 vaults/)).not.toBeInTheDocument();
-  });
-
-  it("opens the billing link in a new tab so the app stays open", async () => {
-    vi.mocked(getSession).mockResolvedValue({
-      signed_in: true,
-      csrf: "c",
-      email: "ag@unforced.org",
-    });
-    vi.mocked(listVaults).mockResolvedValue({ vaults: [CLOUD_VAULT] });
-    vi.mocked(getAccountSummary).mockResolvedValue(null);
-
-    renderAccount();
-    const link = await screen.findByRole("link", { name: /manage plan & billing/i });
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noreferrer");
   });
 
   // HUB-PARITY P4 — a password door may sign a person in under `username`
@@ -257,6 +276,174 @@ describe("Account — the app-as-manager surface", () => {
         expect(screen.getByText(/couldn't load your vaults/i)).toBeInTheDocument(),
       );
       expect(useAccountSessionStore.getState().gate).toBeNull();
+    });
+  });
+
+  // Plan A: the Billing section is straight-to-Stripe — no cloud-console
+  // re-login. Three states, gated purely on `AccountSummary.billing_enabled`
+  // + `has_billing_customer` (data the app already holds); the two actions are
+  // typed redirect calls, asserted by checking `window.location.assign` lands
+  // on the endpoint's own `{ url }` — never a value the app computed itself.
+  describe("Billing section — Stripe-direct redirects", () => {
+    beforeEach(() => {
+      // openBillingPortal/startCheckout redirect via window.location.assign;
+      // jsdom's default throws "Not implemented: navigation".
+      vi.stubGlobal("location", { ...window.location, assign: vi.fn() });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("billing_enabled: false → no Billing section at all (self-hosted / no-billing door)", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "c",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummary).mockResolvedValue({
+        ...SUMMARY,
+        billing_enabled: false,
+        has_billing_customer: false,
+      });
+
+      renderAccount();
+      await waitFor(() => expect(screen.getByText("ag@unforced.org")).toBeInTheDocument());
+      expect(screen.queryByText("Billing")).not.toBeInTheDocument();
+      expect(openBillingPortal).not.toHaveBeenCalled();
+    });
+
+    it("has_billing_customer: true → Manage button opens the billing portal and redirects to its url", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "c",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummary).mockResolvedValue(SUMMARY); // billing_enabled + has_billing_customer: true
+      vi.mocked(openBillingPortal).mockResolvedValue({
+        url: "https://billing.stripe.com/session/abc",
+      });
+
+      renderAccount();
+      const button = await screen.findByRole("button", { name: /manage plan & billing/i });
+      fireEvent.click(button);
+
+      await waitFor(() => expect(openBillingPortal).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(window.location.assign).toHaveBeenCalledWith(
+          "https://billing.stripe.com/session/abc",
+        ),
+      );
+      // No plan cards — this is the existing-subscriber state.
+      expect(screen.queryByText(/upgrade to/i)).not.toBeInTheDocument();
+      expect(startCheckout).not.toHaveBeenCalled();
+    });
+
+    it("a 409/503 from the billing portal shows a small inline message, not a crash", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "c",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummary).mockResolvedValue(SUMMARY);
+      vi.mocked(openBillingPortal).mockRejectedValue(
+        new BillingApiError(409, "no_billing_customer", "no_billing_customer"),
+      );
+
+      renderAccount();
+      const button = await screen.findByRole("button", { name: /manage plan & billing/i });
+      fireEvent.click(button);
+
+      await waitFor(() =>
+        expect(screen.getByText(/billing isn't available right now/i)).toBeInTheDocument(),
+      );
+      expect(window.location.assign).not.toHaveBeenCalled();
+    });
+
+    it("a real session expiry rides the app's session-ended handling, NOT the billing inline message", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "c",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummary).mockResolvedValue(SUMMARY);
+      vi.mocked(openBillingPortal).mockRejectedValue(new SessionExpiredError());
+
+      renderAccount();
+      const button = await screen.findByRole("button", { name: /manage plan & billing/i });
+      fireEvent.click(button);
+
+      // The account session store is marked expired (drives the existing
+      // AccountSessionBanner), and the billing-specific message is NOT shown.
+      await waitFor(() => expect(useAccountSessionStore.getState().expired).toBe(true));
+      expect(screen.queryByText(/billing isn't available right now/i)).not.toBeInTheDocument();
+      expect(window.location.assign).not.toHaveBeenCalled();
+    });
+
+    it("has_billing_customer: false → renders the door's plan cards, marks the current plan, and Upgrade calls checkout with the right tier", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "c",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummary).mockResolvedValue({
+        ...SUMMARY,
+        billing_enabled: true,
+        has_billing_customer: false,
+      });
+      vi.mocked(getDoorDescriptor).mockResolvedValue({ plans: PLANS });
+      vi.mocked(startCheckout).mockResolvedValue({
+        url: "https://checkout.stripe.com/session/xyz",
+      });
+
+      renderAccount();
+      await waitFor(() => expect(screen.getByText("Entry")).toBeInTheDocument());
+      expect(screen.getByText("Plus")).toBeInTheDocument();
+      // The current plan (tier "standard") is marked, not offered an Upgrade button.
+      const standardCard = screen.getByText("Standard").closest("li") as HTMLElement;
+      expect(standardCard).not.toBeNull();
+      expect(within(standardCard).getByText("Current")).toBeInTheDocument();
+      expect(within(standardCard).queryByRole("button")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /manage plan & billing/i }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /upgrade to plus/i }));
+      await waitFor(() => expect(startCheckout).toHaveBeenCalledWith("plus"));
+      await waitFor(() =>
+        expect(window.location.assign).toHaveBeenCalledWith(
+          "https://checkout.stripe.com/session/xyz",
+        ),
+      );
+    });
+
+    it("checkout 409 already_subscribed → inline message, no redirect", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "c",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummary).mockResolvedValue({
+        ...SUMMARY,
+        billing_enabled: true,
+        has_billing_customer: false,
+      });
+      vi.mocked(getDoorDescriptor).mockResolvedValue({ plans: PLANS });
+      vi.mocked(startCheckout).mockRejectedValue(
+        new BillingApiError(409, "already_subscribed", "already_subscribed"),
+      );
+
+      renderAccount();
+      await waitFor(() => expect(screen.getByText("Entry")).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: /upgrade to plus/i }));
+
+      await waitFor(() => expect(screen.getByText(/already subscribed/i)).toBeInTheDocument());
+      expect(window.location.assign).not.toHaveBeenCalled();
     });
   });
 });

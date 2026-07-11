@@ -4,6 +4,8 @@ import type {
   AccountSummary,
   AccountTokenResponse,
   AccountVaultsResponse,
+  BillingInterval,
+  BillingTier,
   CreateVaultResponse,
   VaultTokenResponse,
 } from "./types";
@@ -50,6 +52,41 @@ export class AccountApiError extends Error {
     super(message);
     this.name = "AccountApiError";
     this.status = status;
+  }
+}
+
+/** The billing-endpoint error reasons the UI branches on (cloud rc.74's
+ *  `POST /account/billing/{portal,checkout}`). `"unknown"` covers a 503 with
+ *  no parseable body, or any other shape we don't recognize — the UI folds
+ *  every code into the same non-blocking "billing isn't available" message,
+ *  but the code is there for callers that want to distinguish. */
+export type BillingErrorCode =
+  | "no_billing_customer"
+  | "already_subscribed"
+  | "invalid_tier"
+  | "invalid_interval"
+  | "invalid_plan"
+  | "unconfigured"
+  | "unknown";
+
+const KNOWN_BILLING_ERROR_CODES: readonly BillingErrorCode[] = [
+  "no_billing_customer",
+  "already_subscribed",
+  "invalid_tier",
+  "invalid_interval",
+  "invalid_plan",
+];
+
+/** Thrown by `openBillingPortal` / `startCheckout` on any non-2xx response —
+ *  an `AccountApiError` with a typed `code` so the UI can branch (e.g. show
+ *  the "Billing isn't available right now" inline message) without parsing
+ *  the message string itself. */
+export class BillingApiError extends AccountApiError {
+  readonly code: BillingErrorCode;
+  constructor(status: number, code: BillingErrorCode, message: string) {
+    super(status, message);
+    this.name = "BillingApiError";
+    this.code = code;
   }
 }
 
@@ -235,6 +272,77 @@ export async function mintVaultToken(
     method: "POST",
   });
   return jsonOrThrow<VaultTokenResponse>(res);
+}
+
+/** `{ url }` on 200 — the shape both billing endpoints return. */
+interface BillingUrlResponse {
+  url: string;
+}
+
+/**
+ * Parse a billing-endpoint response: `{ url }` on 200, a typed
+ * `BillingApiError` on any non-2xx (409/400/503), `SessionExpiredError` on
+ * 401 (same as every other Bearer call). A 503 means billing isn't
+ * configured on this door at all, regardless of body shape.
+ *
+ * The 200 body is GUARDED: a contract-violating `200 {}` / blank / non-string
+ * `url` would otherwise `window.location.assign(undefined)` → a bogus
+ * navigation to `/undefined`. We require a non-empty string `url` and throw a
+ * typed `BillingApiError` otherwise, so the UI shows its inline message rather
+ * than navigating nowhere.
+ */
+async function billingResult(res: Response): Promise<BillingUrlResponse> {
+  if (res.status === 401) throw new SessionExpiredError();
+  if (res.ok) {
+    const body = (await res.json().catch(() => null)) as { url?: unknown } | null;
+    if (body && typeof body.url === "string" && body.url.length > 0) return { url: body.url };
+    throw new BillingApiError(res.status, "unknown", "Billing returned no redirect URL.");
+  }
+  if (res.status === 503) {
+    throw new BillingApiError(503, "unconfigured", "Billing isn't configured for this door.");
+  }
+  let code: BillingErrorCode = "unknown";
+  try {
+    const body = (await res.json()) as { error?: string };
+    if (body.error && (KNOWN_BILLING_ERROR_CODES as string[]).includes(body.error)) {
+      code = body.error as BillingErrorCode;
+    }
+  } catch {
+    // non-JSON error body — keep "unknown"
+  }
+  throw new BillingApiError(res.status, code, code === "unknown" ? `${res.status}` : code);
+}
+
+/**
+ * `POST /account/billing/portal` (Bearer, no body) — mints a Stripe
+ * billing-portal session for an EXISTING subscriber and returns its URL. The
+ * caller redirects straight there (`window.location.assign`) — the app never
+ * touches Stripe or pricing itself, it just carries the account bearer and
+ * follows the door's answer. `409 no_billing_customer` (comped/no-customer)
+ * and `503` (billing unconfigured) surface as a `BillingApiError`.
+ */
+export async function openBillingPortal(
+  fetchImpl: Fetch = fetch.bind(globalThis),
+): Promise<BillingUrlResponse> {
+  const res = await bearerFetch(fetchImpl, "/account/billing/portal", { method: "POST" });
+  return billingResult(res);
+}
+
+/**
+ * `POST /account/billing/checkout` (Bearer, `{ tier, interval? }`) — mints a
+ * Stripe Checkout session for a NEW subscription and returns its URL. `409
+ * already_subscribed`, `400 invalid_tier|invalid_interval|invalid_plan`, and
+ * `503` (billing unconfigured) surface as a `BillingApiError`.
+ */
+export async function startCheckout(
+  tier: BillingTier,
+  interval?: BillingInterval,
+  fetchImpl: Fetch = fetch.bind(globalThis),
+): Promise<BillingUrlResponse> {
+  const body: Record<string, unknown> = { tier };
+  if (interval) body.interval = interval;
+  const res = await bearerFetch(fetchImpl, "/account/billing/checkout", { method: "POST", body });
+  return billingResult(res);
 }
 
 /**

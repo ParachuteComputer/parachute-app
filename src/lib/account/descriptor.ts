@@ -15,6 +15,8 @@
  * switch the front door to the password-ceremony-hop branch (Landing.tsx).
  */
 
+import type { DoorPlan } from "./types";
+
 /** One door's advertised sign-in surface. `methods` may list more than one;
  *  the app only distinguishes "has magic_link" vs "password-only" today. */
 export interface DoorAuthDescriptor {
@@ -35,7 +37,9 @@ export interface DoorDescriptor {
    *  never the source of truth for a URL after creation (Welcome.tsx). */
   vault_url_template?: string;
   capabilities?: { vault_create?: boolean; vault_delete?: boolean };
-  plans?: unknown[];
+  /** The upgrade-tier ladder for the Account surface's Billing section (see
+   *  `Account.tsx`'s plan cards) — omitted on a door with no billing. */
+  plans?: DoorPlan[];
 }
 
 type Fetch = typeof fetch;
@@ -58,7 +62,8 @@ let inflight: Promise<DoorDescriptor | null> | null = null;
  * has no ErrorBoundary) or hop to `"undefined?next=…"`. The fallback rule is
  * "anything we can't trust ⇒ behave as the magic-link door", so we DROP a
  * malformed `auth` (leaving the descriptor otherwise intact) rather than trust
- * it. A non-object body coerces to `null` (pure magic-link fallback).
+ * it. A non-object body coerces to `null` (pure magic-link fallback). A
+ * malformed `plans` (the Billing section's ladder) is dropped the same way.
  */
 function normalizeDescriptor(raw: unknown): DoorDescriptor | null {
   // Arrays are `typeof === "object"` too — a JSON array body is not a descriptor.
@@ -79,10 +84,23 @@ function normalizeDescriptor(raw: unknown): DoorDescriptor | null {
     auth.methods.every((m) => typeof m === "string") &&
     typeof auth.signin_path === "string" &&
     auth.signin_path.startsWith("/");
-  if (authOk) return src;
-  // Drop a malformed `auth`, keep the rest of the descriptor intact.
-  const { auth: _dropped, ...rest } = src;
-  return rest;
+  // `plans` (the Billing section's upgrade ladder) is consumed by `UpgradePlans`
+  // as `plans.length` then `plans.map((p) => p.id …)`. A door we don't control
+  // serving `plans: "x"` (truthy `.length`, no `.map`) or `plans: [null]`
+  // (`.id` on `null`) would throw during render → a white screen (no
+  // ErrorBoundary). So `plans` is KEPT only when it's a clean array of objects;
+  // otherwise DROPPED, exactly like a malformed `auth`. An absent `plans` is
+  // fine (the section just shows no cards).
+  const plansOk =
+    src.plans === undefined ||
+    (Array.isArray(src.plans) && src.plans.every((p) => !!p && typeof p === "object"));
+  if (authOk && plansOk) return src;
+  // Drop whichever block is malformed; keep the rest of the descriptor intact.
+  const { auth: _auth, plans: _plans, ...rest } = src;
+  const out: DoorDescriptor = { ...rest };
+  if (authOk) out.auth = src.auth;
+  if (plansOk && src.plans !== undefined) out.plans = src.plans;
+  return out;
 }
 
 async function fetchDescriptor(fetchImpl: Fetch): Promise<DoorDescriptor | null> {

@@ -1,5 +1,63 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.4.1] - 2026-07-11
+
+**Billing section — Stripe-direct, no cloud-console re-login (Plan A).**
+"Manage plan & billing" now goes STRAIGHT to Stripe instead of hopping to
+`cloud.parachute.computer/console` (a different origin, host-scoped cookies —
+that hop forced a re-login before the console's own second hop to Stripe).
+Pairs with cloud rc.74's new Bearer billing endpoints — deploy together.
+
+- **`AccountSummary` gains `billing_enabled` + `has_billing_customer`, drops
+  `manage_billing_url`** (types.ts). The Account surface's Billing section is
+  gated purely on this data: `billing_enabled: false` (self-hosted hub / no
+  Stripe configured) ⇒ the section doesn't exist at all — never a false door to
+  a plan that isn't there.
+- **NEW `openBillingPortal()` / `startCheckout(tier, interval?)`** (client.ts) —
+  Bearer-gated POSTs to cloud's `POST /account/billing/{portal,checkout}`,
+  riding the same account-bearer plumbing (mint, cache, re-mint-once-on-401) as
+  every other `/account/*` call. Both return `{ url }` on 200; a typed
+  `BillingApiError` (with a `code`: `no_billing_customer` /
+  `already_subscribed` / `invalid_tier` / `invalid_interval` / `invalid_plan` /
+  `unconfigured`) on 409/400/503 so the UI can show a small inline message
+  instead of crashing.
+- **The Billing section** (`Account.tsx`, replacing the old inline billing
+  button): an **existing subscriber** (`has_billing_customer: true`) sees the
+  current-plan line + a **"Manage plan & billing ↗"** button that calls
+  `openBillingPortal()` and redirects straight to the returned Stripe URL
+  (`window.location.assign` — cross-origin, so a top-level nav, not a
+  fetch-follow). A **trial/free account** sees the door's upgrade ladder as
+  plan cards (from `descriptor.plans`, the door descriptor — P4), current tier
+  marked, each purchasable tier an **"Upgrade to \<name\>"** button that calls
+  `startCheckout(tier)` and redirects the same way. The app renders plan DATA
+  it's already handed and makes two typed redirect calls — zero Stripe
+  knowledge, zero pricing math, zero cloud-origin imports.
+- **Identity card simplified**: "Signed in as X" + Sign out only — plan/billing
+  now lives entirely in its own Billing section.
+- **Home's plan backlink now stays in-app.** The Home surface's quiet backlink
+  (`PlanBacklink`) was the SAME cloud-console → re-login seam from the Home
+  surface — it `href`-ed to `cloud.parachute.computer/console`. It now renders
+  **"Manage your account →"** as an in-app react-router `Link to="/account"`
+  (same origin, no re-login), shown only for home-door (account-minted) vaults
+  — a foreign self-hosted vault has no account on this door, so no backlink.
+  The `/account` surface (with the new Billing section) owns Manage-vs-Upgrade
+  + the Stripe-direct hop from there.
+- **`src/lib/vault/console-url.ts` (and its test) removed** — the host-sniffed
+  `manageBillingUrl` fallback and `Home`'s backlink were its only consumers;
+  with both routed in-app, `cloudConsoleUrl` is dead and gone. The app now has
+  **zero** cloud-console links (the only remaining `/console` reference is the
+  service-worker navigation denylist, which forces server-owned ceremony paths
+  past the SW to the origin — infrastructure, not a link).
+- **White-screen hardening (review folds)**: `normalizeDescriptor` now drops a
+  malformed `plans` (non-array, or an array with a null/primitive element) the
+  same way it drops a malformed `auth` — a door we don't control can't
+  white-screen the Billing cards' `plans.map(p => p.id …)`. `billingResult`
+  guards the `200 {url}` body (non-empty string required) so a contract-broken
+  `200 {}` can't `assign(undefined)`. And a genuine session expiry (post-retry
+  401 → `SessionExpiredError`) now rides the app's existing session-ended
+  handling (`markExpired` → the account session banner) instead of being masked
+  as a generic billing message.
+
 ## [0.4.0] - 2026-07-11
 
 **Descriptor-driven, door-agnostic front door — HUB-PARITY P4.** The same app

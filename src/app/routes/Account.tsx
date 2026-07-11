@@ -1,9 +1,20 @@
-import { getAccountSummary, getSession, listVaults, logout } from "@/lib/account/client";
+import {
+  BillingApiError,
+  SessionExpiredError,
+  getAccountSummary,
+  getSession,
+  listVaults,
+  logout,
+  openBillingPortal,
+  startCheckout,
+} from "@/lib/account/client";
+import type { DoorDescriptor } from "@/lib/account/descriptor";
+import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { markHubGateFromError } from "@/lib/account/dispatch";
 import { openHostedVault } from "@/lib/account/hosted-vault";
-import { formatBytes, formatUsageBytes, manageBillingUrl } from "@/lib/account/provenance";
-import { clearAccountToken } from "@/lib/account/store";
-import type { AccountSummary, AccountVault } from "@/lib/account/types";
+import { formatBytes, formatUsageBytes } from "@/lib/account/provenance";
+import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
+import type { AccountSummary, AccountVault, DoorPlan } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -32,6 +43,10 @@ type View =
       // first" empty-state on a failure — that would invite a duplicate vault.
       vaults: AccountVault[] | null;
       summary: AccountSummary | null;
+      // The door descriptor's `plans` ladder powers the Billing section's
+      // upgrade cards (trial/free state). `null` on any fetch failure — the
+      // Billing section degrades to no cards rather than fabricating a ladder.
+      descriptor: DoorDescriptor | null;
     }
   | { kind: "device" };
 
@@ -57,7 +72,10 @@ export function Account() {
       // vault-load FAILURE resolves to null (→ a "couldn't load, retry" card),
       // NOT [] — an empty list must mean genuinely-no-vaults, or we'd nudge a
       // signed-in person to create a duplicate. An absent summary is just null.
-      const [vaults, summary] = await Promise.all([
+      // The door descriptor is same-origin + public (no bearer needed) and
+      // never throws — it's fetched alongside for the Billing section's
+      // upgrade-plan cards.
+      const [vaults, summary, descriptor] = await Promise.all([
         listVaults()
           .then((r) => r.vaults)
           .catch((err) => {
@@ -68,6 +86,7 @@ export function Account() {
             return null;
           }),
         getAccountSummary(),
+        getDoorDescriptor(),
       ]);
       if (live) {
         setView({
@@ -77,6 +96,7 @@ export function Account() {
           csrf: session.csrf,
           vaults,
           summary,
+          descriptor,
         });
       }
     })();
@@ -124,6 +144,7 @@ export function Account() {
           csrf={view.csrf}
           vaults={view.vaults}
           summary={view.summary}
+          descriptor={view.descriptor}
           onReloadVaults={reloadVaults}
         />
       )}
@@ -131,14 +152,15 @@ export function Account() {
   );
 }
 
-// The signed-in account manager: who you are + plan, your Cloud vaults, and AI
-// connections — everything driven by the account bearer.
+// The signed-in account manager: who you are, plan + billing, your Cloud
+// vaults, and AI connections — everything driven by the account bearer.
 function ManagerView({
   email,
   username,
   csrf,
   vaults,
   summary,
+  descriptor,
   onReloadVaults,
 }: {
   email?: string;
@@ -146,12 +168,11 @@ function ManagerView({
   csrf: string;
   vaults: AccountVault[] | null;
   summary: AccountSummary | null;
+  descriptor: DoorDescriptor | null;
   onReloadVaults: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const activeVault = useVaultStore((s) => s.getActiveVault());
-  const firstCloudVaultUrl = (vaults ?? []).find((v) => v.url)?.url ?? null;
-  const billingUrl = manageBillingUrl(summary, firstCloudVaultUrl);
 
   async function signOut() {
     try {
@@ -164,35 +185,25 @@ function ManagerView({
 
   return (
     <div className="space-y-8">
-      <AccountBlock
-        email={email}
-        username={username}
-        summary={summary}
-        billingUrl={billingUrl}
-        onSignOut={signOut}
-      />
+      <AccountBlock email={email} username={username} onSignOut={signOut} />
+      <BillingSection summary={summary} descriptor={descriptor} />
       <VaultsBlock vaults={vaults} onReload={onReloadVaults} />
       <ConnectionsBlock hasActiveVault={!!activeVault} />
     </div>
   );
 }
 
-// "Signed in as X" + the plan/usage line (only when the summary is present —
-// never fabricated) + the one true trip out: Manage plan & billing.
+// "Signed in as X" + sign out. Plan + billing live in their own section below
+// (BillingSection) — this card is identity only.
 function AccountBlock({
   email,
   username,
-  summary,
-  billingUrl,
   onSignOut,
 }: {
   email?: string;
   username?: string;
-  summary: AccountSummary | null;
-  billingUrl: string | null;
   onSignOut: () => void;
 }) {
-  const planLine = summary ? planSummaryLine(summary) : null;
   return (
     <section aria-label="Account" className="card rounded-xl p-6 shadow-soft">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -201,13 +212,6 @@ function AccountBlock({
           <p className="truncate font-serif text-xl text-fg">
             {email ?? username ?? "your account"}
           </p>
-          {planLine ? (
-            <p className="mt-2 text-sm text-fg-muted">{planLine}</p>
-          ) : (
-            <p className="mt-2 text-sm text-fg-dim">
-              Your plan lives on the door you signed in to.
-            </p>
-          )}
         </div>
         <button
           type="button"
@@ -217,22 +221,147 @@ function AccountBlock({
           Sign out
         </button>
       </div>
-      {billingUrl ? (
-        <div className="mt-5 border-t border-border pt-5">
-          <a
-            href={billingUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="btn btn-primary btn-touch"
-          >
-            Manage plan &amp; billing ↗
-          </a>
-          <p className="mt-2 text-xs text-fg-dim">
-            Payment and plan changes happen on the door, then you land right back here.
-          </p>
-        </div>
-      ) : null}
     </section>
+  );
+}
+
+// The Billing section — the ONE trip out to Stripe (Plan A: straight from the
+// app, no cloud-console re-login). Pure presentation over data the account
+// summary + door descriptor already handed us: zero Stripe knowledge, zero
+// pricing math, zero cloud origin — just two typed redirect calls.
+//
+// Absent entirely when the door has no billing wired (self-hosted hub / no
+// Stripe configured) — there's nothing honest to show, so the section simply
+// doesn't exist.
+function BillingSection({
+  summary,
+  descriptor,
+}: {
+  summary: AccountSummary | null;
+  descriptor: DoorDescriptor | null;
+}) {
+  if (!summary?.billing_enabled) return null;
+  return (
+    <section aria-label="Billing" className="card rounded-xl p-6 shadow-soft">
+      <h2 className="font-serif text-xl text-fg">Billing</h2>
+      {summary.has_billing_customer ? (
+        <ManageBilling summary={summary} />
+      ) : (
+        <UpgradePlans summary={summary} plans={descriptor?.plans ?? []} />
+      )}
+    </section>
+  );
+}
+
+// Existing subscriber: the current-plan line + the one true trip to the
+// Stripe billing portal. A 409/503 (comped account, or billing momentarily
+// unconfigured) surfaces a small inline message — never a blocking error.
+function ManageBilling({ summary }: { summary: AccountSummary }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function manage() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { url } = await openBillingPortal();
+      window.location.assign(url);
+    } catch (err) {
+      setBusy(false);
+      // A real session expiry (post-retry 401) is NOT a billing problem — hand
+      // it to the app's existing "your sign-in ended" handling (the account
+      // session banner), not a billing-specific inline message.
+      if (err instanceof SessionExpiredError) {
+        useAccountSessionStore.getState().markExpired();
+        return;
+      }
+      setError("Billing isn't available right now.");
+    }
+  }
+
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+      <button
+        type="button"
+        onClick={manage}
+        disabled={busy}
+        className="btn btn-primary btn-touch mt-4"
+      >
+        {busy ? "Opening…" : "Manage plan & billing ↗"}
+      </button>
+      {error ? <p className="mt-2 text-xs text-fg-dim">{error}</p> : null}
+    </div>
+  );
+}
+
+// Trial/free state: the door's upgrade ladder as plan cards (from the door
+// descriptor — the app doesn't know pricing, it just renders what the door
+// advertised), current tier marked, each purchasable tier a straight trip to
+// Stripe Checkout.
+function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: DoorPlan[] }) {
+  const [busyTier, setBusyTier] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function upgrade(tier: DoorPlan["id"]) {
+    if (busyTier) return;
+    setBusyTier(tier);
+    setError(null);
+    try {
+      const { url } = await startCheckout(tier);
+      window.location.assign(url);
+    } catch (err) {
+      setBusyTier(null);
+      // Session expiry rides the app's session-ended handling, not a billing
+      // message (see ManageBilling.manage).
+      if (err instanceof SessionExpiredError) {
+        useAccountSessionStore.getState().markExpired();
+        return;
+      }
+      setError(
+        err instanceof BillingApiError && err.code === "already_subscribed"
+          ? "You're already subscribed — refresh to see your plan."
+          : "Billing isn't available right now.",
+      );
+    }
+  }
+
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+      {plans.length > 0 ? (
+        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+          {plans.map((plan) => {
+            const isCurrent = plan.id === summary.plan.tier;
+            return (
+              <li key={plan.id} className="rounded-lg border border-border p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-serif text-base text-fg">{plan.name}</span>
+                  {isCurrent ? <span className="chip">Current</span> : null}
+                </div>
+                {typeof plan.price_month === "number" ? (
+                  <p className="mt-1 text-sm text-fg-muted">${plan.price_month}/mo</p>
+                ) : null}
+                {typeof plan.vaults === "number" ? (
+                  <p className="text-xs text-fg-dim">{plan.vaults} vaults</p>
+                ) : null}
+                {isCurrent ? null : (
+                  <button
+                    type="button"
+                    onClick={() => upgrade(plan.id)}
+                    disabled={busyTier !== null}
+                    className="btn btn-primary btn-sm btn-touch mt-3 w-full"
+                  >
+                    {busyTier === plan.id ? "Starting…" : `Upgrade to ${plan.name}`}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {error ? <p className="mt-2 text-xs text-fg-dim">{error}</p> : null}
+    </div>
   );
 }
 

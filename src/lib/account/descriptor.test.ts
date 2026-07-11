@@ -110,6 +110,54 @@ describe("getDoorDescriptor", () => {
     await expect(getDoorDescriptor(fetchImpl)).resolves.toBeNull();
   });
 
+  // The Billing section renders `plans.map((p) => p.id …)`. A door we don't
+  // control serving a non-array `plans` (`.map` throws) or an array with a
+  // null/primitive element (`.id` throws) would white-screen the app (no
+  // ErrorBoundary). The guard DROPS a malformed `plans` the same way it drops
+  // a malformed `auth`, keeping the rest of the descriptor intact.
+  it("malformed plans (not an array) → plans dropped, rest kept", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "cloud", plans: "nope" }));
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "cloud" });
+  });
+
+  it("malformed plans (array containing null) → plans dropped, rest kept", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ door: "cloud", plans: [{ id: "entry", name: "Entry" }, null] }),
+    );
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "cloud" });
+  });
+
+  it("malformed plans (array of primitives) → plans dropped, rest kept", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "cloud", plans: [1, 2, 3] }));
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "cloud" });
+  });
+
+  it("a clean plans array of objects → kept verbatim", async () => {
+    const descriptor = {
+      door: "cloud",
+      plans: [
+        { id: "entry", name: "Entry", vaults: 1, price_month: 0 },
+        { id: "standard", name: "Standard", vaults: 3, price_month: 5 },
+      ],
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async () => res(descriptor));
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(descriptor);
+  });
+
+  it("drops a malformed plans even when auth is valid (both blocks guarded independently)", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({
+        door: "hub",
+        auth: { methods: ["password"], signin_path: "/login" },
+        plans: "nope",
+      }),
+    );
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({
+      door: "hub",
+      auth: { methods: ["password"], signin_path: "/login" },
+    });
+  });
+
   it("memoizes in-module — one fetch across concurrent + sequential callers", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "hub" }));
     const [a, b] = await Promise.all([getDoorDescriptor(fetchImpl), getDoorDescriptor(fetchImpl)]);

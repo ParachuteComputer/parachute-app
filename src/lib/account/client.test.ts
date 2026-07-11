@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  BillingApiError,
   SessionExpiredError,
   createVault,
   getAccountSummary,
   listVaults,
   logout,
   mintVaultToken,
+  openBillingPortal,
+  startCheckout,
 } from "./client";
 import { loadAccountToken } from "./store";
 import type { AccountSummary } from "./types";
@@ -170,6 +173,8 @@ describe("getAccountSummary — Bearer-gated (account:<id>:read) + seamed", () =
     email: "a@b.c",
     account_created_at: "2026-01-01T00:00:00Z",
     plan: { tier: "standard", label: "Standard", price_monthly_usd: 5, vault_limit: 3 },
+    billing_enabled: true,
+    has_billing_customer: true,
   };
 
   it("returns the summary on 200, riding the account Bearer (no cookie)", async () => {
@@ -211,6 +216,147 @@ describe("getAccountSummary — Bearer-gated (account:<id>:read) + seamed", () =
       throw new Error("offline");
     });
     await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
+  });
+});
+
+describe("openBillingPortal — POST /account/billing/portal (Bearer)", () => {
+  it("200 → { url }, Bearer attached, no body", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/account/billing/portal" && init?.method === "POST")
+        return res({ url: "https://billing.stripe.com/session/abc" });
+      return res("unexpected", 500);
+    });
+
+    await expect(openBillingPortal(fetchImpl)).resolves.toEqual({
+      url: "https://billing.stripe.com/session/abc",
+    });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(headersOf(init).authorization).toBe("Bearer acct-tok");
+    expect(JSON.parse(init?.body as string)).toEqual({});
+  });
+
+  it("409 no_billing_customer → typed BillingApiError", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ error: "no_billing_customer" }, 409));
+
+    const err = await openBillingPortal(fetchImpl).catch((e) => e);
+    expect(err).toBeInstanceOf(BillingApiError);
+    expect((err as BillingApiError).status).toBe(409);
+    expect((err as BillingApiError).code).toBe("no_billing_customer");
+  });
+
+  it("503 (billing unconfigured) → typed BillingApiError, regardless of body", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () => res("", 503));
+
+    const err = await openBillingPortal(fetchImpl).catch((e) => e);
+    expect(err).toBeInstanceOf(BillingApiError);
+    expect((err as BillingApiError).status).toBe(503);
+    expect((err as BillingApiError).code).toBe("unconfigured");
+  });
+
+  it("200 with no/blank url → typed BillingApiError (never assign(undefined))", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    // A contract-violating 200 body: no url, a blank url, a non-string url.
+    for (const body of [{}, { url: "" }, { url: 123 }] as const) {
+      const fetchImpl = vi.fn<typeof fetch>(async () => res(body));
+      const err = await openBillingPortal(fetchImpl).catch((e) => e);
+      expect(err).toBeInstanceOf(BillingApiError);
+      expect((err as BillingApiError).code).toBe("unknown");
+    }
+  });
+
+  it("re-mints once on a 401 and retries with the fresh token", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "stale-tok");
+    let calls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const path = String(input);
+      if (path === "/account/session") return res(SESSION_OK);
+      if (path === "/account/token") return res({ token: "fresh-tok" });
+      if (path === "/account/billing/portal") {
+        calls++;
+        return headersOf(init).authorization === "Bearer stale-tok"
+          ? res("", 401)
+          : res({ url: "https://billing.stripe.com/session/fresh" });
+      }
+      return res("unexpected", 500);
+    });
+
+    const out = await openBillingPortal(fetchImpl);
+    expect(out).toEqual({ url: "https://billing.stripe.com/session/fresh" });
+    expect(calls).toBe(2); // stale → 401, fresh → 200
+    expect(loadAccountToken()).toBe("fresh-tok");
+  });
+});
+
+describe("startCheckout — POST /account/billing/checkout (Bearer)", () => {
+  it("200 → { url }, Bearer attached, { tier } body", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/account/billing/checkout" && init?.method === "POST")
+        return res({ url: "https://checkout.stripe.com/session/abc" });
+      return res("unexpected", 500);
+    });
+
+    await expect(startCheckout("standard", undefined, fetchImpl)).resolves.toEqual({
+      url: "https://checkout.stripe.com/session/abc",
+    });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(headersOf(init).authorization).toBe("Bearer acct-tok");
+    expect(JSON.parse(init?.body as string)).toEqual({ tier: "standard" });
+  });
+
+  it("includes interval in the body when given", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ url: "https://checkout.stripe.com/x" }),
+    );
+
+    await startCheckout("plus", "yearly", fetchImpl);
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(JSON.parse(init?.body as string)).toEqual({ tier: "plus", interval: "yearly" });
+  });
+
+  it("400 invalid_tier → typed BillingApiError", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ error: "invalid_tier" }, 400));
+
+    const err = await startCheckout("entry", undefined, fetchImpl).catch((e) => e);
+    expect(err).toBeInstanceOf(BillingApiError);
+    expect((err as BillingApiError).status).toBe(400);
+    expect((err as BillingApiError).code).toBe("invalid_tier");
+  });
+
+  it("409 already_subscribed → typed BillingApiError", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ error: "already_subscribed" }, 409));
+
+    const err = await startCheckout("power", undefined, fetchImpl).catch((e) => e);
+    expect(err).toBeInstanceOf(BillingApiError);
+    expect((err as BillingApiError).code).toBe("already_subscribed");
+  });
+
+  it("re-mints once on a 401 and retries with the fresh token", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "stale-tok");
+    let calls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const path = String(input);
+      if (path === "/account/session") return res(SESSION_OK);
+      if (path === "/account/token") return res({ token: "fresh-tok" });
+      if (path === "/account/billing/checkout") {
+        calls++;
+        return headersOf(init).authorization === "Bearer stale-tok"
+          ? res("", 401)
+          : res({ url: "https://checkout.stripe.com/session/fresh" });
+      }
+      return res("unexpected", 500);
+    });
+
+    const out = await startCheckout("entry", undefined, fetchImpl);
+    expect(out).toEqual({ url: "https://checkout.stripe.com/session/fresh" });
+    expect(calls).toBe(2);
+    expect(loadAccountToken()).toBe("fresh-tok");
   });
 });
 

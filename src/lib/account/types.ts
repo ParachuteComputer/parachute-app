@@ -151,16 +151,14 @@ export interface AccountPlan {
 
 /**
  * `GET /account/summary` — the account-level manager read: email + plan + a
- * usage roll-up + an optional billing deep-link. This drives the Account
- * surface's plan/usage line and the [Manage plan & billing →] target.
+ * usage roll-up + billing capability flags. This drives the Account surface's
+ * plan/usage line and the Billing section.
  *
- * ⚠ CANONICAL, NOT-YET-SHIPPED-BY-CLOUD. `GET /account/vaults` gives per-vault
- * usage but NO account-level plan/tier/limits — so this shape is the app's
- * CANONICAL contract handed to cloud to build to (pin cloud to this; don't let
- * two impls guess). The app SEAMS it: `getAccountSummary()` returns `null` on
- * any non-200 (404 while unbuilt, 401 signed-out), and the UI renders the
- * plan/usage line only when a summary is present — gracefully absent otherwise,
- * never faking numbers.
+ * ⚠ CANONICAL, VERIFIED against cloud's merged source (`GET /account/summary`,
+ * cloud rc.74+). The app SEAMS it: `getAccountSummary()` returns `null` on any
+ * non-200 (404 while unbuilt, 401 signed-out), and the UI renders the
+ * plan/usage line + Billing section only when a summary is present —
+ * gracefully absent otherwise, never faking numbers.
  */
 export interface AccountSummary {
   /** The account's email (mirrors `GET /account/session`.email). */
@@ -170,10 +168,40 @@ export interface AccountSummary {
   /** The current plan/tier + its limits. */
   plan: AccountPlan;
   /**
-   * The door's own plan/billing management deep-link (a Stripe billing-portal
-   * session URL or the console). When present the app links straight to it;
-   * when absent it derives a fallback from a cloud vault host (see
-   * `manageBillingUrl`). The door-agnostic replacement for host-sniffing.
+   * Whether this door has billing wired at all (Stripe configured on the
+   * account API). `false` ⇒ the Billing section renders NOTHING — a
+   * self-hosted hub / no-billing door has no plan to manage, so there's
+   * nothing honest to show.
    */
-  manage_billing_url?: string;
+  billing_enabled: boolean;
+  /**
+   * Whether the account already has a Stripe customer (an existing
+   * subscriber, possibly on a comped/trial plan with billing set up). `true`
+   * ⇒ the Billing section shows "Manage plan & billing" (the Stripe billing
+   * portal); `false` ⇒ it shows the upgrade plan cards (Stripe Checkout).
+   */
+  has_billing_customer: boolean;
+}
+
+/** The tier ladder cloud's billing endpoints accept — `POST
+ *  /account/billing/checkout`'s `tier` body field and `DoorPlan.id` below. */
+export type BillingTier = "entry" | "standard" | "plus" | "power";
+
+/** The billing-interval ladder `POST /account/billing/checkout` accepts. */
+export type BillingInterval = "monthly" | "quarterly" | "yearly";
+
+/**
+ * One purchasable tier on the door's upgrade ladder, as advertised by the door
+ * descriptor (`GET /.well-known/parachute-account`.plans — see
+ * `descriptor.ts`). Distinct from `AccountPlan` above: `AccountPlan` is the
+ * account's CURRENT tier + live usage; `DoorPlan` is a static catalog row the
+ * Billing section renders as an "Upgrade to <name>" card.
+ */
+export interface DoorPlan {
+  id: BillingTier;
+  name: string;
+  /** Max vaults this tier allows. */
+  vaults?: number;
+  /** Monthly price in USD. */
+  price_month?: number;
 }

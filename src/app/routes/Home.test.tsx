@@ -1,4 +1,5 @@
 import { Home } from "@/app/routes/Home";
+import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import { loadChecklistState } from "@/lib/home/checklist";
 import { __resetInstallAffordanceForTests } from "@/lib/pwa-install";
 import { useVaultStore } from "@/lib/vault/store";
@@ -175,8 +176,9 @@ describe("Home — the warm front door", () => {
     expect(loadChecklistState("v1").dismissed).toBe(true);
   });
 
-  it("hides the manage-plan backlink for a self-host vault", async () => {
-    // Default seed vault is http://localhost:1940 → no cloud console → no row.
+  it("hides the account backlink for a self-host (OAuth) vault", async () => {
+    // Default seed vault has clientId "c" (a foreign OAuth client, not the
+    // home door) → no account on THIS door → no backlink.
     installFetch(SEED_ONLY);
     render(
       <Wrap>
@@ -184,10 +186,10 @@ describe("Home — the warm front door", () => {
       </Wrap>,
     );
     await screen.findByRole("heading", { level: 1, name: "default" });
-    expect(screen.queryByRole("link", { name: /manage your vault plan/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /manage your account/i })).not.toBeInTheDocument();
   });
 
-  it("shows the manage-plan backlink for a cloud vault", async () => {
+  it("shows an in-app /account backlink for a home-door vault (no cross-origin console hop)", async () => {
     useVaultStore.setState({
       vaults: {
         v1: {
@@ -195,7 +197,7 @@ describe("Home — the warm front door", () => {
           url: "https://u.parachute.computer/vault/aaron",
           name: "aaron",
           issuer: "https://u.parachute.computer",
-          clientId: "c",
+          clientId: HOSTED_CLIENT_ID, // home-door (account-minted) vault
           scope: "full",
           addedAt: "2026-07-01T00:00:00.000Z",
           lastUsedAt: "2026-07-01T00:00:00.000Z",
@@ -210,9 +212,9 @@ describe("Home — the warm front door", () => {
       </Wrap>,
     );
     await screen.findByRole("heading", { level: 1, name: "aaron" });
-    expect(screen.getByRole("link", { name: /manage your vault plan/i })).toHaveAttribute(
-      "href",
-      "https://cloud.parachute.computer/console",
-    );
+    // In-app react-router link (same origin) — never a cross-origin console URL.
+    const link = screen.getByRole("link", { name: /manage your account/i });
+    expect(link).toHaveAttribute("href", "/account");
+    expect(link.getAttribute("href")).not.toContain("cloud.parachute.computer");
   });
 });
