@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { detectMountBase, detectMountBaseWithSlash } from "./lib/base-url";
+import { afterEach, describe, expect, it } from "vitest";
+import { detectMountBase, detectMountBaseWithSlash, withMount } from "./lib/base-url";
 
 // Guards the runtime mount detection. The bundle no longer bakes its mount
 // path in at build time (Vite `base: ""` → relative asset URLs); instead the
@@ -140,6 +140,30 @@ describe("detectMountBase", () => {
     it("appends a slash even when input lacks one", () => {
       expect(detectMountBaseWithSlash("/notes")).toBe("/notes/");
       expect(detectMountBaseWithSlash("/surface/my-notes")).toBe("/surface/my-notes/");
+    });
+  });
+
+  // HUB-PARITY P4 — `withMount` reads the LIVE global document (no override
+  // params, unlike `detectMountBase` above), since its callers (Landing's
+  // ceremony hop, the hub-gate banner's change-password `next`) always run in
+  // a real browser/jsdom context, never SSR.
+  describe("withMount", () => {
+    afterEach(() => {
+      for (const meta of document.querySelectorAll('meta[name="parachute-mount"]')) {
+        meta.remove();
+      }
+    });
+
+    it("passes an app-relative path through unprefixed at the root mount (no meta tag)", () => {
+      expect(withMount("/welcome")).toBe("/welcome");
+    });
+
+    it("prefixes an app-relative path with the mount read from the meta tag (e.g. a hub-mounted app at /app)", () => {
+      const meta = document.createElement("meta");
+      meta.setAttribute("name", "parachute-mount");
+      meta.setAttribute("content", "/app");
+      document.head.appendChild(meta);
+      expect(withMount("/welcome")).toBe("/app/welcome");
     });
   });
 });

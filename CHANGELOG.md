@@ -1,5 +1,44 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.4.0] - 2026-07-11
+
+**Descriptor-driven, door-agnostic front door — HUB-PARITY P4.** The same app
+can now boot against a hub OR cloud by reading the door's descriptor at
+`GET /.well-known/parachute-account`; safe to ship pre-hub (cloud's descriptor
+without an `auth` block falls back to today's magic-link behavior byte-for-byte).
+
+- **NEW `src/lib/account/descriptor.ts`** — `getDoorDescriptor()`, same-origin,
+  public, memoized in-module + `sessionStorage` (`parachute:door-descriptor`)
+  so boot pays one fetch. `null` on any non-200/network/parse failure. The app
+  pins these shapes locally (its contract-of-record convention) — it does not
+  import `door-contract`.
+- **The front door's ONE door-conditional branch** (`Landing.tsx`): a
+  `magic_link` door (or no descriptor) renders the existing email form,
+  byte-unchanged; a password-only door renders a ceremony-hop card
+  ("Sign in to your parachute." → **[Continue to sign in →]**) that hands off
+  to the door's own sign-in page, mount-aware (`next` is prefixed with the
+  app's runtime mount — e.g. `/app/welcome` under a hub — via the new
+  `withMount` helper in `base-url.ts`; `signin_path` itself is never
+  mount-prefixed, it's the door's own origin-rooted path). A password door
+  with a `signup_path` gets a quiet "New here? Create your account →"; without
+  one, "Accounts on this parachute are created by its operator." The
+  self-hosted side door stays on both branches.
+- **Vault-address echo from `vault_url_template`** (`Welcome.tsx`'s naming
+  form, shared by first-vault onboarding and the add-vault flow): once a door
+  advertises a template, the live echo shows the real address
+  (`{name}` substituted); falls back to the slug-only echo when absent —
+  preview-only, post-creation addresses still come from the create/list
+  responses.
+- **Hub-session tolerance**: `AccountSession` gains optional `username` +
+  `password_change_required`. "Signed in as X" falls back `email ?? username`
+  (Landing's already-signed-in card, Account's header). A `403
+  {error:"force_change_password"}` (or a pre-empting
+  `session.password_change_required`) on the account-token mint sets a
+  non-blocking gate → a "Finish setting your password" banner
+  (`HubGateBanner`, new in `AccountSessionBanner.tsx`) linking to
+  `/account/change-password`; a `423` sets an "admin screen is locked" gate.
+  Both are weather, never a wall — reading local notes is never gated.
+
 ## [0.3.4] - 2026-07-10
 
 Account surface polish (PR-2 review nits):

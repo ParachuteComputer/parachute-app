@@ -1,5 +1,6 @@
 import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { getSession, listVaults } from "@/lib/account/client";
+import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { classifyVaults } from "@/lib/account/dispatch";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
 import { formatUsageBytes } from "@/lib/account/provenance";
@@ -11,8 +12,10 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 // address comes from the door (the `address` field on `GET /account/vaults`);
 // the pre-creation naming screen can't know the host yet (the home door assigns
 // it at mint time), so the echo shows the slug + the permanent-address promise
-// without asserting a specific host. (If the door later advertises its vault
-// base, the echo can show the full address — a small contract addition.)
+// without asserting a specific host UNLESS the door descriptor advertises a
+// `vault_url_template` (HUB-PARITY P4) — then the echo substitutes the typed
+// name into it. Preview-only: the real, post-creation address always comes
+// from the create/list responses, never from this template.
 function sanitizeVaultName(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, "");
 }
@@ -342,8 +345,22 @@ function VaultNamingForm({
   onCreate: (name: string) => void;
 }) {
   const [name, setName] = useState(() => sanitizeVaultName(initialName ?? ""));
+  const [vaultUrlTemplate, setVaultUrlTemplate] = useState<string | null>(null);
   const trimmed = name.trim();
   const isAdd = ctx === "addvault";
+
+  // HUB-PARITY P4 (SYNTHESIS screen 5's live address echo): the door
+  // descriptor's `vault_url_template` lets the naming form preview the real
+  // address instead of just the slug, once a door advertises one.
+  useEffect(() => {
+    let live = true;
+    getDoorDescriptor().then((d) => {
+      if (live) setVaultUrlTemplate(d?.vault_url_template ?? null);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -392,6 +409,14 @@ function VaultNamingForm({
             <span>
               Your vault:{" "}
               <b className="rounded-md bg-grass-soft px-2 py-0.5 text-grass-ink">{trimmed}</b>
+              {vaultUrlTemplate ? (
+                <>
+                  {" — it will live at "}
+                  <span className="font-mono text-xs">
+                    {vaultUrlTemplate.replace("{name}", trimmed)}
+                  </span>
+                </>
+              ) : null}
             </span>
           ) : (
             "Letters, numbers, hyphens — pick a word you like."

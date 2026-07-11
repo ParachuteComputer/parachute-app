@@ -1,4 +1,4 @@
-import { AccountSessionBanner } from "@/components/AccountSessionBanner";
+import { AccountSessionBanner, HubGateBanner } from "@/components/AccountSessionBanner";
 import { AmbientMapFab } from "@/components/AmbientMapFab";
 import { BottomTabBar } from "@/components/BottomTabBar";
 import { Header } from "@/components/Header";
@@ -8,7 +8,7 @@ import { TextSizeShortcutsMount } from "@/components/TextSizeControl";
 import { Toaster } from "@/components/Toaster";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { VaultStatusBanner } from "@/components/VaultStatusBanner";
-import { type BootDecision, resolveBoot } from "@/lib/account";
+import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useVaultStore } from "@/lib/vault";
@@ -74,6 +74,13 @@ function BootGate() {
   const run = useCallback(() => {
     startedRef.current = true;
     setDecision(null);
+    // HUB-PARITY P4: prefetch the door descriptor in parallel with the
+    // session check. By the time a signed-out decision renders FrontDoor
+    // (`Landing.tsx`), its own `getDoorDescriptor()` call resolves from the
+    // now-warm in-module cache instead of paying a second network round-trip
+    // — shrinks the window where a password-only door briefly shows the
+    // magic-link form before swapping to the ceremony-hop card.
+    getDoorDescriptor().catch(() => {});
     resolveBoot({ hasLocalActiveVault: false })
       .then(setDecision)
       .catch(() => setDecision({ kind: "front-door" }));
@@ -96,7 +103,11 @@ function BootGate() {
     case "home":
       return <Home />;
     case "signed-in":
-      return <Landing signedIn={{ email: decision.email, vaults: decision.vaults }} />;
+      return (
+        <Landing
+          signedIn={{ email: decision.email, username: decision.username, vaults: decision.vaults }}
+        />
+      );
     case "net-error":
       return <Landing netError={decision.message} onRetry={run} />;
     default:
@@ -210,6 +221,7 @@ export function App() {
             <UpdateBanner />
             <VaultStatusBanner />
             <AccountSessionBanner />
+            <HubGateBanner />
             {/*
               The shell: a left Rail (desktop spine, hidden lg:flex) beside the
               content column. Below lg the Rail collapses and the mobile Header

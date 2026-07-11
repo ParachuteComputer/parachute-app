@@ -1,19 +1,24 @@
 import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { getSession, logout, requestMagicLink } from "@/lib/account/client";
+import { type DoorDescriptor, getDoorDescriptor } from "@/lib/account/descriptor";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { clearAccountToken, loadLastSigninEmail, saveLastSigninEmail } from "@/lib/account/store";
 import type { AccountVault } from "@/lib/account/types";
-import { type FormEvent, useState } from "react";
+import { withMount } from "@/lib/base-url";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
-/** Where a completed magic-link sign-in returns (the post-sign-in dispatcher). */
+/** Where a completed sign-in returns (the post-sign-in dispatcher) — the app-
+ *  relative route; the ceremony-hop `next` mount-prefixes this (see
+ *  `FrontDoor`'s password branch), the magic-link path passes it bare (cloud
+ *  is same-origin root-mounted today). */
 const SIGNIN_NEXT = "/welcome";
 
 export interface LandingProps {
   /** Rendered when the boot dispatcher finds a signed-in session but no vault
    *  connected on this device — the "already signed in" replacement card
    *  (SYNTHESIS #9). A signed-in person never sees a sign-in field. */
-  signedIn?: { email?: string; vaults: AccountVault[] };
+  signedIn?: { email?: string; username?: string; vaults: AccountVault[] };
   /** Net-error weather (SYNTHESIS #12): signed in, but the vault list couldn't
    *  be fetched. */
   netError?: string;
@@ -27,7 +32,15 @@ export interface LandingProps {
 // is the ONE quiet alternative. Also renders the already-signed-in card (#9) and
 // the net-error weather (#12) when the BootGate hands them down.
 export function Landing({ signedIn, netError, onRetry }: LandingProps = {}) {
-  if (signedIn) return <AlreadySignedIn email={signedIn.email} vaults={signedIn.vaults} />;
+  if (signedIn) {
+    return (
+      <AlreadySignedIn
+        email={signedIn.email}
+        username={signedIn.username}
+        vaults={signedIn.vaults}
+      />
+    );
+  }
   if (netError) return <NetError message={netError} onRetry={onRetry} />;
   return <FrontDoor />;
 }
@@ -45,7 +58,66 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
+// The self-hosted side door — SYNTHESIS #1's one quiet alternative. Stays on
+// BOTH front-door branches (magic-link and password), byte-identical either
+// way, so it's factored out once rather than duplicated.
+function SelfHostSideDoor() {
+  return (
+    <div className="mt-8 border-t border-border pt-6">
+      <p className="font-round text-sm text-fg-muted">
+        Self-hosting?{" "}
+        <Link
+          to="/add"
+          className="font-semibold hover:underline"
+          style={{ color: "var(--color-sage)" }}
+        >
+          Connect your own vault →
+        </Link>{" "}
+        <span className="text-fg-dim">(your notes stay on your server)</span>
+      </p>
+    </div>
+  );
+}
+
+// HUB-PARITY P4 — the ONE door-conditional piece of UI the portability
+// principle permits (SYNTHESIS "PORTABILITY"). Loads the door descriptor
+// (`/.well-known/parachute-account`, same-origin, public) and branches:
+//   - `auth` absent, OR `auth.methods` includes `"magic_link"` → the existing
+//     email form (`MagicLinkFrontDoor`), rendered UNCHANGED — this is also
+//     what renders while the descriptor is still in flight, so a slow/offline
+//     fetch never blocks first paint, it just risks a brief flash before a
+//     password-only door's card swaps in (the boot dispatcher prefetches the
+//     descriptor in parallel with the session check to shrink that window —
+//     see `App.tsx`'s `BootGate`).
+//   - password-only (`auth` present, `methods` excludes `"magic_link"`) → the
+//     ceremony-hop card (ONE deliberate, labeled origin change, mirroring the
+//     self-host `/add` hop).
 function FrontDoor() {
+  const [descriptor, setDescriptor] = useState<DoorDescriptor | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getDoorDescriptor().then((d) => {
+      if (live) setDescriptor(d);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const methods = descriptor?.auth?.methods;
+  const passwordOnly = descriptor?.auth != null && !(methods ?? []).includes("magic_link");
+
+  if (passwordOnly && descriptor?.auth) {
+    return <PasswordFrontDoor auth={descriptor.auth} signupPath={descriptor.signup_path} />;
+  }
+  return <MagicLinkFrontDoor />;
+}
+
+// The magic-link front door (`/`, signed-out, cloud today) — SYNTHESIS #1.
+// Byte-unchanged from the pre-P4 shape: one email field that does BOTH (sign
+// in OR create), because magic-link resolves new-vs-returning without asking.
+function MagicLinkFrontDoor() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const expired = params.get("link") === "expired";
@@ -134,26 +206,83 @@ function FrontDoor() {
         </p>
       ) : null}
 
-      <div className="mt-8 border-t border-border pt-6">
-        <p className="font-round text-sm text-fg-muted">
-          Self-hosting?{" "}
-          <Link
-            to="/add"
+      <SelfHostSideDoor />
+    </Shell>
+  );
+}
+
+// The password-door front door (a hub, once P1/P2 ship) — the ceremony-hop
+// card: SYNTHESIS "PORTABILITY" + Q2 (the signup affordance). No email/
+// password field lives here — the hub's OWN `/login` page owns that ceremony;
+// this card just names the door and hands off, mirroring the self-host `/add`
+// hop (SYNTHESIS #11)'s "announced, labeled context switch" pattern.
+function PasswordFrontDoor({
+  auth,
+  signupPath,
+}: {
+  auth: NonNullable<DoorDescriptor["auth"]>;
+  signupPath?: string;
+}) {
+  function continueToSignIn() {
+    // MOUNT-AWARE: `next` is an in-app route, so it needs the app's own mount
+    // prefix (under a hub the app serves at `/app` → `/app/welcome`).
+    // `signin_path` is the DOOR's own path (the hub's `/login`) — origin-
+    // rooted, NEVER mount-prefixed; it isn't an app route.
+    const next = encodeURIComponent(withMount(SIGNIN_NEXT));
+    window.location.assign(`${auth.signin_path}?next=${next}`);
+  }
+
+  return (
+    <Shell>
+      <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
+      <p className="eyebrow mb-3">Welcome</p>
+      <h1 className="hero-title mb-4">
+        A soft place for your thoughts to <span className="accent-word">land.</span>
+      </h1>
+
+      <p className="mx-auto mb-6 max-w-sm text-fg-muted">Sign in to your parachute.</p>
+
+      <button
+        type="button"
+        onClick={continueToSignIn}
+        className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
+      >
+        Continue to sign in →
+      </button>
+
+      {signupPath ? (
+        <p className="mx-auto mt-6 max-w-sm font-round text-sm text-fg-muted">
+          New here?{" "}
+          <a
+            href={signupPath}
             className="font-semibold hover:underline"
             style={{ color: "var(--color-sage)" }}
           >
-            Connect your own vault →
-          </Link>{" "}
-          <span className="text-fg-dim">(your notes stay on your server)</span>
+            Create your account →
+          </a>
         </p>
-      </div>
+      ) : (
+        <p className="mx-auto mt-6 max-w-sm font-round text-xs text-fg-dim">
+          Accounts on this parachute are created by its operator.
+        </p>
+      )}
+
+      <SelfHostSideDoor />
     </Shell>
   );
 }
 
 // SYNTHESIS #9 — a signed-in person who lands on `/` directly. The form is
 // REPLACED by an explicit card; no auto-advance (they came here on purpose).
-function AlreadySignedIn({ email, vaults }: { email?: string; vaults: AccountVault[] }) {
+function AlreadySignedIn({
+  email,
+  username,
+  vaults,
+}: {
+  email?: string;
+  username?: string;
+  vaults: AccountVault[];
+}) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const one = vaults.length === 1 ? vaults[0] : null;
@@ -189,7 +318,8 @@ function AlreadySignedIn({ email, vaults }: { email?: string; vaults: AccountVau
       <ParachuteMark size={56} className="mx-auto mb-6" />
       <p className="eyebrow mb-3">Signed in</p>
       <h1 className="hero-title mb-6" style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>
-        You're already signed in as <span className="accent-word">{email ?? "your account"}</span>.
+        You're already signed in as{" "}
+        <span className="accent-word">{email ?? username ?? "your account"}</span>.
       </h1>
       <div className="flex flex-col items-center gap-4">
         {one ? (
