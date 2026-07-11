@@ -1,5 +1,21 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.3.4] - 2026-07-10
+
+Account surface polish (PR-2 review nits):
+
+- **Vault-load failure ≠ empty.** A failed `GET /account/vaults` (transient 500 /
+  session lapse) now renders a **"Couldn't load your vaults — Retry"** card, not
+  the "create your first" empty-state (which could invite a duplicate vault). The
+  empty-state is reserved for a genuinely empty list; the create/connect
+  affordances are hidden on a load failure. Retry re-fetches just the list.
+- **No fabricated meter.** The plan's "N of M vaults" line renders only when the
+  door gives BOTH `vaults_used` and `vault_limit` — a limit without a count no
+  longer prints a false `0 of M`.
+- **Billing opens in a new tab** (`target="_blank" rel="noreferrer"`) so the app
+  stays open when you pop out to the console — matching the "land right back
+  here" intent.
+
 ## [0.3.3] - 2026-07-10
 
 **The Account surface — the app AS the manager** (SYNTHESIS "The shape"). The
