@@ -83,6 +83,26 @@ export const NOTES_TO = "/notes";
 export const MAP_TO = "/map";
 
 // ---------------------------------------------------------------------------
+// Ceremony routes (DESIGN-SPEC §4.1's applies-to list, minus `/` — BootGate is
+// Home or the marketing Landing). Rule 5 / F21: no app-chrome noise under a
+// ceremony — the AGPL footer and the floating capture chrome (SpeedDial) both
+// gate on this. Re-homed here from App.tsx in W2-9 so chrome components can
+// read the same list without importing the route table.
+// ---------------------------------------------------------------------------
+
+export const CEREMONY_ROUTES = [
+  "/welcome",
+  "/check-email",
+  "/add",
+  "/add-vault",
+  "/oauth/callback",
+];
+
+export function isCeremonyPath(pathname: string): boolean {
+  return CEREMONY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
+
+// ---------------------------------------------------------------------------
 // The static skeleton — everything that doesn't depend on live state.
 // ---------------------------------------------------------------------------
 

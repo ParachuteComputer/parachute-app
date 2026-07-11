@@ -18,7 +18,13 @@ import { useVaultReachabilityStore } from "./reachability-store";
 import { forceRefresh } from "./refresh";
 import { loadToken } from "./storage";
 import { useVaultStore } from "./store";
-import type { Note, NoteAttachment, TagRecord, TagUpsertPayload } from "./types";
+import type {
+  Note,
+  NoteAttachment,
+  TagRecord,
+  TagUpsertPayload,
+  TranscriptionCapability,
+} from "./types";
 
 export function useActiveVaultClient(): VaultClient | null {
   const vault = useVaultStore((s) => s.getActiveVault());
@@ -73,6 +79,22 @@ export function useVaultInfo() {
  * "undeclared" and keep the mic (absent ≠ disabled; back-compat).
  */
 export function useTranscriptionCapability() {
+  return useTranscriptionGate().capability;
+}
+
+/**
+ * `useTranscriptionCapability` plus a `settled` flag: has the two-leg
+ * capability question actually been ANSWERED (both legs resolved — success
+ * or error), as opposed to still in flight? Callers that must not act on a
+ * pending answer (W2-9's `?voice=1` auto-start: auto-firing the mic before
+ * an `enabled: false` resolves would record toward "_Transcription
+ * unavailable._") wait on `settled`; a failed fetch settles as `undefined`
+ * = undeclared, which stays fail-open exactly like the render gate.
+ */
+export function useTranscriptionGate(): {
+  capability: TranscriptionCapability | undefined;
+  settled: boolean;
+} {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
   const info = useVaultInfo();
@@ -89,7 +111,13 @@ export function useTranscriptionCapability() {
     retry: false,
   });
 
-  return info.data?.transcription ?? landing.data?.transcription;
+  const infoSettled = info.isSuccess || info.isError;
+  const landingSettled = !needsLandingProbe || landing.isSuccess || landing.isError;
+
+  return {
+    capability: info.data?.transcription ?? landing.data?.transcription,
+    settled: infoSettled && landingSettled,
+  };
 }
 
 export function useNotes(queryState: NoteQueryState) {

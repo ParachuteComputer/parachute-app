@@ -1,5 +1,6 @@
 import { QuickSwitch } from "@/components/QuickSwitch";
 import { QuickSwitchMount } from "@/components/QuickSwitchMount";
+import { Rail } from "@/components/Rail";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { useVaultStore } from "@/lib/vault/store";
@@ -149,6 +150,39 @@ describe("QuickSwitch", () => {
     });
   });
 
+  // W2-9 presentation: the pill's right slot is RESERVED for a future
+  // "Smart" toggle — a visual placeholder only. It must be clearly inert:
+  // not a control, hidden from AT, no handler to trigger.
+  it("the reserved Smart slot is inert — a non-interactive, aria-hidden span", async () => {
+    installFetch([]);
+    render(
+      <Wrap>
+        <QuickSwitch onClose={() => {}} />
+      </Wrap>,
+    );
+    const slot = screen.getByTestId("smart-slot-reserved");
+    expect(slot.tagName).toBe("SPAN");
+    expect(slot).toHaveAttribute("aria-hidden", "true");
+    // Nothing happens on a click — the location is unchanged and the
+    // palette stays put (no navigation, no toggle, no dialog).
+    fireEvent.click(slot);
+    expect(screen.getByTestId("location").textContent).toBe("/");
+    expect(screen.getByLabelText(/quick switch query/i)).toBeInTheDocument();
+  });
+
+  // W2-9 mobile sheet: phones have no Esc key — the explicit Cancel closes.
+  it("the Cancel button closes the palette (the mobile sheet's explicit exit)", async () => {
+    installFetch([]);
+    const onClose = vi.fn();
+    render(
+      <Wrap>
+        <QuickSwitch onClose={onClose} />
+      </Wrap>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("> prefix surfaces commands — typing '>new' jumps to /new on Enter", async () => {
     installFetch([]);
     render(
@@ -216,6 +250,22 @@ describe("QuickSwitchMount", () => {
     );
     fireEvent.keyDown(window, { key: "k" });
     expect(screen.queryByLabelText(/quick switch query/i)).not.toBeInTheDocument();
+  });
+
+  // W2-9 done-when: the palette opens from all three doors. ⌘K and the
+  // mobile Search tab are pinned above / in BottomTabBar.test — this pins
+  // the third: the rail's Search row.
+  it("opens from the desktop rail's Search row", async () => {
+    installFetch([]);
+    render(
+      <Wrap>
+        <Rail />
+        <QuickSwitchMount />
+      </Wrap>,
+    );
+    expect(screen.queryByLabelText(/quick switch query/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /search/i }));
+    expect(screen.getByLabelText(/quick switch query/i)).toBeInTheDocument();
   });
 
   it("closes the switcher when the active vault changes", async () => {

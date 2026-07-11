@@ -4,12 +4,14 @@ import { BottomTabBar } from "@/components/BottomTabBar";
 import { Header } from "@/components/Header";
 import { QuickSwitchMount } from "@/components/QuickSwitchMount";
 import { Rail } from "@/components/Rail";
+import { SpeedDial } from "@/components/SpeedDial";
 import { TextSizeShortcutsMount } from "@/components/TextSizeControl";
 import { Toaster } from "@/components/Toaster";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { VaultStatusBanner } from "@/components/VaultStatusBanner";
 import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
+import { isCeremonyPath } from "@/lib/nav/model";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault";
@@ -229,19 +231,9 @@ function NotFoundRedirect() {
   return <Navigate to="/" replace />;
 }
 
-// The full-screen ceremony routes (DESIGN-SPEC §4.1's applies-to list, minus
-// `/` — the BootGate route is Home or the marketing Landing, and the marketing
-// front door keeps its ecosystem footer). §4.1 rule 5 / F21: no app-chrome
-// noise under a ceremony — the AGPL footer must not render beneath "Making a
-// place for moss…". Gated on a route-list (the spec's builder's-choice) so the
-// footer's absence is a pure function of the URL.
-const CEREMONY_ROUTES = ["/welcome", "/check-email", "/add", "/add-vault", "/oauth/callback"];
-
-function isCeremonyPath(pathname: string): boolean {
-  return CEREMONY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
-}
-
-// The AGPL ecosystem footer, gated off ceremony routes (§4.1 rule 5, F21).
+// The ceremony-route gate (§4.1 rule 5 / F21 — no app-chrome noise under a
+// ceremony) moved to `@/lib/nav/model` in W2-9 so the SpeedDial shares the
+// same list. The AGPL ecosystem footer gates off it here.
 function AppFooter() {
   const { pathname } = useLocation();
   if (isCeremonyPath(pathname)) return null;
@@ -413,6 +405,10 @@ export function App() {
             </div>
             <BottomTabBar />
             <AmbientMapFab />
+            {/* Desktop-only capture speed-dial (W2-9) — top-right, clear of
+                the Map FAB's bottom-right corner. Mobile capture stays the
+                BottomTabBar's centre [+]. */}
+            <SpeedDial />
           </div>
         </BrowserRouter>
       </SyncProvider>

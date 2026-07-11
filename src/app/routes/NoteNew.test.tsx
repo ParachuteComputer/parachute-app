@@ -648,6 +648,28 @@ describe("NoteNew — voice affordance", () => {
     expect(await screen.findByRole("button", { name: /record voice memo/i })).toBeInTheDocument();
   });
 
+  // W2-9: the speed-dial's "Voice note" verb lands as /new?voice=1 — the
+  // recorder starts on arrival, NO extra tap (the spec's done-when).
+  it("?voice=1 lands IN voice capture — recording starts with no extra tap", async () => {
+    installFetch({});
+    renderAt("/new?voice=1");
+
+    // Recording state, unprompted: the Stop button replaces Record.
+    expect(await screen.findByRole("button", { name: /stop/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /record voice memo/i })).toBeNull();
+    // Exactly one mic request — the once-guard held.
+    expect(fakeState.requestMic).toHaveBeenCalledTimes(1);
+  });
+
+  it("plain /new does NOT auto-record — the mic waits for a tap", async () => {
+    installFetch({});
+    renderAt("/new");
+
+    expect(await screen.findByRole("button", { name: /record voice memo/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /stop/i })).toBeNull();
+    expect(fakeState.requestMic).not.toHaveBeenCalled();
+  });
+
   it("tap Record → tap Stop captures audio and enables Save", async () => {
     installFetch({});
     renderAt("/new");
@@ -997,6 +1019,20 @@ describe("NoteNew — transcription capability gate", () => {
     // Metered shape (minutes_remaining present) = the cloud plan gate.
     expect(note).toHaveTextContent(/comes with the voice plan/i);
     expect(screen.queryByRole("button", { name: /record voice memo/i })).toBeNull();
+  });
+
+  // W2-9: ?voice=1 respects the gate — an already-resolved enabled:false
+  // means NO auto mic request (auto-recording toward "_Transcription
+  // unavailable._" would be the product lying).
+  it("?voice=1 with transcription explicitly disabled does not auto-start the mic", async () => {
+    installDoorFetch({
+      apiVault: { name: "dev", description: "", transcription: { enabled: false } },
+    });
+    renderAt("/new?voice=1");
+
+    await screen.findByTestId("voice-unavailable");
+    expect(screen.queryByRole("button", { name: /stop/i })).toBeNull();
+    expect(fakeState.requestMic).not.toHaveBeenCalled();
   });
 
   it("enabled:true on /api/vault → recorder shows, no gate copy, no landing probe", async () => {

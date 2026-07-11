@@ -1,12 +1,30 @@
+import { IconSearch, IconSpark } from "@/components/NavIcons";
 import { loadRecents } from "@/lib/quick-switch/recents";
 import { type QuickSwitchEntry, computeResults } from "@/lib/quick-switch/results";
 import { useAllNotesForSwitcher, useTags, useVaultStore } from "@/lib/vault";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
-// Cmd+K spotlight. Opens via a global keydown (see useQuickSwitchHotkey),
-// closes on Escape, click-outside, or selection. Modal renders inside a
-// <dialog open> so native a11y semantics and focus management help.
+// The command palette. Opens from three doors — the rail's Search row, ⌘K
+// (see QuickSwitchMount), and the mobile bottom-tab Search — and closes on
+// Escape, click-outside/Cancel, or selection. Renders inside a <dialog open>
+// so native a11y semantics and focus management help.
+//
+// W2-9 presentation (adopt #6 — prototype `13-home-search-command-palette.png`),
+// same results engine underneath:
+//   · desktop ≥lg — a bottom-centre glass pill; the results panel BLOOMS
+//     UPWARD from it (`.glass-panel` + --shadow-lift; the pill's shadow grows
+//     soft→lift on focus). DOM stays input-first (focus + combobox order);
+//     `lg:flex-col-reverse` puts the pill at the bottom visually.
+//   · mobile <lg — a full-screen sheet from the Search tab: pill row up top
+//     (with an explicit Cancel — no Esc key on a phone), results filling the
+//     screen below.
+//
+// The pill's right slot RESERVES space for a future "Smart" toggle — a
+// clearly-inert visual placeholder (a dimmed span, aria-hidden, no handler).
+// The prototype's "Smart search" AI-prompt rows are mocked and the app has no
+// ask-AI endpoint; shipping fake prompts would violate the honesty rule
+// (DESIGN-SPEC W2-9 spec-resolved note, §6-A2 owns the future toggle).
 //
 // The results list is a flat array — commands + notes + tags interleaved
 // and ranked. Flat keeps ↑/↓/Enter simple (one selected index, always a
@@ -116,65 +134,106 @@ export function QuickSwitch({ onClose }: Props) {
     <dialog
       open
       aria-labelledby={inputId}
-      className="fixed inset-0 z-50 m-0 flex h-full max-h-full w-full max-w-full items-start justify-center bg-black/60 p-4 pt-[10vh]"
+      className="fixed inset-0 z-50 m-0 h-full max-h-full w-full max-w-full bg-transparent p-0 lg:flex lg:px-6 lg:pb-8"
       onMouseDown={(e) => {
+        // Desktop click-outside: the transparent dialog root spans the
+        // viewport around the bottom-centre column. (On mobile the sheet
+        // fills the screen, so this never fires — Cancel closes instead.)
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-xl rounded-md border border-border bg-card shadow-xl">
-        <input
-          id={inputId}
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Jump to… (type > for commands)"
-          aria-label="Quick switch query"
-          aria-controls={listboxId}
-          aria-activedescendant={results[selectedIdx] ? `qs-opt-${selectedIdx}` : undefined}
-          autoComplete="off"
-          spellCheck={false}
-          className="w-full rounded-t-md border-b border-border bg-transparent px-4 py-3 text-base text-fg placeholder:text-fg-dim focus:outline-none"
-        />
-        <div
-          id={listboxId}
-          ref={listRef}
-          // biome-ignore lint/a11y/useSemanticElements: combobox pattern (listbox paired with input above), not a native <select>
-          role="listbox"
-          tabIndex={-1}
-          aria-label="Quick switch results"
-          aria-live="polite"
-          className="max-h-[50vh] overflow-y-auto"
-        >
-          {loading && results.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-fg-dim">Loading notes…</div>
-          ) : results.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-fg-dim">
-              {query.trim().length === 0 ? "Start typing to search." : "No matches."}
-            </div>
-          ) : (
-            results.map((entry, i) => (
-              <ResultRow
-                key={entryKey(entry)}
-                entry={entry}
-                index={i}
-                selected={i === selectedIdx}
-                onPick={() => runEntry(entry)}
-                onHover={() => setSelectedIdx(i)}
-              />
-            ))
-          )}
+      {/* Mobile: a full-screen cream sheet (bg + blur, like the Header bar).
+          Desktop: a transparent bottom-centre column; col-reverse keeps the
+          input first in the DOM while the pill sits visually at the bottom,
+          the panel blooming upward above it. */}
+      <div className="flex h-full w-full flex-col bg-bg/95 backdrop-blur-md lg:mx-auto lg:h-auto lg:w-full lg:max-w-xl lg:flex-col-reverse lg:self-end lg:bg-transparent lg:backdrop-blur-none">
+        <div className="flex items-center gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 lg:p-0">
+          <div className="glass-panel flex min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border px-4 py-2.5 shadow-soft transition-shadow focus-within:shadow-lift motion-reduce:transition-none lg:px-5 lg:py-3">
+            <span aria-hidden="true" className="shrink-0 text-fg-dim">
+              <IconSearch width={18} height={18} />
+            </span>
+            <input
+              id={inputId}
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Search your vault…"
+              aria-label="Quick switch query"
+              aria-controls={listboxId}
+              aria-activedescendant={results[selectedIdx] ? `qs-opt-${selectedIdx}` : undefined}
+              autoComplete="off"
+              spellCheck={false}
+              className="min-w-0 flex-1 bg-transparent text-base text-fg placeholder:text-fg-dim focus:outline-none"
+            />
+            {/* RESERVED, INERT: the future "Smart" toggle's seat (W2-9
+                spec-resolved / §6-A2). Not a control — no handler, no focus,
+                hidden from AT — just the pill holding space honestly until
+                an ask-AI capability actually exists. */}
+            <span
+              aria-hidden="true"
+              data-testid="smart-slot-reserved"
+              className="hidden shrink-0 select-none items-center gap-1 rounded-full border border-border-light px-2.5 py-1 text-xs text-fg-dim opacity-70 lg:flex"
+            >
+              <IconSpark width={13} height={13} />
+              Smart
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="focus-ring shrink-0 rounded-full px-3 py-2 text-sm text-fg-muted hover:text-accent lg:hidden"
+          >
+            Cancel
+          </button>
         </div>
-        <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-fg-dim">
-          <span>
-            <kbd className="rounded bg-bg/60 px-1">↑↓</kbd> navigate{" "}
-            <kbd className="rounded bg-bg/60 px-1">↵</kbd> open{" "}
-            <kbd className="rounded bg-bg/60 px-1">esc</kbd> close
-          </span>
-          <span>
-            {results.length > 0 ? `${results.length} result${results.length === 1 ? "" : "s"}` : ""}
-          </span>
+
+        {/* The result panel — flat on the mobile sheet; a floating glass
+            card on desktop (blooms upward from the pill per shot 13). */}
+        <div className="glass-panel flex min-h-0 flex-1 flex-col lg:mb-3 lg:max-h-[55vh] lg:flex-none lg:rounded-[var(--radius-2xl)] lg:border lg:border-border lg:shadow-lift">
+          <div
+            id={listboxId}
+            ref={listRef}
+            // biome-ignore lint/a11y/useSemanticElements: combobox pattern (listbox paired with input above), not a native <select>
+            role="listbox"
+            tabIndex={-1}
+            aria-label="Quick switch results"
+            aria-live="polite"
+            className="min-h-0 flex-1 overflow-y-auto py-1 lg:max-h-[50vh]"
+          >
+            {loading && results.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-fg-dim">Loading notes…</div>
+            ) : results.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-fg-dim">
+                {query.trim().length === 0 ? "Start typing to search." : "No matches."}
+              </div>
+            ) : (
+              results.map((entry, i) => (
+                <ResultRow
+                  key={entryKey(entry)}
+                  entry={entry}
+                  index={i}
+                  selected={i === selectedIdx}
+                  onPick={() => runEntry(entry)}
+                  onHover={() => setSelectedIdx(i)}
+                />
+              ))
+            )}
+          </div>
+          <div className="hidden items-center justify-between border-t border-border-light px-4 py-2 text-xs text-fg-dim lg:flex">
+            <span>
+              <kbd className="rounded bg-bg/60 px-1">↑↓</kbd> navigate{" "}
+              <kbd className="rounded bg-bg/60 px-1">↵</kbd> open{" "}
+              <kbd className="rounded bg-bg/60 px-1">esc</kbd> close{" "}
+              <kbd className="rounded bg-bg/60 px-1">&gt;</kbd> commands
+            </span>
+            <span>
+              {results.length > 0
+                ? `${results.length} result${results.length === 1 ? "" : "s"}`
+                : ""}
+            </span>
+          </div>
         </div>
       </div>
     </dialog>
@@ -216,7 +275,7 @@ function ResultRow({
         e.preventDefault();
         onPick();
       }}
-      className={`flex cursor-pointer items-center gap-3 px-4 py-2 text-sm ${bg}`}
+      className={`mx-1.5 flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm ${bg}`}
     >
       {entry.kind === "note" ? (
         <>
