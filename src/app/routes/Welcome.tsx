@@ -16,21 +16,16 @@ function sanitizeVaultName(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9-]/g, "");
 }
 
+// Cloud's usage is BYTES only (notes_bytes + attachment_bytes), nullable — there
+// is no note COUNT on this endpoint, so we show total size only.
 function formatUsage(usage?: AccountVault["usage"]): string | null {
   if (!usage) return null;
-  const parts: string[] = [];
-  if (typeof usage.bytes === "number") {
-    const mb = usage.bytes / (1024 * 1024);
-    parts.push(
-      mb >= 1
-        ? `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
-        : `${Math.max(1, Math.round(usage.bytes / 1024))} KB`,
-    );
-  }
-  if (typeof usage.notes === "number") {
-    parts.push(`${usage.notes} note${usage.notes === 1 ? "" : "s"}`);
-  }
-  return parts.length ? parts.join(" · ") : null;
+  const bytes = (usage.notes_bytes ?? 0) + (usage.attachment_bytes ?? 0);
+  if (bytes <= 0) return null;
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1
+    ? `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
 // The vault-naming context: onboarding (first vault, right after account
@@ -572,8 +567,9 @@ function VaultCard({
   onOpen: () => void;
 }) {
   const usage = formatUsage(vault.usage);
-  // The door provides the vault's real address; never fabricate a cloud host.
-  const address = vault.address ? vault.address.replace(/^https?:\/\//, "") : "";
+  // The door provides the vault's real URL (cloud's field is `url`); never
+  // fabricate a cloud host.
+  const address = vault.url ? vault.url.replace(/^https?:\/\//, "") : "";
   return (
     <li className="card flex items-center gap-4 rounded-2xl p-4 shadow-soft">
       <span

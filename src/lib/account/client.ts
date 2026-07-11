@@ -2,8 +2,8 @@ import type { TokenResponse } from "@/lib/vault/types";
 import type {
   AccountSession,
   AccountTokenResponse,
-  AccountVault,
   AccountVaultsResponse,
+  CreateVaultResponse,
 } from "./types";
 
 /**
@@ -115,9 +115,9 @@ export async function createVault(
   name: string,
   csrf: string,
   fetchImpl: Fetch = fetch.bind(globalThis),
-): Promise<AccountVault> {
+): Promise<CreateVaultResponse> {
   const res = await post(fetchImpl, "/account/vaults", { name, __csrf: csrf });
-  return jsonOrThrow<AccountVault>(res);
+  return jsonOrThrow<CreateVaultResponse>(res);
 }
 
 /** `POST /account/vaults/<name>/token` (C3) — mint a per-vault token the notes

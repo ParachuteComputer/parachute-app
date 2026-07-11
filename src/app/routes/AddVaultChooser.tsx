@@ -1,9 +1,7 @@
 import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
-import { listVaults } from "@/lib/account/client";
 import { loadLastSigninEmail } from "@/lib/account/store";
-import type { AccountPlan } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault/store";
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 
 // The in-app "add a vault" chooser (SYNTHESIS #10) — the second and only
@@ -16,30 +14,11 @@ export function AddVaultChooser() {
   const navigate = useNavigate();
   const email = loadLastSigninEmail();
   const activeVault = useVaultStore((s) => s.getActiveVault());
-  const [plan, setPlan] = useState<AccountPlan | null>(null);
-
-  // Best-effort plan-slot fetch for the Create card's quiet foot line
-  // ("2 of 3 plan slots used"). Purely decorative — a failure (offline,
-  // signed-out edge case) just omits the foot line; it never blocks or
-  // errors the chooser itself.
-  useEffect(() => {
-    let cancelled = false;
-    listVaults()
-      .then((res) => {
-        if (!cancelled) setPlan(res.plan ?? null);
-      })
-      .catch(() => {
-        // best-effort — see comment above.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const slots =
-    plan?.vault_limit != null && plan?.vaults_used != null
-      ? `${plan.vaults_used} of ${plan.vault_limit} plan slots used`
-      : null;
+  // The Create card's "N of M plan slots used" foot line needs a plan/usage
+  // SUMMARY endpoint that cloud doesn't expose yet (GET /account/vaults returns
+  // only the vault list). Seam it: no foot line until the account-manager plan
+  // endpoint lands (PR-2). Don't fabricate slot counts.
+  const slots: string | null = null;
 
   return (
     <Shell>

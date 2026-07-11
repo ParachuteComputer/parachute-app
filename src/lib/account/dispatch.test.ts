@@ -5,7 +5,7 @@ import type { AccountVault } from "./types";
 
 const V = (name: string): AccountVault => ({
   name,
-  address: `https://u.parachute.computer/vault/${name}`,
+  url: `https://u.parachute.computer/vault/${name}`,
 });
 
 // A routed mock fetch: match by pathname, return the queued JSON per endpoint.

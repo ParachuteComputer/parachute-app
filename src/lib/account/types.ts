@@ -35,44 +35,43 @@ export interface AccountSession {
   account_created_at?: string;
 }
 
-/** Usage for one vault (ASSUMED structured; UI formats "68 MB · 42 notes"). */
+/**
+ * Usage for one vault — cloud's real shape (account-api.ts): BYTES only,
+ * nullable. There is NO note-count field on this endpoint, so the UI shows size
+ * only (a note count would be a future cloud addition).
+ */
 export interface AccountVaultUsage {
-  bytes?: number;
-  notes?: number;
+  notes_bytes?: number;
+  attachment_bytes?: number;
 }
 
-/** One row of `GET /account/vaults` — a hosted (Cloud) vault on this account. */
+/** One row of `GET /account/vaults` (cloud account-api.ts). */
 export interface AccountVault {
-  /** The immutable slug — also the address tail (u.parachute.computer/vault/<name>). */
+  /** The immutable slug. */
   name: string;
-  /** Full vault URL, e.g. https://u.parachute.computer/vault/moss. ASSUMED field. */
-  address?: string;
-  /** ASSUMED field. */
-  usage?: AccountVaultUsage;
-  /** ISO-8601. ASSUMED field. */
+  /** Full vault REST URL (cloud's field name is `url`). */
+  url?: string;
+  /** BYTES only, nullable (see AccountVaultUsage). */
+  usage?: AccountVaultUsage | null;
+  /** ISO-8601. */
   created_at?: string;
 }
 
-/** `GET /account/vaults`. ASSUMED envelope (`{ vaults }` vs bare array). */
+/** `GET /account/vaults` — cloud returns ONLY `{ vaults }` (no plan summary;
+ *  a plan/usage summary is a future account-manager endpoint — PR-2 seam). */
 export interface AccountVaultsResponse {
   vaults: AccountVault[];
-  /** Plan slot accounting for the add-vault chooser ("2 of 3 plan slots used"). ASSUMED. */
-  plan?: AccountPlan;
 }
 
-/** Plan + usage summary for the Account surface (PR-2). ASSUMED shape. */
-export interface AccountPlan {
-  /** e.g. "entry" | "standard" | "plus" | "power" | "trial". */
-  tier?: string;
-  /** Human label, e.g. "Standard". */
-  label?: string;
-  price_monthly_usd?: number;
-  vault_limit?: number;
-  vaults_used?: number;
-  bytes_limit?: number;
-  bytes_used?: number;
-  /** Free-trial days remaining, when on trial. */
-  trial_days_left?: number;
+/**
+ * `POST /account/vaults` (cloud) → `{ name, url, vault_token, services }`. We
+ * consume name + url here; `createHostedVault` mints the per-vault token via C3
+ * (well-defined TokenResponse shape) rather than depend on `vault_token`'s exact
+ * type — a redundant call we can drop once `vault_token` is pinned.
+ */
+export interface CreateVaultResponse {
+  name: string;
+  url: string;
 }
 
 /**

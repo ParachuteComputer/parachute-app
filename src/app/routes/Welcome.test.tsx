@@ -123,11 +123,17 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
         csrf: "csrf-2",
         email: "ag@unforced.org",
       });
+      // Cloud's real GET /account/vaults shape: { vaults: [{ name, url, usage }] }
+      // — `url` (not `address`), usage in BYTES only.
       vi.mocked(listVaults).mockResolvedValue({
         vaults: [
-          { name: "moss", address: "https://u.parachute.computer/vault/moss" },
-          { name: "journal", address: "https://u.parachute.computer/vault/journal" },
-          { name: "atlas", address: "https://u.parachute.computer/vault/atlas" },
+          {
+            name: "moss",
+            url: "https://u.parachute.computer/vault/moss",
+            usage: { notes_bytes: 68_000_000, attachment_bytes: 3_000_000 },
+          },
+          { name: "journal", url: "https://u.parachute.computer/vault/journal" },
+          { name: "atlas", url: "https://u.parachute.computer/vault/atlas" },
         ],
       });
     });
@@ -143,6 +149,11 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       const opens = screen.getAllByRole("button", { name: /open →/i });
       expect(opens).toHaveLength(3);
       expect(screen.getAllByText("☁ Cloud")).toHaveLength(3);
+      // Door-provided `url` renders; usage is size-only (cloud gives bytes, no
+      // note count) — 68M + 3M attachment bytes ⇒ "68 MB", never "· N notes".
+      expect(screen.getByText("u.parachute.computer/vault/moss")).toBeInTheDocument();
+      expect(screen.getByText("68 MB")).toBeInTheDocument();
+      expect(screen.queryByText(/\bnotes?\b/i)).not.toBeInTheDocument();
 
       fireEvent.click(opens[1] as HTMLElement);
       await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("journal", "csrf-2"));

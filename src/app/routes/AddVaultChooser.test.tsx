@@ -1,19 +1,14 @@
 import { AddVaultChooser } from "@/app/routes/AddVaultChooser";
-import { listVaults } from "@/lib/account/client";
 import { saveLastSigninEmail } from "@/lib/account/store";
-import type { AccountVaultsResponse } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault/store";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The in-app "add a vault" chooser (SYNTHESIS #10) — three explicit verbs,
-// one meaning each. `listVaults` is mocked so the plan-slots foot line is
-// deterministic and no real network call runs (matches Welcome.test.tsx's
-// pattern for the same module).
-vi.mock("@/lib/account/client", () => ({
-  listVaults: vi.fn(),
-}));
+// The in-app "add a vault" chooser (SYNTHESIS #10) — three explicit verbs, one
+// meaning each. It makes no network call: the plan/usage summary needed for the
+// "N of M plan slots used" foot line is a future account-manager endpoint
+// (cloud's GET /account/vaults returns only the vault list), seamed off for now.
 
 function LocationEcho() {
   const location = useLocation();
@@ -44,7 +39,6 @@ describe("AddVaultChooser", () => {
   beforeEach(() => {
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
-    vi.mocked(listVaults).mockResolvedValue({ vaults: [] } satisfies AccountVaultsResponse);
   });
 
   afterEach(() => {
@@ -119,19 +113,8 @@ describe("AddVaultChooser", () => {
     expect(screen.getByText("moss")).toBeInTheDocument();
   });
 
-  it("shows the quiet plan-slots foot line once listVaults resolves it", async () => {
-    vi.mocked(listVaults).mockResolvedValue({
-      vaults: [],
-      plan: { vault_limit: 3, vaults_used: 2 },
-    });
+  it("shows no plan-slots foot line (cloud has no plan-summary endpoint yet)", () => {
     renderChooser();
-    expect(await screen.findByText("2 of 3 plan slots used")).toBeInTheDocument();
-  });
-
-  it("stays quiet (no foot line) when the plan fetch fails or omits slot counts", async () => {
-    vi.mocked(listVaults).mockRejectedValue(new Error("network down"));
-    renderChooser();
-    await waitFor(() => expect(listVaults).toHaveBeenCalled());
     expect(screen.queryByText(/plan slots used/i)).not.toBeInTheDocument();
   });
 });
