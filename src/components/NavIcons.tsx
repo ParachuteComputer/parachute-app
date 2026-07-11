@@ -131,6 +131,29 @@ export function IconImport(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// A pen over a baseline — the speed-dial's "New note" verb (prototype 15's
+// write glyph).
+export function IconPen(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <path d="M14.5 5 19 9.5 9.5 19H5v-4.5z" />
+      <path d="m12.5 7 4.5 4.5" />
+      <path d="M4.5 21.5h15" />
+    </svg>
+  );
+}
+
+// A microphone — the speed-dial's "Voice note" verb.
+export function IconMic(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
+      <path d="M12 18v3.5" />
+    </svg>
+  );
+}
+
 // A quiet chevron — the rail's collapse/expand toggle.
 export function IconChevronLeft(props: SVGProps<SVGSVGElement>) {
   return (

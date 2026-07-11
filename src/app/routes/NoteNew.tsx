@@ -25,14 +25,14 @@ import { type CreateNotePayload, VaultAuthError } from "@/lib/vault/client";
 import {
   optimisticCreatedNote,
   useActiveVaultClient,
-  useTranscriptionCapability,
+  useTranscriptionGate,
 } from "@/lib/vault/queries";
 import { ensureNotesSchema } from "@/lib/vault/schema-ensure";
 import type { Note, TranscriptionCapability } from "@/lib/vault/types";
 import { useSync } from "@/providers/SyncProvider";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 
 // Unified note-creation screen — replaces the prior split between `/new`
 // (form-shaped text-only) and `/capture` (voice + transcript landing).
@@ -126,12 +126,38 @@ export function NoteNew() {
   // in-flight capture (requesting/recording/have-audio) — the sub-second
   // race where the capability resolves after Record was pressed finishes
   // honestly instead of stranding armed audio behind a hidden panel.
-  const transcription = useTranscriptionCapability();
+  const transcriptionGate = useTranscriptionGate();
+  const transcription = transcriptionGate.capability;
   const captureInFlight =
     voice.phase.kind === "requesting" ||
     voice.phase.kind === "recording" ||
     voice.phase.kind === "have-audio";
   const voiceGated = transcription?.enabled === false && !captureInFlight;
+
+  // W2-9: the speed-dial's "Voice note" verb arrives as `/new?voice=1` —
+  // land IN voice capture, no extra tap: auto-start the recorder once the
+  // capability gate has an ANSWER. Waiting on `settled` (not just "not yet
+  // false") matters: firing the mic during the pending window would record
+  // toward "_Transcription unavailable._" on a disabled vault — the manual
+  // race above is user-initiated and sub-second; an auto-start must not be.
+  // In practice the vault-info answer rides a warm cache, so the wait is
+  // invisible. The once-ref keeps StrictMode's dev double-invoke (and later
+  // re-renders) from requesting the mic twice.
+  const [searchParams] = useSearchParams();
+  const voiceRequested = searchParams.has("voice");
+  const autoVoiceFiredRef = useRef(false);
+  useEffect(() => {
+    if (!voiceRequested || autoVoiceFiredRef.current) return;
+    if (!transcriptionGate.settled) return;
+    if (transcriptionGate.capability?.enabled === false) return;
+    autoVoiceFiredRef.current = true;
+    void voice.startRecording();
+  }, [
+    voiceRequested,
+    transcriptionGate.settled,
+    transcriptionGate.capability,
+    voice.startRecording,
+  ]);
 
   const uploader = useAttachmentUploader({
     noteId: null,

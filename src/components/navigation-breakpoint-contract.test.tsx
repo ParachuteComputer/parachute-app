@@ -1,6 +1,7 @@
 import { BottomTabBar } from "@/components/BottomTabBar";
 import { NavSheet } from "@/components/NavSheet";
 import { Rail } from "@/components/Rail";
+import { SpeedDial } from "@/components/SpeedDial";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -108,6 +109,26 @@ describe("Rail + BottomTabBar breakpoint contract (notes#147)", () => {
     expect(root, "NavSheet must render when open").not.toBeNull();
     expect(root?.className).toMatch(/\blg:hidden\b/);
     expect(root?.className).not.toMatch(/\bmd:hidden\b/);
+  });
+
+  // W2-9: the capture affordances split by form factor on the SAME gate —
+  // desktop gets the SpeedDial (top-right, `hidden lg:block`), mobile keeps
+  // the BottomTabBar's raised centre [+] hopping straight to /new. Neither
+  // side may drift to `md:`, and the mobile [+] must never become a menu.
+  it("SpeedDial is desktop-only (hidden lg:block) and the mobile [+] still goes straight to /new (W2-9)", async () => {
+    const { container: dialContainer } = await renderWithClient(<SpeedDial />);
+    const { container: barContainer } = await renderWithClient(<BottomTabBar />);
+
+    const dial = dialContainer.firstElementChild;
+    expect(dial, "SpeedDial must render when a vault is active").not.toBeNull();
+    expect(dial?.className).toMatch(/\bhidden\b/);
+    expect(dial?.className).toMatch(/\blg:block\b/);
+    expect(dial?.className).not.toMatch(/\bmd:block\b/);
+    expect(dial?.className).not.toMatch(/\bmd:hidden\b/);
+
+    const centerCapture = barContainer.querySelector('a[aria-label="New note"]');
+    expect(centerCapture, "the mobile centre [+] must exist").not.toBeNull();
+    expect(centerCapture?.getAttribute("href")).toBe("/new");
   });
 
   it("Rail renders nothing with no active vault (the no-vault desktop view is full-width Landing)", async () => {

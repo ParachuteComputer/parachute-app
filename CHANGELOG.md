@@ -1,5 +1,38 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.9.0] - 2026-07-11
+
+**W2-9 — speed-dial + command-palette presentation (adopt #5 #6).** The prototype's two
+capture/navigation affordances land in the app's language — honestly (no fake AI). Minor bump: two
+new visual surfaces (the desktop SpeedDial; the palette's bloom/sheet presentation).
+
+- **Desktop speed-dial** (`SpeedDial.tsx`, prototype shot 15): a floating coral "+" disc, top-right,
+  that expands DOWNWARD into three verbs — **New note** → `/new` · **Voice note** → `/new?voice=1`
+  (lands IN voice capture, no extra tap) · **Import notes** → `/import`. Label pills beside forest
+  icon discs; Escape/click-outside/route-change close; springy hover behind
+  `prefers-reduced-motion`. **Desktop ≥lg only** — the mobile [+] still hops straight to `/new`
+  (the breakpoint contract test pins both sides). Hidden under ceremonies (§4.1 rule 5) and on
+  `/new` itself; top-right placement stays clear of the Map FAB (bottom-right) and the palette pill
+  (bottom-centre).
+- **`/new?voice=1` voice arrival:** the create surface auto-starts the recorder once the
+  transcription-capability gate has an ANSWER — never during the pending window (an auto-fired mic
+  toward "_Transcription unavailable._" would be the product lying). New `useTranscriptionGate()`
+  (capability + `settled`) backs it; `useTranscriptionCapability()` is unchanged for render gates.
+- **Command palette, restyled** (`QuickSwitch.tsx`, prototype shot 13) — same results engine
+  (merged commands + notes + tags, same ranking, same keyboard nav), new presentation:
+  - **Desktop:** a bottom-centre glass pill (`.glass-panel`, shadow grows `soft→lift` on focus);
+    the result panel **blooms upward** above it (`--radius-2xl` + `--shadow-lift`).
+  - **Mobile:** a full-screen sheet from the Search tab — pill row up top with an explicit Cancel,
+    results filling the screen.
+  - Opens from all three doors — rail Search, ⌘K, mobile Search tab (each pinned by a test).
+- **The honest "Smart" slot:** the pill's right side RESERVES space for a future Smart toggle as a
+  clearly-inert placeholder (a dimmed `aria-hidden` span — not a control). The prototype's
+  "Smart search" AI-prompt rows are mocked and the app has no ask-AI endpoint; shipping fake
+  prompts violates the honesty rule (DESIGN-SPEC W2-9 [spec-resolved], §6-A2 owns the future
+  toggle).
+- Ceremony-route gate (`CEREMONY_ROUTES`/`isCeremonyPath`) re-homed from `App.tsx` to
+  `@/lib/nav/model` so chrome components share one list. New `IconPen`/`IconMic` glyphs.
+
 ## [0.8.0] - 2026-07-11
 
 **W2-8 — `/account` "Your parachute" + trial ambience (F4 full / WALK-manager #1).** The manager

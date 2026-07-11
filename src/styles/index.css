@@ -800,11 +800,16 @@ body {
 
   /* Translucent cream over blur — the rail, the mobile nav sheet, the command
      palette, sticky headers (prototype: sidebar bg-cream/70 backdrop-blur).
-     Pair with --shadow-lift when the panel floats. */
+     Pair with --shadow-lift when the panel floats.
+     ORDER MATTERS: -webkit- prefix FIRST, standard LAST — lightningcss
+     merges the pair keeping the last declaration as the winner, and with
+     standard-first it emitted ONLY -webkit-backdrop-filter into dist, so
+     the blur never rendered in Chromium/Firefox (caught in W2-9 when the
+     palette floated glass over page text for the first time). */
   .glass-panel {
     background-color: color-mix(in srgb, var(--color-bg-soft) 82%, transparent);
-    backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
   }
 
   /* --- Chips --- */
