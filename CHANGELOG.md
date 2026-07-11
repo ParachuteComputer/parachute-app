@@ -34,10 +34,20 @@ Pairs with cloud rc.74's new Bearer billing endpoints — deploy together.
   knowledge, zero pricing math, zero cloud-origin imports.
 - **Identity card simplified**: "Signed in as X" + Sign out only — plan/billing
   now lives entirely in its own Billing section.
-- The old host-sniffed `manageBillingUrl` fallback (deriving
-  `cloud.parachute.computer/console` from a cloud vault's host) is gone.
-  `src/lib/vault/console-url.ts` itself stays — `Home.tsx`'s separate "Manage
-  your vault plan →" backlink still uses it and is unaffected by this change.
+- **Home's plan backlink now stays in-app.** The Home surface's quiet backlink
+  (`PlanBacklink`) was the SAME cloud-console → re-login seam from the Home
+  surface — it `href`-ed to `cloud.parachute.computer/console`. It now renders
+  **"Manage your account →"** as an in-app react-router `Link to="/account"`
+  (same origin, no re-login), shown only for home-door (account-minted) vaults
+  — a foreign self-hosted vault has no account on this door, so no backlink.
+  The `/account` surface (with the new Billing section) owns Manage-vs-Upgrade
+  + the Stripe-direct hop from there.
+- **`src/lib/vault/console-url.ts` (and its test) removed** — the host-sniffed
+  `manageBillingUrl` fallback and `Home`'s backlink were its only consumers;
+  with both routed in-app, `cloudConsoleUrl` is dead and gone. The app now has
+  **zero** cloud-console links (the only remaining `/console` reference is the
+  service-worker navigation denylist, which forces server-owned ceremony paths
+  past the SW to the origin — infrastructure, not a link).
 
 ## [0.4.0] - 2026-07-11
 

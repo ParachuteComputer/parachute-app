@@ -1,5 +1,6 @@
 import { RecentTimeline, groupNotesByDay } from "@/components/RecentTimeline";
 import { OfflineRibbon } from "@/components/ui";
+import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import {
   type HomeStepId,
   deriveSteps,
@@ -8,7 +9,7 @@ import {
 } from "@/lib/home/checklist";
 import { useHomeChecklist } from "@/lib/home/use-home-checklist";
 import { useInstallAffordance } from "@/lib/pwa-install";
-import { cloudConsoleUrl, useNotesForDateViews, useVaultStore } from "@/lib/vault";
+import { useNotesForDateViews, useVaultStore } from "@/lib/vault";
 import type { Note } from "@/lib/vault/types";
 import { useMemo } from "react";
 import { Link, Navigate } from "react-router";
@@ -82,7 +83,7 @@ export function Home() {
         fresh={mode === "fresh"}
       />
 
-      <PlanBacklink vaultUrl={vault.url} />
+      <PlanBacklink clientId={vault.clientId} />
     </div>
   );
 }
@@ -273,19 +274,21 @@ function RecentSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Plan backlink — a quiet "manage your plan" door for CLOUD vaults only.
+// Account backlink — a quiet in-app door to the account manager, shown only for
+// HOME-DOOR (account-minted) vaults. Navigates to `/account` (same origin, via
+// react-router) rather than hopping to a cross-origin console — the /account
+// surface owns plan + billing (Stripe-direct) + hosted vaults, so there's no
+// re-login. A foreign self-hosted vault (connected via `/add` OAuth) has no
+// account on THIS door, so no backlink is shown — never a dead affordance.
 // ---------------------------------------------------------------------------
 
-function PlanBacklink({ vaultUrl }: { vaultUrl: string }) {
-  // Self-host vaults resolve to null → no row (no false door to a console that
-  // doesn't exist).
-  const consoleUrl = cloudConsoleUrl(vaultUrl);
-  if (!consoleUrl) return null;
+function PlanBacklink({ clientId }: { clientId: string }) {
+  if (!isHostedVaultRecord(clientId)) return null;
   return (
     <div className="mt-10 border-t border-border pt-4 text-sm">
-      <a href={consoleUrl} className="text-fg-dim hover:text-accent">
-        Manage your vault plan →
-      </a>
+      <Link to="/account" className="text-fg-dim hover:text-accent">
+        Manage your account →
+      </Link>
     </div>
   );
 }
