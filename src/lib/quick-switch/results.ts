@@ -41,8 +41,8 @@ export const COMMANDS: Array<{
   },
   {
     id: "graph",
-    label: "Graph",
-    description: "Full-vault graph view",
+    label: "Map",
+    description: "Full-vault map view",
     keywords: ["graph", "map", "visualize"],
     action: { type: "navigate", to: "/map" },
   },

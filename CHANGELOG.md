@@ -11,6 +11,11 @@ route-table change — every old bookmark still resolves, nothing existing break
   Map room** (`/graph` becomes the same kind of query-preserving `replace` shim). New shared
   `App.tsx` helper `ShimPreservingQuery` implements both. The `/pinned`/`/archived`/`/untagged`/
   `/orphaned` view-shims retarget from `/all?view=` to `/notes?view=`.
+- **Mount-detection fix (review fold):** the legacy notes-daemon mount pattern in `base-url.ts`
+  matched a bare `/notes` as well as `/notes/…`; a bare `/notes` now falls through to the root mount,
+  so a hard load / refresh / share of the new `/notes` route on the root-hosted deploy renders the
+  Notes list (not Home) and keeps `?view=`. `/notes/` and deep legacy routes still detect the mount.
+- Command-palette row label "Graph" → **"Map"** (was still drifting from the rail/sheet label).
 - **`src/lib/nav/model.tsx`'s `NOTES_TO`/`MAP_TO`/`matchNotes` flip to the new addresses** — the
   Rail, NavSheet, and BottomTabBar all consume these, so no component-level drift was possible.
   Every other inbound link (`AmbientMapFab`, the command palette's rows and tag-jump, `Notes.tsx`'s

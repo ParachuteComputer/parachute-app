@@ -24,8 +24,12 @@ describe("detectMountBase", () => {
     it("returns /notes for the OAuth callback path", () => {
       expect(detectMountBase("/notes/oauth/callback")).toBe("/notes");
     });
-    it("returns /notes with no trailing slash for exact-prefix-no-slash", () => {
-      expect(detectMountBase("/notes")).toBe("/notes");
+    it("does NOT treat a bare /notes as the legacy mount — it's the app's canonical Notes route (W2-7)", () => {
+      // The daemon's document URL is `/notes/`; a bare `/notes` is the app's
+      // own Notes-list route on the root deploy, so it must fall through to the
+      // root mount (else a hard load of /notes lands on Home). Only /notes/ and
+      // deeper legacy routes detect the mount.
+      expect(detectMountBase("/notes")).toBe("");
     });
   });
 
@@ -138,7 +142,9 @@ describe("detectMountBase", () => {
       expect(detectMountBaseWithSlash("/surface/notes/")).toBe("/surface/notes/");
     });
     it("appends a slash even when input lacks one", () => {
-      expect(detectMountBaseWithSlash("/notes")).toBe("/notes/");
+      // `/surface/<slug>` still detects a bare (no-trailing-slash) mount; bare
+      // `/notes` no longer does (W2-7 — see the detectMountBase test above), so
+      // the slash-append is demonstrated on the surface mount.
       expect(detectMountBaseWithSlash("/surface/my-notes")).toBe("/surface/my-notes/");
     });
   });
