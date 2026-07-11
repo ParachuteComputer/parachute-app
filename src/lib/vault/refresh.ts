@@ -31,10 +31,35 @@ export async function forceRefresh(vaultId: string): Promise<string | null> {
 }
 
 async function doRefresh(vaultId: string): Promise<string | null> {
+  const vault = useVaultStore.getState().vaults[vaultId];
+
+  // Home-door (Cloud) vaults have NO OAuth refresh token — their per-vault
+  // token is re-minted from the still-valid account SESSION cookie. On a 401,
+  // re-mint via the account door instead of the OAuth rotate. If the session
+  // itself is gone, `remintHostedVault` flips the non-blocking session-expired
+  // banner and we fall through to null (the notes stay readable locally). The
+  // account module is loaded dynamically so `lib/vault` doesn't take a static
+  // dependency on `lib/account` (which already depends on `lib/vault`).
+  if (vault) {
+    const { isHostedVaultRecord, remintHostedVault } = await import("@/lib/account/hosted-vault");
+    if (isHostedVaultRecord(vault.clientId)) {
+      try {
+        await remintHostedVault(vault.name);
+        const fresh = loadToken(vaultId);
+        if (fresh?.accessToken) {
+          useAuthHaltStore.getState().clearHalt(vaultId);
+          return fresh.accessToken;
+        }
+      } catch {
+        // session expired → banner already raised; fall through to null
+      }
+      return null;
+    }
+  }
+
   const stored = loadToken(vaultId);
   if (!stored?.refreshToken) return null;
 
-  const vault = useVaultStore.getState().vaults[vaultId];
   if (!vault?.tokenEndpoint || !vault.clientId) return null;
 
   try {

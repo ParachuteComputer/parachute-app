@@ -189,7 +189,12 @@ export function Welcome() {
     case "checking":
       return <SigningInBeat />;
     case "redirect":
-      return <Navigate to="/" replace />;
+      // Preserve the expired-link cue: cloud 302s a dead/used link to
+      // /welcome?link=expired, but the recovery UI lives on the front door
+      // (Landing reads ?link=expired). Carry the param through the redirect.
+      return (
+        <Navigate to={searchParams.get("link") === "expired" ? "/?link=expired" : "/"} replace />
+      );
     case "net-error":
       return (
         <NetErrorCard

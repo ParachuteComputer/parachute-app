@@ -2,7 +2,7 @@ import { Welcome } from "@/app/routes/Welcome";
 import { getSession, listVaults } from "@/lib/account/client";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The post-sign-in dispatcher (SYNTHESIS #4): confirms the session, lists the
@@ -27,12 +27,17 @@ vi.mock("@/lib/account/hosted-vault", async () => {
   };
 });
 
+function FrontDoorEcho() {
+  const location = useLocation();
+  return <div>Home surface{location.search}</div>;
+}
+
 function renderWelcome(initial = "/welcome") {
   return render(
     <MemoryRouter initialEntries={[initial]}>
       <Routes>
         <Route path="/welcome" element={<Welcome />} />
-        <Route path="/" element={<div>Home surface</div>} />
+        <Route path="/" element={<FrontDoorEcho />} />
         <Route path="/add" element={<div>Connect a vault</div>} />
       </Routes>
     </MemoryRouter>,
@@ -52,6 +57,15 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
     renderWelcome();
     await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
     expect(listVaults).not.toHaveBeenCalled();
+  });
+
+  it("preserves ?link=expired through the signed-out redirect (front-door recovery)", async () => {
+    // Cloud 302s a dead/used link to /welcome?link=expired; the recovery cue
+    // lives on the front door, so the param must survive the redirect.
+    vi.mocked(getSession).mockResolvedValue({ signed_in: false, csrf: "c" });
+    renderWelcome("/welcome?link=expired");
+    await waitFor(() => expect(screen.getByText(/home surface/i)).toBeInTheDocument());
+    expect(screen.getByText(/\?link=expired/)).toBeInTheDocument();
   });
 
   it("redirects to the front door when the session check fails (network)", async () => {
