@@ -1,3 +1,13 @@
+/* Self-hosted brand fonts (Wave-2 hybrid pass) — Fraunces (display serif,
+   opsz+wght variable axes: the optical-size axis IS the display voice) +
+   Figtree (body/chrome sans, wght). Bundled by Vite from @fontsource-variable,
+   precached by the service worker (woff2 in the workbox glob) — no external
+   font requests, ever (CSP-safe, offline-capable). font-display: swap with the
+   tuned system stacks below as fallbacks, so first paint is never blocked.
+   The italic file is load-bearing: the .accent-word device needs REAL italics. */
+@import "@fontsource-variable/fraunces/opsz.css";
+@import "@fontsource-variable/fraunces/opsz-italic.css";
+@import "@fontsource-variable/figtree/index.css";
 @import "tailwindcss";
 @import "highlight.js/styles/github.css";
 
@@ -5,16 +15,18 @@
    Parachute — design system / token contract
    ---------------------------------------------------------------------------
    This stylesheet is the CANONICAL starting point other Parachute surface
-   authors copy. It codifies the warm-paper / coral / serif identity into a
-   token + component-class system so a generic notes surface stays
+   authors copy. It codifies the cream-and-sage / coral / serif identity into
+   a token + component-class system so a generic notes surface stays
    Linear/Things-tier consistent without re-deriving the look per file.
 
    Brand source of truth: parachute.computer/design/brand-tokens.md (§1 palette,
-   §2 type). This file is the new-brand pass of that reference: SYSTEM font
-   stacks (no webfont download — Google Fonts retired, matching the brand
-   pilot's own decision) and the coral accent family. Fonts: --font-serif
-   (display), --font-sans (body, the brand's font-body stack), --font-round (UI
-   chrome — buttons, eyebrows), --font-mono. Keep it in step with the brand doc.
+   §2 type). This file is the Wave-2 HYBRID pass of that reference (DESIGN-SPEC
+   §1, ratified decision c): the prototype's warm cream/sage grounds + forest
+   ink under the EXISTING coral accent, with self-hosted Fraunces + Figtree
+   (see the @fontsource imports above). Fonts: --font-serif (Fraunces —
+   display), --font-sans (Figtree — body + chrome), --font-round (retired
+   alias of --font-sans; the rounded UI voice folded into Figtree),
+   --font-mono. The brand doc mirrors this in a separate parachute.computer PR.
 
    Layers (in cascade order):
      1. @theme            — design tokens (colors, type scale, radii, shadows,
@@ -45,69 +57,78 @@
      --color-border / -light      hairlines
      --color-card / -hover        raised surface
      --text-2xs … --text-3xl      ONE type ramp shared by chrome + prose
-     --radius-xs … --radius-full  radii
-     --shadow-sm / -md / -lg      warm-tinted elevation
+     --radius-xs … --radius-2xl, --radius-full   radii (interactive = pill)
+     --shadow-sm / -md / -lg      forest-tinted elevation
+     --shadow-soft / -lift        sage-tinted resting / floating lift
      --w-prose / -page / -narrow  container widths
 
    WCAG-AA note (the dark-accent fix): the accent is the coral button hue
-   (#bf4a2a): white-on-accent is 4.97:1, accent-on-paper 4.77:1 — both pass AA.
-   The dark-mode accent LIGHTENS to a coral (#ec7a5c, 6.28:1 on the dark
-   ground), so `--color-on-accent` flips to a dark warm ink (#2a1710 → 6.11:1
-   on the dark accent) instead of white. Every accent-surfaced label uses
-   `.btn-primary` or `text-on-accent`, never a hardcoded `text-white`.
-   Ratios computed in the 0.1.21 brand pass; see the PR for the full table.
+   (#bf4a2a): white-on-accent is 4.97:1, accent-on-canvas 4.75:1 (4.91 on
+   card) — all pass AA. The dark-mode accent LIGHTENS to a coral (#ec7a5c,
+   6.14:1 on the forest-night ground), so `--color-on-accent` flips to a dark
+   warm ink (#2a1710 → 6.11:1 on the dark accent) instead of white. Every
+   accent-surfaced label uses `.btn-primary` or `text-on-accent`, never a
+   hardcoded `text-white`. Ratios recomputed in the Wave-2 hybrid pass
+   (DESIGN-SPEC §1 tables); see that PR for the full table.
    =========================================================================== */
 
 @theme {
-  /* Brand system-font stacks (parachute.computer/design/brand-tokens.md §2),
-     verbatim. No webfont download. --font-sans carries the brand's font-body
-     stack (Tailwind names the body token `sans`); --font-round is UI-chrome. */
-  --font-sans: -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-serif: ui-serif, "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
-  --font-round: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Hiragino Maru Gothic ProN",
-    Quicksand, system-ui, sans-serif;
+  /* Brand font stacks (DESIGN-SPEC §1.3) — Fraunces carries display, Figtree
+     carries everything else. The vars keep their names (zero component churn);
+     the system stacks remain as font-display:swap fallbacks. --font-round is
+     a retired alias: the rounded UI voice folded into Figtree. */
+  --font-sans: "Figtree Variable", -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-serif: "Fraunces Variable", ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  --font-round: var(--font-sans);
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, "Cascadia Code", monospace;
 
-  /* --- Surfaces + text (light) ---
-     bg-soft warmed to the prototype's paper-2 (#f7f1e6) so the rail + recessed
-     surfaces glow rather than sit grey against the paper. */
-  --color-bg: #fdfaf4;
-  --color-bg-soft: #f7f1e6;
-  --color-fg: #2a2521;
-  --color-fg-muted: #6b6459;
-  --color-fg-dim: #9a9184;
+  /* --- Surfaces + text (light) — the hybrid cream/sage world (DESIGN-SPEC §1.1) ---
+     Grounds move from blush paper to the prototype's cream (#fafaf6 canvas /
+     #f7f5ec recessed); ink moves from warm brown to FOREST (#233c2a, 11.46:1
+     on bg) with sage-cast secondary text. fg-dim stays tertiary/placeholder
+     ONLY (2.94:1 — never body copy). */
+  --color-bg: #fafaf6;
+  --color-bg-soft: #f7f5ec;
+  --color-fg: #233c2a;
+  --color-fg-muted: #5b6f5e;
+  --color-fg-dim: #8a968b;
 
-  /* --- Brand accent (light) — coral (brand-tokens §1) ---
-     accent = the button hue #bf4a2a (4.97:1 on white, 4.77:1 on paper);
-     -light = the bright display coral #e05d3c (LARGE / decorative only). */
+  /* --- Brand accent (light) — coral, KEPT as-is (ratified decision c) ---
+     accent = the button hue #bf4a2a (4.97:1 white-on-accent, 4.75:1 on the
+     new canvas, 4.91:1 on card); -light = the bright display coral #e05d3c
+     (LARGE / decorative only, 3.46:1). The interactive voice doesn't change. */
   --color-accent: #bf4a2a;
   --color-accent-hover: #a63f23;
   --color-accent-light: #e05d3c;
   --color-sky: #5b8fa8;
 
-  /* --- Warm secondary hues (prototype parity) ---
-     The synthesized prototype threads three warm-paper accents beyond coral:
-     GRASS (the vault's own colour — switcher glyph, active rail rows, the
-     "issued / connected" trust green), SUN (the gentle "finish setting up"
-     nudge), and SAGE (mid blue-green, "connected apps" on the map — == sky).
-     Each carries a -strong (button fill), -soft (tint bg), -ink (text-on-soft)
-     so they compose like the coral family. Ratios AA-checked on paper. */
+  /* --- Secondary hues ---
+     GRASS (the vault's own colour — switcher glyph, active-nav pill, the
+     "issued / connected" trust green; -soft is the prototype's secondary
+     #e1f0e4, grass-ink 6.67:1 on it), SUN (the gentle "finish setting up"
+     nudge + trial chip), SAGE (the prototype's sage GREEN — eyebrows, section
+     labels, quiet icons; 4.46:1 on bg, 4.27:1 on bg-soft), and SKY (the
+     blue-green — graph "connected apps", self-host side-door links).
+     NOTE the Wave-2 naming fix: --color-sage used to be a blue (== sky);
+     it now means green, as any reader would assume. Blue uses point at
+     --color-sky. */
   --color-grass: #3f8a58;
   --color-grass-strong: #2f7647;
-  --color-grass-soft: #dcefe0;
+  --color-grass-soft: #e1f0e4;
   --color-grass-ink: #245c39;
   --color-sun: #f4c020;
   --color-sun-soft: #fdf1c9;
   --color-sun-ink: #6b5200;
-  --color-sage: #5b8fa8;
+  --color-sage: #527e5d;
 
   /* --- Hairlines + raised surfaces (light) ---
-     Warmed toward the prototype's paper lines (#ece5d8 / #e2d9c8) so hairlines
-     read as part of the paper, not a cool grey. */
-  --color-border: #e2d9c8;
-  --color-border-light: #ece5d8;
-  --color-card: #ffffff;
-  --color-card-hover: #fefdfb;
+     Sage-cast hairlines (prototype --border) so lines read as part of the
+     cream world, not a cool grey; the card lifts a breath off the canvas
+     (#fefefa on #fafaf6) instead of hard white. */
+  --color-border: #d6e2d6;
+  --color-border-light: #e4ece4;
+  --color-card: #fefefa;
+  --color-card-hover: #f9f9f2;
 
   /* --- Semantic state tokens (light) ---
      Warm-leaning danger (brick) + amber warning so the state colors read as
@@ -146,25 +167,37 @@
   --text-2xl: 1.625rem; /* 26px — h2 / page title (mobile) */
   --text-3xl: 1.9375rem; /* 31px — h1 / page title (desktop) */
 
-  /* --- Radii (consolidated from 5 ad-hoc values) --- */
+  /* --- Radii — the pill move (DESIGN-SPEC §1.2) ---
+     xs/sm/md stay for code, tables, tiny chrome; lg/xl step up for nav rows
+     and soft cards; 2xl is the new generous card/modal/sheet radius
+     (prototype's computed 28px, tempered one step for our denser surfaces). */
   --radius-xs: 3px;
   --radius-sm: 4px;
   --radius-md: 6px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
   --radius-full: 9999px;
 
-  /* --- Elevation (warm-tinted, not cool-gray default) ---
-     Tints the shadow toward the ink color so cards lift off paper warmly. */
-  --shadow-sm: 0 1px 2px color-mix(in srgb, #2c2a26 6%, transparent);
-  --shadow-md: 0 2px 8px color-mix(in srgb, #2c2a26 8%, transparent), 0 1px 2px
-    color-mix(in srgb, #2c2a26 5%, transparent);
-  --shadow-lg: 0 8px 24px color-mix(in srgb, #2c2a26 12%, transparent), 0 2px 6px
-    color-mix(in srgb, #2c2a26 6%, transparent);
-  /* Prototype's generous, diffuse warm shadows — the "settling gently onto
-     paper" feel. -soft lifts cards a touch; -lift is the floating sheet / FAB. */
-  --shadow-soft: 0 10px 30px color-mix(in srgb, #3c2d1e 8%, transparent);
-  --shadow-lift: 0 18px 44px color-mix(in srgb, #3c2d1e 14%, transparent);
+  /* --- Elevation (sage-tinted, never plain gray) ---
+     The utility ramp keeps its geometry; the tint moves from warm brown to
+     forest (#24422e) at the same percentages. */
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #24422e 6%, transparent);
+  --shadow-md: 0 2px 8px color-mix(in srgb, #24422e 8%, transparent), 0 1px 2px
+    color-mix(in srgb, #24422e 5%, transparent);
+  --shadow-lg: 0 8px 24px color-mix(in srgb, #24422e 12%, transparent), 0 2px 6px
+    color-mix(in srgb, #24422e 6%, transparent);
+  /* The prototype's sage-tinted, negative-spread shadows — the "settling
+     gently onto paper" feel. -soft lifts cards at rest; -lift is the floating
+     sheet / FAB / popover / palette. */
+  --shadow-soft: 0 12px 40px -18px oklch(40% 0.05 152 / 0.22);
+  --shadow-lift: 0 24px 60px -30px oklch(40% 0.05 152 / 0.28);
+
+  /* --- Canvas wash (consumed by .app-canvas) ---
+     The pale-green dawn glow — the prototype's --gradient-dawn feel. This is
+     the "blush wash → misty sage morning" shift: grass-tinted at 7% in light;
+     the dark gates repoint it to a 5% whisper over the night ground. */
+  --canvas-wash: color-mix(in srgb, var(--color-grass) 7%, transparent);
 
   /* --- Container widths (consolidated; Header/footer/content now agree) --- */
   --w-prose: 42rem;
@@ -231,21 +264,25 @@
    :root (they don't take effect until a theme selector assigns them to the
    public tokens, so light mode is unaffected). */
 :root {
-  --_d-bg: #1a1917;
-  --_d-bg-soft: #23221f;
-  --_d-fg: #e8e5de;
-  --_d-fg-muted: #a8a49b;
-  --_d-fg-dim: #706c64;
-  /* Coral, lightened for the dark ground (brand-tokens §1 proposed direction,
-     ratios computed + adjusted for AA in the 0.1.21 pass):
-       accent #ec7a5c → 6.28:1 on --_d-bg, 5.69:1 on --_d-card
-       accent-hover #f08d70 → 7.32:1 on --_d-bg
-       on-accent #2a1710 → 6.11:1 on accent, 7.12:1 on accent-hover */
+  /* "Forest night" (DESIGN-SPEC §1.4, net-new design) — the dark complement
+     of the cream/sage world: deep green-cast near-blacks, sage-tinted
+     secondary text. The prototype has no dark mode; this one is ours. */
+  --_d-bg: #161d18;
+  --_d-bg-soft: #1c241d;
+  --_d-fg: #e7ece5;
+  --_d-fg-muted: #a7b3a7;
+  --_d-fg-dim: #71806f;
+  /* Coral, lightened for the dark ground (kept from the 0.1.21 pass; ratios
+     recomputed on the forest-night grounds in the Wave-2 hybrid pass):
+       accent #ec7a5c → 6.14:1 on --_d-bg, 5.50:1 on --_d-card
+       accent-hover #f08d70 → 7.15:1 on --_d-bg
+       on-accent #2a1710 → 6.11:1 on accent */
   --_d-accent: #ec7a5c;
   --_d-accent-hover: #f08d70;
   --_d-accent-light: #c95f40;
   --_d-sky: #7fb3cc;
-  /* Warm secondary hues, lightened for the dark ground (grass/sun/sage). */
+  /* Secondary hues, lightened for the night ground. --_d-sage is the sage
+     GREEN now (7.21:1 on bg, 6.46:1 on card) — the naming fix, see light. */
   --_d-grass: #6fbf8a;
   --_d-grass-strong: #4f9d6b;
   --_d-grass-soft: #1e3527;
@@ -253,13 +290,17 @@
   --_d-sun: #f4c020;
   --_d-sun-soft: #38300f;
   --_d-sun-ink: #f0d68a;
-  --_d-sage: #7fb3cc;
+  --_d-sage: #8fb096;
+  /* Sage tint is invisible in the dark; black-based shadows stay. */
   --_d-shadow-soft: 0 10px 30px color-mix(in srgb, #000 42%, transparent);
   --_d-shadow-lift: 0 18px 44px color-mix(in srgb, #000 52%, transparent);
-  --_d-border: #33312d;
-  --_d-border-light: #2a2926;
-  --_d-card: #23221f;
-  --_d-card-hover: #2a2926;
+  --_d-border: #303b31;
+  --_d-border-light: #283229;
+  --_d-card: #1e271f;
+  --_d-card-hover: #252f26;
+  /* The dark canvas wash: the same grass-tinted radial, dialed to a 5%
+     whisper of green over the night ground. */
+  --_d-canvas-wash: color-mix(in srgb, var(--_d-grass) 5%, transparent);
   /* The WCAG-AA fix lives here: dark accent is light, so on-accent is a dark ink. */
   --_d-on-accent: #2a1710;
   /* Dark coral "featured" badge family — ink-on-soft 7.79:1. */
@@ -315,6 +356,7 @@
     --shadow-lg: var(--_d-shadow-lg);
     --shadow-soft: var(--_d-shadow-soft);
     --shadow-lift: var(--_d-shadow-lift);
+    --canvas-wash: var(--_d-canvas-wash);
   }
 }
 
@@ -352,6 +394,7 @@
   --shadow-lg: var(--_d-shadow-lg);
   --shadow-soft: var(--_d-shadow-soft);
   --shadow-lift: var(--_d-shadow-lift);
+  --canvas-wash: var(--_d-canvas-wash);
 }
 
 html,
@@ -535,25 +578,27 @@ body {
   }
 }
 
+/* Dark code surfaces ride --color-bg-soft (the recessed night ground) instead
+   of the retired warm-brown hex, so they stay coherent with the forest theme. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .prose-note code,
   :root:not([data-theme="light"]) .prose-note pre {
-    background: #1f1e1b;
+    background: var(--color-bg-soft);
     border-color: var(--color-border);
   }
   :root:not([data-theme="light"]) .prose-note .hljs {
-    background: #1f1e1b !important;
+    background: var(--color-bg-soft) !important;
     color: var(--color-fg);
   }
 }
 
 :root[data-theme="dark"] .prose-note code,
 :root[data-theme="dark"] .prose-note pre {
-  background: #1f1e1b;
+  background: var(--color-bg-soft);
   border-color: var(--color-border);
 }
 :root[data-theme="dark"] .prose-note .hljs {
-  background: #1f1e1b !important;
+  background: var(--color-bg-soft) !important;
   color: var(--color-fg);
 }
 
@@ -580,24 +625,27 @@ body {
     border-radius: var(--radius-sm);
   }
 
-  /* --- Buttons --- */
+  /* --- Buttons — pills (DESIGN-SPEC §1.2: everything interactive is a pill) --- */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     min-height: 2.25rem; /* min-h-9 — comfortable tap target on desktop */
-    padding: 0.375rem 0.875rem;
-    border-radius: var(--radius-md);
-    /* UI chrome rides the brand round stack (brand-tokens §2). */
+    /* Inline padding stepped up with the pill radius so labels breathe
+       inside the curve. */
+    padding: 0.375rem 1rem;
+    border-radius: var(--radius-full);
+    /* UI chrome rides --font-round (now an alias of the Figtree sans stack). */
     font-family: var(--font-round);
     font-size: var(--text-sm);
     font-weight: 500;
     line-height: 1.2;
     white-space: nowrap;
     cursor: pointer;
-    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow
-      0.12s ease;
+    transition:
+      background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow
+      0.12s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   .btn:disabled,
   .btn[aria-disabled="true"] {
@@ -619,6 +667,13 @@ body {
   }
   .btn-primary:not(:disabled):hover {
     background-color: var(--color-accent-hover);
+  }
+  /* Micro-motion (§1.2): primary actions get a springy-small lift on hover.
+     Guarded so reduced-motion users get the color change only. */
+  @media (prefers-reduced-motion: no-preference) {
+    .btn-primary:not(:disabled):hover {
+      transform: scale(1.02);
+    }
   }
 
   /* Secondary — bordered card surface. */
@@ -680,7 +735,7 @@ body {
   /* Size modifiers. Default is "md" (the base). */
   .btn-sm {
     min-height: 0;
-    padding: 0.25rem 0.625rem;
+    padding: 0.25rem 0.75rem;
     font-size: var(--text-xs);
   }
   .btn-lg {
@@ -694,7 +749,8 @@ body {
     min-height: 2.75rem;
   }
 
-  /* --- Form controls --- */
+  /* --- Form controls — inputs/selects are pills; the textarea keeps a
+     generous corner (a pill textarea is silly). §1.2. --- */
   .input,
   .textarea,
   .select {
@@ -702,14 +758,16 @@ body {
     background-color: var(--color-card);
     color: var(--color-fg);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-full);
+    padding: 0.5rem 1rem;
     font-size: var(--text-sm);
     line-height: 1.5;
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
   }
   .textarea {
     resize: vertical;
+    border-radius: var(--radius-xl);
+    padding: 0.5rem 0.75rem;
   }
   .input::placeholder,
   .textarea::placeholder {
@@ -737,7 +795,16 @@ body {
   .card {
     background-color: var(--color-card);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-2xl);
+  }
+
+  /* Translucent cream over blur — the rail, the mobile nav sheet, the command
+     palette, sticky headers (prototype: sidebar bg-cream/70 backdrop-blur).
+     Pair with --shadow-lift when the panel floats. */
+  .glass-panel {
+    background-color: color-mix(in srgb, var(--color-bg-soft) 82%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 
   /* --- Chips --- */
@@ -792,23 +859,20 @@ body {
     width: 100%;
     background-color: var(--color-card);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-2xl);
     padding: 1.25rem;
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-lift);
   }
 
   /* --- App canvas ---
-     A whisper of warm sage washed in from the top of the page — enough to
-     lift the paper off a flat fill without reading as a colour. Sits on the
-     shell so it spans the header + content; text still resolves against the
-     solid --color-bg beneath it, so contrast is unchanged. */
+     The misty sage morning: a whisper of green washed in from the top of the
+     page (--canvas-wash — grass at 7% light / 5% dark) — enough to lift the
+     cream off a flat fill without reading as a colour. Sits on the shell so
+     it spans the header + content; text still resolves against the solid
+     --color-bg beneath it, so contrast is unchanged. */
   .app-canvas {
     background-color: var(--color-bg);
-    background-image: radial-gradient(
-      1100px 520px at 50% -6%,
-      color-mix(in srgb, var(--color-accent) 6%, transparent),
-      transparent 70%
-    );
+    background-image: radial-gradient(1100px 520px at 50% -6%, var(--canvas-wash), transparent 70%);
     background-repeat: no-repeat;
   }
 
@@ -825,14 +889,19 @@ body {
   }
 
   /* --- Micro typography helpers --- */
-  /* The uppercase micro-label used as section eyebrows everywhere. Rides the
-     brand round stack (brand-tokens §2: eyebrows are font-round). */
+  /* The uppercase micro-label used as section eyebrows everywhere. The
+     prototype's rule: SAGE labels in-app (4.46:1 on bg); the coral modifier
+     below is reserved for the marketing Landing — "terracotta on marketing,
+     sage in product". */
   .eyebrow {
     font-family: var(--font-round);
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--color-fg-dim);
+    color: var(--color-sage);
+  }
+  .eyebrow-accent {
+    color: var(--color-accent);
   }
   /* Mono path / id label. */
   .note-id {

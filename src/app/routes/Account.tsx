@@ -629,7 +629,7 @@ function VaultsBlock({
           <Link
             to="/add"
             className="font-semibold hover:underline"
-            style={{ color: "var(--color-sage)" }}
+            style={{ color: "var(--color-sky)" }}
           >
             Connect a self-hosted vault
           </Link>

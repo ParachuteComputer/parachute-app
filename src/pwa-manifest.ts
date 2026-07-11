@@ -16,10 +16,10 @@ export function buildPwaManifest(base = "/"): Partial<ManifestOptions> {
     short_name: "Parachute",
     description:
       "Your notes, and a soft place for your thoughts to land. Browse, edit, and capture in any Parachute Vault.",
-    // New-brand pass (0.1.21): coral accent + warm paper, mirroring the CSS
+    // Wave-2 hybrid pass: coral accent + the cream canvas, mirroring the CSS
     // token values (--color-accent / --color-bg light theme).
     theme_color: "#bf4a2a",
-    background_color: "#fdfaf4",
+    background_color: "#fafaf6",
     display: "standalone",
     orientation: "any",
     start_url: normalized,

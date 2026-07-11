@@ -91,7 +91,7 @@ export function CheckEmail() {
               type="button"
               onClick={() => setSub("changeemail")}
               className="font-round text-sm font-semibold text-link hover:underline"
-              style={{ color: "var(--color-sage)" }}
+              style={{ color: "var(--color-sky)" }}
             >
               Use a different email
             </button>

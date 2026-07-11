@@ -69,7 +69,7 @@ function SelfHostSideDoor() {
         <Link
           to="/add"
           className="font-semibold hover:underline"
-          style={{ color: "var(--color-sage)" }}
+          style={{ color: "var(--color-sky)" }}
         >
           Connect your own vault →
         </Link>{" "}
@@ -152,7 +152,7 @@ function MagicLinkFrontDoor() {
   return (
     <Shell>
       <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
-      <p className="eyebrow mb-3">Welcome</p>
+      <p className="eyebrow eyebrow-accent mb-3">Welcome</p>
       <h1 className="hero-title mb-4">
         A soft place for your thoughts to <span className="accent-word">land.</span>
       </h1>
@@ -235,7 +235,7 @@ function PasswordFrontDoor({
   return (
     <Shell>
       <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
-      <p className="eyebrow mb-3">Welcome</p>
+      <p className="eyebrow eyebrow-accent mb-3">Welcome</p>
       <h1 className="hero-title mb-4">
         A soft place for your thoughts to <span className="accent-word">land.</span>
       </h1>
@@ -256,7 +256,7 @@ function PasswordFrontDoor({
           <a
             href={signupPath}
             className="font-semibold hover:underline"
-            style={{ color: "var(--color-sage)" }}
+            style={{ color: "var(--color-sky)" }}
           >
             Create your account →
           </a>
@@ -316,7 +316,7 @@ function AlreadySignedIn({
   return (
     <Shell>
       <ParachuteMark size={56} className="mx-auto mb-6" />
-      <p className="eyebrow mb-3">Signed in</p>
+      <p className="eyebrow eyebrow-accent mb-3">Signed in</p>
       <h1 className="hero-title mb-6" style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>
         You're already signed in as{" "}
         <span className="accent-word">{email ?? username ?? "your account"}</span>.
@@ -357,7 +357,7 @@ function NetError({ message, onRetry }: { message: string; onRetry?: () => void 
   return (
     <Shell>
       <ParachuteMark size={56} className="mx-auto mb-6" />
-      <p className="eyebrow mb-3">Almost there</p>
+      <p className="eyebrow eyebrow-accent mb-3">Almost there</p>
       <h1 className="hero-title mb-4" style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>
         You're signed in — we just couldn't fetch your <span className="accent-word">vaults.</span>
       </h1>
