@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyVaults, resolveBoot } from "./dispatch";
-import { loadAccountToken, loadLastSigninEmail } from "./store";
+import { loadAccountToken, loadLastSigninEmail, useAccountSessionStore } from "./store";
 import type { AccountVault } from "./types";
 
 const V = (name: string): AccountVault => ({
@@ -40,10 +40,12 @@ describe("resolveBoot", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    useAccountSessionStore.setState({ expired: false, gate: null });
   });
   afterEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    useAccountSessionStore.setState({ expired: false, gate: null });
   });
 
   it("goes straight Home when a vault is already connected on this device (no network)", async () => {
@@ -98,5 +100,71 @@ describe("resolveBoot", () => {
     });
     const decision = await resolveBoot({ hasLocalActiveVault: false, fetchImpl });
     expect(decision.kind).toBe("net-error");
+  });
+
+  // HUB-PARITY P4 — a password door may sign a person in under a `username`
+  // instead of `email` (no email identity model). The signed-in arm carries
+  // it through, and the email-presence guard on saveLastSigninEmail holds.
+  it("hub-shaped session (username, no email) → flows to the signed-in arm", async () => {
+    const fetchImpl = mockFetch({
+      "/account/session": { json: { signed_in: true, csrf: "c", username: "aaron" } },
+      "/account/token": { json: { token: "acct-tok", scopes: ["account:x:admin"] } },
+      "/account/vaults": { json: { vaults: [V("moss")] } },
+    });
+    const decision = await resolveBoot({ hasLocalActiveVault: false, fetchImpl });
+    expect(decision).toEqual({ kind: "signed-in", username: "aaron", vaults: [V("moss")] });
+    // No email on this session → the last-signin-email helper is never called.
+    expect(loadLastSigninEmail()).toBeNull();
+    expect(loadAccountToken()).toBe("acct-tok");
+  });
+
+  // HUB-PARITY P4 weather (design §2 row 4) — non-blocking gates, both set on
+  // the shared `useAccountSessionStore` for the app-wide `HubGateBanner`.
+  describe("hub gates (force_change_password / admin_locked)", () => {
+    it("session.password_change_required pre-empts the gate before the token mint even runs", async () => {
+      const fetchImpl = mockFetch({
+        "/account/session": {
+          json: { signed_in: true, csrf: "c", username: "aaron", password_change_required: true },
+        },
+        "/account/token": { json: { token: "acct-tok", scopes: ["s"] } },
+        "/account/vaults": { json: { vaults: [] } },
+      });
+      await resolveBoot({ hasLocalActiveVault: false, fetchImpl });
+      expect(useAccountSessionStore.getState().gate).toBe("force_change_password");
+    });
+
+    it('a 403 {error:"force_change_password"} on /account/token marks the gate and short-circuits to signed-in (no vault list retry)', async () => {
+      const fetchImpl = mockFetch({
+        "/account/session": { json: { signed_in: true, csrf: "c", username: "aaron" } },
+        "/account/token": { status: 403, json: { error: "force_change_password" } },
+        // Never requested: every C3 call (listVaults included) would just
+        // re-attempt the SAME failing mint, so resolveBoot short-circuits
+        // instead of retrying a doomed call.
+        "/account/vaults": { json: { vaults: [{ name: "should-not-be-fetched" }] } },
+      });
+      const decision = await resolveBoot({ hasLocalActiveVault: false, fetchImpl });
+      expect(useAccountSessionStore.getState().gate).toBe("force_change_password");
+      expect(decision).toEqual({ kind: "signed-in", username: "aaron", vaults: [] });
+    });
+
+    it("a 423 on /account/token marks the admin_locked gate", async () => {
+      const fetchImpl = mockFetch({
+        "/account/session": { json: { signed_in: true, csrf: "c", username: "aaron" } },
+        "/account/token": { status: 423, json: { error: "admin_locked" } },
+        "/account/vaults": { json: { vaults: [] } },
+      });
+      await resolveBoot({ hasLocalActiveVault: false, fetchImpl });
+      expect(useAccountSessionStore.getState().gate).toBe("admin_locked");
+    });
+
+    it("cloud's shipped shape (no password_change_required, /account/token 200s) never sets a gate", async () => {
+      const fetchImpl = mockFetch({
+        "/account/session": { json: { signed_in: true, csrf: "c", email: "ag@unforced.org" } },
+        "/account/token": { json: { token: "acct-tok", scopes: ["s"] } },
+        "/account/vaults": { json: { vaults: [] } },
+      });
+      await resolveBoot({ hasLocalActiveVault: false, fetchImpl });
+      expect(useAccountSessionStore.getState().gate).toBeNull();
+    });
   });
 });

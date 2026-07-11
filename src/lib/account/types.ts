@@ -36,6 +36,21 @@ export interface AccountSession {
    * "Account created ✓" cue (recently-created ⇒ fresh sign-up).
    */
   account_created_at?: string;
+  /**
+   * HUB-PARITY P4 tolerance: a password door (no self-serve signup / no email
+   * identity model) may sign a person in under a `username` instead of an
+   * `email`. "Signed in as X" falls back `email ?? username` everywhere it
+   * appears. Cloud never sends this (email-only) — present for hub parity.
+   */
+  username?: string;
+  /**
+   * HUB-PARITY P4: an operator-provisioned hub account may still be on its
+   * initial/operator-set password. When true, the boot dispatcher pre-empts
+   * the `/account/token` 403 `force_change_password` gate with the same
+   * non-blocking "Finish setting your password" weather (a cleaner hop — no
+   * need to wait for the mint to fail). Cloud never sends this.
+   */
+  password_change_required?: boolean;
 }
 
 /**

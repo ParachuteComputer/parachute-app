@@ -1,5 +1,5 @@
-import { getSession, listVaults, mintAccountToken } from "./client";
-import { saveAccountToken, saveLastSigninEmail } from "./store";
+import { AccountApiError, getSession, listVaults, mintAccountToken } from "./client";
+import { saveAccountToken, saveLastSigninEmail, useAccountSessionStore } from "./store";
 import type { AccountVault } from "./types";
 
 type Fetch = typeof fetch;
@@ -42,7 +42,7 @@ export function classifyVaults(vaults: AccountVault[]): PostSignInBranch {
 export type BootDecision =
   | { kind: "home" }
   | { kind: "front-door" }
-  | { kind: "signed-in"; email?: string; vaults: AccountVault[] }
+  | { kind: "signed-in"; email?: string; username?: string; vaults: AccountVault[] }
   | { kind: "net-error"; message: string };
 
 export async function resolveBoot({
@@ -65,20 +65,54 @@ export async function resolveBoot({
   if (!session.signed_in) return { kind: "front-door" };
 
   if (session.email) saveLastSigninEmail(session.email);
+  // HUB-PARITY P4 weather: the session can pre-empt the /account/token 403
+  // below with a cleaner hop — no need to wait for the mint to fail.
+  if (session.password_change_required) {
+    useAccountSessionStore.getState().markGate("force_change_password");
+  }
   // Mint the account token (C2) for the manager surface. Best-effort for the
   // dispatch itself — the vault list is cookie-authed, so a C2 hiccup shouldn't
   // strand a signed-in person.
   try {
     const account = await mintAccountToken(session.csrf, fetchImpl);
     saveAccountToken(account.token);
-  } catch {
-    // non-fatal for dispatch
+  } catch (err) {
+    if (markHubGateFromError(err)) {
+      // A KNOWN hub gate (force_change_password / admin_locked): every C3 call
+      // (listVaults included) would re-attempt the SAME failing mint and land
+      // on a confusing "couldn't fetch your vaults" net-error — the
+      // HubGateBanner already explains why, so short-circuit to signed-in
+      // with an empty vault list rather than retrying a doomed mint.
+      return { kind: "signed-in", email: session.email, username: session.username, vaults: [] };
+    }
+    // Non-fatal otherwise — the vault list is cookie-authed elsewhere; try it.
   }
 
   try {
     const { vaults } = await listVaults(fetchImpl);
-    return { kind: "signed-in", email: session.email, vaults };
+    return { kind: "signed-in", email: session.email, username: session.username, vaults };
   } catch (err) {
     return { kind: "net-error", message: err instanceof Error ? err.message : "Unknown error" };
   }
+}
+
+/**
+ * HUB-PARITY P4 weather (design §2 row 4): an `/account/token` 403
+ * `{error:"force_change_password"}` or 423 sets the matching non-blocking
+ * gate (`components/AccountSessionBanner.tsx`'s `HubGateBanner`). Cloud never
+ * throws either shape, so this is a no-op on the shipped door. Returns
+ * whether a known gate was recognized, so a caller (like `resolveBoot` above)
+ * can short-circuit further doomed-to-fail C3 calls instead of retrying them.
+ */
+export function markHubGateFromError(err: unknown): boolean {
+  if (!(err instanceof AccountApiError)) return false;
+  if (err.status === 403 && err.message === "force_change_password") {
+    useAccountSessionStore.getState().markGate("force_change_password");
+    return true;
+  }
+  if (err.status === 423) {
+    useAccountSessionStore.getState().markGate("admin_locked");
+    return true;
+  }
+  return false;
 }

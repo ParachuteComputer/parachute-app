@@ -1,5 +1,6 @@
 import { Welcome } from "@/app/routes/Welcome";
 import { getSession, listVaults } from "@/lib/account/client";
+import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -14,6 +15,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/account/client", () => ({
   getSession: vi.fn(),
   listVaults: vi.fn(),
+}));
+
+// Defaults to null (no descriptor / no template) — the naming echo's
+// documented fallback, keeping every pre-P4 test byte-unchanged.
+vi.mock("@/lib/account/descriptor", () => ({
+  getDoorDescriptor: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/lib/account/hosted-vault", async () => {
@@ -48,6 +55,7 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
   beforeEach(() => {
     vi.mocked(getSession).mockReset();
     vi.mocked(listVaults).mockReset();
+    vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
     vi.mocked(createHostedVault).mockReset().mockResolvedValue("v1");
     vi.mocked(openHostedVault).mockReset().mockResolvedValue("v1");
   });
@@ -101,6 +109,21 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       expect(screen.queryByText(/u\.parachute\.computer/i)).not.toBeInTheDocument();
       expect(screen.getByText(/the address is permanent/i)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /create mossgarden →/i })).toBeInTheDocument();
+    });
+
+    // HUB-PARITY P4: once a door advertises `vault_url_template`, the naming
+    // echo substitutes the typed name into it — preview-only (the real,
+    // post-creation address still comes from create/list responses).
+    it("echoes the real address from vault_url_template when the door advertises one", async () => {
+      vi.mocked(getDoorDescriptor).mockResolvedValue({
+        vault_url_template: "https://hub.example/vault/{name}",
+      });
+      renderWelcome();
+      await waitFor(() => expect(screen.getByText(/let's make your first/i)).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
+      await waitFor(() =>
+        expect(screen.getByText("https://hub.example/vault/moss")).toBeInTheDocument(),
+      );
     });
 
     it("has NO skip affordance and NO 'change it later' copy (the name is the immutable slug)", async () => {

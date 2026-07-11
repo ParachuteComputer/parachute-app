@@ -1,6 +1,7 @@
 import { Account } from "@/app/routes/Account";
-import { getAccountSummary, getSession, listVaults } from "@/lib/account/client";
+import { AccountApiError, getAccountSummary, getSession, listVaults } from "@/lib/account/client";
 import { openHostedVault } from "@/lib/account/hosted-vault";
+import { useAccountSessionStore } from "@/lib/account/store";
 import type { AccountSummary } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -11,12 +12,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Cloud vaults, AI connections — all driven by the account bearer. Degrades to a
 // calm "this device" view with no cloud door / signed out.
 
-vi.mock("@/lib/account/client", () => ({
-  getSession: vi.fn(),
-  listVaults: vi.fn(),
-  getAccountSummary: vi.fn(),
-  logout: vi.fn().mockResolvedValue(undefined),
-}));
+// Spreads the REAL module (not a bare object) so `AccountApiError` /
+// `SessionExpiredError` stay the real classes — `markHubGateFromError`
+// (dispatch.ts, HUB-PARITY P4) does an `instanceof AccountApiError` check on
+// whatever `listVaults()` rejects with, and a bare-object mock without those
+// classes would make that check throw (`instanceof` on `undefined`).
+vi.mock("@/lib/account/client", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/account/client")>("@/lib/account/client");
+  return {
+    ...actual,
+    getSession: vi.fn(),
+    listVaults: vi.fn(),
+    getAccountSummary: vi.fn(),
+    logout: vi.fn().mockResolvedValue(undefined),
+  };
+});
 vi.mock("@/lib/account/hosted-vault", () => ({
   openHostedVault: vi.fn().mockResolvedValue("v1"),
 }));
@@ -51,6 +62,7 @@ function renderAccount() {
 
 beforeEach(() => {
   useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  useAccountSessionStore.setState({ expired: false, gate: null });
   vi.mocked(getSession).mockReset();
   vi.mocked(listVaults).mockReset();
   vi.mocked(getAccountSummary).mockReset();
@@ -58,6 +70,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  useAccountSessionStore.setState({ expired: false, gate: null });
 });
 
 describe("Account — the app-as-manager surface", () => {
@@ -189,5 +202,61 @@ describe("Account — the app-as-manager surface", () => {
     const link = await screen.findByRole("link", { name: /manage plan & billing/i });
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noreferrer");
+  });
+
+  // HUB-PARITY P4 — a password door may sign a person in under `username`
+  // instead of `email`. "Signed in as X" falls back `email ?? username`.
+  it("falls back to username in the header when a hub-shaped session has no email", async () => {
+    vi.mocked(getSession).mockResolvedValue({ signed_in: true, csrf: "c", username: "aaron" });
+    vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+    vi.mocked(getAccountSummary).mockResolvedValue(null);
+
+    renderAccount();
+    await waitFor(() => expect(screen.getByText("aaron")).toBeInTheDocument());
+  });
+
+  // HUB-PARITY P4 weather (design §2 row 4): the account-token mint underlying
+  // listVaults() can 403 force_change_password / 423 — surface the matching
+  // non-blocking gate (`useAccountSessionStore`) rather than just degrading.
+  describe("hub gates (force_change_password / admin_locked)", () => {
+    it("a 403 force_change_password on the underlying token mint marks the gate", async () => {
+      vi.mocked(getSession).mockResolvedValue({ signed_in: true, csrf: "c", username: "aaron" });
+      vi.mocked(listVaults).mockRejectedValue(new AccountApiError(403, "force_change_password"));
+      vi.mocked(getAccountSummary).mockResolvedValue(null);
+
+      renderAccount();
+      await waitFor(() =>
+        expect(screen.getByText(/couldn't load your vaults/i)).toBeInTheDocument(),
+      );
+      expect(useAccountSessionStore.getState().gate).toBe("force_change_password");
+    });
+
+    it("a 423 marks the admin_locked gate", async () => {
+      vi.mocked(getSession).mockResolvedValue({ signed_in: true, csrf: "c", username: "aaron" });
+      vi.mocked(listVaults).mockRejectedValue(new AccountApiError(423, "admin_locked"));
+      vi.mocked(getAccountSummary).mockResolvedValue(null);
+
+      renderAccount();
+      await waitFor(() =>
+        expect(screen.getByText(/couldn't load your vaults/i)).toBeInTheDocument(),
+      );
+      expect(useAccountSessionStore.getState().gate).toBe("admin_locked");
+    });
+
+    it("an ordinary failure (not a hub gate) never sets a gate", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "c",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockRejectedValue(new Error("500"));
+      vi.mocked(getAccountSummary).mockResolvedValue(null);
+
+      renderAccount();
+      await waitFor(() =>
+        expect(screen.getByText(/couldn't load your vaults/i)).toBeInTheDocument(),
+      );
+      expect(useAccountSessionStore.getState().gate).toBeNull();
+    });
   });
 });

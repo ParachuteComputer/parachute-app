@@ -1,4 +1,5 @@
 import { getAccountSummary, getSession, listVaults, logout } from "@/lib/account/client";
+import { markHubGateFromError } from "@/lib/account/dispatch";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { formatBytes, formatUsageBytes, manageBillingUrl } from "@/lib/account/provenance";
 import { clearAccountToken } from "@/lib/account/store";
@@ -22,6 +23,9 @@ type View =
   | {
       kind: "manager";
       email?: string;
+      /** HUB-PARITY P4: a password door may sign in under a username instead
+       *  of an email; "Signed in as X" falls back `email ?? username`. */
+      username?: string;
       csrf: string;
       // null = the vault list FAILED to load (transient 500 / session lapse).
       // Distinct from [] (genuinely no vaults) so we never show the "create your
@@ -56,11 +60,24 @@ export function Account() {
       const [vaults, summary] = await Promise.all([
         listVaults()
           .then((r) => r.vaults)
-          .catch(() => null),
+          .catch((err) => {
+            // HUB-PARITY P4 weather: the account-token mint underlying this
+            // call may 403 force_change_password / 423 — surface the
+            // matching non-blocking gate rather than just degrading to null.
+            markHubGateFromError(err);
+            return null;
+          }),
         getAccountSummary(),
       ]);
       if (live) {
-        setView({ kind: "manager", email: session.email, csrf: session.csrf, vaults, summary });
+        setView({
+          kind: "manager",
+          email: session.email,
+          username: session.username,
+          csrf: session.csrf,
+          vaults,
+          summary,
+        });
       }
     })();
     return () => {
@@ -103,6 +120,7 @@ export function Account() {
       ) : (
         <ManagerView
           email={view.email}
+          username={view.username}
           csrf={view.csrf}
           vaults={view.vaults}
           summary={view.summary}
@@ -117,12 +135,14 @@ export function Account() {
 // connections — everything driven by the account bearer.
 function ManagerView({
   email,
+  username,
   csrf,
   vaults,
   summary,
   onReloadVaults,
 }: {
   email?: string;
+  username?: string;
   csrf: string;
   vaults: AccountVault[] | null;
   summary: AccountSummary | null;
@@ -144,7 +164,13 @@ function ManagerView({
 
   return (
     <div className="space-y-8">
-      <AccountBlock email={email} summary={summary} billingUrl={billingUrl} onSignOut={signOut} />
+      <AccountBlock
+        email={email}
+        username={username}
+        summary={summary}
+        billingUrl={billingUrl}
+        onSignOut={signOut}
+      />
       <VaultsBlock vaults={vaults} onReload={onReloadVaults} />
       <ConnectionsBlock hasActiveVault={!!activeVault} />
     </div>
@@ -155,11 +181,13 @@ function ManagerView({
 // never fabricated) + the one true trip out: Manage plan & billing.
 function AccountBlock({
   email,
+  username,
   summary,
   billingUrl,
   onSignOut,
 }: {
   email?: string;
+  username?: string;
   summary: AccountSummary | null;
   billingUrl: string | null;
   onSignOut: () => void;
@@ -170,7 +198,9 @@ function AccountBlock({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="eyebrow mb-1">Signed in as</p>
-          <p className="truncate font-serif text-xl text-fg">{email ?? "your account"}</p>
+          <p className="truncate font-serif text-xl text-fg">
+            {email ?? username ?? "your account"}
+          </p>
           {planLine ? (
             <p className="mt-2 text-sm text-fg-muted">{planLine}</p>
           ) : (

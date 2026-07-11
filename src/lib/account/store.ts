@@ -55,6 +55,15 @@ export function clearAccountToken(): void {
 }
 
 /**
+ * HUB-PARITY P4 — the hub's two extra, non-blocking gates (design §2 row 4):
+ * `force_change_password` (an operator-provisioned account still on its
+ * initial password) and `admin_locked` (the admin screen is locked). Cloud
+ * never triggers either. Both are weather, never a wall — reading local notes
+ * is never gated on them.
+ */
+export type HubGate = "force_change_password" | "admin_locked";
+
+/**
  * Reactive hosted-session state for the app-wide, NON-BLOCKING "your sign-in
  * ended" banner (SYNTHESIS weather #12). Set when a hosted call 401s; reading
  * notes is never blocked — the banner just invites re-signing to keep syncing.
@@ -63,10 +72,17 @@ interface AccountSessionState {
   expired: boolean;
   markExpired: () => void;
   clearExpired: () => void;
+  /** See `HubGate` — set by the boot dispatcher / Account surface. */
+  gate: HubGate | null;
+  markGate: (gate: HubGate) => void;
+  clearGate: () => void;
 }
 
 export const useAccountSessionStore = create<AccountSessionState>((set) => ({
   expired: false,
   markExpired: () => set({ expired: true }),
   clearExpired: () => set({ expired: false }),
+  gate: null,
+  markGate: (gate) => set({ gate }),
+  clearGate: () => set({ gate: null }),
 }));

@@ -143,3 +143,21 @@ export function detectMountBaseWithSlash(pathname?: string, doc?: Document): str
   const base = detectMountBase(pathname, doc);
   return base.endsWith("/") ? base : `${base}/`;
 }
+
+/**
+ * Prefix an APP-relative path with the runtime mount base (HUB-PARITY P4).
+ *
+ * Use this for a path you're handing to ANOTHER origin as a "come back here"
+ * target — e.g. `next=` on a password-door sign-in redirect, or `next=` on
+ * the hub's own `/account/change-password`. Under a hub the app is served at
+ * `/app`, so the in-app route `/welcome` must round-trip as `/app/welcome` —
+ * `detectMountBase()` (via the meta-tag contract, once the host injects one)
+ * carries that prefix.
+ *
+ * Apply this ONLY to the app-relative path, never to the other door's own
+ * path (`signin_path`, `/account/change-password`, `/admin`, …) — those are
+ * origin-rooted on the door serving them, not mount-prefixed app routes.
+ */
+export function withMount(path: string): string {
+  return `${detectMountBase()}${path}`;
+}
