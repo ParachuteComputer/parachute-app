@@ -82,6 +82,26 @@ describe("OAuthCallback pending-approval rendering", () => {
     expect(screen.queryByText(/connection failed/i)).not.toBeInTheDocument();
   });
 
+  // SYNTHESIS #11 restyle (sceneHubHandoff-flavored) — the headline names the
+  // host pulled straight off approve_url, so "who's asking" is never a mystery.
+  it("names the host from approve_url in the 'Approving Parachute on {host}' headline", async () => {
+    savePendingOAuth(pending);
+    const approveUrl = "http://localhost:1940/admin/approve-client/client-123";
+    mockTokenResponse({
+      body: JSON.stringify({
+        error: "invalid_client",
+        error_description: "client pending approval",
+        approve_url: approveUrl,
+      }),
+    });
+
+    renderCallback();
+
+    expect(
+      await screen.findByRole("heading", { name: /approving parachute on localhost:1940/i }),
+    ).toBeInTheDocument();
+  });
+
   it("'Retry now' navigates to /add (single-use code: reload would re-redeem and 4xx)", async () => {
     // Single-use authorization codes (RFC 6749 §4.1.2) mean a naive
     // reload-with-same-params strategy reuses the already-redeemed code and
@@ -434,6 +454,15 @@ describe("OAuthCallback error rendering", () => {
       await screen.findByText(
         "Vault returned: invalid_scope — you do not own the vault: e2e-notes",
       ),
+    ).toBeInTheDocument();
+  });
+
+  // SYNTHESIS #11 restyle — the generic failure card's eyebrow + headline.
+  it("shows the 'Connection failed' eyebrow and 'sideways' headline", async () => {
+    renderWithError("error=access_denied");
+    expect(await screen.findByText("Connection failed")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: /something went sideways\./i }),
     ).toBeInTheDocument();
   });
 

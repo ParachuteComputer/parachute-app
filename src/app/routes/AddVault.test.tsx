@@ -128,6 +128,49 @@ describe("AddVault URL prefill", () => {
   });
 });
 
+// SYNTHESIS #11 restyle — the self-hosted "Connect your own vault" copy +
+// the ONE announced origin hop, live off the typed hostname. Kept separate
+// from the mechanics suites above (those assert on the observable OAuth
+// side-effects; these assert on the copy/DOM the restyle actually changed).
+describe("AddVault self-hosted restyle (SYNTHESIS #11)", () => {
+  beforeEach(() => {
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  });
+
+  it("renders the self-hosted eyebrow and headline", async () => {
+    mockFetchOnce({ throwNetwork: true });
+    renderAddVault();
+    expect(screen.getByText("Self-hosted")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /connect your own vault\./i })).toBeInTheDocument();
+  });
+
+  it("shows no announced-hop box until the address looks valid, then names the live host", async () => {
+    const fetchImpl = mockFetchOnce({ throwNetwork: true });
+    renderAddVault();
+    const input = screen.getByLabelText(/vault address/i) as HTMLInputElement;
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+
+    // Empty field — the one deliberate origin change stays unannounced
+    // until there's actually somewhere to announce.
+    expect(screen.queryByText(/your server, not ours/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "hub.example.com" } });
+
+    expect(screen.getByText(/your server, not ours/i)).toBeInTheDocument();
+    expect(screen.getByText("hub.example.com")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue to hub\.example\.com/i }),
+    ).toBeInTheDocument();
+  });
+});
+
 // Aaron hit "Cannot read properties of undefined (reading 'digest')" on
 // fresh-install testing when serving Notes from a non-HTTPS / non-localhost
 // origin. The defensive check in `pkce.ts` now throws

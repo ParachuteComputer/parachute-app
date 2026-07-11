@@ -87,7 +87,9 @@ describe("App", () => {
 
     // Lands on the connect screen (lazy route), field prefilled from the
     // forwarded ?add= value.
-    expect(await screen.findByRole("heading", { name: /connect a vault/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: /connect your own vault/i }),
+    ).toBeInTheDocument();
     expect((screen.getByLabelText(/vault address/i) as HTMLInputElement).value).toBe(
       "https://u.parachute.computer/vault/aaron",
     );

@@ -32,6 +32,9 @@ import { Today } from "./routes/Today";
 // layer, settings, etc. don't pile into the initial download.
 const Activity = lazy(() => import("./routes/Activity").then((m) => ({ default: m.Activity })));
 const AddVault = lazy(() => import("./routes/AddVault").then((m) => ({ default: m.AddVault })));
+const AddVaultChooser = lazy(() =>
+  import("./routes/AddVaultChooser").then((m) => ({ default: m.AddVaultChooser })),
+);
 const Calendar = lazy(() => import("./routes/Calendar").then((m) => ({ default: m.Calendar })));
 const ConnectAI = lazy(() => import("./routes/ConnectAI").then((m) => ({ default: m.ConnectAI })));
 const Import = lazy(() => import("./routes/Import").then((m) => ({ default: m.Import })));
@@ -261,6 +264,7 @@ export function App() {
                       <Route path="/:id" element={<NoteIdRedirect />} />
                       <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
                       <Route path="/add" element={<AddVault />} />
+                      <Route path="/add-vault" element={<AddVaultChooser />} />
                       <Route path="/welcome" element={<Welcome />} />
                       <Route path="/oauth/callback" element={<OAuthCallback />} />
                       <Route path="/vaults" element={<Vaults />} />
