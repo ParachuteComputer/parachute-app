@@ -1,5 +1,54 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.8.0] - 2026-07-11
+
+**W2-8 — `/account` "Your parachute" + trial ambience (F4 full / WALK-manager #1).** The manager
+half gets a real home: the account page rebuilds into the prototype-language four-card stack, the
+plan can never silently vanish again, and the trial surfaces ambiently in exactly the four
+sanctioned places. Minor bump: a full surface rebuild plus a client-contract addition
+(`getAccountSummaryState`).
+
+- **`/account` rebuilt as "Your parachute"** (DESIGN-SPEC §3.1): H1 + sub-line, no breadcrumb (a
+  primary-nav room, F11), four cards at prose width — **Identity** (`SIGNED IN AS` eyebrow, email
+  in Fraunces, inline plan chip: sun-soft trial countdown / quiet plan label / none on failure,
+  the quiet Sign-out ghost), **Plan & billing**, **Your vaults**, **Connections**. The signed-out
+  "This device" view is unchanged.
+- **The five Plan & billing states, all designed** — loading (skeleton lines) · billing-disabled
+  (card absent) · **summary-fetch-FAILED (the card's own retry state: "Couldn't load your plan." ·
+  "A hiccup reaching your account — your plan hasn't changed." · pill Retry that recovers in
+  place)** · trial/free (current-plan line + interval picker + plan cards) · paid (portal pill).
+  Previously a failed `GET /account/summary` silently removed ALL plan information from the app
+  with no symptom and no retry (WALK-manager #1, `desktop-11-null-summary-account.png`).
+- **Failed ≠ absent — the tri-state summary seam.** New `getAccountSummaryState()` (client.ts):
+  200 → summary, **404/501 → `null`** (the door honestly serves no summary — a hub's steady
+  state; the card is absent, never a retry that can't succeed), **anything transient → `"error"`**
+  (network/5xx → the retry card). `getAccountSummary()` remains the ambient collapse-to-null read.
+  The shared `useAccountSummary()` hook now carries the tri-state (error answers are never cached:
+  `staleTime` 0 on `"error"`), and `/account` consumes the same cached query as the switcher and
+  the nav badge.
+- **Honest checkout errors:** a 400 `invalid_plan`/`invalid_interval`/`invalid_tier` now reads
+  "That plan isn't offered on this cycle — pick another." — never "Billing isn't available right
+  now." for a plan-shaped 400 (that line is reserved for real unavailability: 503/unknown).
+  Billing errors render as the visible danger-soft line, not a dim gray whisper.
+- **Honest per-interval price lines** (decision a): each plan card lists every cycle it actually
+  sells from the door's own labels — Entry reads "$3/quarter · $10/yr — about $1/mo", with the
+  "about" equivalence only for tiers with no monthly cycle. Interval-picker mechanics unchanged
+  (PR #11); this is the §3.1 restyle around them.
+- **Vaults card:** "n of m on your plan" meter (only when the summary carries both numbers),
+  glyph-circle rows (initial in grass-soft · name in Fraunces · mono address · usage · "Open →"
+  pill), the failure retry card kept, and the foot collapsed to **one verb** "＋ Add a vault" →
+  `/add-vault` (the chooser holds the create/connect fork; the old two-verb foot and the "All on
+  this device →" header link retire — the rail/sheet's Vaults row carries that door now).
+- **Connections card:** two icon-in-soft-circle rows — "Connect your AI" → `/connect`, "Import
+  notes" → `/import`; with no active vault the AI row dims with "Open a vault above to connect an
+  AI to it."
+- **Trial ambience — exactly the four sanctioned places (decision b), nowhere else:** (1) the
+  switcher foot line (W2-4, verified), (2) Home's `PlanBacklink` becomes "Free trial · N days
+  left · Manage your account →" while trialing, (3) the rail/sheet "Account & plan" badge (W2-5,
+  verified — now reads through the tri-state), (4) **the Today countdown nudge, only at
+  `trial_days_left ≤ 7`**: a sun row under the composer — "Your trial ends in N days — see
+  plans →" → `/account`. Not dismissible, never a modal, never on any other page.
+
 ## [0.7.1] - 2026-07-11
 
 **W2-7 — route renames with shims: `/all`→`/notes`, `/graph`→`/map` (F16).** Label–URL agreement:

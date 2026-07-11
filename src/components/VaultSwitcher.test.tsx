@@ -229,7 +229,7 @@ describe("VaultSwitcher (component)", () => {
     useToastStore.setState({ toasts: [] });
     vi.restoreAllMocks();
     // Default: no door session — summary and account list degrade to null.
-    vi.spyOn(accountClient, "getAccountSummary").mockResolvedValue(null);
+    vi.spyOn(accountClient, "getAccountSummaryState").mockResolvedValue(null);
     vi.spyOn(accountClient, "listVaults").mockRejectedValue(
       new accountClient.SessionExpiredError(),
     );
@@ -425,7 +425,7 @@ describe("VaultSwitcher (component)", () => {
 
   it("renders the upsell instead of Create at the vault limit — the 409 is unreachable", async () => {
     seedDefaultVault();
-    vi.spyOn(accountClient, "getAccountSummary").mockResolvedValue(
+    vi.spyOn(accountClient, "getAccountSummaryState").mockResolvedValue(
       summaryWith({ tier: "trial", label: "Free trial", vault_limit: 1, vaults_used: 1 }),
     );
     renderSwitcher();
@@ -440,7 +440,7 @@ describe("VaultSwitcher (component)", () => {
 
   it("renders the plain Create verb below the limit", async () => {
     seedDefaultVault();
-    vi.spyOn(accountClient, "getAccountSummary").mockResolvedValue(
+    vi.spyOn(accountClient, "getAccountSummaryState").mockResolvedValue(
       summaryWith({ tier: "standard", label: "Standard", vault_limit: 3, vaults_used: 1 }),
     );
     renderSwitcher();
@@ -479,7 +479,7 @@ describe("VaultSwitcher (component)", () => {
 
   it("shows the trial foot line only while trialing, linking /account", async () => {
     seedDefaultVault();
-    vi.spyOn(accountClient, "getAccountSummary").mockResolvedValue(
+    vi.spyOn(accountClient, "getAccountSummaryState").mockResolvedValue(
       summaryWith({
         tier: "trial",
         label: "Free trial",
@@ -496,7 +496,7 @@ describe("VaultSwitcher (component)", () => {
 
   it("renders 'ends today' at 0 trial days left (not '0 days left')", async () => {
     seedDefaultVault();
-    vi.spyOn(accountClient, "getAccountSummary").mockResolvedValue(
+    vi.spyOn(accountClient, "getAccountSummaryState").mockResolvedValue(
       summaryWith({
         tier: "trial",
         label: "Free trial",
@@ -514,7 +514,7 @@ describe("VaultSwitcher (component)", () => {
 
   it("shows no trial line on a paid plan", async () => {
     seedDefaultVault();
-    vi.spyOn(accountClient, "getAccountSummary").mockResolvedValue(
+    vi.spyOn(accountClient, "getAccountSummaryState").mockResolvedValue(
       summaryWith({ tier: "standard", label: "Standard", vault_limit: 3, vaults_used: 1 }),
     );
     renderSwitcher();

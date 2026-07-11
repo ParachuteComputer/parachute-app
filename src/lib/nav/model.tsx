@@ -12,7 +12,7 @@ import {
   IconVault,
 } from "@/components/NavIcons";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
-import { useAccountSummary } from "@/lib/account/use-summary";
+import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import { type HomeStepId, deriveSteps, hasUserAuthoredNote } from "@/lib/home/checklist";
 import { useHomeChecklist } from "@/lib/home/use-home-checklist";
 import { useInstallAffordance } from "@/lib/pwa-install";
@@ -280,7 +280,9 @@ export function useNavBands(): NavBand[] {
   // just appears when the answer lands.
   const isHosted = vault !== null && isHostedVaultRecord(vault.clientId);
   const summaryQuery = useAccountSummary({ enabled: isHosted });
-  const plan = (isHosted ? (summaryQuery.data ?? null) : null)?.plan ?? null;
+  // Ambient read: failed and absent both mean "no chip" (the retry affordance
+  // lives on /account's Plan & billing card, not in a badge).
+  const plan = (isHosted ? summaryOrNull(summaryQuery.data) : null)?.plan ?? null;
   const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
 
   if (!vault) return [];
