@@ -1,3 +1,4 @@
+import { loadToken } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as client from "./client";
@@ -20,12 +21,11 @@ describe("openHostedVault — door-agnostic (same-origin home door)", () => {
     localStorage.clear();
   });
 
-  it("stores the vault with issuer = the serving origin, not a cloud host", async () => {
+  it("maps cloud's C3 response and stores issuer = the serving origin, not a cloud host", async () => {
+    // Cloud's REAL C3 shape: { vault_token, expires_at (ISO), services }.
     vi.spyOn(client, "mintVaultToken").mockResolvedValue({
-      access_token: "vault-tok",
-      token_type: "bearer",
-      scope: "vault:read vault:write",
-      vault: "moss",
+      vault_token: "vault-tok",
+      expires_at: "2026-07-11T00:00:00.000Z",
       services: { "vault:moss": { url: "https://u.parachute.computer/vault/moss" } },
     });
 
@@ -37,14 +37,17 @@ describe("openHostedVault — door-agnostic (same-origin home door)", () => {
     expect(rec?.url).toBe("https://u.parachute.computer/vault/moss");
     expect(rec?.clientId).toBe(HOSTED_CLIENT_ID);
     expect(isHostedVaultRecord(rec?.clientId ?? "")).toBe(true);
+    // The token is stored from vault_token + derived scope + ISO→ms expiry.
+    const token = loadToken(id);
+    expect(token?.accessToken).toBe("vault-tok");
+    expect(token?.scope).toBe("vault:moss:read vault:moss:write");
+    expect(token?.expiresAt).toBe(Date.parse("2026-07-11T00:00:00.000Z"));
   });
 
   it("throws (no fabricated cloud origin) when the C3 token omits its services URL", async () => {
     vi.spyOn(client, "mintVaultToken").mockResolvedValue({
-      access_token: "vault-tok",
-      token_type: "bearer",
-      scope: "vault:read vault:write",
-      vault: "moss",
+      vault_token: "vault-tok",
+      expires_at: "2026-07-11T00:00:00.000Z",
       // no services catalog → the door didn't tell us where the vault lives
     });
     await expect(openHostedVault("moss", "csrf")).rejects.toThrow(/services\.vault\.url/);

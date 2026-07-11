@@ -1,9 +1,9 @@
-import type { TokenResponse } from "@/lib/vault/types";
 import type {
   AccountSession,
   AccountTokenResponse,
   AccountVaultsResponse,
   CreateVaultResponse,
+  VaultTokenResponse,
 } from "./types";
 
 /**
@@ -120,18 +120,19 @@ export async function createVault(
   return jsonOrThrow<CreateVaultResponse>(res);
 }
 
-/** `POST /account/vaults/<name>/token` (C3) — mint a per-vault token the notes
- *  layer uses. TokenResponse-shaped so `storedFromTokenResponse` + `addVault`
- *  consume it unchanged. */
+/** `POST /account/vaults/<name>/token` (C3) — mint a per-vault token. Cloud
+ *  returns `{ vault_token, expires_at, services }` (NOT the OAuth TokenResponse);
+ *  `hosted-vault.ts` maps it into a StoredToken. Scope defaults to read+write
+ *  server-side when the body omits `scopes`. */
 export async function mintVaultToken(
   name: string,
   csrf: string,
   fetchImpl: Fetch = fetch.bind(globalThis),
-): Promise<TokenResponse> {
+): Promise<VaultTokenResponse> {
   const res = await post(fetchImpl, `/account/vaults/${encodeURIComponent(name)}/token`, {
     __csrf: csrf,
   });
-  return jsonOrThrow<TokenResponse>(res);
+  return jsonOrThrow<VaultTokenResponse>(res);
 }
 
 /** `POST /logout` — end the session. */

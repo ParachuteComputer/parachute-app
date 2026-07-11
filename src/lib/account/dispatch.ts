@@ -70,7 +70,7 @@ export async function resolveBoot({
   // strand a signed-in person.
   try {
     const account = await mintAccountToken(session.csrf, fetchImpl);
-    saveAccountToken(account.access_token);
+    saveAccountToken(account.token);
   } catch {
     // non-fatal for dispatch
   }

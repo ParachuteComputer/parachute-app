@@ -62,8 +62,13 @@ describe("resolveBoot", () => {
   it("signed in → returns the vault list, and persists email + account token", async () => {
     const fetchImpl = mockFetch({
       "/account/session": { json: { signed_in: true, csrf: "c", email: "ag@unforced.org" } },
+      // Cloud's REAL C2 shape: { token, expires_at, scopes, aud }.
       "/account/token": {
-        json: { access_token: "acct-tok", token_type: "bearer", scope: "account:x:admin" },
+        json: {
+          token: "acct-tok",
+          expires_at: "2026-07-11T00:00:00.000Z",
+          scopes: ["account:x:admin"],
+        },
       },
       "/account/vaults": { json: { vaults: [V("moss"), V("journal")] } },
     });
@@ -88,7 +93,7 @@ describe("resolveBoot", () => {
   it("signed in but the vault list fails → net-error weather", async () => {
     const fetchImpl = mockFetch({
       "/account/session": { json: { signed_in: true, csrf: "c", email: "ag@unforced.org" } },
-      "/account/token": { json: { access_token: "acct-tok", token_type: "bearer", scope: "s" } },
+      "/account/token": { json: { token: "acct-tok", scopes: ["s"] } },
       "/account/vaults": { status: 500, json: { error: "boom" } },
     });
     const decision = await resolveBoot({ hasLocalActiveVault: false, fetchImpl });

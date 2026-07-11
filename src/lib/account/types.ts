@@ -11,8 +11,11 @@
  * ⚠ CONTRACT-OF-RECORD FOR THE APP SIDE. Cloud's G1–G5 are built in parallel;
  * these are the exact shapes the app consumes, so cloud should be pinned to
  * them (the "don't let two impls guess a cross-repo interface" rule). Fields
- * marked ASSUMED aren't nailed down in SYNTHESIS — reconcile before cutover.
+ * Every response shape below is VERIFIED against cloud's merged source
+ * (workers/identity/src/account-api.ts + account-token.ts).
  */
+
+import type { ServicesCatalog } from "@/lib/vault/types";
 
 /** `GET /account/session` — the boot oracle. Cheap; cookie-authed. */
 export interface AccountSession {
@@ -64,24 +67,44 @@ export interface AccountVaultsResponse {
 }
 
 /**
- * `POST /account/vaults` (cloud) → `{ name, url, vault_token, services }`. We
- * consume name + url here; `createHostedVault` mints the per-vault token via C3
- * (well-defined TokenResponse shape) rather than depend on `vault_token`'s exact
- * type — a redundant call we can drop once `vault_token` is pinned.
+ * `POST /account/vaults` (cloud account-api.ts) — creates a vault AND returns a
+ * ready-to-use per-vault token inline (the "land you IN the vault, no extra
+ * round-trip" hinge), so `createHostedVault` stores it directly.
+ * VERIFIED against cloud source: `{ name, url, vault_token, services }`.
  */
 export interface CreateVaultResponse {
   name: string;
-  url: string;
+  url?: string;
+  /** The per-vault token STRING (not RFC-6749 `access_token`). */
+  vault_token?: string;
+  services?: ServicesCatalog;
+}
+
+/**
+ * `POST /account/vaults/<name>/token` (C3) — mints a per-vault token.
+ * VERIFIED against cloud: `{ vault_token, expires_at, services }`. NOTE it is
+ * NOT the OAuth `TokenResponse` shape — the token is `vault_token` (a string),
+ * `expires_at` is an ISO-8601 string, and there is no top-level `scope`/`vault`
+ * (the app derives scope = `vault:<name>:{read,write}`; vault = the name). The
+ * `services` catalog carries `services["vault:<name>"].url` + `services.vault.url`.
+ */
+export interface VaultTokenResponse {
+  vault_token: string;
+  /** ISO-8601 absolute expiry. */
+  expires_at?: string;
+  services?: ServicesCatalog;
 }
 
 /**
  * `POST /account/token` (C2) — mints the full account token
- * `account:<session-user>:admin`. RFC-6749-shaped so the same envelope reader
- * works. The app holds this to drive account management.
+ * `account:<session-user>:admin`. VERIFIED against cloud account-token.ts:
+ * `{ token, expires_at, scopes, aud }` — NOT RFC-6749 (`token` not
+ * `access_token`; `scopes` array not `scope` string; `expires_at` ISO string).
  */
 export interface AccountTokenResponse {
-  access_token: string;
-  token_type: "bearer";
-  scope: string;
-  expires_in?: number;
+  token: string;
+  /** ISO-8601 absolute expiry. */
+  expires_at?: string;
+  scopes?: string[];
+  aud?: string;
 }
