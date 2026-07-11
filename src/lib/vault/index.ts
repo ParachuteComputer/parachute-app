@@ -18,6 +18,7 @@ export * from "./reachability-store";
 export * from "./settings";
 export * from "./storage";
 export * from "./store";
+export * from "./switch";
 export * from "./tag-roles";
 export * from "./types";
 export * from "./url";

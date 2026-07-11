@@ -9,7 +9,7 @@ import {
   IconUser,
 } from "@/components/NavIcons";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { VaultPopover } from "@/components/VaultPopover";
+import { VaultSwitcher } from "@/components/VaultSwitcher";
 import {
   type DerivedStep,
   type HomeStepId,
@@ -50,7 +50,7 @@ export function Rail() {
       style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
       <div className="p-3">
-        <VaultPopover variant="rail" />
+        <VaultSwitcher variant="rail" />
         <RailSearch />
       </div>
 

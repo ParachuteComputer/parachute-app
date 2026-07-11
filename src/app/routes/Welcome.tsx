@@ -6,6 +6,7 @@ import { describeAccountError } from "@/lib/account/error-copy";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
 import { formatUsageBytes } from "@/lib/account/provenance";
 import type { AccountVault } from "@/lib/account/types";
+import { announceVaultSwitch } from "@/lib/vault/switch";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 
@@ -194,6 +195,9 @@ export function Welcome() {
     (async () => {
       try {
         await openHostedVault(vaultName);
+        // §4.4 switch-confirmation — the auto-open changes the active vault,
+        // so it announces too (the toast renders after landing).
+        announceVaultSwitch(vaultName);
         // NAVIGATION.md: (d) the single post-auth landing — replace.
         navigate("/", { replace: true });
       } catch (err) {
@@ -257,7 +261,13 @@ export function Welcome() {
           // re-resolves against the now-created vault (welcome-back → replace
           // → `/`): you end up right back in your vault, never on a stale or
           // re-creating screen.
-          onOpen={() => navigate("/")}
+          // §4.4: the ready beat's Open confirms with the toast. (Truthful
+          // today because createHostedVault already activated the vault;
+          // W2-6's create≠activate split moves the activation here.)
+          onOpen={() => {
+            announceVaultSwitch(stage.name);
+            navigate("/");
+          }}
           onRetry={() => setStage({ kind: "naming", ...stage.back })}
         />
       );
@@ -281,6 +291,8 @@ export function Welcome() {
           vaults={stage.vaults}
           onOpenVault={async (vault) => {
             await openHostedVault(vault.name);
+            // §4.4 switch-confirmation: "Now in {vault}".
+            announceVaultSwitch(vault.name);
             // NAVIGATION.md: "Picker: user picks a vault → /" — user-
             // initiated, push. Back to the picker is harmless and useful.
             navigate("/");

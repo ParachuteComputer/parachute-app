@@ -5,3 +5,4 @@ export * from "./descriptor";
 export * from "./dispatch";
 export * from "./hosted-vault";
 export * from "./provenance";
+export * from "./use-summary";

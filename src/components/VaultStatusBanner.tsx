@@ -77,7 +77,7 @@ function AuthHaltBanner({
     } catch (err) {
       // Insecure-context surfaces with a structured remediation banner
       // instead of being squashed into the red one-liner — same reasoning
-      // as AddVault / VaultPopover.
+      // as AddVault / VaultSwitcher.
       if (err instanceof InsecureContextError) {
         setInsecureContext(true);
       } else {

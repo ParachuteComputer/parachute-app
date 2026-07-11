@@ -1,8 +1,9 @@
 import { Vaults } from "@/app/routes/Vaults";
 import { HOSTED_CLIENT_ID } from "@/lib/account";
+import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault";
 import type { VaultRecord } from "@/lib/vault/types";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -31,8 +32,14 @@ function renderVaults() {
   );
 }
 
-beforeEach(() => useVaultStore.setState({ vaults: {}, activeVaultId: null }));
-afterEach(() => useVaultStore.setState({ vaults: {}, activeVaultId: null }));
+beforeEach(() => {
+  useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  useToastStore.setState({ toasts: [] });
+});
+afterEach(() => {
+  useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  useToastStore.setState({ toasts: [] });
+});
 
 describe("Vaults — provenance chips + honest remove copy", () => {
   it("labels a home-door vault Cloud", () => {
@@ -65,6 +72,28 @@ describe("Vaults — provenance chips + honest remove copy", () => {
     useVaultStore.setState({ vaults: { "1": vaultRecord({}) }, activeVaultId: "1" });
     renderVaults();
     expect(screen.getByRole("button", { name: /remove from this device/i })).toBeInTheDocument();
+  });
+});
+
+// §4.4 switch-confirmation (WALK-manager #2) — Make active is a switch path,
+// so it announces "Now in {vault}" like every other one.
+describe("Vaults — Make active confirms the switch", () => {
+  it("switches the active vault and toasts 'Now in {vault}'", () => {
+    useVaultStore.setState({
+      vaults: {
+        "1": vaultRecord({}),
+        "2": vaultRecord({
+          id: "2",
+          name: "fieldnotes",
+          url: "https://u.parachute.computer/vault/fieldnotes",
+        }),
+      },
+      activeVaultId: "1",
+    });
+    renderVaults();
+    fireEvent.click(screen.getByRole("button", { name: /make active/i }));
+    expect(useVaultStore.getState().activeVaultId).toBe("2");
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Now in fieldnotes");
   });
 });
 

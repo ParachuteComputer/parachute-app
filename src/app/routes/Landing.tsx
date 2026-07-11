@@ -5,6 +5,7 @@ import { openHostedVault } from "@/lib/account/hosted-vault";
 import { clearAccountToken, loadLastSigninEmail, saveLastSigninEmail } from "@/lib/account/store";
 import type { AccountVault } from "@/lib/account/types";
 import { withMount } from "@/lib/base-url";
+import { announceVaultSwitch } from "@/lib/vault/switch";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
@@ -295,6 +296,8 @@ function AlreadySignedIn({
     try {
       // The account bearer is minted + cached inside the client; no csrf needed.
       await openHostedVault(one.name);
+      // §4.4 switch-confirmation: "Now in {vault}".
+      announceVaultSwitch(one.name);
       // NAVIGATION.md: "Landing 'already signed in' card: Open {vault} → /"
       // — user-initiated, push.
       navigate("/");

@@ -23,6 +23,7 @@ import type {
   DoorPlanInterval,
 } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault";
+import { announceVaultSwitch } from "@/lib/vault/switch";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 
@@ -529,6 +530,8 @@ function VaultsBlock({
     setError(null);
     try {
       await openHostedVault(vault.name);
+      // §4.4 switch-confirmation: "Now in {vault}".
+      announceVaultSwitch(vault.name);
       // NAVIGATION.md: "Account.tsx VaultsBlock: Open {vault} → /" — user-
       // initiated, push (was a gratuitous replace — F7 offender).
       navigate("/");

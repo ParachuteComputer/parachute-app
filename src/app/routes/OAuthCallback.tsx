@@ -7,6 +7,7 @@ import {
   useVaultStore,
 } from "@/lib/vault";
 import { useAuthHaltStore } from "@/lib/vault/auth-halt-store";
+import { announceVaultSwitch, vaultDisplayLabel } from "@/lib/vault/switch";
 import { safeInternalRedirect } from "@/lib/vault/url";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -131,6 +132,11 @@ export function OAuthCallback() {
         // state rode through sessionStorage and an attacker who can plant
         // there must never steer navigate() off-origin. Falls back to `/`.
         const dest = safeInternalRedirect(pending.redirect) ?? "/";
+        // §4.4 switch-confirmation — a fresh OAuth connect activates the new
+        // vault (addVault sets it active), so it announces like every other
+        // switch path. Label from the stored record (name, else URL host).
+        const connected = useVaultStore.getState().vaults[id];
+        if (connected) announceVaultSwitch(vaultDisplayLabel(connected));
         // NAVIGATION.md: "OAuth callback → target" — (b) one-shot params,
         // replace.
         navigate(dest, { replace: true });

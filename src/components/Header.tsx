@@ -2,7 +2,7 @@ import { InstallPrompt } from "@/components/InstallPrompt";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 import { TextSizeControl } from "@/components/TextSizeControl";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { VaultPopover } from "@/components/VaultPopover";
+import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { useVaultStore } from "@/lib/vault";
 import { type ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
@@ -36,7 +36,7 @@ export function Header() {
       <nav className="flex items-center justify-between gap-3 px-4 py-3">
         {hasVaults ? (
           <div className="min-w-0 flex-1">
-            <VaultPopover />
+            <VaultSwitcher />
           </div>
         ) : (
           <Link

@@ -9,7 +9,7 @@
  * there's no ambiguity about which URL the user is on.
  *
  * Used by every OAuth-initiating call site (`AddVault`,
- * `VaultStatusBanner`'s reconnect path, `VaultPopover`'s connect
+ * `VaultStatusBanner`'s reconnect path, `VaultSwitcher`'s connect
  * button) so the messaging stays identical wherever PKCE can fail.
  */
 export function InsecureContextBanner() {
