@@ -33,7 +33,7 @@ export function NoteView() {
   return (
     <div className="page">
       <nav className="mb-6 text-sm text-fg-dim">
-        <Link to="/all" className="hover:text-accent">
+        <Link to="/notes" className="hover:text-accent">
           ← All notes
         </Link>
       </nav>
@@ -186,7 +186,7 @@ function HeaderTags({ tags }: { tags: string[] }) {
       {tags.map((t) => (
         <Link
           key={t}
-          to={`/all?tag=${encodeURIComponent(t)}`}
+          to={`/notes?tag=${encodeURIComponent(t)}`}
           className="chip chip-tag focus-ring max-w-full break-all font-medium"
         >
           #{t}
@@ -395,7 +395,7 @@ function NotFoundBlock({ id }: { id: string }) {
         </>
       }
       action={
-        <Link to="/all" className="text-sm text-accent hover:underline">
+        <Link to="/notes" className="text-sm text-accent hover:underline">
           Back to all notes
         </Link>
       }

@@ -72,7 +72,13 @@ import { getMountBase } from "@openparachute/surface-client";
  */
 const MOUNT_PATTERNS: readonly RegExp[] = [
   /^(\/surface\/[a-z0-9][a-z0-9_-]*)(?=\/|$)/,
-  /^(\/notes)(?=\/|$)/,
+  // Legacy notes-daemon mount. Requires a FOLLOWING SLASH — the daemon's
+  // document URL is `/notes/` and its routes are `/notes/...`. A BARE `/notes`
+  // must NOT match: since W2-7 it's the app's own canonical Notes-list route,
+  // and on the root-hosted deploy (no meta tag) a bare-`/notes` match would set
+  // basename=`/notes`, blanking the router to `/` (Home) on a hard load/refresh
+  // and dropping `?view=`. `/notes/` and deep legacy routes still detect.
+  /^(\/notes)(?=\/)/,
 ] as const;
 
 /**

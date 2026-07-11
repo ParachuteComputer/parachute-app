@@ -36,9 +36,9 @@ import type { ReactNode } from "react";
 // The vault switcher is NOT a NavItem — it's the hinge (§2.4), rendered by
 // each projection above the bands.
 //
-// Labels vs routes: the spec's labels ("Notes", "Map") land now; the route
-// RENAMES (`/all`→`/notes`, `/graph`→`/map`) are W2-7's job. Keep every
-// route string in this module so W2-7 is a one-file retarget.
+// Labels vs routes: the spec's labels ("Notes", "Map") landed in W2-5; the
+// route RENAMES (`/all`→`/notes`, `/graph`→`/map`) are W2-7's, landed here —
+// `/all` and `/graph` now live only as replace-shims in App.tsx.
 
 export interface NavItem {
   id: string;
@@ -72,15 +72,15 @@ export function matchToday(pathname: string): boolean {
   return pathname === "/" || pathname === "/today" || pathname.startsWith("/n/");
 }
 
-/** The Notes room — label "Notes", route still `/all` until W2-7 renames it. */
+/** The Notes room — label "Notes", route `/notes` (W2-7; `/all` is a shim). */
 export function matchNotes(pathname: string): boolean {
-  return pathname === "/all";
+  return pathname === "/notes";
 }
 
-/** Route targets, single-sourced for the W2-7 rename. */
+/** Route targets, single-sourced (W2-7 renamed these off `/all`/`/graph`). */
 export const TODAY_TO = "/";
-export const NOTES_TO = "/all";
-export const MAP_TO = "/graph";
+export const NOTES_TO = "/notes";
+export const MAP_TO = "/map";
 
 // ---------------------------------------------------------------------------
 // The static skeleton — everything that doesn't depend on live state.

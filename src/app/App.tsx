@@ -201,6 +201,15 @@ function NoteIdRedirect({ suffix = "" }: { suffix?: string }) {
   return <Navigate to={`/n/${encodeURIComponent(id)}${suffix}`} replace />;
 }
 
+// W2-7 route renames (`/all`→`/notes`, `/graph`→`/map`): the old address
+// becomes a shim to the new one, preserving any query string (a bookmark to
+// `/all?view=pinned` must land on `/notes?view=pinned`, not just `/notes`).
+// NAVIGATION.md: (a) redirect shim — replace throughout.
+function ShimPreservingQuery({ to }: { to: string }) {
+  const location = useLocation();
+  return <Navigate to={`${to}${location.search}`} replace />;
+}
+
 // The catch-all (`*` route — DESIGN-SPEC §2.5's route table: "keep the shim,
 // plus a quiet toast", F7-adjacent): a typo'd or stale URL silently teleported
 // home with zero acknowledgment before this fix — no different, from the
@@ -312,25 +321,45 @@ export function App() {
                     <Routes>
                       <Route path="/" element={<BootGate />} />
                       <Route path="/check-email" element={<CheckEmail />} />
-                      <Route path="/all" element={<Notes />} />
                       {/*
-                    The four built-in views are filters inside /all now (a
+                    W2-7: /notes is the canonical Notes room (label "Notes"
+                    matches address). Registered here — well before the
+                    dynamic /:id bare-path shim below — so a note literally
+                    named "notes" can never shadow this route; that note is
+                    reachable only at /n/notes (same accepted tradeoff as the
+                    ceremony denylist). React Router's ranked matching already
+                    prefers static segments over /:id regardless of
+                    declaration order (see App.test.tsx's "/settings wins"
+                    guard), but the order stays literal/readable here too.
+                  */}
+                      <Route path="/notes" element={<Notes />} />
+                      {/*
+                    /all is the pre-W2-7 address — a shim to /notes,
+                    preserving any query string. NAVIGATION.md: (a) redirect
+                    shim — replace.
+                  */}
+                      <Route path="/all" element={<ShimPreservingQuery to="/notes" />} />
+                      {/*
+                    The four built-in views are filters inside /notes now (a
                     ?view= chip), not their own routes. Old bookmarks redirect
                     into the filtered list so links keep working.
                     NAVIGATION.md: (a) redirect shims — replace throughout.
                   */}
-                      <Route path="/pinned" element={<Navigate to="/all?view=pinned" replace />} />
+                      <Route
+                        path="/pinned"
+                        element={<Navigate to="/notes?view=pinned" replace />}
+                      />
                       <Route
                         path="/archived"
-                        element={<Navigate to="/all?view=archived" replace />}
+                        element={<Navigate to="/notes?view=archived" replace />}
                       />
                       <Route
                         path="/untagged"
-                        element={<Navigate to="/all?view=untagged" replace />}
+                        element={<Navigate to="/notes?view=untagged" replace />}
                       />
                       <Route
                         path="/orphaned"
-                        element={<Navigate to="/all?view=orphaned" replace />}
+                        element={<Navigate to="/notes?view=orphaned" replace />}
                       />
                       <Route path="/tags" element={<Tags />} />
                       <Route path="/new" element={<NoteNew />} />
@@ -344,7 +373,14 @@ export function App() {
                       <Route path="/capture" element={<Navigate to="/new" replace />} />
                       <Route path="/import" element={<Import />} />
                       <Route path="/connect" element={<ConnectAI />} />
-                      <Route path="/graph" element={<VaultGraph />} />
+                      {/*
+                    W2-7: /map is the canonical Map room (label "Map" matches
+                    address; earned-gated on both projections, §2.2). /graph
+                    is the pre-W2-7 address — a shim to /map, preserving any
+                    query string. NAVIGATION.md: (a) redirect shim — replace.
+                  */}
+                      <Route path="/map" element={<VaultGraph />} />
+                      <Route path="/graph" element={<ShimPreservingQuery to="/map" />} />
                       <Route path="/today" element={<DayView />} />
                       <Route path="/calendar" element={<Calendar />} />
                       <Route path="/activity" element={<Activity />} />

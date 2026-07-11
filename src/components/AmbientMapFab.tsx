@@ -1,4 +1,5 @@
 import { IconMap } from "@/components/NavIcons";
+import { MAP_TO } from "@/lib/nav/model";
 import { useMapEarned } from "@/lib/vault/map-earned";
 import { useVaultStore } from "@/lib/vault/store";
 import { Link, useLocation } from "react-router";
@@ -21,11 +22,11 @@ export function AmbientMapFab() {
 
   if (!hasVault) return null;
   if (earned) return null;
-  if (pathname === "/graph") return null;
+  if (pathname === MAP_TO) return null;
 
   return (
     <Link
-      to="/graph"
+      to={MAP_TO}
       aria-label="Open the relational map"
       title="Your map"
       className="focus-ring fixed right-5 bottom-20 z-20 grid h-12 w-12 place-items-center rounded-full border border-border bg-card text-accent shadow-lg hover:border-accent lg:right-6 lg:bottom-6"

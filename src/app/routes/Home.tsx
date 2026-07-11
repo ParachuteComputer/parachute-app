@@ -242,7 +242,7 @@ function RecentNotes({
     <section aria-label="Recent notes">
       <h2 className="eyebrow mb-3 flex items-center justify-between">
         <span>{fresh ? "Today" : "Recent"}</span>
-        <Link to="/all" className="text-fg-dim hover:text-accent">
+        <Link to="/notes" className="text-fg-dim hover:text-accent">
           All notes
         </Link>
       </h2>

@@ -1,5 +1,35 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.7.1] - 2026-07-11
+
+**W2-7 — route renames with shims: `/all`→`/notes`, `/graph`→`/map` (F16).** Label–URL agreement:
+the nav rows have said "Notes" and "Map" since W2-5; the addresses now match. Patch bump: additive
+route-table change — every old bookmark still resolves, nothing existing breaks.
+
+- **`/notes` is now the canonical Notes room** (`/all` becomes a `replace` shim, preserving the
+  query string — `/all?view=pinned` lands on `/notes?view=pinned`). **`/map` is now the canonical
+  Map room** (`/graph` becomes the same kind of query-preserving `replace` shim). New shared
+  `App.tsx` helper `ShimPreservingQuery` implements both. The `/pinned`/`/archived`/`/untagged`/
+  `/orphaned` view-shims retarget from `/all?view=` to `/notes?view=`.
+- **Mount-detection fix (review fold):** the legacy notes-daemon mount pattern in `base-url.ts`
+  matched a bare `/notes` as well as `/notes/…`; a bare `/notes` now falls through to the root mount,
+  so a hard load / refresh / share of the new `/notes` route on the root-hosted deploy renders the
+  Notes list (not Home) and keeps `?view=`. `/notes/` and deep legacy routes still detect the mount.
+- Command-palette row label "Graph" → **"Map"** (was still drifting from the rail/sheet label).
+- **`src/lib/nav/model.tsx`'s `NOTES_TO`/`MAP_TO`/`matchNotes` flip to the new addresses** — the
+  Rail, NavSheet, and BottomTabBar all consume these, so no component-level drift was possible.
+  Every other inbound link (`AmbientMapFab`, the command palette's rows and tag-jump, `Notes.tsx`'s
+  own `?view=`/saved-view/tag links, `NoteView`/`NoteEditor`/`NoteNew`/`Import`/`Home`/`Tags`'s back-
+  and tag-links) retargets to `/notes`/`/map`.
+  Zero stray `/all`/`/graph` references remain outside the App.tsx shim definitions (and the tests
+  that exercise those shims directly).
+- **Route-order guard:** `/notes` is registered ahead of the `/:id` bare-path bookmark shim, so a
+  note literally named "notes" is reachable only at `/n/notes` — the same accepted tradeoff as the
+  ceremony denylist (React Router's ranked matching already prefers static segments over `/:id`
+  regardless of declaration order; a regression test pins it).
+- **`NAVIGATION.md`** updated: the redirect-shims row drops its "pre-W2-7" placeholders now that
+  the rename has shipped, and retargets the view-shims to `/notes?view=`.
+
 ## [0.7.0] - 2026-07-11
 
 **W2-6 — wizard chrome + stepped creation + activation honesty (F6 full / F7-ceremony /

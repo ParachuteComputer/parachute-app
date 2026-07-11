@@ -422,7 +422,7 @@ export function NoteNew() {
   return (
     <div className="page">
       <nav className="mb-6 text-sm text-fg-dim">
-        <Link to="/all" className="hover:text-accent">
+        <Link to="/notes" className="hover:text-accent">
           ← All notes
         </Link>
       </nav>

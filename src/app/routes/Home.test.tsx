@@ -60,7 +60,7 @@ function Wrap({ children }: { children: ReactNode }) {
       <QueryClientProvider client={qc}>
         <Routes>
           <Route path="/" element={children} />
-          <Route path="/all" element={<LocationSpy />} />
+          <Route path="/notes" element={<LocationSpy />} />
           <Route path="/new" element={<LocationSpy />} />
           <Route path="/connect" element={<LocationSpy />} />
           <Route path="/calendar" element={<LocationSpy />} />

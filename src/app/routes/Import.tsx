@@ -144,7 +144,7 @@ export function Import() {
   return (
     <div className="page-prose">
       <nav className="mb-4 text-sm text-fg-dim">
-        <Link to="/all" className="focus-ring hover:text-accent">
+        <Link to="/notes" className="focus-ring hover:text-accent">
           ← All notes
         </Link>
       </nav>

@@ -88,7 +88,7 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
     );
     expect(notesLinks).toEqual([
       ["Today", "/"],
-      ["Notes", "/all"],
+      ["Notes", "/notes"],
       ["Calendar", "/calendar"],
       ["Tags", "/tags"],
       ["Activity", "/activity"],
@@ -139,7 +139,7 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
       b: makeVault({ id: "b", url: "http://localhost:1941", name: "journal" }),
     });
     await renderRail();
-    expect(screen.getByRole("link", { name: /^map$/i })).toHaveAttribute("href", "/graph");
+    expect(screen.getByRole("link", { name: /^map$/i })).toHaveAttribute("href", "/map");
   });
 
   it("marks the current room active (aria-current on the matching row only)", async () => {
@@ -147,6 +147,21 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
     await renderRail("/tags");
     expect(screen.getByRole("link", { name: /^tags$/i })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: /^today$/i })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks Notes active on /notes (W2-7 rename)", async () => {
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    await renderRail("/notes");
+    expect(screen.getByRole("link", { name: /^notes$/i })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("marks Map active on /map, once earned (W2-7 rename)", async () => {
+    seedVaults({
+      a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }),
+      b: makeVault({ id: "b", url: "http://localhost:1941", name: "journal" }),
+    });
+    await renderRail("/map");
+    expect(screen.getByRole("link", { name: /^map$/i })).toHaveAttribute("aria-current", "page");
   });
 
   it("collapses to the icon rail (labels hidden, tooltips carry them) and persists", async () => {
