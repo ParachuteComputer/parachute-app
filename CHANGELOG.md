@@ -1,5 +1,33 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.3.2] - 2026-07-10
+
+**P0 wire fix — the account client now attaches the account bearer on every
+`/account/vaults*` call.** Verified against cloud's real source
+(`workers/identity/src/account-api.ts` + `account-auth.ts`): that surface (C3)
+is **Bearer-gated** by the account token (`aud="account"`,
+`account:<id>:{read,admin}`) — the session cookie alone gets a 401. The merged
+PR-1 client sent `credentials: "include"` + CSRF but no `Authorization: Bearer`,
+so the FIRST `/account/vaults` call 401'd. (Green-on-mocks hid it — the mocks
+mocked our assumed shapes, not the wire.)
+
+- **`client.ts`** grows a Bearer layer: `listVaults` / `createVault` /
+  `mintVaultToken` route through a `bearerFetch` that mints the account token
+  (C2 `POST /account/token`), caches it (`lens:account_token`), attaches
+  `Authorization: Bearer <token>`, and **re-mints once on a 401** from the live
+  session cookie. `getSession` / `POST /account/token` / `POST /auth/magic` stay
+  on the cookie+CSRF layer (that IS how the bearer is obtained). C3 bodies drop
+  `__csrf` (the Bearer layer isn't CSRF-gated).
+- **`logout`** now posts an `x-www-form-urlencoded` body — cloud's
+  `handleLogoutPost` reads `req.formData()`, so the old JSON POST silently
+  no-op'd server-side.
+- **`createVault` / `mintVaultToken` / `openHostedVault` / `createHostedVault`**
+  no longer thread `csrf` (the client self-sources the account bearer); the
+  Welcome / Landing call sites drop the redundant `getSession`.
+- **Tests round-trip the REAL wire**: `client.test.ts` asserts the
+  `Authorization: Bearer` header IS sent on every C3 call, that the account
+  token is minted + cached + re-minted on 401, and that logout is form-encoded.
+
 ## [0.3.1] - 2026-07-10
 
 PWA service worker → **auto-update**. A new deploy now wins on the next load

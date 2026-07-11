@@ -141,8 +141,9 @@ export function Welcome() {
     const { name, back } = stage;
     (async () => {
       try {
-        const session = await getSession();
-        await createHostedVault(name, session.csrf);
+        // The account bearer is minted + cached inside the client (the dispatch
+        // above already confirmed the session), so no csrf is threaded here.
+        await createHostedVault(name);
         setStage((prev) =>
           prev.kind === "creating" && prev.name === name ? { ...prev, ready: true } : prev,
         );
@@ -171,8 +172,7 @@ export function Welcome() {
     const vaultName = stage.vault.name;
     (async () => {
       try {
-        const session = await getSession();
-        await openHostedVault(vaultName, session.csrf);
+        await openHostedVault(vaultName);
         navigate("/", { replace: true });
       } catch (err) {
         welcomeBackRan.current = null;
@@ -252,8 +252,7 @@ export function Welcome() {
           email={stage.email}
           vaults={stage.vaults}
           onOpenVault={async (vault) => {
-            const session = await getSession();
-            await openHostedVault(vault.name, session.csrf);
+            await openHostedVault(vault.name);
             navigate("/", { replace: true });
           }}
           onCreateNew={() => {

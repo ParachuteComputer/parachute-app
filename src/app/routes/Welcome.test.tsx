@@ -117,7 +117,8 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
       fireEvent.click(screen.getByRole("button", { name: /create moss →/i }));
 
-      await waitFor(() => expect(createHostedVault).toHaveBeenCalledWith("moss", "csrf-1"));
+      // The account bearer is sourced inside the client now — no csrf threaded.
+      await waitFor(() => expect(createHostedVault).toHaveBeenCalledWith("moss"));
       // The "X is ready." headline splits across the accent-word <span>, so its
       // accessible NAME (which concatenates descendant text) is what to match —
       // getByText only sees an element's own direct text nodes.
@@ -170,7 +171,7 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       expect(screen.queryByText(/\bnotes?\b/i)).not.toBeInTheDocument();
 
       fireEvent.click(opens[1] as HTMLElement);
-      await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("journal", "csrf-2"));
+      await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("journal"));
     });
 
     it("offers Create a new vault (addvault naming) and Connect a self-hosted vault", async () => {
@@ -201,7 +202,7 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       });
       vi.mocked(listVaults).mockResolvedValue({ vaults: [{ name: "moss" }] });
       renderWelcome();
-      await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss", "csrf-3"));
+      await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
       await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
     });
   });
