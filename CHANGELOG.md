@@ -1,5 +1,51 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.5.3] - 2026-07-11
+
+**W2-4 — vault switcher v2: the manager hinge (F2 full / F13 full / F4 ambient half / WALK-manager #2+#3).**
+`VaultPopover` becomes `VaultSwitcher` (file history kept) — the one canonical door for
+switch / open / create / connect, plan-aware and trial-aware (DESIGN-SPEC §2.4 + §3.2).
+
+- **Three row sources, partitioned honestly:** ON THIS DEVICE (local vaults — ✓ current +
+  switch rows) · IN YOUR ACCOUNT (the door account's hosted vaults **not on this device**,
+  each with an "Open →" verb — F13's real fix: Open is scoped to exactly not-here, so it can
+  never silently reopen the vault you're already in) · FROM YOUR HUB (hub-published,
+  unconnected — the OAuth Connect door, unchanged). Account matching is by normalized URL
+  plus a name-match for home-door records (slugs are the identity at the door); a hub entry
+  sharing an account vault's URL collapses into the one-click Open row.
+- **Inline add-vault verbs (F2 full):** "＋ Create a vault" (→ the create flow, today
+  `/welcome?new=1`; W2-6 retargets to `/add-vault/create`) and "⌂ Connect your own" (→ `/add`)
+  — the AddVaultChooser's cards inlined at the switcher's foot. `/add-vault` stays the
+  deep-linkable page form; the switcher is the primary door.
+- **Plan-aware create (WALK-manager #3):** at the plan's vault limit the Create row renders
+  the upsell — "N of N vaults on your plan — Upgrade →" → `/account` (sun-tinted circle) —
+  so the 409 is unreachable from the switcher. Degrades to the plain Create row when no
+  summary exists (self-host / signed out / fetch failed); the server still guards.
+- **Trial ambience (F4, decision b):** a quiet "Free trial · N days left" foot line →
+  `/account`, only while the door reports `trial_days_left`.
+- **Switch confirmation everywhere (WALK-manager #2, §4.4):** new `switchVault(id, {toast})` +
+  `announceVaultSwitch(label)` helpers (`src/lib/vault/switch.ts`) — every path that changes
+  the active vault now toasts "Now in {vault}": switcher rows + account Open, `/vaults` Make
+  active, the picker, the welcome-back auto-open, the creation ready-beat's Open, `/add`'s
+  already-connected deep-link switch, and a fresh OAuth connect landing. Already-active
+  no-ops don't announce (nothing switched).
+- **New shared `useAccountSummary()` hook** (`src/lib/account/use-summary.ts`) — one TanStack
+  query (staleTime 5 min) for every plan/trial consumer; lazy (`enabled`), never gates first
+  paint. The switcher enables it (and the account vault-list query) only while its panel is
+  open. Future consumers: the rail badge (W2-5), `/account` + Today nudge (W2-8).
+- **§3.2 visuals:** panel is a `--radius-2xl` card with `--shadow-lift`; rows use the
+  icon-in-soft-circle pattern (vault-initial glyph squares — grass-soft when on this device,
+  neutral otherwise); sage-eyebrow section labels ("On this device" / "In your account" /
+  "From your hub"); friendly error copy on a failed Open (F12 mapping, never a wire code).
+- Both entry points kept: the desktop rail's vault card and the mobile header's vault pill
+  (NavSheet integration is W2-5). The dead `inline` variant is gone.
+- Tests: `VaultSwitcher.test.tsx` (evolved from `VaultPopover.test.tsx` — row-model partition
+  incl. F13 scoping + name-match rules, at-limit upsell with Create absent, trial-line
+  presence/absence, switch/Open toasts, verb navigation, all prior hub/OAuth coverage);
+  new `switch.test.ts`; Make-active toast in `Vaults.test.tsx`; picker/welcome-back/ready-beat
+  toasts in `Welcome.test.tsx`.
+- **Closes F2 (full), F13 (full), F4 (ambient half), WALK-manager #2 (confirmation half) + #3.**
+
 ## [0.5.2] - 2026-07-11
 
 **W2-3 — merge `/today` into `/`: one room, one name on both form factors (F8).**

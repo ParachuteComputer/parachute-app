@@ -3,6 +3,7 @@ import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { beginOAuth, normalizeVaultUrl, useOriginVaultProbe } from "@/lib/vault";
 import { InsecureContextError } from "@/lib/vault/pkce";
 import { useVaultStore } from "@/lib/vault/store";
+import { switchVault } from "@/lib/vault/switch";
 import { safeInternalRedirect, vaultIdFromUrl } from "@/lib/vault/url";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
@@ -168,7 +169,9 @@ export function AddVault() {
     const store = useVaultStore.getState();
     const existing = store.vaults[vaultIdFromUrl(normalized)];
     if (existing) {
-      store.setActiveVault(existing.id);
+      // §4.4 switch-confirmation — no toast when it's already the active
+      // vault (a repeat deep-link changes nothing worth announcing).
+      switchVault(existing.id, { toast: true });
       // NAVIGATION.md: this consumes the ?add= auto-begin one-shot param
       // (already stripped from history above) — replace.
       navigate(redirect ?? "/", { replace: true });

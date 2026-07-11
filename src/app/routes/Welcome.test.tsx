@@ -2,6 +2,7 @@ import { Welcome } from "@/app/routes/Welcome";
 import { getSession, listVaults } from "@/lib/account/client";
 import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
+import { useToastStore } from "@/lib/toast/store";
 import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router";
@@ -73,6 +74,7 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
     vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
     vi.mocked(createHostedVault).mockReset().mockResolvedValue("v1");
     vi.mocked(openHostedVault).mockReset().mockResolvedValue("v1");
+    useToastStore.setState({ toasts: [] });
   });
 
   it("redirects to the front door when the session isn't signed in", async () => {
@@ -185,6 +187,23 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
       expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" });
     });
+
+    // §4.4 switch-confirmation (WALK-manager #2): the ready beat's Open is a
+    // switch path, so it announces "Now in {vault}".
+    it("the ready beat's Open toasts 'Now in {vault}'", async () => {
+      renderWelcome();
+      await waitFor(() => expect(screen.getByText(/let's make your first/i)).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
+      fireEvent.click(screen.getByRole("button", { name: /create moss →/i }));
+      await waitFor(() =>
+        expect(screen.getByRole("heading", { name: /moss is ready/i })).toBeInTheDocument(),
+      );
+      expect(useToastStore.getState().toasts).toHaveLength(0); // not before Open
+      fireEvent.click(screen.getByRole("button", { name: /open my vault/i }));
+      await waitFor(() =>
+        expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Now in moss"),
+      );
+    });
   });
 
   describe("picker (many vaults)", () => {
@@ -243,6 +262,19 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       fireEvent.click(opens[1] as HTMLElement);
       await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
       expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" });
+    });
+
+    // §4.4 switch-confirmation: picking a vault announces "Now in {vault}".
+    it("picking a vault toasts 'Now in {vault}'", async () => {
+      renderWelcome();
+      await waitFor(() =>
+        expect(screen.getByRole("heading", { name: /which vault today/i })).toBeInTheDocument(),
+      );
+      const opens = screen.getAllByRole("button", { name: /open →/i });
+      fireEvent.click(opens[1] as HTMLElement);
+      await waitFor(() =>
+        expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Now in journal"),
+      );
     });
 
     it("offers Create a new vault (addvault naming) and Connect a self-hosted vault", async () => {
@@ -347,6 +379,8 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       renderWelcome();
       await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
       await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
+      // §4.4: the auto-open is a switch too — it announces after landing.
+      expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Now in moss");
     });
 
     // NAVIGATION.md: "Welcome-back beat → /" — (d) the single post-auth

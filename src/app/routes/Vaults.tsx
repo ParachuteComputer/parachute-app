@@ -1,12 +1,11 @@
 import { vaultProvenance } from "@/lib/account";
-import { isLegacyVaultUrl, useVaultStore } from "@/lib/vault";
+import { isLegacyVaultUrl, switchVault, useVaultStore } from "@/lib/vault";
 import { Link } from "react-router";
 
 export function Vaults() {
   const vaults = useVaultStore((s) => s.vaults);
   const activeVaultId = useVaultStore((s) => s.activeVaultId);
   const removeVault = useVaultStore((s) => s.removeVault);
-  const setActiveVault = useVaultStore((s) => s.setActiveVault);
 
   const list = Object.values(vaults).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -60,7 +59,8 @@ export function Vaults() {
                     {!isActive ? (
                       <button
                         type="button"
-                        onClick={() => setActiveVault(vault.id)}
+                        // §4.4 switch-confirmation: "Now in {vault}".
+                        onClick={() => switchVault(vault.id, { toast: true })}
                         className="focus-ring text-fg-muted hover:text-accent"
                       >
                         Make active

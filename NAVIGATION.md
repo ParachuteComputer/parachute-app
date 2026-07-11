@@ -42,6 +42,7 @@ or misleading state (a consumed compose form, a session that no longer exists).
 | Picker: user picks a vault → `/` | **push** | user-initiated (Back to the picker is harmless and useful) |
 | Picker: "＋ Create a new vault" → naming form | **push** | user-initiated (picker → naming) |
 | Chooser card (`/add-vault`) → `/welcome?pick=1` / `/welcome?new=1` / `/add` | **push** | user-initiated |
+| Switcher verbs (W2-4 — the chooser's cards inlined): Create → `/welcome?new=1` · Connect your own → `/add` · at-limit Upgrade / trial line → `/account` · Manage vaults → `/vaults` | **push** | user-initiated |
 | Ready beat "Open my vault →" → `/` | **push** | user-initiated |
 | `Account.tsx` VaultsBlock: Open {vault} → `/` | **push** | user-initiated |
 | NoteNew save (text or audio) → `/n/<id>` | replace | (b) consumes the compose form (Back to a ghost draft would lie) |

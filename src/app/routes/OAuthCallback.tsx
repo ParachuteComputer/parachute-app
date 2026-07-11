@@ -7,6 +7,7 @@ import {
   useVaultStore,
 } from "@/lib/vault";
 import { useAuthHaltStore } from "@/lib/vault/auth-halt-store";
+import { announceVaultSwitch, vaultDisplayLabel } from "@/lib/vault/switch";
 import { safeInternalRedirect } from "@/lib/vault/url";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -99,6 +100,10 @@ export function OAuthCallback() {
         // sometimes omit it on standalone-vault flows that pre-date hub-as-
         // issuer); fall back to the issuer-derived display name so VaultRecord
         // always carries something to render.
+        // Snapshot the active vault BEFORE addVault (which sets the new record
+        // active) so we can tell a genuine switch from a same-vault reconnect
+        // below (§4.4 announce guard).
+        const prevActiveId = useVaultStore.getState().activeVaultId;
         const id = addVault(
           {
             url: vaultUrl,
@@ -131,6 +136,17 @@ export function OAuthCallback() {
         // state rode through sessionStorage and an attacker who can plant
         // there must never steer navigate() off-origin. Falls back to `/`.
         const dest = safeInternalRedirect(pending.redirect) ?? "/";
+        // §4.4 switch-confirmation — a fresh OAuth connect activates the new
+        // vault (addVault sets it active), so it announces like every other
+        // switch path. But the auth-halt "Reconnect" flow (VaultStatusBanner →
+        // beginOAuth with priorHaltedVaultId) rides this SAME callback for the
+        // already-active vault: re-authing moss while you're in moss is not a
+        // switch, so it must NOT toast "Now in moss" (switch.ts flags exactly
+        // this remint hazard). Announce only when the active vault changed.
+        if (id !== prevActiveId) {
+          const connected = useVaultStore.getState().vaults[id];
+          if (connected) announceVaultSwitch(vaultDisplayLabel(connected));
+        }
         // NAVIGATION.md: "OAuth callback → target" — (b) one-shot params,
         // replace.
         navigate(dest, { replace: true });

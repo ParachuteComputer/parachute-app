@@ -1,6 +1,7 @@
 import { Header } from "@/components/Header";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,10 +19,16 @@ function makeVault(partial: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url
 }
 
 function renderHeader() {
+  // The header hosts the VaultSwitcher, whose plan/account reads are TanStack
+  // queries (lazy — enabled only while its panel is open), so the tree needs a
+  // QueryClient like the Rail's tests.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
-      <Header />
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
