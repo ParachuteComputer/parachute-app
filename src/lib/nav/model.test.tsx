@@ -33,7 +33,7 @@ describe("buildNavBands (pure)", () => {
     expect(notes.label).toBe("Your notes");
     expect(notes.items.map((i) => [i.id, i.label, i.to])).toEqual([
       ["today", "Today", "/"],
-      ["notes", "Notes", "/all"],
+      ["notes", "Notes", "/notes"],
       ["calendar", "Calendar", "/calendar"],
       ["tags", "Tags", "/tags"],
       ["activity", "Activity", "/activity"],
@@ -61,7 +61,7 @@ describe("buildNavBands (pure)", () => {
     ).toBe(false);
     const earned = buildNavBands({ ...base, mapEarned: true }).find((b) => b.id === "notes");
     expect(earned?.items.at(-1)?.id).toBe("map");
-    expect(earned?.items.at(-1)?.to).toBe("/graph");
+    expect(earned?.items.at(-1)?.to).toBe("/map");
     expect(earned?.items.at(-1)?.label).toBe("Map");
   });
 
@@ -96,13 +96,17 @@ describe("buildNavBands (pure)", () => {
     expect(buildNavBands(base).find((b) => b.id === "setup")).toBeUndefined();
   });
 
-  it("active-state rules: Today owns /, /today and /n/*; Notes owns /all", () => {
+  it("active-state rules: Today owns /, /today and /n/*; Notes owns /notes (W2-7 rename)", () => {
     expect(matchToday("/")).toBe(true);
     expect(matchToday("/today")).toBe(true);
     expect(matchToday("/n/some-note")).toBe(true);
-    expect(matchToday("/all")).toBe(false);
-    expect(matchNotes("/all")).toBe(true);
+    expect(matchToday("/notes")).toBe(false);
+    expect(matchNotes("/notes")).toBe(true);
     expect(matchNotes("/")).toBe(false);
+    // The pre-rename address is a shim now, not a match target — it briefly
+    // renders while <Navigate replace> resolves, but active-state should
+    // never claim it as "Notes" in its own right.
+    expect(matchNotes("/all")).toBe(false);
   });
 });
 

@@ -65,8 +65,8 @@ function parsePreset(value: string | null): NotesPreset | undefined {
 
 // `preset` is normally read from the `?view=` query param — the four built-in
 // views are filters INSIDE the All-notes list now, not their own routes (the
-// old /pinned etc. redirect into /all?view=). The optional prop is an explicit
-// override kept for direct-render callers (tests, embeds).
+// old /pinned etc. redirect into /notes?view=). The optional prop is an
+// explicit override kept for direct-render callers (tests, embeds).
 export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(activeVault?.id ?? null);
@@ -585,7 +585,7 @@ function SavedViewsSidebar({
               className="group flex items-center rounded-md border border-transparent hover:border-border hover:bg-card"
             >
               <Link
-                to={`/all?${filtersToSearchParams(v.filters).toString()}`}
+                to={`/notes?${filtersToSearchParams(v.filters).toString()}`}
                 className="block flex-1 truncate px-2 py-1 text-sm text-fg-muted hover:text-accent"
               >
                 {v.name}
@@ -1031,14 +1031,14 @@ function PinnedTagsStrip({
 
 // The four built-in views live as inline filter chips at the top of the list
 // (progressive disclosure — they used to be their own routes + a sidebar
-// section). "All" clears the preset; each chip links to /all?view=<preset>.
+// section). "All" clears the preset; each chip links to /notes?view=<preset>.
 function PresetFilterBar({ active }: { active?: NotesPreset }) {
   const items: Array<{ to: string; label: string; preset?: NotesPreset; glyph?: string }> = [
-    { to: "/all", label: "All" },
-    { to: "/all?view=pinned", label: "Pinned", preset: "pinned", glyph: "★" },
-    { to: "/all?view=archived", label: "Archived", preset: "archived" },
-    { to: "/all?view=untagged", label: "Untagged", preset: "untagged" },
-    { to: "/all?view=orphaned", label: "Orphaned", preset: "orphaned" },
+    { to: "/notes", label: "All" },
+    { to: "/notes?view=pinned", label: "Pinned", preset: "pinned", glyph: "★" },
+    { to: "/notes?view=archived", label: "Archived", preset: "archived" },
+    { to: "/notes?view=untagged", label: "Untagged", preset: "untagged" },
+    { to: "/notes?view=orphaned", label: "Orphaned", preset: "orphaned" },
   ];
   return (
     <nav aria-label="Views" className="mb-6 flex flex-wrap items-center gap-2">

@@ -255,6 +255,33 @@ describe("App", () => {
     });
   });
 
+  it('static route /notes wins over the dynamic /:id deep-link shim — a note literally named "notes" is reachable only at /n/notes (W2-7 route-order guard)', async () => {
+    useVaultStore.setState({
+      vaults: {
+        v1: {
+          id: "v1",
+          url: "http://localhost:1940",
+          name: "default",
+          issuer: "http://localhost:1940",
+          clientId: "c",
+          scope: "full",
+          addedAt: "2026-04-20T00:00:00.000Z",
+          lastUsedAt: "2026-04-20T00:00:00.000Z",
+        },
+      },
+      activeVaultId: "v1",
+    });
+    // Bare path "notes" under the /notes mount — external /notes/notes. If the
+    // /:id bookmark shim ever won this collision it would redirect on to
+    // /notes/n/notes; the canonical Notes room must win instead (DESIGN-SPEC
+    // §2.5 row 3's accepted tradeoff: a note named "notes" lives only at
+    // /n/notes).
+    window.history.replaceState({}, "", "/notes/notes");
+    render(<App />);
+    expect(await screen.findByLabelText(/search notes/i)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/notes/notes");
+  });
+
   it("bare-path note that spells a ceremony word still resolves under the /notes mount (no false-bail, #189)", async () => {
     // Mount-awareness guard: `/notes/login` is NOT the origin ceremony
     // `/login`, so the bare-path shim keeps redirecting it to the canonical

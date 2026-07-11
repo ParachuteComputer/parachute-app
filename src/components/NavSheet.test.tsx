@@ -97,7 +97,7 @@ describe("NavSheet (mobile projection, W2-5)", () => {
 
     // The rest of the notes band.
     expect(sheet.getByRole("link", { name: /^today$/i })).toHaveAttribute("href", "/");
-    expect(sheet.getByRole("link", { name: /^notes$/i })).toHaveAttribute("href", "/all");
+    expect(sheet.getByRole("link", { name: /^notes$/i })).toHaveAttribute("href", "/notes");
     expect(sheet.getByRole("link", { name: /^calendar$/i })).toHaveAttribute("href", "/calendar");
     expect(sheet.getByRole("link", { name: /^activity$/i })).toHaveAttribute("href", "/activity");
 
@@ -128,7 +128,7 @@ describe("NavSheet (mobile projection, W2-5)", () => {
       activeVaultId: "a",
     });
     await renderSheet();
-    expect(screen.getByRole("link", { name: /^map$/i })).toHaveAttribute("href", "/graph");
+    expect(screen.getByRole("link", { name: /^map$/i })).toHaveAttribute("href", "/map");
   });
 
   it("marks the current room active", async () => {

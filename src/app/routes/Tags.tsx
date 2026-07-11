@@ -210,7 +210,7 @@ function TagRow({
           className="accent-accent"
         />
         <Link
-          to={`/all?tag=${encodeURIComponent(tag.name)}`}
+          to={`/notes?tag=${encodeURIComponent(tag.name)}`}
           className="chip chip-tag focus-ring shrink-0 max-w-full break-all"
         >
           <span className="font-mono">#{tag.name}</span>

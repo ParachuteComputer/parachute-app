@@ -538,7 +538,7 @@ function NotFoundBlock({ id }: { id: string }) {
         </>
       }
       action={
-        <Link to="/all" className="text-sm text-accent hover:underline">
+        <Link to="/notes" className="text-sm text-accent hover:underline">
           Back to all notes
         </Link>
       }

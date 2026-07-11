@@ -30,7 +30,7 @@ or misleading state (a consumed compose form, a session that no longer exists).
 | Transition | push / replace | Rule |
 |---|---|---|
 | Any rail / tab / sheet / footer / card link | **push** | user-initiated |
-| Redirect shims: `/all→/notes`(pre-W2-7: `/all` IS the canonical route), `/graph→/map`(pre-W2-7: N/A), `/pinned`/`/archived`/`/untagged`/`/orphaned`→`/all?view=`, `/capture→/new`, `/:id→/n/:id`, `/today`(no-param — post-W2-3), `/welcome?new=1→/add-vault/create` (W2-6), `/add-vault/ready` with no `?vault=`→`/add-vault`, catch-all `*→/` (+toast) | **replace** | (a) shims leave no trace |
+| Redirect shims: `/all→/notes` (W2-7, query-preserving), `/graph→/map` (W2-7, query-preserving), `/pinned`/`/archived`/`/untagged`/`/orphaned`→`/notes?view=`, `/capture→/new`, `/:id→/n/:id`, `/today`(no-param — post-W2-3), `/welcome?new=1→/add-vault/create` (W2-6), `/add-vault/ready` with no `?vault=`→`/add-vault`, catch-all `*→/` (+toast) | **replace** | (a) shims leave no trace |
 | BootGate `?add=` → `/add` | replace | (b) one-shot param |
 | Landing: submit email → `/check-email` | **push** | user-initiated |
 | CheckEmail poll success → `/welcome` | replace | (c) auto-advance; returning to a consumed check-email would be wrong |

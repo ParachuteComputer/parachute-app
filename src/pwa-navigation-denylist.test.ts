@@ -46,6 +46,10 @@ describe("PWA navigation denylist", () => {
   // the SPA owns, or the installed app breaks. Mirrors App.tsx.
   const spaRoutes = [
     "/",
+    "/notes",
+    "/notes?view=pinned",
+    // W2-7: /all and /graph are pre-rename addresses now served as shims
+    // (→ /notes, /map) — still SPA-owned routes the SW must never deny.
     "/all",
     "/all?view=pinned",
     "/tags",
@@ -53,6 +57,7 @@ describe("PWA navigation denylist", () => {
     "/capture",
     "/import",
     "/connect",
+    "/map",
     "/graph",
     "/today",
     "/calendar",

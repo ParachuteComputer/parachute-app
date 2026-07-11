@@ -50,17 +50,17 @@ describe("AmbientMapFab", () => {
     });
     renderFab("/");
     const fab = screen.getByRole("link", { name: /open the relational map/i });
-    expect(fab).toHaveAttribute("href", "/graph");
+    expect(fab).toHaveAttribute("href", "/map");
     // Pre-earn the FAB is the ambient door everywhere — no breakpoint gate.
     expect(fab.className).not.toMatch(/\blg:hidden\b/);
   });
 
-  it("is hidden on the graph route itself", () => {
+  it("is hidden on the map route itself (W2-7 rename)", () => {
     useVaultStore.setState({
       vaults: { a: makeVault("a", "http://localhost:1940") },
       activeVaultId: "a",
     });
-    const { container } = renderFab("/graph");
+    const { container } = renderFab("/map");
     expect(container.querySelector("a")).toBeNull();
   });
 

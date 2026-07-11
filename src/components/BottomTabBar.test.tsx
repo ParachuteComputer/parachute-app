@@ -89,8 +89,8 @@ describe("BottomTabBar (D6 four-slot)", () => {
     expect(screen.getByLabelText(/^today$/i)).toHaveAttribute("aria-current", "page");
   });
 
-  it("marks Notes active on /all", () => {
-    renderAt("/all");
+  it("marks Notes active on /notes (W2-7 rename)", () => {
+    renderAt("/notes");
     expect(screen.getByLabelText(/^notes$/i)).toHaveAttribute("aria-current", "page");
   });
 
