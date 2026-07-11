@@ -256,6 +256,17 @@ describe("openBillingPortal — POST /account/billing/portal (Bearer)", () => {
     expect((err as BillingApiError).code).toBe("unconfigured");
   });
 
+  it("200 with no/blank url → typed BillingApiError (never assign(undefined))", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    // A contract-violating 200 body: no url, a blank url, a non-string url.
+    for (const body of [{}, { url: "" }, { url: 123 }] as const) {
+      const fetchImpl = vi.fn<typeof fetch>(async () => res(body));
+      const err = await openBillingPortal(fetchImpl).catch((e) => e);
+      expect(err).toBeInstanceOf(BillingApiError);
+      expect((err as BillingApiError).code).toBe("unknown");
+    }
+  });
+
   it("re-mints once on a 401 and retries with the fresh token", async () => {
     sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "stale-tok");
     let calls = 0;

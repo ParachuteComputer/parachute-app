@@ -284,10 +284,20 @@ interface BillingUrlResponse {
  * `BillingApiError` on any non-2xx (409/400/503), `SessionExpiredError` on
  * 401 (same as every other Bearer call). A 503 means billing isn't
  * configured on this door at all, regardless of body shape.
+ *
+ * The 200 body is GUARDED: a contract-violating `200 {}` / blank / non-string
+ * `url` would otherwise `window.location.assign(undefined)` → a bogus
+ * navigation to `/undefined`. We require a non-empty string `url` and throw a
+ * typed `BillingApiError` otherwise, so the UI shows its inline message rather
+ * than navigating nowhere.
  */
 async function billingResult(res: Response): Promise<BillingUrlResponse> {
   if (res.status === 401) throw new SessionExpiredError();
-  if (res.ok) return (await res.json()) as BillingUrlResponse;
+  if (res.ok) {
+    const body = (await res.json().catch(() => null)) as { url?: unknown } | null;
+    if (body && typeof body.url === "string" && body.url.length > 0) return { url: body.url };
+    throw new BillingApiError(res.status, "unknown", "Billing returned no redirect URL.");
+  }
   if (res.status === 503) {
     throw new BillingApiError(503, "unconfigured", "Billing isn't configured for this door.");
   }

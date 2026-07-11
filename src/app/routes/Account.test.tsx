@@ -2,6 +2,7 @@ import { Account } from "@/app/routes/Account";
 import {
   AccountApiError,
   BillingApiError,
+  SessionExpiredError,
   getAccountSummary,
   getSession,
   listVaults,
@@ -358,6 +359,27 @@ describe("Account — the app-as-manager surface", () => {
       await waitFor(() =>
         expect(screen.getByText(/billing isn't available right now/i)).toBeInTheDocument(),
       );
+      expect(window.location.assign).not.toHaveBeenCalled();
+    });
+
+    it("a real session expiry rides the app's session-ended handling, NOT the billing inline message", async () => {
+      vi.mocked(getSession).mockResolvedValue({
+        signed_in: true,
+        csrf: "c",
+        email: "ag@unforced.org",
+      });
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummary).mockResolvedValue(SUMMARY);
+      vi.mocked(openBillingPortal).mockRejectedValue(new SessionExpiredError());
+
+      renderAccount();
+      const button = await screen.findByRole("button", { name: /manage plan & billing/i });
+      fireEvent.click(button);
+
+      // The account session store is marked expired (drives the existing
+      // AccountSessionBanner), and the billing-specific message is NOT shown.
+      await waitFor(() => expect(useAccountSessionStore.getState().expired).toBe(true));
+      expect(screen.queryByText(/billing isn't available right now/i)).not.toBeInTheDocument();
       expect(window.location.assign).not.toHaveBeenCalled();
     });
 

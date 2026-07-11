@@ -1,5 +1,6 @@
 import {
   BillingApiError,
+  SessionExpiredError,
   getAccountSummary,
   getSession,
   listVaults,
@@ -12,7 +13,7 @@ import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { markHubGateFromError } from "@/lib/account/dispatch";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { formatBytes, formatUsageBytes } from "@/lib/account/provenance";
-import { clearAccountToken } from "@/lib/account/store";
+import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import type { AccountSummary, AccountVault, DoorPlan } from "@/lib/account/types";
 import { useVaultStore } from "@/lib/vault";
 import { useCallback, useEffect, useState } from "react";
@@ -265,8 +266,15 @@ function ManageBilling({ summary }: { summary: AccountSummary }) {
     try {
       const { url } = await openBillingPortal();
       window.location.assign(url);
-    } catch {
+    } catch (err) {
       setBusy(false);
+      // A real session expiry (post-retry 401) is NOT a billing problem — hand
+      // it to the app's existing "your sign-in ended" handling (the account
+      // session banner), not a billing-specific inline message.
+      if (err instanceof SessionExpiredError) {
+        useAccountSessionStore.getState().markExpired();
+        return;
+      }
       setError("Billing isn't available right now.");
     }
   }
@@ -304,6 +312,12 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
       window.location.assign(url);
     } catch (err) {
       setBusyTier(null);
+      // Session expiry rides the app's session-ended handling, not a billing
+      // message (see ManageBilling.manage).
+      if (err instanceof SessionExpiredError) {
+        useAccountSessionStore.getState().markExpired();
+        return;
+      }
       setError(
         err instanceof BillingApiError && err.code === "already_subscribed"
           ? "You're already subscribed — refresh to see your plan."

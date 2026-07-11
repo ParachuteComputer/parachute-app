@@ -48,6 +48,15 @@ Pairs with cloud rc.74's new Bearer billing endpoints — deploy together.
   **zero** cloud-console links (the only remaining `/console` reference is the
   service-worker navigation denylist, which forces server-owned ceremony paths
   past the SW to the origin — infrastructure, not a link).
+- **White-screen hardening (review folds)**: `normalizeDescriptor` now drops a
+  malformed `plans` (non-array, or an array with a null/primitive element) the
+  same way it drops a malformed `auth` — a door we don't control can't
+  white-screen the Billing cards' `plans.map(p => p.id …)`. `billingResult`
+  guards the `200 {url}` body (non-empty string required) so a contract-broken
+  `200 {}` can't `assign(undefined)`. And a genuine session expiry (post-retry
+  401 → `SessionExpiredError`) now rides the app's existing session-ended
+  handling (`markExpired` → the account session banner) instead of being masked
+  as a generic billing message.
 
 ## [0.4.0] - 2026-07-11
 
