@@ -1,6 +1,7 @@
 import { RecentTimeline, groupNotesByDay } from "@/components/RecentTimeline";
 import { OfflineRibbon } from "@/components/ui";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
+import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import {
   type HomeStepId,
   deriveSteps,
@@ -33,6 +34,16 @@ export function Home() {
   const notes = useNotesForDateViews();
   const install = useInstallAffordance();
   const { state: checklistState, dismiss } = useHomeChecklist(vault?.id ?? null);
+
+  // Trial ambience (DESIGN-SPEC §3.1, sanctioned places 2 + 4) — the SHARED
+  // account-summary query, enabled only for a home-door (account-minted)
+  // vault: a self-host door has no summary, so the fetch never fires. Lazy,
+  // never gates paint; failed/absent read the same here (no ambience — the
+  // retry affordance lives on /account).
+  const isHosted = vault !== null && isHostedVaultRecord(vault.clientId);
+  const summaryQuery = useAccountSummary({ enabled: isHosted });
+  const plan = (isHosted ? summaryOrNull(summaryQuery.data) : null)?.plan ?? null;
+  const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
 
   // NotesIndex only mounts Home when a vault is active, but guard anyway: a
   // vault removed mid-session falls back to the arrival (via the index).
@@ -76,6 +87,8 @@ export function Home() {
 
       <Composer vaultName={vault.name} focused={mode === "fresh"} />
 
+      <TrialCountdownNudge daysLeft={trialDaysLeft} />
+
       {mode === "fresh" ? <QuickDoors /> : null}
 
       {showSetup && incomplete.length > 0 ? (
@@ -95,7 +108,28 @@ export function Home() {
         fresh={mode === "fresh"}
       />
 
-      <PlanBacklink clientId={vault.clientId} />
+      <PlanBacklink clientId={vault.clientId} trialDaysLeft={trialDaysLeft} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Trial countdown nudge — sanctioned ambience place 4 of exactly four
+// (DESIGN-SPEC §3.1): a single sun row under the composer, ONLY when
+// `trial_days_left <= 7`, ONLY on Today. Not dismissible (it exists for ≤7
+// days by definition), never a modal, never on any other page.
+// ---------------------------------------------------------------------------
+
+function TrialCountdownNudge({ daysLeft }: { daysLeft: number | null }) {
+  if (daysLeft === null || daysLeft > 7) return null;
+  return (
+    <div className="nudge-sun mb-6">
+      <span aria-hidden="true">✦</span>
+      <Link to="/account" className="min-w-0 flex-1 truncate hover:underline">
+        {daysLeft === 0
+          ? "Your trial ends today — see plans →"
+          : `Your trial ends in ${daysLeft} day${daysLeft === 1 ? "" : "s"} — see plans →`}
+      </Link>
     </div>
   );
 }
@@ -294,12 +328,32 @@ function RecentSkeleton() {
 // account on THIS door, so no backlink is shown — never a dead affordance.
 // ---------------------------------------------------------------------------
 
-function PlanBacklink({ clientId }: { clientId: string }) {
+function PlanBacklink({
+  clientId,
+  trialDaysLeft,
+}: {
+  clientId: string;
+  trialDaysLeft: number | null;
+}) {
   if (!isHostedVaultRecord(clientId)) return null;
   return (
     <div className="mt-10 border-t border-border pt-4 text-sm">
+      {/* Sanctioned ambience place 2 (§3.1): the backlink carries the trial
+          line while trialing — plain otherwise. One link, one destination. */}
       <Link to="/account" className="text-fg-dim hover:text-accent">
-        Manage your account →
+        {trialDaysLeft !== null ? (
+          <>
+            <span className="font-medium text-sun-ink">
+              Free trial ·{" "}
+              {trialDaysLeft === 0
+                ? "ends today"
+                : `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`}
+            </span>{" "}
+            · Manage your account →
+          </>
+        ) : (
+          "Manage your account →"
+        )}
       </Link>
     </div>
   );

@@ -158,10 +158,11 @@ export interface AccountPlan {
  * plan/usage line and the Billing section.
  *
  * ⚠ CANONICAL, VERIFIED against cloud's merged source (`GET /account/summary`,
- * cloud rc.74+). The app SEAMS it: `getAccountSummary()` returns `null` on any
- * non-200 (404 while unbuilt, 401 signed-out), and the UI renders the
- * plan/usage line + Billing section only when a summary is present —
- * gracefully absent otherwise, never faking numbers.
+ * cloud rc.74+). The app SEAMS it (`getAccountSummaryState`, W2-8): 200 → the
+ * summary; 404/501 → `null` (the door serves no summary — a hub — so the UI
+ * shows nothing, never faking numbers); anything transient → `"error"` (the
+ * Account surface renders a retry card — a hiccup must never silently vanish
+ * the plan; ambient consumers treat it as `null` via `summaryOrNull`).
  */
 export interface AccountSummary {
   /** The account's email (mirrors `GET /account/session`.email). */

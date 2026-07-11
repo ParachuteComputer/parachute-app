@@ -1,6 +1,7 @@
 import { Home } from "@/app/routes/Home";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,11 +55,17 @@ function seedStore() {
 }
 
 function renderHome() {
+  // The notes hook is mocked above, but Home's trial-ambience summary hook
+  // (W2-8) is a real useQuery — it needs a client in context even while
+  // disabled (the seed vault's OAuth clientId keeps it disabled here).
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
     <MemoryRouter initialEntries={["/"]}>
-      <Routes>
-        <Route path="/" element={<Home />} />
-      </Routes>
+      <QueryClientProvider client={qc}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+        </Routes>
+      </QueryClientProvider>
     </MemoryRouter>,
   );
 }

@@ -4,7 +4,7 @@ import {
   BillingApiError,
   SessionExpiredError,
   createVault,
-  getAccountSummary,
+  getAccountSummaryState,
   listVaults,
   logout,
   mintVaultToken,
@@ -195,13 +195,17 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
   });
 });
 
-describe("getAccountSummary — Bearer-gated (account:<id>:read) + seamed", () => {
+// W2-8 (DESIGN-SPEC §3.1): the seam that distinguishes FAILED from ABSENT —
+// what lets the Plan & billing card render a retry state instead of the
+// vanishing-plan hole (WALK-manager #1). 404/501 = the door honestly serves no
+// summary (a hub — its account API ships /account/vaults but no summary), so
+// there is nothing to retry; everything transient = "error".
+describe("getAccountSummaryState — Bearer-gated + the failed/absent tri-state seam", () => {
   const summary: AccountSummary = {
     email: "a@b.c",
-    account_created_at: "2026-01-01T00:00:00Z",
-    plan: { tier: "standard", label: "Standard", price_monthly_usd: 5, vault_limit: 3 },
+    plan: { tier: "trial", label: "Free trial", trial_days_left: 5 },
     billing_enabled: true,
-    has_billing_customer: true,
+    has_billing_customer: false,
   };
 
   it("returns the summary on 200, riding the account Bearer (no cookie)", async () => {
@@ -211,38 +215,38 @@ describe("getAccountSummary — Bearer-gated (account:<id>:read) + seamed", () =
       return res("unexpected", 500);
     });
 
-    await expect(getAccountSummary(fetchImpl)).resolves.toEqual(summary);
+    await expect(getAccountSummaryState(fetchImpl)).resolves.toEqual(summary);
     const [, init] = fetchImpl.mock.calls[0]!;
     expect(headersOf(init).authorization).toBe("Bearer acct-tok");
     expect(init?.credentials).toBeUndefined(); // no cookie on the Bearer layer
   });
 
-  it("returns null on 404 (endpoint not built yet) — graceful absent", async () => {
+  it("returns null (ABSENT) on 404 — a door with no summary endpoint must not spin a retry card forever", async () => {
     sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => res("not found", 404));
-    await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
+    await expect(getAccountSummaryState(fetchImpl)).resolves.toBeNull();
   });
 
-  it("returns null on 403 (underscoped)", async () => {
+  it('returns "error" (FAILED) on a 500 — transient weather gets the retry card', async () => {
     sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
-    const fetchImpl = vi.fn<typeof fetch>(async () => res("", 403));
-    await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
+    const fetchImpl = vi.fn<typeof fetch>(async () => res("boom", 500));
+    await expect(getAccountSummaryState(fetchImpl)).resolves.toBe("error");
   });
 
-  it("returns null when signed out (no bearer to mint) — no-cloud-door degrade", async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
-      if (String(input) === "/account/session") return res({ signed_in: false, csrf: "x" });
-      return res("unexpected", 500);
-    });
-    await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
-  });
-
-  it("returns null on a network failure (never throws)", async () => {
+  it('returns "error" on a network failure (never throws)', async () => {
     sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => {
       throw new Error("offline");
     });
-    await expect(getAccountSummary(fetchImpl)).resolves.toBeNull();
+    await expect(getAccountSummaryState(fetchImpl)).resolves.toBe("error");
+  });
+
+  it('returns "error" when signed out (no bearer to mint — the session banner owns the real story)', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      if (String(input) === "/account/session") return res({ signed_in: false, csrf: "x" });
+      return res("unexpected", 500);
+    });
+    await expect(getAccountSummaryState(fetchImpl)).resolves.toBe("error");
   });
 });
 

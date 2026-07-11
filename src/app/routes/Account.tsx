@@ -1,7 +1,7 @@
+import { IconImport, IconSpark } from "@/components/NavIcons";
 import {
   BillingApiError,
   SessionExpiredError,
-  getAccountSummary,
   getSession,
   listVaults,
   logout,
@@ -22,22 +22,28 @@ import type {
   DoorPlan,
   DoorPlanInterval,
 } from "@/lib/account/types";
+import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import { useVaultStore } from "@/lib/vault";
 import { announceVaultSwitch } from "@/lib/vault/switch";
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 
-// The Account surface — the app AS the manager (SYNTHESIS "The shape"). The
-// person lives HERE and drives their whole account through the account bearer;
-// Cloud shrinks to the counter you visit only to sign up, pay, or change plan.
-// Everything else — open/create vaults, view plan + usage, manage AI
-// connections — happens in the app.
+// "Your parachute" — the manager's home (DESIGN-SPEC §3.1, W2-8). The person
+// lives HERE and drives their whole account through the account bearer; Cloud
+// shrinks to the counter you visit only to sign up, pay, or change plan. Four
+// cards: Identity · Plan & billing · Vaults · Connections.
 //
-// Door-agnostic + graceful: reads the account API at the SERVING origin (never a
-// hardcoded cloud host). When there's no cloud door / no session (a self-host
-// device, or signed out), it degrades to a calm "this device" view — local
-// vaults + connect + AI, no account/plan sections, never a crash.
-type View =
+// Door-agnostic + graceful: reads the account API at the SERVING origin (never
+// a hardcoded cloud host). When there's no cloud door / no session (a
+// self-host device, or signed out), it degrades to a calm "this device" view —
+// local vaults + connections, no account/plan sections, never a crash.
+//
+// The correctness piece (WALK-manager #1 / F4): the plan may never silently
+// vanish. A summary fetch FAILURE renders the Plan & billing card's own retry
+// state — distinguishable from a door that honestly has no summary to serve
+// (tri-state seam in client.ts / use-summary.ts).
+
+type BootView =
   | { kind: "loading" }
   | {
       kind: "manager";
@@ -46,20 +52,16 @@ type View =
        *  of an email; "Signed in as X" falls back `email ?? username`. */
       username?: string;
       csrf: string;
-      // null = the vault list FAILED to load (transient 500 / session lapse).
-      // Distinct from [] (genuinely no vaults) so we never show the "create your
-      // first" empty-state on a failure — that would invite a duplicate vault.
-      vaults: AccountVault[] | null;
-      summary: AccountSummary | null;
-      // The door descriptor's `plans` ladder powers the Billing section's
-      // upgrade cards (trial/free state). `null` on any fetch failure — the
-      // Billing section degrades to no cards rather than fabricating a ladder.
-      descriptor: DoorDescriptor | null;
     }
   | { kind: "device" };
 
+/** The vault list's own tri-state — mirrors the summary seam: a failure gets a
+ *  retry card, never the "create your first" empty-state (which would invite a
+ *  duplicate vault on a transient 500 / session lapse). */
+type VaultsState = "loading" | "error" | AccountVault[];
+
 export function Account() {
-  const [view, setView] = useState<View>({ kind: "loading" });
+  const [view, setView] = useState<BootView>({ kind: "loading" });
 
   useEffect(() => {
     let live = true;
@@ -72,70 +74,30 @@ export function Account() {
         if (live) setView({ kind: "device" });
         return;
       }
-      if (!session.signed_in) {
-        if (live) setView({ kind: "device" });
-        return;
-      }
-      // Both reads ride the same account bearer; each degrades on its own. A
-      // vault-load FAILURE resolves to null (→ a "couldn't load, retry" card),
-      // NOT [] — an empty list must mean genuinely-no-vaults, or we'd nudge a
-      // signed-in person to create a duplicate. An absent summary is just null.
-      // The door descriptor is same-origin + public (no bearer needed) and
-      // never throws — it's fetched alongside for the Billing section's
-      // upgrade-plan cards.
-      const [vaults, summary, descriptor] = await Promise.all([
-        listVaults()
-          .then((r) => r.vaults)
-          .catch((err) => {
-            // HUB-PARITY P4 weather: the account-token mint underlying this
-            // call may 403 force_change_password / 423 — surface the
-            // matching non-blocking gate rather than just degrading to null.
-            markHubGateFromError(err);
-            return null;
-          }),
-        getAccountSummary(),
-        getDoorDescriptor(),
-      ]);
-      if (live) {
-        setView({
-          kind: "manager",
-          email: session.email,
-          username: session.username,
-          csrf: session.csrf,
-          vaults,
-          summary,
-          descriptor,
-        });
-      }
+      if (!live) return;
+      setView(
+        session.signed_in
+          ? {
+              kind: "manager",
+              email: session.email,
+              username: session.username,
+              csrf: session.csrf,
+            }
+          : { kind: "device" },
+      );
     })();
     return () => {
       live = false;
     };
   }, []);
 
-  // Retry just the vault list (the "Couldn't load your vaults" card), leaving
-  // the rest of the manager view in place.
-  const reloadVaults = useCallback(async () => {
-    try {
-      const { vaults } = await listVaults();
-      setView((v) => (v.kind === "manager" ? { ...v, vaults } : v));
-    } catch {
-      setView((v) => (v.kind === "manager" ? { ...v, vaults: null } : v));
-    }
-  }, []);
-
   return (
     <div className="page-prose">
       <header className="mb-8">
-        <nav className="mb-4 text-sm text-fg-dim">
-          <Link to="/" className="focus-ring hover:text-accent">
-            ← Home
-          </Link>
-        </nav>
-        <h1 className="page-title">Account</h1>
+        {/* No "← Home" breadcrumb — a primary-nav room (F11 rule). */}
+        <h1 className="page-title">Your parachute</h1>
         <p className="mt-2 max-w-prose text-fg-muted">
-          Managed here. Cloud is just the counter you visit to sign up, pay, or change plan —
-          everything else lives in the app, held by your account.
+          Your account, plan, vaults, and connections — managed here.
         </p>
       </header>
 
@@ -146,41 +108,68 @@ export function Account() {
       ) : view.kind === "device" ? (
         <DeviceView />
       ) : (
-        <ManagerView
-          email={view.email}
-          username={view.username}
-          csrf={view.csrf}
-          vaults={view.vaults}
-          summary={view.summary}
-          descriptor={view.descriptor}
-          onReloadVaults={reloadVaults}
-        />
+        <ManagerView email={view.email} username={view.username} csrf={view.csrf} />
       )}
     </div>
   );
 }
 
-// The signed-in account manager: who you are, plan + billing, your Cloud
-// vaults, and AI connections — everything driven by the account bearer.
+// The signed-in manager: the four-card stack. Owns the three data reads beyond
+// the session — each card degrades on its own, none gates the others.
 function ManagerView({
   email,
   username,
   csrf,
-  vaults,
-  summary,
-  descriptor,
-  onReloadVaults,
 }: {
   email?: string;
   username?: string;
   csrf: string;
-  vaults: AccountVault[] | null;
-  summary: AccountSummary | null;
-  descriptor: DoorDescriptor | null;
-  onReloadVaults: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const activeVault = useVaultStore((s) => s.getActiveVault());
+
+  // Plan/trial context — the SHARED summary query (§2.4): same cache as the
+  // switcher, the nav badge, and Home's ambience. Tri-state: summary | null
+  // (door serves no summary) | "error" (transient failure → the retry card).
+  const summaryQuery = useAccountSummary();
+  const summaryState = summaryQuery.isPending ? "loading" : (summaryQuery.data ?? null);
+  const summary = summaryOrNull(summaryQuery.data);
+  const retrySummary = useCallback(() => summaryQuery.refetch(), [summaryQuery.refetch]);
+
+  // The account's vault list + the door descriptor (the upgrade ladder). The
+  // descriptor is same-origin + public and never throws (memoized module-side).
+  const [vaults, setVaults] = useState<VaultsState>("loading");
+  const [descriptor, setDescriptor] = useState<DoorDescriptor | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    listVaults()
+      .then((r) => {
+        if (live) setVaults(r.vaults);
+      })
+      .catch((err) => {
+        // HUB-PARITY P4 weather: the account-token mint underlying this call
+        // may 403 force_change_password / 423 — surface the matching
+        // non-blocking gate rather than just degrading to the retry card.
+        markHubGateFromError(err);
+        if (live) setVaults("error");
+      });
+    getDoorDescriptor().then((d) => {
+      if (live) setDescriptor(d);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const reloadVaults = useCallback(async () => {
+    try {
+      const { vaults } = await listVaults();
+      setVaults(vaults);
+    } catch {
+      setVaults("error");
+    }
+  }, []);
 
   async function signOut() {
     try {
@@ -194,34 +183,48 @@ function ManagerView({
   }
 
   return (
-    <div className="space-y-8">
-      <AccountBlock email={email} username={username} onSignOut={signOut} />
-      <BillingSection summary={summary} descriptor={descriptor} />
-      <VaultsBlock vaults={vaults} onReload={onReloadVaults} />
-      <ConnectionsBlock hasActiveVault={!!activeVault} />
+    <div className="space-y-6">
+      <IdentityCard email={email} username={username} summary={summary} onSignOut={signOut} />
+      <PlanBillingCard
+        state={summaryState}
+        descriptor={descriptor}
+        onRetry={retrySummary}
+        retrying={summaryQuery.isFetching}
+      />
+      <VaultsCard vaults={vaults} summary={summary} onReload={reloadVaults} />
+      <ConnectionsCard hasActiveVault={!!activeVault} />
     </div>
   );
 }
 
-// "Signed in as X" + sign out. Plan + billing live in their own section below
-// (BillingSection) — this card is identity only.
-function AccountBlock({
+// ---------------------------------------------------------------------------
+// Card 1 — Identity. SIGNED IN AS · email (Fraunces) · the plan chip · the
+// quiet sign-out ghost. The chip is ambience: no summary (failed or absent) ⇒
+// no chip — the retry affordance lives in Card 2, never here.
+// ---------------------------------------------------------------------------
+
+function IdentityCard({
   email,
   username,
+  summary,
   onSignOut,
 }: {
   email?: string;
   username?: string;
+  summary: AccountSummary | null;
   onSignOut: () => void;
 }) {
   return (
-    <section aria-label="Account" className="card rounded-xl p-6 shadow-soft">
+    <section aria-label="Account" className="card p-6 shadow-soft">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="eyebrow mb-1">Signed in as</p>
-          <p className="truncate font-serif text-xl text-fg">
-            {email ?? username ?? "your account"}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="truncate font-serif text-xl text-fg">
+              {email ?? username ?? "your account"}
+            </p>
+            <PlanChip summary={summary} />
+          </div>
         </div>
         <button
           type="button"
@@ -235,29 +238,75 @@ function AccountBlock({
   );
 }
 
-// The Billing section — the ONE trip out to Stripe (Plan A: straight from the
-// app, no cloud-console re-login). Pure presentation over data the account
-// summary + door descriptor already handed us: zero Stripe knowledge, zero
-// pricing math, zero cloud origin — just two typed redirect calls.
-//
-// Absent entirely when the door has no billing wired (self-hosted hub / no
-// Stripe configured) — there's nothing honest to show, so the section simply
-// doesn't exist.
-function BillingSection({
-  summary,
+function PlanChip({ summary }: { summary: AccountSummary | null }) {
+  if (!summary) return null;
+  const days = summary.plan.trial_days_left;
+  if (typeof days === "number") {
+    return (
+      <span className="chip border-transparent bg-sun-soft font-medium text-sun-ink">
+        Free trial · {days === 0 ? "ends today" : `${days} day${days === 1 ? "" : "s"} left`}
+      </span>
+    );
+  }
+  return <span className="chip">{summary.plan.label}</span>;
+}
+
+// ---------------------------------------------------------------------------
+// Card 2 — Plan & billing. The five states (DESIGN-SPEC §3.1):
+//   loading            → skeleton lines
+//   absent             → no card (the door serves no summary — a hub — or
+//                        billing_enabled: false — nothing honest to show)
+//   failed             → the card's own retry state (WALK-manager #1: a
+//                        transient hiccup must never silently vanish the plan)
+//   trial / free       → current-plan line · interval picker · plan cards
+//   paid               → plan line + the one true trip to the billing portal
+// ---------------------------------------------------------------------------
+
+function PlanBillingCard({
+  state,
   descriptor,
+  onRetry,
+  retrying,
 }: {
-  summary: AccountSummary | null;
+  state: AccountSummary | null | "error" | "loading";
   descriptor: DoorDescriptor | null;
+  onRetry: () => void;
+  retrying: boolean;
 }) {
-  if (!summary?.billing_enabled) return null;
+  // Absent — the door serves no summary (404: a self-hosted hub's honest
+  // steady-state), or it does and billing isn't wired. Either way there is
+  // nothing honest to show, so the card simply doesn't exist.
+  if (state === null) return null;
+  if (state !== "loading" && state !== "error" && !state.billing_enabled) return null;
+
   return (
-    <section aria-label="Billing" className="card rounded-xl p-6 shadow-soft">
-      <h2 className="font-serif text-xl text-fg">Billing</h2>
-      {summary.has_billing_customer ? (
-        <ManageBilling summary={summary} />
+    <section aria-label="Plan & billing" className="card p-6 shadow-soft">
+      <h2 className="font-serif text-xl text-fg">Plan & billing</h2>
+      {state === "loading" ? (
+        <div aria-busy="true" className="mt-4 space-y-2.5">
+          <div className="skeleton h-4 w-3/5 rounded-md" />
+          <div className="skeleton h-4 w-2/5 rounded-md" />
+        </div>
+      ) : state === "error" ? (
+        // The retry card — mirrors the vaults card's failure state exactly.
+        <div className="mt-4 text-center">
+          <p className="mb-1 font-serif text-lg text-fg">Couldn't load your plan.</p>
+          <p className="mb-5 text-sm text-fg-muted">
+            A hiccup reaching your account — your plan hasn't changed.
+          </p>
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            className="btn btn-primary btn-touch"
+          >
+            {retrying ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      ) : state.has_billing_customer ? (
+        <ManageBilling summary={state} />
       ) : (
-        <UpgradePlans summary={summary} plans={descriptor?.plans ?? []} />
+        <UpgradePlans summary={state} plans={descriptor?.plans ?? []} />
       )}
     </section>
   );
@@ -300,7 +349,7 @@ function ManageBilling({ summary }: { summary: AccountSummary }) {
       >
         {busy ? "Opening…" : "Manage plan & billing ↗"}
       </button>
-      {error ? <p className="mt-2 text-xs text-fg-dim">{error}</p> : null}
+      {error ? <BillingErrorLine text={error} /> : null}
     </div>
   );
 }
@@ -322,6 +371,14 @@ const INTERVAL_SUFFIX: Record<BillingInterval, string> = {
   monthly: "/mo",
   quarterly: "/quarter",
   yearly: "/yr",
+};
+/** Cycles per year — the honest "about $N/mo" equivalence for plans that
+ *  don't sell a monthly cycle (decision (a): Entry reads
+ *  "$3/quarter · $10/yr — about $1/mo", never a bare "$1/mo"). */
+const MONTHS_PER_INTERVAL: Record<BillingInterval, number> = {
+  monthly: 1,
+  quarterly: 3,
+  yearly: 12,
 };
 
 /** The set of intervals available on ANY offered tier, cheapest-first — the
@@ -357,22 +414,91 @@ function cheapestPlanInterval(
   return null;
 }
 
+/**
+ * The card's honest per-interval price line (DESIGN-SPEC §3.1, decision (a)):
+ * every cycle the tier actually sells, the door's own labels, joined — Entry
+ * = "$3/quarter · $10/yr — about $1/mo". The "about $N/mo" equivalence renders
+ * ONLY when the tier has no monthly cycle (it answers "what's that per
+ * month?" for a plan that can't be bought monthly) and is derived from the
+ * cheapest per-month real price, rounded to a whole dollar — approximate by
+ * construction and labeled so ("about").
+ */
+function planPriceLine(plan: DoorPlan, hasIntervalData: boolean): string | null {
+  if (!hasIntervalData || !plan.intervals) {
+    return typeof plan.price_month === "number" ? `$${plan.price_month}/mo` : null;
+  }
+  const parts: string[] = [];
+  let monthlyAvailable = false;
+  let perMonth: number | null = null;
+  for (const key of INTERVAL_ORDER) {
+    const entry = plan.intervals[key];
+    if (!entry?.available) continue;
+    if (key === "monthly") monthlyAvailable = true;
+    const label = formatIntervalPrice(entry, key);
+    if (label) parts.push(label);
+    if (typeof entry.price === "number") {
+      const equivalent = entry.price / MONTHS_PER_INTERVAL[key];
+      perMonth = perMonth === null ? equivalent : Math.min(perMonth, equivalent);
+    }
+  }
+  if (parts.length === 0) return null;
+  const line = parts.join(" · ");
+  if (monthlyAvailable || perMonth === null) return line;
+  return `${line} — about $${Math.max(1, Math.round(perMonth))}/mo`;
+}
+
+/** Honest checkout-failure copy (§3.1): a 400 about THIS plan/cycle must never
+ *  read as a billing outage — `shots-manager/desktop-05-entry-upgrade-error.png`
+ *  is the anti-pattern this replaces. */
+function checkoutErrorCopy(err: unknown): string {
+  if (err instanceof BillingApiError) {
+    switch (err.code) {
+      case "already_subscribed":
+        return "You're already subscribed — refresh to see your plan.";
+      case "invalid_plan":
+      case "invalid_interval":
+      case "invalid_tier":
+        return "That plan isn't offered on this cycle — pick another.";
+      default:
+        break;
+    }
+  }
+  return "Billing isn't available right now.";
+}
+
+// A billing error is honest, visible weather — the same danger-soft line the
+// vaults card uses, not a quiet gray whisper that reads like a footnote.
+function BillingErrorLine({ text }: { text: string }) {
+  return (
+    <p className="mt-3 rounded-lg border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
+      {text}
+    </p>
+  );
+}
+
 // Trial/free state: the door's upgrade ladder as plan cards (from the door
 // descriptor — the app doesn't know pricing, it just renders what the door
 // advertised), current tier marked, each purchasable tier a straight trip to
 // Stripe Checkout. A GLOBAL segmented interval picker (monthly/quarterly/
-// yearly) sits above the grid — one selection for the whole ladder, since
-// Standard/Plus/Power sell all three cycles and a per-card picker would just
-// repeat the same three buttons three times. Entry (F1's matrix hole: no
-// monthly Price) disables its own button + shows its cheapest real cycle as a
-// hint rather than ever sending a checkout call that will 400.
+// yearly) sits above the grid — one selection for the whole ladder. Entry
+// (F1's matrix hole: no monthly Price) disables its own button + shows its
+// cheapest real cycle as a hint rather than ever sending a checkout call that
+// will 400.
 function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: DoorPlan[] }) {
   const availableIntervals = unionAvailableIntervals(plans);
+  // The selection is DERIVED, not initialized: `plans` can arrive AFTER this
+  // component first mounts (the descriptor fetch is independent of the
+  // summary's — W2-8's progressive load), and a useState initializer computed
+  // against the early empty ladder would pin `null` forever — the crash class
+  // "static-write + stale-read". The user's pick applies only while it's still
+  // a cycle the ladder sells; otherwise the cheapest available leads.
   // `null` ⇒ no plan published `intervals` data at all — the legacy path:
   // no picker, price_month display, interval-less checkout call.
-  const [selectedInterval, setSelectedInterval] = useState<BillingInterval | null>(
-    availableIntervals[0] ?? null,
-  );
+  const [pickedInterval, setPickedInterval] = useState<BillingInterval | null>(null);
+  const selectedInterval =
+    pickedInterval !== null && availableIntervals.includes(pickedInterval)
+      ? pickedInterval
+      : (availableIntervals[0] ?? null);
   const [busyTier, setBusyTier] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -393,11 +519,7 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
         useAccountSessionStore.getState().markExpired();
         return;
       }
-      setError(
-        err instanceof BillingApiError && err.code === "already_subscribed"
-          ? "You're already subscribed — refresh to see your plan."
-          : "Billing isn't available right now.",
-      );
+      setError(checkoutErrorCopy(err));
     }
   }
 
@@ -413,7 +535,7 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
               <button
                 key={key}
                 type="button"
-                onClick={() => setSelectedInterval(key)}
+                onClick={() => setPickedInterval(key)}
                 aria-pressed={active}
                 className={`chip focus-ring ${active ? "chip-tag-active font-medium" : "chip-tag"}`}
               >
@@ -432,24 +554,19 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
             // — there's no cycle dimension to mismatch on.
             const canCheckoutSelected =
               availableIntervals.length === 0 || selectedEntry?.available === true;
-            const priceLine =
-              availableIntervals.length === 0
-                ? typeof plan.price_month === "number"
-                  ? `$${plan.price_month}/mo`
-                  : null
-                : selectedEntry?.available
-                  ? formatIntervalPrice(selectedEntry, selectedInterval as BillingInterval)
-                  : null;
+            const priceLine = planPriceLine(plan, availableIntervals.length > 0);
             const fallback = canCheckoutSelected ? null : cheapestPlanInterval(plan);
             return (
-              <li key={plan.id} className="rounded-lg border border-border p-4">
+              <li key={plan.id} className="rounded-xl border border-border bg-bg p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-serif text-base text-fg">{plan.name}</span>
+                  <span className="font-serif text-lg text-fg">{plan.name}</span>
                   {isCurrent ? <span className="chip">Current</span> : null}
                 </div>
                 {priceLine ? <p className="mt-1 text-sm text-fg-muted">{priceLine}</p> : null}
                 {typeof plan.vaults === "number" ? (
-                  <p className="text-xs text-fg-dim">{plan.vaults} vaults</p>
+                  <p className="mt-0.5 text-xs text-fg-dim">
+                    {plan.vaults} vault{plan.vaults === 1 ? "" : "s"}
+                  </p>
                 ) : null}
                 {isCurrent ? null : canCheckoutSelected ? (
                   <button
@@ -482,7 +599,7 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
           })}
         </ul>
       ) : null}
-      {error ? <p className="mt-2 text-xs text-fg-dim">{error}</p> : null}
+      {error ? <BillingErrorLine text={error} /> : null}
     </div>
   );
 }
@@ -510,13 +627,20 @@ function planSummaryLine(summary: AccountSummary): string {
   return parts.join(" · ");
 }
 
-// The account's Cloud vaults (the endpoint returns only these — all `Cloud`).
-// Every card verb is Open; the self-hosted device list lives on /vaults.
-function VaultsBlock({
+// ---------------------------------------------------------------------------
+// Card 3 — Your vaults. Title + the "n of m on your plan" meter (only when the
+// summary carries BOTH numbers — never fabricated), glyph rows, and ONE foot
+// verb: "＋ Add a vault" → /add-vault (the chooser holds the create/connect
+// fork). Failure keeps its retry card; empty keeps its warm first-vault door.
+// ---------------------------------------------------------------------------
+
+function VaultsCard({
   vaults,
+  summary,
   onReload,
 }: {
-  vaults: AccountVault[] | null;
+  vaults: VaultsState;
+  summary: AccountSummary | null;
   onReload: () => Promise<void>;
 }) {
   const navigate = useNavigate();
@@ -533,12 +657,11 @@ function VaultsBlock({
       // §4.4 switch-confirmation: "Now in {vault}".
       announceVaultSwitch(vault.name);
       // NAVIGATION.md: "Account.tsx VaultsBlock: Open {vault} → /" — user-
-      // initiated, push (was a gratuitous replace — F7 offender).
+      // initiated, push.
       navigate("/");
     } catch (err) {
       setBusyName(null);
-      // F12 — same friendly-copy mapping as the create-vault naming form:
-      // never a raw wire code.
+      // F12 — friendly copy, never a raw wire code.
       setError(describeAccountError(err, "Couldn't open that vault."));
     }
   }
@@ -552,19 +675,30 @@ function VaultsBlock({
     }
   }
 
+  // The meter needs both numbers — a limit without a count (or vice versa)
+  // renders nothing rather than a fabricated "0 of N".
+  const plan = summary?.plan;
+  const meter =
+    plan && typeof plan.vault_limit === "number" && typeof plan.vaults_used === "number"
+      ? `${plan.vaults_used} of ${plan.vault_limit} on your plan`
+      : null;
+
   return (
-    <section aria-label="Your vaults">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <h2 className="eyebrow">Your vaults</h2>
-        <Link to="/vaults" className="focus-ring text-sm text-fg-dim hover:text-accent">
-          All on this device →
-        </Link>
+    <section aria-label="Your vaults" className="card p-6 shadow-soft">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="font-serif text-xl text-fg">Your vaults</h2>
+        {meter ? <span className="text-xs text-fg-muted">{meter}</span> : null}
       </div>
 
-      {vaults === null ? (
+      {vaults === "loading" ? (
+        <div aria-busy="true" className="mt-4 space-y-2.5">
+          <div className="skeleton h-9 rounded-lg" />
+          <div className="skeleton h-9 w-4/5 rounded-lg" />
+        </div>
+      ) : vaults === "error" ? (
         // Load FAILED (not empty) — never the "create your first" nudge here, or
         // a transient 500 / session lapse invites a duplicate vault.
-        <div className="card rounded-xl p-6 text-center shadow-soft">
+        <div className="mt-4 text-center">
           <p className="mb-1 font-serif text-lg text-fg">Couldn't load your vaults.</p>
           <p className="mb-5 text-sm text-fg-muted">
             A hiccup reaching your account — nothing's lost, your vaults are safe.
@@ -579,48 +713,50 @@ function VaultsBlock({
           </button>
         </div>
       ) : vaults.length === 0 ? (
-        <div className="card rounded-xl p-6 text-center shadow-soft">
+        <div className="mt-4 text-center">
           <p className="mb-1 font-serif text-lg text-fg">No vaults yet.</p>
           <p className="mb-5 text-sm text-fg-muted">
             Create your first — a private home for your notes, always yours to export.
           </p>
-          {/* NAVIGATION.md: card link — user-initiated, push (W2-6: the
-              creation ceremony's own URL, was /welcome?new=1). */}
+          {/* NAVIGATION.md: card link — user-initiated, push. */}
           <Link to="/add-vault/create" className="btn btn-primary btn-touch">
             Create a vault
           </Link>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {vaults.map((vault) => {
-            const usage = formatUsageBytes(vault.usage);
-            const address = vault.url ? vault.url.replace(/^https?:\/\//, "") : null;
-            return (
-              <li key={vault.name} className="card rounded-xl p-5 shadow-soft">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-serif text-lg text-fg">{vault.name}</span>
-                      <span className="chip">☁ Cloud</span>
-                    </div>
-                    {address ? <p className="mt-1 truncate note-id">{address}</p> : null}
-                    {usage ? (
-                      <p className="mt-0.5 font-round text-xs text-fg-muted">{usage}</p>
-                    ) : null}
+        <>
+          <ul className="mt-3 divide-y divide-border-light">
+            {vaults.map((vault) => {
+              const usage = formatUsageBytes(vault.usage);
+              const address = vault.url ? vault.url.replace(/^https?:\/\//, "") : null;
+              return (
+                <li key={vault.name} className="flex items-center gap-3 py-3">
+                  <VaultGlyph name={vault.name} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-serif text-lg leading-snug text-fg">{vault.name}</p>
+                    {address ? <p className="mt-0.5 truncate note-id">{address}</p> : null}
+                    {usage ? <p className="mt-0.5 text-xs text-fg-muted">{usage}</p> : null}
                   </div>
                   <button
                     type="button"
                     onClick={() => open(vault)}
                     disabled={busyName === vault.name}
-                    className="btn btn-primary btn-touch shrink-0 rounded-full"
+                    className="btn btn-primary btn-sm btn-touch shrink-0"
                   >
                     {busyName === vault.name ? "Opening…" : "Open →"}
                   </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-3 border-t border-border-light pt-3 text-sm">
+            {/* NAVIGATION.md: card link — user-initiated, push. ONE verb — the
+                chooser at /add-vault holds the create/connect fork (§3.1). */}
+            <Link to="/add-vault" className="focus-ring font-semibold text-accent hover:underline">
+              ＋ Add a vault
+            </Link>
+          </p>
+        </>
       )}
 
       {error ? (
@@ -628,60 +764,127 @@ function VaultsBlock({
           {error}
         </p>
       ) : null}
-
-      {vaults !== null ? (
-        <p className="mt-4 font-round text-sm text-fg-muted">
-          {/* NAVIGATION.md: card link — user-initiated, push (W2-6: the
-              creation ceremony's own URL, was /welcome?new=1). */}
-          <Link to="/add-vault/create" className="font-semibold text-accent hover:underline">
-            ＋ Create a new vault
-          </Link>{" "}
-          ·{" "}
-          <Link
-            to="/add"
-            className="font-semibold hover:underline"
-            style={{ color: "var(--color-sky)" }}
-          >
-            Connect a self-hosted vault
-          </Link>
-        </p>
-      ) : null}
     </section>
   );
 }
 
-// AI connections live per-vault (the MCP URL is a vault address), so this is a
-// pointer to the existing Connect surface — or a nudge to open a vault first.
-function ConnectionsBlock({ hasActiveVault }: { hasActiveVault: boolean }) {
+// The vault-initial glyph in a grass-soft circle — the switcher's identity
+// mark, echoed here (§3.1 Card 3 row anatomy).
+function VaultGlyph({ name }: { name: string }) {
+  const initial = (name.trim()[0] ?? "?").toUpperCase();
   return (
-    <section aria-label="AI connections" className="card rounded-xl p-6 shadow-soft">
-      <h2 className="font-serif text-xl text-fg">AI connections</h2>
-      <p className="mt-1 text-sm text-fg-muted">
-        Invite Claude, ChatGPT, or any MCP client into a vault — one memory, shared with every
-        assistant you choose.
-      </p>
-      <div className="mt-4">
+    <span
+      aria-hidden
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-grass-soft text-sm font-semibold text-grass-ink"
+    >
+      {initial}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Card 4 — Connections. Two icon-in-soft-circle rows (adopt #9): Connect your
+// AI → /connect, Import notes → /import. With no active vault the AI row dims
+// with the honest pointer — a vault is the thing an AI connects TO.
+// ---------------------------------------------------------------------------
+
+function ConnectionsCard({ hasActiveVault }: { hasActiveVault: boolean }) {
+  return (
+    <section aria-label="Connections" className="card p-6 shadow-soft">
+      <h2 className="font-serif text-xl text-fg">Connections</h2>
+      <div className="mt-2 divide-y divide-border-light">
         {hasActiveVault ? (
-          <Link to="/connect" className="btn btn-primary btn-touch">
-            Manage AI connections
-          </Link>
+          <ConnectionRow
+            to="/connect"
+            tone="sky"
+            icon={<IconSpark width={18} height={18} />}
+            title="Connect your AI"
+            description="Claude, ChatGPT, or any MCP client — one memory, shared."
+          />
         ) : (
-          <p className="text-sm text-fg-dim">Open a vault above to connect an AI to it.</p>
+          <div className="-mx-2 flex items-center gap-3 px-2 py-3 opacity-60">
+            <ConnectionCircle tone="sky">
+              <IconSpark width={18} height={18} />
+            </ConnectionCircle>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-fg">Connect your AI</p>
+              <p className="mt-0.5 text-sm text-fg-muted">
+                Open a vault above to connect an AI to it.
+              </p>
+            </div>
+          </div>
         )}
+        <ConnectionRow
+          to="/import"
+          tone="grass"
+          icon={<IconImport width={18} height={18} />}
+          title="Import notes"
+          description="Bring your notes over from anywhere markdown lives."
+        />
       </div>
     </section>
   );
 }
 
-// No cloud door / signed out: manage what's on THIS device. Honest — no account
-// or plan sections (there's no account to speak of here), just the local vaults
-// and the way in.
+function ConnectionRow({
+  to,
+  tone,
+  icon,
+  title,
+  description,
+}: {
+  to: string;
+  tone: "sky" | "grass";
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    // NAVIGATION.md: card link — user-initiated, push.
+    <Link
+      to={to}
+      className="focus-ring -mx-2 flex items-center gap-3 rounded-lg px-2 py-3 hover:bg-bg-soft"
+    >
+      <ConnectionCircle tone={tone}>{icon}</ConnectionCircle>
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium text-fg">{title}</span>
+        <span className="mt-0.5 block text-sm text-fg-muted">{description}</span>
+      </span>
+      <span aria-hidden className="shrink-0 text-lg text-fg-dim">
+        ›
+      </span>
+    </Link>
+  );
+}
+
+// The 36–40px tinted soft circle behind a thin-stroke icon (adopt #9). Sky =
+// the "connected apps" voice; grass = notes coming home to the vault.
+function ConnectionCircle({ tone, children }: { tone: "sky" | "grass"; children: ReactNode }) {
+  return (
+    <span
+      aria-hidden
+      className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${
+        tone === "grass" ? "bg-grass-soft text-grass-ink" : "bg-bg-soft"
+      }`}
+      style={tone === "sky" ? { color: "var(--color-sky)" } : undefined}
+    >
+      {children}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// No cloud door / signed out: manage what's on THIS device. Honest — no
+// account or plan sections (there's no account to speak of here), just the
+// local vaults and the way in.
+// ---------------------------------------------------------------------------
+
 function DeviceView() {
   const vaults = useVaultStore((s) => s.vaults);
   const list = Object.values(vaults);
   return (
-    <div className="space-y-8">
-      <section className="card rounded-xl p-6 shadow-soft">
+    <div className="space-y-6">
+      <section className="card p-6 shadow-soft">
         <h2 className="font-serif text-xl text-fg">This device</h2>
         <p className="mt-1 text-sm text-fg-muted">
           You're managing the vaults connected on this device. Sign in to your account to manage
@@ -696,7 +899,7 @@ function DeviceView() {
           </Link>
         </div>
       </section>
-      <ConnectionsBlock hasActiveVault={list.length > 0} />
+      <ConnectionsCard hasActiveVault={list.length > 0} />
     </div>
   );
 }

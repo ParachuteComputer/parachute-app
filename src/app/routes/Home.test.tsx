@@ -1,5 +1,7 @@
 import { Home } from "@/app/routes/Home";
+import { getAccountSummaryState } from "@/lib/account/client";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
+import type { AccountSummary } from "@/lib/account/types";
 import { loadChecklistState } from "@/lib/home/checklist";
 import { __resetInstallAffordanceForTests } from "@/lib/pwa-install";
 import { useVaultStore } from "@/lib/vault/store";
@@ -8,6 +10,18 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The shared account-summary read (trial ambience, §3.1 places 2 + 4) — mocked
+// so Home tests control the plan state without wiring a whole account door.
+// Spreads the real module so everything else (error classes etc.) stays real.
+vi.mock("@/lib/account/client", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/account/client")>("@/lib/account/client");
+  return {
+    ...actual,
+    getAccountSummaryState: vi.fn().mockResolvedValue(null),
+  };
+});
 
 interface Row {
   id: string;
@@ -93,11 +107,48 @@ const WITH_USER_NOTE: Row[] = [
   },
 ];
 
+// A home-door (account-minted) vault — the seed under which trial ambience is
+// even possible (a self-host OAuth vault never fetches the summary).
+function seedHostedStore() {
+  useVaultStore.setState({
+    vaults: {
+      v1: {
+        id: "v1",
+        url: "https://u.parachute.computer/vault/aaron",
+        name: "aaron",
+        issuer: "https://u.parachute.computer",
+        clientId: HOSTED_CLIENT_ID,
+        scope: "full",
+        addedAt: "2026-07-01T00:00:00.000Z",
+        lastUsedAt: "2026-07-01T00:00:00.000Z",
+      },
+    },
+    activeVaultId: "v1",
+  });
+}
+
+function trialSummary(daysLeft: number): AccountSummary {
+  return {
+    email: "ag@unforced.org",
+    plan: { tier: "trial", label: "Free trial", trial_days_left: daysLeft },
+    billing_enabled: true,
+    has_billing_customer: false,
+  };
+}
+
+const PAID_SUMMARY: AccountSummary = {
+  email: "ag@unforced.org",
+  plan: { tier: "standard", label: "Standard", price_monthly_usd: 5 },
+  billing_enabled: true,
+  has_billing_customer: true,
+};
+
 describe("Home — the warm front door", () => {
   beforeEach(() => {
     localStorage.clear();
     __resetInstallAffordanceForTests();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    vi.mocked(getAccountSummaryState).mockReset().mockResolvedValue(null);
     seedStore();
   });
   afterEach(() => {
@@ -264,5 +315,117 @@ describe("Home — the warm front door", () => {
     const link = screen.getByRole("link", { name: /manage your account/i });
     expect(link).toHaveAttribute("href", "/account");
     expect(link.getAttribute("href")).not.toContain("cloud.parachute.computer");
+  });
+
+  // ---------------------------------------------------------------------
+  // Trial ambience (DESIGN-SPEC §3.1) — Home carries sanctioned places 2
+  // (the PlanBacklink trial line) and 4 (the ≤7-day countdown nudge under
+  // the composer, Today only). Nowhere else on this page.
+  // ---------------------------------------------------------------------
+  describe("trial ambience — the backlink line + the ≤7-day nudge", () => {
+    it("the backlink carries the trial countdown while trialing (place 2)", async () => {
+      seedHostedStore();
+      vi.mocked(getAccountSummaryState).mockResolvedValue(trialSummary(5));
+      installFetch(SEED_ONLY);
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      await screen.findByRole("heading", { level: 1, name: "aaron" });
+      const link = await screen.findByRole("link", {
+        name: /free trial · 5 days left · manage your account/i,
+      });
+      expect(link).toHaveAttribute("href", "/account");
+    });
+
+    it("the backlink is plain when not trialing", async () => {
+      seedHostedStore();
+      vi.mocked(getAccountSummaryState).mockResolvedValue(PAID_SUMMARY);
+      installFetch(SEED_ONLY);
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      await screen.findByRole("heading", { level: 1, name: "aaron" });
+      const link = screen.getByRole("link", { name: /manage your account/i });
+      expect(link.textContent).not.toMatch(/free trial/i);
+    });
+
+    it("shows the countdown nudge under the composer ONLY at ≤7 days (place 4)", async () => {
+      seedHostedStore();
+      vi.mocked(getAccountSummaryState).mockResolvedValue(trialSummary(7));
+      installFetch(SEED_ONLY);
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const nudge = await screen.findByRole("link", {
+        name: /your trial ends in 7 days — see plans/i,
+      });
+      expect(nudge).toHaveAttribute("href", "/account");
+      // Not dismissible — it exists for ≤7 days by definition. (The setup
+      // nudge's dismiss button is a different row; the trial nudge has none.)
+      expect(nudge.closest(".nudge-sun")?.querySelector("button")).toBeNull();
+    });
+
+    it("keeps the nudge away above 7 days — ambience, not a nag", async () => {
+      seedHostedStore();
+      vi.mocked(getAccountSummaryState).mockResolvedValue(trialSummary(8));
+      installFetch(SEED_ONLY);
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      await screen.findByRole("heading", { level: 1, name: "aaron" });
+      // The trial line still shows in the backlink (place 2) …
+      await screen.findByRole("link", { name: /free trial · 8 days left/i });
+      // … but the countdown nudge does not exist yet.
+      expect(screen.queryByText(/your trial ends in/i)).not.toBeInTheDocument();
+    });
+
+    it("reads 'ends today' at zero days", async () => {
+      seedHostedStore();
+      vi.mocked(getAccountSummaryState).mockResolvedValue(trialSummary(0));
+      installFetch(SEED_ONLY);
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      expect(
+        await screen.findByRole("link", { name: /your trial ends today — see plans/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows no nudge when paid, and never fetches for a self-host vault", async () => {
+      // Paid, hosted: no nudge, plain backlink.
+      seedHostedStore();
+      vi.mocked(getAccountSummaryState).mockResolvedValue(PAID_SUMMARY);
+      installFetch(SEED_ONLY);
+      const { unmount } = render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      await screen.findByRole("heading", { level: 1, name: "aaron" });
+      expect(screen.queryByText(/your trial ends/i)).not.toBeInTheDocument();
+      unmount();
+
+      // Self-host (OAuth clientId "c"): the summary query never even fires.
+      vi.mocked(getAccountSummaryState).mockClear();
+      seedStore();
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      await screen.findByRole("heading", { level: 1, name: "default" });
+      expect(getAccountSummaryState).not.toHaveBeenCalled();
+      expect(screen.queryByText(/your trial ends/i)).not.toBeInTheDocument();
+    });
   });
 });

@@ -3,7 +3,7 @@ import { listVaults } from "@/lib/account/client";
 import { describeAccountError } from "@/lib/account/error-copy";
 import { isHostedVaultRecord, openHostedVault } from "@/lib/account/hosted-vault";
 import type { AccountVault } from "@/lib/account/types";
-import { useAccountSummary } from "@/lib/account/use-summary";
+import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import {
   type HubVaultEntry,
   type VaultRecord,
@@ -259,7 +259,9 @@ function SwitcherPanel({
   // panel only mounts while its surface is open, so the switcher never adds a
   // boot fetch.
   const summaryQuery = useAccountSummary();
-  const summary = summaryQuery.data ?? null;
+  // Ambient read of the tri-state: failed and absent both degrade to "no plan
+  // context" here — the retry affordance lives on /account (W2-8).
+  const summary = summaryOrNull(summaryQuery.data);
 
   // The account's hosted vault list (the cloud door), same mount-lazy timing.
   // `null` = nothing to show (signed out / self-host / fetch failed) — the

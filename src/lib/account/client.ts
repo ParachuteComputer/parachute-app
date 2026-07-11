@@ -161,7 +161,7 @@ export async function mintAccountToken(
 // --- The Bearer layer: `/account/*` C3 surface -------------------------------
 
 // A single in-flight C2 mint, shared across concurrent C3 callers: the Account
-// surface fires listVaults + getAccountSummary at once, and without this each
+// surface fires listVaults + the summary read at once, and without this each
 // would mint its own account token (duplicate getSession + /account/token
 // round-trips, last-write-wins on the cache). While a mint is in flight every
 // caller awaits the SAME promise; it clears on settle so the next lapse re-mints.
@@ -229,25 +229,43 @@ async function bearerFetch(
 }
 
 /**
- * `GET /account/summary` — the account-level plan/usage roll-up (the
- * Account-manager surface). Bearer-gated (`account:<id>:read`), so it rides the
- * same account bearer as the other C3 calls. SEAMED: cloud may not have shipped
- * it yet, so this returns `null` on ANY non-200 (404 unbuilt, 403/401) and on a
- * mint/network failure — the caller renders the plan/usage line only when a
- * summary is present, and never blocks the rest of the Account screen on its
- * absence.
+ * The tri-state summary read (W2-8, DESIGN-SPEC §3.1) — the seam that lets the
+ * Account surface distinguish *failed* from *absent* instead of folding both
+ * into `null`-means-nothing-to-show (WALK-manager #1: a transient 500 used to
+ * silently vanish ALL plan information, indistinguishable from a self-host
+ * door with no billing).
+ *
+ *   · `AccountSummary` — a real 200 answer.
+ *   · `null`           — ABSENT: the door answered 404/501, i.e. it does not
+ *     serve a summary at all. This is a hub's honest steady-state (the hub
+ *     door ships `/account/session|token|vaults` but no `/account/summary`),
+ *     so it must NOT render a retry card that can never succeed — there is
+ *     simply nothing to show, same as `billing_enabled: false`.
+ *   · `"error"`        — FAILED: network, 5xx, auth hiccup — anything that may
+ *     be transient. The Plan & billing card renders its own retry state.
  */
-export async function getAccountSummary(
+export type AccountSummaryState = AccountSummary | null | "error";
+
+export async function getAccountSummaryState(
   fetchImpl: Fetch = fetch.bind(globalThis),
-): Promise<AccountSummary | null> {
+): Promise<AccountSummaryState> {
   try {
     const res = await bearerFetch(fetchImpl, "/account/summary", { method: "GET" });
-    if (!res.ok) return null;
-    return (await res.json()) as AccountSummary;
+    if (res.ok) return (await res.json()) as AccountSummary;
+    // 404/501 = the door doesn't offer a summary (absent, not broken).
+    if (res.status === 404 || res.status === 501) return null;
+    return "error";
   } catch {
-    return null;
+    // Mint/network failure — transient until proven otherwise.
+    return "error";
   }
 }
+
+// NOTE: ambient consumers (switcher, nav badge, Home's trial line/nudge) read
+// the same tri-state through `useAccountSummary` + `summaryOrNull`
+// (use-summary.ts) — failed and absent both mean "no ambience"; only the
+// Account surface distinguishes them. There is deliberately no separate
+// collapse-to-null fetch function to drift.
 
 /** `GET /account/vaults` — the account's hosted vaults (drives the dispatch). */
 export async function listVaults(
