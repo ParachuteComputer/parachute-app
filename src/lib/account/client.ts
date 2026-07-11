@@ -98,7 +98,14 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     let detail = `${res.status}`;
     try {
       const body = (await res.json()) as { error?: string; message?: string };
-      detail = body.error || body.message || detail;
+      // F12: the C3 vault surface's `restError` (account-api.ts) sends BOTH a
+      // machine `error` code (`vault_taken`, `vault_limit_reached`, …) and a
+      // human `message` ("That vault name is already taken.") — prefer the
+      // friendly `message` so a plan-limit hit reads as prose, not a bare wire
+      // code. `error` is still the fallback for shapes that omit `message`
+      // (e.g. the OAuth-flavored `{error, error_description}` account-token
+      // responses, or a self-hosted hub predating this convention).
+      detail = body.message || body.error || detail;
     } catch {
       // non-JSON error body — keep the status
     }

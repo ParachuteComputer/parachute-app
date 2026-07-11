@@ -2,6 +2,7 @@ import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { getSession, listVaults } from "@/lib/account/client";
 import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { classifyVaults } from "@/lib/account/dispatch";
+import { describeAccountError } from "@/lib/account/error-copy";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
 import { formatUsageBytes } from "@/lib/account/provenance";
 import type { AccountVault } from "@/lib/account/types";
@@ -22,9 +23,9 @@ function sanitizeVaultName(raw: string): string {
 
 // The vault-naming context: onboarding (first vault, right after account
 // creation) vs. addvault (an ADDITIONAL vault, reached from the picker's
-// "＋ Create a new vault" today, and — later — a dedicated add-vault chooser,
-// SYNTHESIS #10). Both share the exact same form; only the eyebrow/H1/sub
-// copy differ.
+// "＋ Create a new vault" row, or from the dedicated add-vault chooser's
+// "Create" card (AddVaultChooser.tsx, F2/SYNTHESIS #10). Both share the exact
+// same form; only the eyebrow/H1/sub copy differ.
 type NamingCtx = "onboarding" | "addvault";
 
 /** What the naming form needs to render again if creation fails. */
@@ -52,15 +53,16 @@ type Stage =
 //
 // ADD-VAULT NAMING VARIANT (SYNTHESIS #10): the SAME naming form, reached to
 // create an ADDITIONAL vault, is triggered by `?new=1` on this route. A fresh
-// navigation to `/welcome?new=1` (bookmark, reload, or a future dedicated
-// add-vault chooser screen linking in) mounts this component fresh, so the
-// dispatch effect below reads the param and routes straight to the naming
-// form in "addvault" context (skipping the classify branch) once the vaults
-// are in. The picker's own "＋ Create a new vault" row is the one caller that
-// does NOT remount (it's already on this route) — it keeps the URL in sync
-// via `navigate(..., { replace: true })` for back-button/bookmark honesty,
-// but transitions `stage` directly (no refetch needed; it already has the
-// vault list in hand).
+// navigation to `/welcome?new=1` (bookmark, reload, or the add-vault
+// chooser's "Create" card, AddVaultChooser.tsx) mounts this component fresh,
+// so the dispatch effect below reads the param and routes straight to the
+// naming form in "addvault" context (skipping the classify branch) once the
+// vaults are in. The picker's own "＋ Create a new vault" row is the one
+// caller that does NOT remount (it's already on this route) — it keeps the
+// URL in sync via `navigate(..., { replace: true })` for back-button/bookmark
+// honesty, but transitions `stage` directly (no refetch needed; it already
+// has the vault list in hand). `?pick=1` (F13) is the sibling variant for
+// AddVaultChooser's "Open" card — see `wantsPicker` below.
 export function Welcome() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -79,6 +81,12 @@ export function Welcome() {
     if (processedRunId.current === runId) return;
     processedRunId.current = runId;
     const wantsAddVault = searchParams.get("new") === "1";
+    // F13 — AddVaultChooser's "Open" card links here with `?pick=1` to force
+    // the picker even when the account has exactly one vault. Without this,
+    // classifyVaults' welcome-back auto-open silently reopens the vault the
+    // person is likely already in — "open a vault not on this device" would
+    // otherwise be a no-op bounce back to where they started.
+    const wantsPicker = searchParams.get("pick") === "1";
 
     (async () => {
       let session: Awaited<ReturnType<typeof getSession>>;
@@ -102,6 +110,10 @@ export function Welcome() {
             email: session.email,
             existingName: vaults[0]?.name,
           });
+          return;
+        }
+        if (wantsPicker && vaults.length > 0) {
+          setStage({ kind: "picker", email: session.email, vaults });
           return;
         }
         const branch = classifyVaults(vaults);
@@ -145,10 +157,10 @@ export function Welcome() {
           kind: "naming",
           ...back,
           attemptedName: name,
-          error:
-            err instanceof Error
-              ? err.message
-              : "Couldn't create your vault. Try a different name.",
+          // F12 — never the raw wire code (`vault_limit_reached`, …): map
+          // known account-error codes to calm copy, generic fallback for the
+          // rest.
+          error: describeAccountError(err, "Couldn't create your vault. Try a different name."),
         });
       }
     })();
@@ -265,12 +277,28 @@ export function Welcome() {
 
 // The shared no-vault-yet layout — a Wordmark strip + a centered column
 // (matches Landing.tsx / CheckEmail.tsx exactly, since desktop's Rail spine
-// doesn't show without a vault).
-function Shell({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+// doesn't show without a vault). `backTo` (F6) renders a quiet "← Back" beside
+// the (now-linked) Wordmark — only the naming form passes it (it's also
+// what's shown on a creation failure, so it doubles as that escape hatch);
+// the transient/auto-advancing beats rely on the linked Wordmark alone.
+function Shell({
+  children,
+  wide = false,
+  backTo,
+}: {
+  children: ReactNode;
+  wide?: boolean;
+  backTo?: string;
+}) {
   return (
     <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col">
-      <div className="flex items-center px-6 pt-6 sm:px-10">
+      <div className="flex items-center justify-between px-6 pt-6 sm:px-10">
         <Wordmark />
+        {backTo ? (
+          <Link to={backTo} className="focus-ring font-round text-sm text-fg-dim hover:text-accent">
+            ← Back
+          </Link>
+        ) : null}
       </div>
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
         <div className={`mx-auto w-full ${wide ? "max-w-xl" : "max-w-md"}`}>{children}</div>
@@ -348,6 +376,11 @@ function VaultNamingForm({
   const [vaultUrlTemplate, setVaultUrlTemplate] = useState<string | null>(null);
   const trimmed = name.trim();
   const isAdd = ctx === "addvault";
+  // F6 — a quiet way out. An add-vault naming (reached via the chooser or the
+  // picker's "＋ Create a new vault") backs up to the chooser; first-vault
+  // onboarding (no other vault exists yet) backs up to "/" — the front door /
+  // "already signed in, choose a vault or sign out" card.
+  const backTo = isAdd ? "/add-vault" : "/";
 
   // HUB-PARITY P4 (SYNTHESIS screen 5's live address echo): the door
   // descriptor's `vault_url_template` lets the naming form preview the real
@@ -369,7 +402,7 @@ function VaultNamingForm({
   }
 
   return (
-    <Shell>
+    <Shell backTo={backTo}>
       <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
       <SignedInChip email={email} />
       <p className="eyebrow mb-3">{isAdd ? "Adding a vault" : "Account created ✓"}</p>
@@ -479,6 +512,13 @@ function CreationBeatView({
   onOpen: () => void;
   onRetry: () => void;
 }) {
+  // NOTE: this branch is currently unreachable — the creation-failure catch
+  // (above, in `Welcome()`) transitions back to the `naming` stage (with
+  // `error` set there) rather than keeping `creating`'s own `error` field, so
+  // the naming form's inline error banner is what a real failure shows, not
+  // this card. Its Back link (F6, VaultNamingForm) is the actual escape hatch
+  // for that path. Left as-is (pre-existing) — reconciling the two is a
+  // separate cleanup, not this navigation fix.
   if (error) {
     return (
       <Shell>

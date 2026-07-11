@@ -1,3 +1,5 @@
+import { Link } from "react-router";
+
 // The Parachute glyph — a coral canopy over a warm-sun payload, the brand mark
 // threaded through the prototype (arrival hero, wordmark, the creation canopy).
 // Pure SVG on `currentColor`-free brand tokens so it reads identically on paper
@@ -35,12 +37,20 @@ export function ParachuteMark({
 }
 
 // Wordmark — the glyph beside the "Parachute" name, the identity lockup used in
-// the arrival nav + wizard chrome.
+// the arrival nav + wizard chrome. A real link to `/` (F6): every wizard Shell
+// (Landing, Welcome, AddVault, AddVaultChooser, CheckEmail, OAuthCallback) is
+// the ONLY place this renders, and with no active vault none of them have any
+// other chrome — the Wordmark being a bare `<span>` left the browser Back
+// button as the sole (and often broken) way out. Every call site is a
+// no-active-vault wizard screen, so linking it here covers all of them at once.
 export function Wordmark({ size = 22 }: { size?: number }) {
   return (
-    <span className="inline-flex items-center gap-2 font-round font-bold text-fg">
+    <Link
+      to="/"
+      className="focus-ring inline-flex items-center gap-2 rounded-md font-round font-bold text-fg hover:text-accent"
+    >
       <ParachuteMark size={size} />
       <span>Parachute</span>
-    </span>
+    </Link>
   );
 }

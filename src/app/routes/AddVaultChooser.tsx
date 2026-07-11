@@ -2,7 +2,7 @@ import { ParachuteMark, Wordmark } from "@/components/ParachuteMark";
 import { loadLastSigninEmail } from "@/lib/account/store";
 import { useVaultStore } from "@/lib/vault/store";
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 // The in-app "add a vault" chooser (SYNTHESIS #10) — the second and only
 // other naming home besides the first-vault onboarding form. Reached from
@@ -19,9 +19,14 @@ export function AddVaultChooser() {
   // only the vault list). Seam it: no foot line until the account-manager plan
   // endpoint lands (PR-2). Don't fabricate slot counts.
   const slots: string | null = null;
+  // F6 — a quiet way out. Reached from /vaults' "Add vault" button when a
+  // vault is already active on this device (the common F2 path), so back
+  // returns there; with no active vault (first-run, or reached directly) the
+  // front door / boot dispatcher is the only sane fallback.
+  const backTo = activeVault ? "/vaults" : "/";
 
   return (
-    <Shell>
+    <Shell backTo={backTo}>
       <ParachuteMark size={56} className="mx-auto mb-6" />
       {email ? (
         <p className="chip mb-4 inline-flex border-grass/40 bg-grass-soft text-grass-ink">
@@ -38,7 +43,11 @@ export function AddVaultChooser() {
           icon="📂"
           verb="Open"
           description="One of your account's vaults not on this device."
-          onClick={() => navigate("/welcome")}
+          // `?pick=1` forces the picker even when the account has exactly one
+          // vault (F13) — without it the dispatcher's welcome-back auto-open
+          // (classifyVaults) silently reopens the vault you're likely already
+          // in, turning "open a vault not on this device" into a no-op bounce.
+          onClick={() => navigate("/welcome?pick=1")}
         />
         <ChooserCard
           icon="✦"
@@ -70,11 +79,18 @@ export function AddVaultChooser() {
 // The shared no-vault-yet layout — matches Landing.tsx / Welcome.tsx /
 // CheckEmail.tsx / AddVault.tsx exactly. Wider than the wizard column
 // (max-w-2xl, not max-w-md) so the three-card grid has room to breathe.
-function Shell({ children }: { children: ReactNode }) {
+// `backTo` (F6) renders a quiet "← Back" beside the (now-linked) Wordmark —
+// this screen otherwise has no other exit.
+function Shell({ children, backTo }: { children: ReactNode; backTo?: string }) {
   return (
     <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col">
-      <div className="flex items-center px-6 pt-6 sm:px-10">
+      <div className="flex items-center justify-between px-6 pt-6 sm:px-10">
         <Wordmark />
+        {backTo ? (
+          <Link to={backTo} className="focus-ring font-round text-sm text-fg-dim hover:text-accent">
+            ← Back
+          </Link>
+        ) : null}
       </div>
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
         <div className="mx-auto w-full max-w-2xl">{children}</div>

@@ -17,7 +17,7 @@ export function Vaults() {
           <h1 className="page-title">Vaults</h1>
           <p className="mt-2 text-fg-muted">Every vault you've connected, in one place.</p>
         </div>
-        <Link to="/add" className="btn btn-primary btn-touch">
+        <Link to="/add-vault" className="btn btn-primary btn-touch">
           Add vault
         </Link>
       </header>
@@ -26,9 +26,9 @@ export function Vaults() {
         <div className="card rounded-xl p-8 text-center shadow-soft">
           <p className="mb-1 font-serif text-lg text-fg">No vaults connected yet.</p>
           <p className="mb-5 text-sm text-fg-muted">
-            Add one by its address to bring it into Parachute.
+            Open one you already have, create a new one, or connect a self-hosted vault.
           </p>
-          <Link to="/add" className="btn btn-primary btn-touch">
+          <Link to="/add-vault" className="btn btn-primary btn-touch">
             Add vault
           </Link>
         </div>

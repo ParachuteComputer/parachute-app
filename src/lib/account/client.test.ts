@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AccountApiError,
   BillingApiError,
   SessionExpiredError,
   createVault,
@@ -165,6 +166,32 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
 
     await expect(listVaults(fetchImpl)).rejects.toBeInstanceOf(SessionExpiredError);
     expect(fetchImpl.mock.calls.some(([p]) => String(p) === "/account/vaults")).toBe(false);
+  });
+
+  // F12 root cause: account-api.ts's `restError` sends BOTH a machine `error`
+  // code and a human `message` (`{error: "vault_taken", message: "That vault
+  // name is already taken."}`) — jsonOrThrow used to pick `error` first,
+  // surfacing the bare code to the naming form. It must prefer `message`.
+  describe("jsonOrThrow prefers the server's friendly `message` over the bare `error` code (F12)", () => {
+    it("createVault: a 409 vault_taken surfaces the friendly message, not the code", async () => {
+      sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        res({ error: "vault_taken", message: "That vault name is already taken." }, 409),
+      );
+
+      const err = await createVault("moss", fetchImpl).catch((e) => e);
+      expect(err).toBeInstanceOf(AccountApiError);
+      expect((err as AccountApiError).message).toBe("That vault name is already taken.");
+    });
+
+    it("falls back to the bare `error` code when no `message` field is present", async () => {
+      sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+      const fetchImpl = vi.fn<typeof fetch>(async () => res({ error: "not_owner" }, 403));
+
+      const err = await mintVaultToken("moss", fetchImpl).catch((e) => e);
+      expect(err).toBeInstanceOf(AccountApiError);
+      expect((err as AccountApiError).message).toBe("not_owner");
+    });
   });
 });
 

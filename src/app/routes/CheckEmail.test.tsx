@@ -42,6 +42,14 @@ describe("CheckEmail", () => {
     expect(screen.getByText(/works once, expires in 10 min/i)).toBeInTheDocument();
   });
 
+  // F6 — no exit before this fix short of the browser Back button.
+  it("has a Back link to / (F6)", () => {
+    saveLastSigninEmail("moss@example.com");
+    renderCheckEmail();
+    fireEvent.click(screen.getByRole("link", { name: /back/i }));
+    expect(screen.getByText("Front door")).toBeInTheDocument();
+  });
+
   it("resends the link and confirms", async () => {
     saveLastSigninEmail("moss@example.com");
     renderCheckEmail();
