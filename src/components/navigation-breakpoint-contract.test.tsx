@@ -169,6 +169,27 @@ describe("Rail + BottomTabBar breakpoint contract (notes#147)", () => {
     expect(ids).toContain("account");
     expect(ids).toContain("tags");
     expect(ids).toContain("calendar");
+
+    // LZ-2: BOTH projections carry the lens band and the Explore band, with
+    // the same items in the same order — the lens/destination split can't
+    // exist on one form factor only.
+    expect(railNav.filter(([band]) => band === "notes").map(([, id]) => id)).toEqual([
+      "recent",
+      "notes",
+      "pinned",
+      "archive",
+    ]);
+    expect(railNav.filter(([band]) => band === "explore").map(([, id]) => id)).toEqual([
+      "calendar",
+      "tags",
+      "activity",
+    ]);
+    // The lens targets are today's exact URLs (LENS-SPEC §2, zero migration).
+    const hrefById = new Map(railNav.map(([, id, , href]) => [id, href]));
+    expect(hrefById.get("recent")).toBe("/");
+    expect(hrefById.get("notes")).toBe("/notes");
+    expect(hrefById.get("pinned")).toBe("/notes?view=pinned");
+    expect(hrefById.get("archive")).toBe("/notes?view=archived");
   });
 
   it("band parity holds with the Map earned too (the gate flips on BOTH projections — F14)", async () => {
@@ -186,7 +207,13 @@ describe("Rail + BottomTabBar breakpoint contract (notes#147)", () => {
 
     const railNav = collectNav(railContainer);
     const sheetNav = collectNav(sheetContainer).filter(([band]) => band !== "switcher");
-    expect(railNav.map(([, id]) => id)).toContain("map");
+    // Earned Map lands in EXPLORE (it's a destination, not a lens) — on both.
+    expect(railNav.filter(([band]) => band === "explore").map(([, id]) => id)).toEqual([
+      "calendar",
+      "tags",
+      "activity",
+      "map",
+    ]);
     expect(sheetNav).toEqual(railNav);
   });
 });

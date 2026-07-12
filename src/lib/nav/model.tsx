@@ -1,12 +1,14 @@
 import {
   IconActivity,
+  IconArchive,
   IconCalendar,
+  IconClock,
   IconCog,
-  IconHome,
   IconImport,
   IconMap,
   IconNotes,
   IconSpark,
+  IconStar,
   IconTag,
   IconUser,
   IconVault,
@@ -19,14 +21,18 @@ import { useInstallAffordance } from "@/lib/pwa-install";
 import { useMapEarned, useNotesForDateViews, useVaultStore } from "@/lib/vault";
 import type { ReactNode } from "react";
 
-// The shared nav model (DESIGN-SPEC §2.1) — ONE data model renders BOTH
-// projections: the desktop Rail and the mobile NavSheet. This is the F14 fix
-// at the root: the two form factors can't disagree about what the rooms are,
-// because neither owns a room list — they both render `useNavBands()`.
+// The shared nav model (DESIGN-SPEC §2.1; reshaped by LENS-SPEC §4 in LZ-2) —
+// ONE data model renders BOTH projections: the desktop Rail and the mobile
+// NavSheet. This is the F14 fix at the root: the two form factors can't
+// disagree about what the rooms are, because neither owns a room list — they
+// both render `useNavBands()`.
 //
-// Two named zones (F15's two-zone IA):
-//   YOUR NOTES     — the reading/writing rooms (Today · Notes · Calendar ·
-//                    Tags · Activity · Map-once-earned).
+// Three named zones (the lens model — LENS-SPEC §1's lens/destination line):
+//   YOUR NOTES     — the LENS SET over the one collection (Recent · All notes ·
+//                    Pinned · Archive). A lens is a filter rendered as the
+//                    same note list, not a different room.
+//   EXPLORE        — the destinations (Calendar · Tags · Activity ·
+//                    Map-once-earned): different visualizations/objects.
 //   YOUR PARACHUTE — the manager rooms (Account & plan · Vaults · Connect AI ·
 //                    Import notes). "The app AS the manager" finally has a
 //                    named home in the IA.
@@ -36,9 +42,15 @@ import type { ReactNode } from "react";
 // The vault switcher is NOT a NavItem — it's the hinge (§2.4), rendered by
 // each projection above the bands.
 //
-// Labels vs routes: the spec's labels ("Notes", "Map") landed in W2-5; the
-// route RENAMES (`/all`→`/notes`, `/graph`→`/map`) are W2-7's, landed here —
-// `/all` and `/graph` now live only as replace-shims in App.tsx.
+// Lenses ARE the URLs we already have (LENS-SPEC §2 — zero migration): Recent
+// = `/`, All notes = `/notes`, Pinned/Archive = `/notes?view=…`. That last
+// pair is why `match` reads the SEARCH STRING too, not just the pathname.
+
+/** The location slice every match rule reads — pathname AND search (LZ-2). */
+export interface NavLocation {
+  pathname: string;
+  search: string;
+}
 
 export interface NavItem {
   id: string;
@@ -47,13 +59,13 @@ export interface NavItem {
   /** NavIcons — thin-stroke, rounded caps. */
   icon: ReactNode;
   /** Active-state rule, shared by every projection (rail, sheet, tab bar). */
-  match: (pathname: string) => boolean;
+  match: (loc: NavLocation) => boolean;
   /** e.g. the trial chip on "Account & plan" (§3.1 ambience slot 3). */
   badge?: ReactNode;
 }
 
 export interface NavBand {
-  id: "notes" | "parachute" | "setup" | "foot";
+  id: "notes" | "explore" | "parachute" | "setup" | "foot";
   /** Uppercase sage section label; the foot has none. */
   label?: string;
   /** Quiet parenthetical beside the label — the SET UP shelf's "n of m". */
@@ -62,25 +74,56 @@ export interface NavBand {
 }
 
 // ---------------------------------------------------------------------------
-// Match rules — exported so the BottomTabBar (whose Today/Notes tabs are a
+// Match rules — exported so the BottomTabBar (whose Recent/Notes tabs are a
 // subset projection of the notes band) uses the SAME active-state grammar
 // instead of a drifting copy.
 // ---------------------------------------------------------------------------
 
-/** Reading a note (/n/:id) and the day drill-in (/today?date=) live under Today. */
-export function matchToday(pathname: string): boolean {
-  return pathname === "/" || pathname === "/today" || pathname.startsWith("/n/");
+/**
+ * The Recent lens (what Today was; Recent = `/`). Reading a note (/n/:id) and
+ * the day drill-in (/today?date=) stay under it — drill-ins inherit the lens
+ * you drilled in from.
+ */
+export function matchRecent(loc: NavLocation): boolean {
+  return loc.pathname === "/" || loc.pathname === "/today" || loc.pathname.startsWith("/n/");
 }
 
-/** The Notes room — label "Notes", route `/notes` (W2-7; `/all` is a shim). */
-export function matchNotes(pathname: string): boolean {
-  return pathname === "/notes";
+/** The `?view=` lens param — the one search dimension the nav model reads. */
+function viewParam(loc: NavLocation): string | null {
+  return new URLSearchParams(loc.search).get("view");
+}
+
+/**
+ * The All-notes lens — `/notes` in every dress EXCEPT the pinned/archived
+ * lenses. The maintenance filters (`?view=untagged|orphaned`) and the
+ * search/tag/saved-view params all stay under All: they're filters over the
+ * full collection, not lenses of their own (LENS-SPEC §1).
+ */
+export function matchAllNotes(loc: NavLocation): boolean {
+  if (loc.pathname !== "/notes") return false;
+  const view = viewParam(loc);
+  return view !== "pinned" && view !== "archived";
+}
+
+/** The Pinned lens — `/notes?view=pinned` (the `pinned` role tag). */
+export function matchPinned(loc: NavLocation): boolean {
+  return loc.pathname === "/notes" && viewParam(loc) === "pinned";
+}
+
+/** The Archive lens — `/notes?view=archived` (label "Archive", param stays). */
+export function matchArchive(loc: NavLocation): boolean {
+  return loc.pathname === "/notes" && viewParam(loc) === "archived";
 }
 
 /** Route targets, single-sourced (W2-7 renamed these off `/all`/`/graph`). */
-export const TODAY_TO = "/";
+export const RECENT_TO = "/";
 export const NOTES_TO = "/notes";
 export const MAP_TO = "/map";
+
+/** Pathname-only rooms wrap trivially — the search string is ignored. */
+function pathIs(path: string): (loc: NavLocation) => boolean {
+  return (loc) => loc.pathname === path;
+}
 
 // ---------------------------------------------------------------------------
 // Ceremony routes (DESIGN-SPEC §4.1's applies-to list, minus `/` — BootGate is
@@ -106,28 +149,49 @@ export function isCeremonyPath(pathname: string): boolean {
 // The static skeleton — everything that doesn't depend on live state.
 // ---------------------------------------------------------------------------
 
-const TODAY_ITEM: NavItem = {
-  id: "today",
-  label: "Today",
-  to: TODAY_TO,
-  icon: <IconHome />,
-  match: matchToday,
+// The lens set (LENS-SPEC §1) — four dresses over the one collection. No
+// counts in v1: All has no cheap total (pagination infers "more" from a full
+// page), and counts on only some lenses would read as meaning something.
+const RECENT_ITEM: NavItem = {
+  id: "recent",
+  label: "Recent",
+  to: RECENT_TO,
+  icon: <IconClock />,
+  match: matchRecent,
 };
 
-const NOTES_ITEM: NavItem = {
+const ALL_NOTES_ITEM: NavItem = {
   id: "notes",
-  label: "Notes",
+  label: "All notes",
   to: NOTES_TO,
   icon: <IconNotes />,
-  match: matchNotes,
+  match: matchAllNotes,
 };
 
+const PINNED_ITEM: NavItem = {
+  id: "pinned",
+  label: "Pinned",
+  to: "/notes?view=pinned",
+  icon: <IconStar />,
+  match: matchPinned,
+};
+
+const ARCHIVE_ITEM: NavItem = {
+  id: "archive",
+  label: "Archive",
+  to: "/notes?view=archived",
+  icon: <IconArchive />,
+  match: matchArchive,
+};
+
+// The EXPLORE destinations — each a different visualization/object, not a
+// filter over the note list.
 const CALENDAR_ITEM: NavItem = {
   id: "calendar",
   label: "Calendar",
   to: "/calendar",
   icon: <IconCalendar />,
-  match: (p) => p === "/calendar",
+  match: pathIs("/calendar"),
 };
 
 const TAGS_ITEM: NavItem = {
@@ -135,7 +199,7 @@ const TAGS_ITEM: NavItem = {
   label: "Tags",
   to: "/tags",
   icon: <IconTag />,
-  match: (p) => p === "/tags",
+  match: pathIs("/tags"),
 };
 
 const ACTIVITY_ITEM: NavItem = {
@@ -143,7 +207,7 @@ const ACTIVITY_ITEM: NavItem = {
   label: "Activity",
   to: "/activity",
   icon: <IconActivity />,
-  match: (p) => p === "/activity",
+  match: pathIs("/activity"),
 };
 
 const MAP_ITEM: NavItem = {
@@ -151,7 +215,7 @@ const MAP_ITEM: NavItem = {
   label: "Map",
   to: MAP_TO,
   icon: <IconMap />,
-  match: (p) => p === MAP_TO,
+  match: pathIs(MAP_TO),
 };
 
 const VAULTS_ITEM: NavItem = {
@@ -159,7 +223,7 @@ const VAULTS_ITEM: NavItem = {
   label: "Vaults",
   to: "/vaults",
   icon: <IconVault />,
-  match: (p) => p === "/vaults",
+  match: pathIs("/vaults"),
 };
 
 // [spec-resolved §2.2] Connections is TWO adjacent rows here (one row = one
@@ -170,7 +234,7 @@ const CONNECT_ITEM: NavItem = {
   label: "Connect AI",
   to: "/connect",
   icon: <IconSpark />,
-  match: (p) => p === "/connect",
+  match: pathIs("/connect"),
 };
 
 const IMPORT_ITEM: NavItem = {
@@ -178,7 +242,7 @@ const IMPORT_ITEM: NavItem = {
   label: "Import notes",
   to: "/import",
   icon: <IconImport />,
-  match: (p) => p === "/import",
+  match: pathIs("/import"),
 };
 
 const SETTINGS_ITEM: NavItem = {
@@ -186,7 +250,7 @@ const SETTINGS_ITEM: NavItem = {
   label: "Settings",
   to: "/settings",
   icon: <IconCog />,
-  match: (p) => p === "/settings",
+  match: pathIs("/settings"),
 };
 
 // The SET UP shelf's step rows — guided actions, not rooms, so they carry no
@@ -236,24 +300,28 @@ export interface NavBandSignals {
 }
 
 export function buildNavBands(signals: NavBandSignals): NavBand[] {
-  const notesItems: NavItem[] = [TODAY_ITEM, NOTES_ITEM, CALENDAR_ITEM, TAGS_ITEM, ACTIVITY_ITEM];
+  // YOUR NOTES is the lens set now (LZ-2); the destinations moved to EXPLORE.
+  const lensItems: NavItem[] = [RECENT_ITEM, ALL_NOTES_ITEM, PINNED_ITEM, ARCHIVE_ITEM];
+
+  const exploreItems: NavItem[] = [CALENDAR_ITEM, TAGS_ITEM, ACTIVITY_ITEM];
   // Earned gate (route-map row 11): the Map row is absent until earned, and
   // IDENTICAL on both projections — F14's desktop-gated/mobile-unconditional
   // split can't come back. Pre-earn, the AmbientMapFab carries Map access.
-  if (signals.mapEarned) notesItems.push(MAP_ITEM);
+  if (signals.mapEarned) exploreItems.push(MAP_ITEM);
 
   const accountItem: NavItem = {
     id: "account",
     label: "Account & plan",
     to: "/account",
     icon: <IconUser />,
-    match: (p) => p === "/account",
+    match: pathIs("/account"),
     badge:
       signals.trialDaysLeft !== null ? <TrialChip daysLeft={signals.trialDaysLeft} /> : undefined,
   };
 
   const bands: NavBand[] = [
-    { id: "notes", label: "Your notes", items: notesItems },
+    { id: "notes", label: "Your notes", items: lensItems },
+    { id: "explore", label: "Explore", items: exploreItems },
     {
       id: "parachute",
       label: "Your parachute",

@@ -16,12 +16,12 @@ const BASE: SVGProps<SVGSVGElement> = {
   strokeLinejoin: "round",
 };
 
-export function IconHome(props: SVGProps<SVGSVGElement>) {
+// A clock face — the Recent lens mark (what you've touched lately).
+export function IconClock(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...BASE} aria-hidden="true" {...props}>
-      <path d="M3 10.5 12 3l9 7.5" />
-      <path d="M5 9.5V21h14V9.5" />
-      <path d="M10 21v-6h4v6" />
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2.5" />
     </svg>
   );
 }
@@ -150,6 +150,26 @@ export function IconMic(props: SVGProps<SVGSVGElement>) {
       <rect x="9" y="3" width="6" height="11" rx="3" />
       <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
       <path d="M12 18v3.5" />
+    </svg>
+  );
+}
+
+// A five-point star — the Pinned lens mark (mirrors NoteRow's ★ pinned cue).
+export function IconStar(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <path d="m12 3.5 2.6 5.3 5.9.85-4.25 4.15 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.65l5.9-.85Z" />
+    </svg>
+  );
+}
+
+// A lidded box — the Archive lens mark (set aside, never deleted).
+export function IconArchive(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <rect x="3.5" y="4.5" width="17" height="4.5" rx="1" />
+      <path d="M5.5 9v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V9" />
+      <path d="M10 13h4" />
     </svg>
   );
 }

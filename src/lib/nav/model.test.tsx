@@ -1,4 +1,12 @@
-import { buildNavBands, matchNotes, matchToday, useNavBands } from "@/lib/nav/model";
+import {
+  type NavLocation,
+  buildNavBands,
+  matchAllNotes,
+  matchArchive,
+  matchPinned,
+  matchRecent,
+  useNavBands,
+} from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -6,9 +14,17 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The shared nav model (DESIGN-SPEC §2.1) — the single source both the Rail
-// and the NavSheet render. These tests pin the F14 fix at its root: the two
-// zones, their exact items/order/labels, and the gates.
+// The shared nav model (DESIGN-SPEC §2.1; LENS-SPEC §4 in LZ-2) — the single
+// source both the Rail and the NavSheet render. These tests pin the F14 fix
+// at its root — the zones, their exact items/order/labels, and the gates —
+// plus LZ-2's active-state matrix: which lens lights up for which URL,
+// including the `?view=` search dimension.
+
+/** "/notes?view=pinned" → { pathname, search } the way react-router splits it. */
+function loc(url: string): NavLocation {
+  const [pathname = "", query] = url.split("?");
+  return { pathname, search: query ? `?${query}` : "" };
+}
 
 function makeVault(partial: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url">): VaultRecord {
   return {
@@ -25,21 +41,31 @@ function makeVault(partial: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url
 describe("buildNavBands (pure)", () => {
   const base = { mapEarned: false, trialDaysLeft: null, setup: null };
 
-  it("produces the two named zones with the §2.2 items, order, labels, and routes", () => {
+  it("produces the lens set, the Explore band, and the manager zone — items, order, labels, routes (LENS-SPEC §4)", () => {
     const bands = buildNavBands(base);
-    expect(bands.map((b) => b.id)).toEqual(["notes", "parachute", "foot"]);
+    expect(bands.map((b) => b.id)).toEqual(["notes", "explore", "parachute", "foot"]);
 
+    // YOUR NOTES is the lens set now — four dresses over the one collection,
+    // every target an EXISTING route (§2's zero-migration URL scheme).
     const notes = bands[0];
     expect(notes.label).toBe("Your notes");
     expect(notes.items.map((i) => [i.id, i.label, i.to])).toEqual([
-      ["today", "Today", "/"],
-      ["notes", "Notes", "/notes"],
+      ["recent", "Recent", "/"],
+      ["notes", "All notes", "/notes"],
+      ["pinned", "Pinned", "/notes?view=pinned"],
+      ["archive", "Archive", "/notes?view=archived"],
+    ]);
+
+    // EXPLORE — the destinations, moved out of YOUR NOTES unchanged (D3).
+    const explore = bands[1];
+    expect(explore.label).toBe("Explore");
+    expect(explore.items.map((i) => [i.id, i.label, i.to])).toEqual([
       ["calendar", "Calendar", "/calendar"],
       ["tags", "Tags", "/tags"],
       ["activity", "Activity", "/activity"],
     ]);
 
-    const parachute = bands[1];
+    const parachute = bands[2];
     expect(parachute.label).toBe("Your parachute");
     expect(parachute.items.map((i) => [i.id, i.label, i.to])).toEqual([
       ["account", "Account & plan", "/account"],
@@ -48,21 +74,33 @@ describe("buildNavBands (pure)", () => {
       ["import", "Import notes", "/import"],
     ]);
 
-    const foot = bands[2];
+    const foot = bands[3];
     expect(foot.label).toBeUndefined();
     expect(foot.items.map((i) => [i.id, i.to])).toEqual([["settings", "/settings"]]);
   });
 
-  it("gates the Map row on earned — absent before, last notes-band row after", () => {
+  it("shows no counts on any lens (LENS-SPEC §1 — no rail counts in v1)", () => {
+    for (const item of buildNavBands(base)[0].items) {
+      expect(item.badge, `${item.id} must not carry a badge`).toBeUndefined();
+    }
+  });
+
+  it("gates the Map row on earned — absent before, last EXPLORE row after (gate logic unchanged)", () => {
     expect(
       buildNavBands(base)
+        .find((b) => b.id === "explore")
+        ?.items.some((i) => i.id === "map"),
+    ).toBe(false);
+    const earned = buildNavBands({ ...base, mapEarned: true }).find((b) => b.id === "explore");
+    expect(earned?.items.map((i) => i.id)).toEqual(["calendar", "tags", "activity", "map"]);
+    expect(earned?.items.at(-1)?.to).toBe("/map");
+    expect(earned?.items.at(-1)?.label).toBe("Map");
+    // The lens band never carries Map — it's a destination, not a lens.
+    expect(
+      buildNavBands({ ...base, mapEarned: true })
         .find((b) => b.id === "notes")
         ?.items.some((i) => i.id === "map"),
     ).toBe(false);
-    const earned = buildNavBands({ ...base, mapEarned: true }).find((b) => b.id === "notes");
-    expect(earned?.items.at(-1)?.id).toBe("map");
-    expect(earned?.items.at(-1)?.to).toBe("/map");
-    expect(earned?.items.at(-1)?.label).toBe("Map");
   });
 
   it("hangs the trial chip on Account & plan only while trialing (§3.1 ambience slot 3)", () => {
@@ -91,22 +129,65 @@ describe("buildNavBands (pure)", () => {
       ["Bring notes over", "/import"],
     ]);
     // The shelf sits between the parachute band and the foot (§2.2).
-    expect(withSetup.map((b) => b.id)).toEqual(["notes", "parachute", "setup", "foot"]);
+    expect(withSetup.map((b) => b.id)).toEqual(["notes", "explore", "parachute", "setup", "foot"]);
 
     expect(buildNavBands(base).find((b) => b.id === "setup")).toBeUndefined();
   });
 
-  it("active-state rules: Today owns /, /today and /n/*; Notes owns /notes (W2-7 rename)", () => {
-    expect(matchToday("/")).toBe(true);
-    expect(matchToday("/today")).toBe(true);
-    expect(matchToday("/n/some-note")).toBe(true);
-    expect(matchToday("/notes")).toBe(false);
-    expect(matchNotes("/notes")).toBe(true);
-    expect(matchNotes("/")).toBe(false);
-    // The pre-rename address is a shim now, not a match target — it briefly
-    // renders while <Navigate replace> resolves, but active-state should
-    // never claim it as "Notes" in its own right.
-    expect(matchNotes("/all")).toBe(false);
+  // -------------------------------------------------------------------------
+  // The LZ-2 active-state matrix (LENS-SPEC §4 / §7's done-when): which item
+  // lights up for which URL. Exactly ONE item may match each location — a
+  // lens set with two live highlights (or none on a lens URL) is a bug.
+  // -------------------------------------------------------------------------
+
+  /** Every item id whose match rule claims the given URL, across all bands. */
+  function activeIds(url: string): string[] {
+    const l = loc(url);
+    return buildNavBands({ mapEarned: true, trialDaysLeft: null, setup: null })
+      .flatMap((b) => b.items)
+      .filter((i) => i.match(l))
+      .map((i) => i.id);
+  }
+
+  it("active-state matrix: each lens/destination URL lights exactly its own row", () => {
+    // The lens set.
+    expect(activeIds("/")).toEqual(["recent"]);
+    expect(activeIds("/notes")).toEqual(["notes"]);
+    expect(activeIds("/notes?view=pinned")).toEqual(["pinned"]);
+    expect(activeIds("/notes?view=archived")).toEqual(["archive"]);
+
+    // Drill-ins stay under Recent — reading a note and the day view both
+    // inherit the home lens (matchRecent, the old matchToday grammar).
+    expect(activeIds("/n/some-note")).toEqual(["recent"]);
+    expect(activeIds("/today")).toEqual(["recent"]);
+    expect(activeIds("/today?date=2026-04-18")).toEqual(["recent"]);
+
+    // Maintenance filters and search/tag dresses are NOT lenses — they stay
+    // under All notes (LENS-SPEC §1: the rail highlights All while active).
+    expect(activeIds("/notes?view=untagged")).toEqual(["notes"]);
+    expect(activeIds("/notes?view=orphaned")).toEqual(["notes"]);
+    expect(activeIds("/notes?search=moss&tag=daily")).toEqual(["notes"]);
+
+    // A destination lights only itself — no lens stays lit underneath.
+    expect(activeIds("/calendar")).toEqual(["calendar"]);
+    expect(activeIds("/map")).toEqual(["map"]);
+
+    // The pre-rename address is a shim (`/all` → `/notes` via <Navigate
+    // replace>) — active-state never claims it in its own right.
+    expect(activeIds("/all")).toEqual([]);
+  });
+
+  it("exposes the lens matchers with the search-aware signature (shared with the tab bar)", () => {
+    expect(matchRecent(loc("/"))).toBe(true);
+    expect(matchRecent(loc("/notes"))).toBe(false);
+    expect(matchAllNotes(loc("/notes"))).toBe(true);
+    expect(matchAllNotes(loc("/notes?view=pinned"))).toBe(false);
+    expect(matchAllNotes(loc("/notes?view=archived"))).toBe(false);
+    expect(matchAllNotes(loc("/notes?view=untagged"))).toBe(true);
+    expect(matchPinned(loc("/notes?view=pinned"))).toBe(true);
+    expect(matchPinned(loc("/?view=pinned"))).toBe(false); // param needs the /notes room
+    expect(matchArchive(loc("/notes?view=archived"))).toBe(true);
+    expect(matchArchive(loc("/notes"))).toBe(false);
   });
 });
 
@@ -149,6 +230,7 @@ describe("useNavBands (hook)", () => {
     await waitFor(() => expect(result.current.length).toBeGreaterThan(0));
     const ids = result.current.map((b) => b.id);
     expect(ids).toContain("notes");
+    expect(ids).toContain("explore");
     expect(ids).toContain("parachute");
     expect(ids).toContain("foot");
     // A fresh vault has incomplete guided steps → the shelf shows.
@@ -179,7 +261,7 @@ describe("useNavBands (hook)", () => {
     });
     const { result } = renderHook(() => useNavBands(), { wrapper });
     await waitFor(() => expect(result.current.length).toBeGreaterThan(0));
-    const notes = result.current.find((b) => b.id === "notes");
-    expect(notes?.items.some((i) => i.id === "map")).toBe(true);
+    const explore = result.current.find((b) => b.id === "explore");
+    expect(explore?.items.some((i) => i.id === "map")).toBe(true);
   });
 });

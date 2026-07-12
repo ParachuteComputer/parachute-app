@@ -47,8 +47,11 @@ export const COMMANDS: Array<{
     action: { type: "navigate", to: "/map" },
   },
   {
+    // LZ-2 relabel: the `/` room is the Recent lens now ("Today" retired) —
+    // label only; the id and the today/home keywords stay so muscle memory
+    // and existing tests keep finding it.
     id: "today",
-    label: "Today",
+    label: "Recent",
     description: "Your recent notes, grouped by day",
     keywords: ["today", "now", "daily", "home", "recent"],
     action: { type: "navigate", to: "/" },

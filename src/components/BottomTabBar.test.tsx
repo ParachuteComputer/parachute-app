@@ -31,7 +31,7 @@ function renderAt(path: string) {
   );
 }
 
-describe("BottomTabBar (D6 four-slot)", () => {
+describe("BottomTabBar (D6 four-slot, LZ-2 interim dress)", () => {
   beforeEach(() => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useQuickSwitchOpen.setState({ open: false });
@@ -43,10 +43,13 @@ describe("BottomTabBar (D6 four-slot)", () => {
     useQuickSwitchOpen.setState({ open: false });
   });
 
-  it("renders Today · Notes · [+] · Search when a vault is active (D6 slots)", () => {
+  it("renders Recent · Notes · [+] · Search when a vault is active (LZ-2 relabels the D6 slots)", () => {
     renderAt("/");
     const nav = screen.getByRole("navigation", { name: /primary/i });
-    expect(within(nav).getByLabelText(/^today$/i)).toBeInTheDocument();
+    // LZ-2: the `/` tab reads "Recent" — the rail's lens name — so the two
+    // projections never disagree about what `/` is called (the F14 lesson).
+    expect(within(nav).getByLabelText(/^recent$/i)).toBeInTheDocument();
+    expect(within(nav).queryByLabelText(/^today$/i)).toBeNull();
     expect(within(nav).getByLabelText(/^notes$/i)).toBeInTheDocument();
     // The centre capture action (the raised + disc).
     expect(within(nav).getByLabelText(/new note/i)).toBeInTheDocument();
@@ -76,22 +79,31 @@ describe("BottomTabBar (D6 four-slot)", () => {
     expect(nav.className).not.toMatch(/\bmd:hidden\b/);
   });
 
-  it("marks Today active on / and on a note (/n/:id stays under Today)", () => {
+  it("marks Recent active on / and on a note (/n/:id stays under Recent)", () => {
     renderAt("/");
-    expect(screen.getByLabelText(/^today$/i)).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText(/^recent$/i)).toHaveAttribute("aria-current", "page");
     renderAt("/n/abc");
-    const todays = screen.getAllByLabelText(/^today$/i);
-    expect(todays.some((el) => el.getAttribute("aria-current") === "page")).toBe(true);
+    const recents = screen.getAllByLabelText(/^recent$/i);
+    expect(recents.some((el) => el.getAttribute("aria-current") === "page")).toBe(true);
   });
 
-  it("marks Today active on the day drill-in (/today?date=)", () => {
+  it("marks Recent active on the day drill-in (/today?date=)", () => {
     renderAt("/today?date=2026-04-18");
-    expect(screen.getByLabelText(/^today$/i)).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText(/^recent$/i)).toHaveAttribute("aria-current", "page");
   });
 
   it("marks Notes active on /notes (W2-7 rename)", () => {
     renderAt("/notes");
     expect(screen.getByLabelText(/^notes$/i)).toHaveAttribute("aria-current", "page");
+  });
+
+  it("lights NO tab on the Pinned/Archive lenses — they're not in the interim 4-slot set (LZ-2)", () => {
+    // The tab bar shares the nav model's matchers verbatim: /notes?view=pinned
+    // is the Pinned lens (rail + NavSheet highlight Pinned), not All notes —
+    // so the Notes tab must not claim it. LZ-5's 3-slot bar resolves this.
+    renderAt("/notes?view=pinned");
+    expect(screen.getByLabelText(/^notes$/i)).not.toHaveAttribute("aria-current");
+    expect(screen.getByLabelText(/^recent$/i)).not.toHaveAttribute("aria-current");
   });
 
   it("opens the quick-switch via the Search tab", () => {

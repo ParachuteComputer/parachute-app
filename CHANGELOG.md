@@ -1,5 +1,43 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.12.0] - 2026-07-11
+
+**LZ-2 — the lens rail: YOUR NOTES becomes the lens set, EXPLORE holds the destinations.** The
+nav-model half of the Lens-Model one-surface pivot (LENS-SPEC §4): the vault is ONE surface and
+**Recent · All notes · Pinned · Archive** are lenses over it, split from the **Explore**
+destinations (Calendar · Tags · Activity · Map-earned). Every lens target is an EXISTING route
+(§2's zero-migration URL scheme — `/`, `/notes`, `/notes?view=pinned|archived`), so the rail is
+correct and every room reachable even before the LZ-3/LZ-4 surface merge. Minor bump: nav IA
+change.
+
+- **`match` grows a search dimension** (`src/lib/nav/model.tsx`): `NavItem.match` takes
+  `{ pathname, search }` (the new `NavLocation`) instead of a bare pathname — the Pinned/Archive
+  lenses live in the `?view=` param. All three projections (Rail, NavSheet, BottomTabBar) pass the
+  router location through; pathname-only rooms wrap trivially via a `pathIs` helper.
+- **The lens band** (id `"notes"`, label "Your notes"): **Recent** → `/` (the old Today grammar —
+  `/`, `/today`, `/n/*` stay under it: drill-ins inherit the lens you came from); **All notes** →
+  `/notes` matching every dress EXCEPT `view=pinned|archived` (untagged/orphaned maintenance
+  filters and search/tag params highlight All); **Pinned** → `/notes?view=pinned`; **Archive** →
+  `/notes?view=archived`. No counts on any lens in v1 (§1.1 — All has no cheap total). New
+  NavIcons: clock (Recent), star (Pinned), lidded box (Archive); All notes keeps the notes glyph.
+- **The EXPLORE band** (id `"explore"`, label "Explore" — ratified D3): Calendar · Tags · Activity ·
+  Map, items and the earned-Map gate byte-identical, just moved out of YOUR NOTES into their own
+  band. `NavBand.id` union gains `"explore"`.
+- **Bottom bar interim relabel** (§5.3): the 4-slot bar stays until LZ-5's 3-slot redesign, but the
+  "Today" tab reads **Recent** now (clock icon, the Recent lens's matcher) so the tab and the rail
+  never disagree about what `/` is called (the F14 no-drift lesson). Sub-decision: the tab bar uses
+  the model's matchers verbatim, so `/notes?view=pinned|archived` lights NO tab (those lenses
+  aren't in the 4-slot set; the NavSheet carries them until LZ-5).
+- **Command palette** (`quick-switch/results.ts`): the "Today" command relabels to **Recent** —
+  label only; id, target, and the `today`/`home` keywords unchanged, so muscle memory keeps
+  working. All other rows (All notes, Pinned, Archived, Untagged, Orphaned) untouched.
+- **Tests** (1484 → 1494): the model suite pins the three-band shape plus an **active-state
+  matrix** — exactly one item lights for each of `/`, `/notes`, `?view=pinned`, `?view=archived`,
+  `?view=untagged` (All), `?search=…` (All), `/n/:id` (Recent), `/today?date=` (Recent),
+  `/calendar`, `/map`, and `/all` (shim — none). The Rail↔NavSheet band-parity contract extends to
+  the lens/Explore split and the lens hrefs; rendered-rail and sheet tests cover the search-aware
+  aria-current states; the tab-bar suite covers the Recent relabel + the no-tab-on-Pinned interim.
+
 ## [0.11.3] - 2026-07-11
 
 **LZ-1 — extract the composer from Home into `components/Composer.tsx` (pure move, prep for the

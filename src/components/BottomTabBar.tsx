@@ -1,24 +1,24 @@
-import { IconHome, IconNotes, IconPlus, IconSearch } from "@/components/NavIcons";
-import { NOTES_TO, TODAY_TO, matchNotes, matchToday } from "@/lib/nav/model";
+import { IconClock, IconNotes, IconPlus, IconSearch } from "@/components/NavIcons";
+import { NOTES_TO, RECENT_TO, matchAllNotes, matchRecent } from "@/lib/nav/model";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
 import { useVaultStore } from "@/lib/vault";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 
-// Mobile + tablet fixed bottom navigation — the D6 four-slot set (SYNTHESIS
-// D6, prototype scenes 4 & 6): Today · Notes · [ + ] · Search, where the
-// centre + is a raised capture action, not a peer tab. Hidden on >= lg where
-// the desktop Rail handles navigation. The `lg:hidden` gate MUST match the
+// Mobile + tablet fixed bottom navigation — the D6 four-slot set, in its
+// LZ-2 interim dress: Recent · Notes · [ + ] · Search, where the centre + is
+// a raised capture action, not a peer tab. LENS-SPEC §5's 3-slot bar is
+// LZ-5's; until then the shipped 4-slot layout stays, but the "Today" tab is
+// relabeled Recent NOW so the tab and the rail's Recent lens never disagree
+// on what `/` is called (the F14 no-drift lesson). Hidden on >= lg where the
+// desktop Rail handles navigation. The `lg:hidden` gate MUST match the
 // Rail's `lg:flex` gate — at any width exactly one of them shows (the
 // notes#147 contract, now Rail↔BottomTabBar).
 //
 // Settings left the bottom bar with the D6 pass — it lives behind the header
 // ⋯ menu and in the desktop rail foot (the dissolved console is a room, not a
 // tab). Reading a note (/n/:id) and the day drill-in (/today?date=) stay
-// under Today.
-//
-// F8/W2-3: this tab used to read "Home" while the desktop rail called the
-// same `/` route "Today" — one room, two names. Both form factors now agree.
+// under Recent.
 export function BottomTabBar() {
   const hasActiveVault = useVaultStore((s) => s.activeVaultId !== null);
   const setSwitcherOpen = useQuickSwitchOpen((s) => s.setOpen);
@@ -28,10 +28,11 @@ export function BottomTabBar() {
 
   // Active-state grammar comes from the shared nav model (W2-5) — the tab
   // bar is a subset projection of the notes band, so it can't drift from the
-  // Rail/NavSheet's matching rules.
-  const path = location.pathname;
-  const isToday = matchToday(path);
-  const isNotes = matchNotes(path);
+  // Rail/NavSheet's matching rules. Using the model's matchers verbatim means
+  // the Pinned/Archive lenses (`/notes?view=…`) light NO tab here — those
+  // lenses aren't in the 4-slot set (the NavSheet carries them until LZ-5).
+  const isRecent = matchRecent(location);
+  const isNotes = matchAllNotes(location);
 
   return (
     <nav
@@ -40,7 +41,7 @@ export function BottomTabBar() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-[--w-page] items-stretch justify-around px-2">
-        <Tab to={TODAY_TO} label="Today" active={isToday} icon={<IconHome />} />
+        <Tab to={RECENT_TO} label="Recent" active={isRecent} icon={<IconClock />} />
         <Tab to={NOTES_TO} label="Notes" active={isNotes} icon={<IconNotes />} />
         <CenterCapture />
         <TabButton label="Search" icon={<IconSearch />} onClick={() => setSwitcherOpen(true)} />
