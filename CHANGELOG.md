@@ -1,5 +1,32 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.11.3] - 2026-07-11
+
+**LZ-1 — extract the composer from Home into `components/Composer.tsx` (pure move, prep for the
+lens-model one-surface merge).** Structure-only refactor, zero behavior change and zero visual
+change: the ratified Lens-Model spec (LENS-SPEC.md §3.1 anatomy item 2) calls for the write-in-place
+composer to ride both the future Recent and All lenses once `Notes.tsx`/`Home.tsx` merge into one
+`VaultSurface` (LZ-3/LZ-4); this PR does the LZ-1 groundwork alone.
+
+- **`src/components/Composer.tsx`** — the W2-10 composer `<form>` and all its logic, moved verbatim
+  out of `Home.tsx` behind a clean `{ vault, focused? }` prop interface. Preserved exactly: the
+  `NEW_NOTE_SCOPE` shared-draft wiring (`loadDraft`/`useDraftAutosave`), the **flush-on-blur guard**
+  (the W2-10 review fold — blur flushes the debounced draft before any outside door's click can
+  navigate away and drop the tail), the synchronous flush on the editor/mic links, the voice/mic
+  gate (`useTranscriptionGate`), the `vault.id`-keyed remount, the save path
+  (`buildTextNotePayload` + `useCreateNote`), focus-expands-the-card, the calm post-save fold,
+  "Save to {vault}", "Open full editor →", and "Autosaves to {vault}". `COMPOSER_INPUT_ID` is now
+  exported so `Home`'s empty-state "Write the first one" button can still focus the composer in
+  place.
+- **`Home.tsx`** now imports and renders `<Composer key={vault.id} vault={vault} focused={...} />`
+  exactly where the inline composer used to sit — nothing else about Home changed (nudges,
+  QuickDoors, RecentTimeline, PlanBacklink untouched).
+- **Tests**: the composer's own suite (9 tests — textarea/no-nav, focus-expand, save, save-error,
+  shared-draft-to-/new, the flush-on-blur regression, restore-from-/new, mic arrival, transcription
+  gate) moved out of `Home.test.tsx` into a new `Composer.test.tsx`, re-pointed at `<Composer>`
+  directly. `Home.test.tsx` keeps the surrounding-chrome coverage (masthead, quick doors, setup
+  nudge, trial ambience) exercised through `<Home>` end to end. Test count unchanged (1484).
+
 ## [0.11.2] - 2026-07-11
 
 **W3 — text-size popover stays on-screen on tablet.** `TextSizeControl`'s "aA" popover always
