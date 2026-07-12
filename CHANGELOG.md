@@ -1,5 +1,43 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.11.0] - 2026-07-11
+
+**W2-11 — one NoteRow + `/notes` progressive disclosure (F9, N3).** The same note used to render
+two different ways a tap apart: Today's timeline drew title·time·preview·chips in a bordered
+day-card, while `/notes` drew dot·star·title·time·preview·chips in a flat hover list — and `/notes`
+greeted you with an eight-control filter wall before showing a single note. One row now, one calm
+header. Minor bump: the two note surfaces unify.
+
+- **One shared `NoteRow`** (`src/components/NoteRow.tsx`) — the single anatomy every list surface
+  renders: **dot/status · (pinned ★) · title · mono-path (when it adds something) · preview ·
+  time · chips**, with archived rows dimmed+italic. Consumed by Today's timeline
+  (`RecentTimeline`), the day drill-in (`DayView`), and the `/notes` list; both old row
+  implementations are deleted. A parity test pins the SAME note fixture to **byte-identical row
+  markup** on Today and `/notes`. Role tags (pinned/archived) resolve once per list, not per row;
+  the untagged view's quick-tag control rides an optional `trailing` slot.
+- **The row pattern, codified** — `.note-row` gains the design system's press state
+  (`:active` → grass-soft; hover stays the card tint; selection is never an underline). Today's
+  rows pick up the dot, pinned star, and archived dimming they were missing; the bordered
+  day-card container gives way to the same flat list `/notes` uses (the prototype's home shape —
+  day headers still group and link to the day view).
+- **`/notes` rests at three control groups** — search field · view chips · one **Filters**
+  disclosure. Sort, show-archived, title-prefix, tag browsing (pinned quick-picks + browse-by-tag
+  + any/all match), saved views, and the lazy Folders tree all fold into the Filters panel
+  (`#notes-filters`, a card with Refine / Tags / Views-and-folders columns on desktop). The
+  redundant standalone Tags checklist (`TagFilter`) merged into the panel's TagBrowser; the
+  header's "New note" pill retired (the mobile [+] tab and the desktop speed dial are the create
+  doors at every width; the empty state keeps "Create one").
+- **Nothing hides surprisingly** — the panel is closed on every arrival (state is deliberately
+  not persisted), and a count badge on the closed Filters button shows how many folded filter
+  dimensions are live (e.g. a deep-linked `?tag=…&path_prefix=…` arrives closed with "Filters · 2").
+- **A fresh empty `/notes` is an invitation, not a wall** — search + view chips + "This vault has
+  no notes yet · Create one" only: no Filters disclosure, no pager, no filter chrome over nothing
+  (WALK-nav N3). The pager also hides anywhere there's nothing to page.
+- **Width difference stays deliberate** — Today reads at `page-prose` (42rem), `/notes` manages at
+  `page` (72rem); only the row anatomy rhymes.
+- Rider: fixed a pre-existing biome format error in `Home.test.tsx` (main was red on
+  `biome check`).
+
 ## [0.10.0] - 2026-07-11
 
 **W2-10 — the honest composer on Today (F10).** Home's "What's on your mind?" card looked like an

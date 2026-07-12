@@ -990,7 +990,10 @@ body {
     padding: 0.75rem 1rem;
   }
 
-  /* A note row on the home — dot · title · preview · time (prototype .note). */
+  /* THE note row — dot · title · preview · time · chips (prototype .note).
+     One anatomy everywhere a note is listed (Today's timeline, the day
+     drill-in, /notes — see NoteRow.tsx). States: transparent at rest,
+     card-tint hover, grass-soft press — never underline/border selection. */
   .note-row {
     display: flex;
     gap: 0.75rem;
@@ -1002,6 +1005,10 @@ body {
   .note-row:hover {
     background-color: var(--color-card);
     border-color: var(--color-border-light);
+  }
+  .note-row:active {
+    background-color: var(--color-grass-soft);
+    border-color: transparent;
   }
   .note-dot {
     margin-top: 0.45rem;

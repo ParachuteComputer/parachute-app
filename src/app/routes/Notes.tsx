@@ -1,3 +1,4 @@
+import { NoteRow, NoteRowList } from "@/components/NoteRow";
 import { PathTree } from "@/components/PathTree";
 import { SectionLabel } from "@/components/RecentTimeline";
 import { TagBrowser } from "@/components/TagBrowser";
@@ -7,7 +8,6 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { OfflineRibbon } from "@/components/ui/OfflineRibbon";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { noteTitle } from "@/lib/note-title";
 import { meetsAutoThreshold, usePathTreeMode } from "@/lib/path-tree";
 import {
   useDeleteView,
@@ -23,7 +23,6 @@ import {
   isFiltersNonEmpty,
   searchParamsToFilters,
 } from "@/lib/saved-views/spec";
-import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
 import {
   DEFAULT_NOTE_QUERY,
@@ -39,7 +38,7 @@ import {
   useVaultStore,
 } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
-import type { Note, TagSummary } from "@/lib/vault/types";
+import type { TagSummary } from "@/lib/vault/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 
@@ -125,8 +124,8 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
   }, [preset, debouncedSearch, debouncedPrefix, selectedTags, tagMatch, sort, showArchived]);
 
   // Merge the preset role tag into the query so vault-side filter does the
-  // narrowing. User can add more tags on top via TagFilter. Untagged and
-  // orphaned use vault-native filters (has_tags / has_links) instead.
+  // narrowing. User can add more tags on top via the panel's TagBrowser.
+  // Untagged and orphaned use vault-native filters (has_tags / has_links).
   const effectiveTags = useMemo(() => {
     if (preset === "pinned") return Array.from(new Set([roles.pinned, ...selectedTags]));
     if (preset === "archived") return Array.from(new Set([roles.archived, ...selectedTags]));
@@ -167,13 +166,17 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
   const pushToast = useToastStore((s) => s.push);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [renaming, setRenaming] = useState<SavedView | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // W2-11 progressive disclosure: everything beyond search + view chips lives
+  // behind ONE "Filters" disclosure. Deliberately NOT persisted — the page
+  // rests calm on every arrival; the button's count badge carries any active
+  // (but folded) filter state, so nothing is hidden surprisingly.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Path tree: independent capped fetch (separate from the filtered list) so
   // the tree stays stable as the user narrows results. Disabled on preset
-  // routes (no sidebar) and when the user has set the mode to `never`.
-  // Only fetches once the Folders accordion is opened — demoting it into a
-  // collapsed <details> would otherwise fire the 5000-note query on every
+  // routes (no views column) and when the user has set the mode to `never`.
+  // Only fetches once the Folders accordion (inside the Filters panel) is
+  // opened — a merely-hidden tree would fire the 5000-note query on every
   // Notes load, which is worst-of-both-worlds (hidden but still expensive).
   const { mode: pathTreeMode } = usePathTreeMode(activeVault?.id ?? null);
   const [foldersOpen, setFoldersOpen] = useState(false);
@@ -280,230 +283,301 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
   const hasNext = (notes.data?.length ?? 0) === DEFAULT_PAGE_SIZE;
   const filteringActive = isFiltersNonEmpty(currentFilters);
 
+  // How many FOLDED filter dimensions are live — the Filters button wears
+  // this as a badge so closing the panel never hides active state. Search is
+  // excluded (it stays visible at rest).
+  const foldedFilterCount =
+    (selectedTags.length > 0 ? 1 : 0) +
+    (pathPrefix.trim() ? 1 : 0) +
+    (showArchived ? 1 : 0) +
+    (sort !== "desc" ? 1 : 0);
+
+  // A genuinely empty vault (settled, unfiltered, first page) gets the calm
+  // arrival: search + view chips + the empty-state invitation ONLY — no
+  // filter chrome hovering over nothing (WALK-nav N3). The moment anything
+  // is filterable (notes exist, a filter is live, or a preset scopes the
+  // list) the disclosure comes back.
+  const vaultEmpty =
+    !preset &&
+    !filteringActive &&
+    foldedFilterCount === 0 &&
+    !notes.isPending &&
+    (notes.data?.length ?? 0) === 0 &&
+    offset === 0;
+  const showFiltersControl = !vaultEmpty;
+  const showPagination = hasPrev || hasNext || (displayNotes?.length ?? 0) > 0;
+
   return (
     <div className="page">
-      <header className="mb-5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-3 md:mb-6">
-        <div>
-          <p className="eyebrow">{activeVault.name}</p>
-          <h1 className="page-title">{title}</h1>
-          {subtitle ? <p className="mt-1 text-sm text-fg-muted">{subtitle}</p> : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {!preset ? (
-            <label className="flex items-center gap-1.5 text-sm text-fg-muted hover:text-accent">
-              <input
-                type="checkbox"
-                checked={showArchived}
-                onChange={(e) => setShowArchived(e.target.checked)}
-              />
-              Show archived
-            </label>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setSort((s) => (s === "desc" ? "asc" : "desc"))}
-            className="focus-ring text-sm text-fg-muted hover:text-accent"
-            aria-label="Toggle sort direction"
-          >
-            Sort: {sort === "desc" ? "newest" : "oldest"} first
-          </button>
-          <Link to="/new" className="btn btn-primary btn-touch">
-            New note
-          </Link>
-        </div>
+      <header className="mb-5 md:mb-6">
+        <p className="eyebrow">{activeVault.name}</p>
+        <h1 className="page-title">{title}</h1>
+        {subtitle ? <p className="mt-1 text-sm text-fg-muted">{subtitle}</p> : null}
       </header>
 
-      <PresetFilterBar active={preset} />
-
-      {!preset ? (
-        <PinnedTagsStrip
-          pinnedTags={pinnedTags}
-          tagCounts={tags.data ?? []}
-          selected={selectedTags}
-          onPick={(name) => {
-            setPathPrefix("");
-            setSelectedTags((cur) => (cur.length === 1 && cur[0] === name ? [] : [name]));
-          }}
-        />
-      ) : null}
-
-      <div className={!preset && sidebarOpen ? "grid gap-6 md:grid-cols-[15rem_1fr]" : ""}>
-        {!preset ? (
-          <div className="space-y-3 md:space-y-6">
+      {/* The WHOLE at-rest chrome (W2-11 progressive disclosure): a search
+          field, one Filters disclosure, and the view chips. Everything else —
+          sort, archived visibility, path prefix, tags, pinned tags, saved
+          views, folders — lives in the panel below, folded until asked for.
+          `data-notes-chrome` scopes the resting-control census test. */}
+      <div data-notes-chrome className="mb-6 space-y-3">
+        <div className="flex items-center gap-3">
+          <input
+            type="search"
+            placeholder="Search…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input min-w-0 flex-1"
+            aria-label="Search notes"
+          />
+          {showFiltersControl ? (
             <button
               type="button"
-              onClick={() => setSidebarOpen((o) => !o)}
-              className="flex w-full items-center justify-between rounded-md border border-border bg-card px-3 py-1.5 text-left text-sm text-fg-muted hover:border-accent hover:text-accent md:w-auto"
-              aria-expanded={sidebarOpen}
-              aria-controls="notes-sidebar"
+              onClick={() => setFiltersOpen((o) => !o)}
+              aria-expanded={filtersOpen}
+              aria-controls="notes-filters"
+              className="btn btn-secondary btn-touch shrink-0"
             >
-              <span>Folders &amp; views</span>
-              <span aria-hidden="true" className="ml-2 font-mono text-xs">
-                {sidebarOpen ? "▾" : "▸"}
+              Filters
+              {foldedFilterCount > 0 ? (
+                <span className="rounded-full bg-grass-soft px-1.5 font-semibold text-grass-ink text-xs">
+                  {foldedFilterCount}
+                </span>
+              ) : null}
+              <span aria-hidden="true" className="font-mono text-xs">
+                {filtersOpen ? "▴" : "▾"}
               </span>
             </button>
-            <div
-              id="notes-sidebar"
-              className={`space-y-6 md:sticky md:top-6 md:self-start ${sidebarOpen ? "" : "hidden"}`}
-            >
-              <TagBrowser
-                tags={tags.data ?? []}
-                pinnedTags={pinnedTags}
-                selected={selectedTags}
-                onToggle={(name) =>
-                  setSelectedTags((cur) =>
-                    cur.includes(name) ? cur.filter((t) => t !== name) : [...cur, name],
-                  )
-                }
-                onClear={() => setSelectedTags([])}
-                isLoading={tags.isPending}
-              />
-              <SavedViewsSidebar
-                views={savedViews.data}
-                isPending={savedViews.isPending}
-                error={savedViews.error}
-                canUpdateWithCurrent={isFiltersNonEmpty(currentFilters)}
-                onRename={(v) => setRenaming(v)}
-                onUpdate={onUpdateView}
-                onDelete={onDeleteView}
-              />
-              {showFoldersAccordion ? (
-                <details
-                  className="group"
-                  open={foldersOpen}
-                  onToggle={(e) => setFoldersOpen(e.currentTarget.open)}
-                >
-                  <summary className="eyebrow flex cursor-pointer list-none items-center justify-between rounded-md px-1 py-1 hover:text-accent">
-                    <span>Folders</span>
-                    <span
-                      aria-hidden="true"
-                      className="font-mono text-xs transition-transform group-open:rotate-90"
-                    >
-                      ▸
-                    </span>
-                  </summary>
-                  <div className="mt-2">
-                    {showPathTree ? (
-                      <PathTree
-                        paths={treePaths}
-                        vaultId={activeVault.id}
-                        currentPrefix={pathPrefix}
-                        onSelect={(p) => setPathPrefix(p)}
-                      />
-                    ) : treeNotes.isLoading ? (
-                      <p className="px-1 text-xs text-fg-dim">Loading…</p>
-                    ) : (
-                      <p className="px-1 text-xs text-fg-dim">
-                        Not enough folder variety to show a tree yet.
-                      </p>
-                    )}
-                  </div>
-                </details>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
+        <PresetFilterBar active={preset} />
+      </div>
 
-        <div>
-          <div className="mb-6 space-y-3">
-            <input
-              type="search"
-              placeholder="Search…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input"
-              aria-label="Search notes"
-            />
-            <div className="flex flex-wrap items-start gap-3">
-              <input
-                type="text"
-                placeholder="Title starts with…"
-                value={pathPrefix}
-                onChange={(e) => setPathPrefix(e.target.value)}
-                className="input flex-1 min-w-48 font-mono"
-                aria-label="Filter by path prefix"
-              />
-              {preset !== "untagged" ? (
-                <TagFilter
+      {filtersOpen && showFiltersControl ? (
+        <section id="notes-filters" aria-label="Filters" className="card mb-6 p-4 md:p-5">
+          <div
+            className={`grid gap-x-8 gap-y-6 ${
+              preset === "untagged" ? "" : preset ? "md:grid-cols-2" : "md:grid-cols-3"
+            }`}
+          >
+            {/* Refine — order, archived visibility, path narrowing. */}
+            <div>
+              <h2 className="eyebrow mb-3">Refine</h2>
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setSort((s) => (s === "desc" ? "asc" : "desc"))}
+                  className="focus-ring block text-fg-muted text-sm hover:text-accent"
+                  aria-label="Toggle sort direction"
+                >
+                  Sort: {sort === "desc" ? "newest" : "oldest"} first
+                </button>
+                {!preset ? (
+                  <label className="flex items-center gap-1.5 text-fg-muted text-sm hover:text-accent">
+                    <input
+                      type="checkbox"
+                      checked={showArchived}
+                      onChange={(e) => setShowArchived(e.target.checked)}
+                    />
+                    Show archived
+                  </label>
+                ) : null}
+                <input
+                  type="text"
+                  placeholder="Title starts with…"
+                  value={pathPrefix}
+                  onChange={(e) => setPathPrefix(e.target.value)}
+                  className="input w-full font-mono"
+                  aria-label="Filter by path prefix"
+                />
+              </div>
+            </div>
+
+            {/* Tags — pinned quick-picks, then browse-by-tag multi-select.
+                (The untagged view is definitionally tag-free.) */}
+            {preset !== "untagged" ? (
+              <div className="space-y-4">
+                {!preset ? (
+                  <PinnedTagsStrip
+                    pinnedTags={pinnedTags}
+                    tagCounts={tags.data ?? []}
+                    selected={selectedTags}
+                    onPick={(name) => {
+                      setPathPrefix("");
+                      setSelectedTags((cur) => (cur.length === 1 && cur[0] === name ? [] : [name]));
+                    }}
+                  />
+                ) : null}
+                <TagBrowser
                   tags={tags.data ?? []}
+                  pinnedTags={pinnedTags}
                   selected={selectedTags}
                   onToggle={(name) =>
                     setSelectedTags((cur) =>
                       cur.includes(name) ? cur.filter((t) => t !== name) : [...cur, name],
                     )
                   }
-                  tagMatch={tagMatch}
-                  onTagMatchChange={setTagMatch}
                   onClear={() => setSelectedTags([])}
+                  isLoading={tags.isPending}
                 />
-              ) : null}
-              {!preset && filteringActive ? (
-                <button
-                  type="button"
-                  onClick={() => setShowSaveDialog(true)}
-                  className="btn btn-accent-soft"
-                >
-                  Save view…
-                </button>
-              ) : null}
-            </div>
-          </div>
+                {selectedTags.length > 1 ? (
+                  <fieldset className="flex items-center gap-3 text-xs">
+                    <legend className="sr-only">Match mode</legend>
+                    <span className="text-fg-dim">Match</span>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="tag-match"
+                        value="any"
+                        checked={tagMatch === "any"}
+                        onChange={() => setTagMatch("any")}
+                      />
+                      Any
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="tag-match"
+                        value="all"
+                        checked={tagMatch === "all"}
+                        onChange={() => setTagMatch("all")}
+                      />
+                      All
+                    </label>
+                  </fieldset>
+                ) : null}
+              </div>
+            ) : null}
 
-          {notes.isPending ? (
-            <SkeletonRows />
-          ) : notes.isError && !notes.data ? (
-            // Keep the last-loaded list on screen when a background refetch
-            // fails (offline mid-session); only a truly empty cache errors.
-            <NotesErrorBlock error={notes.error} retry={() => notes.refetch()} />
-          ) : displayNotes && displayNotes.length > 0 ? (
-            <>
-              {notes.isError ? <OfflineRibbon /> : null}
-              <SectionLabel>{`${title} (${pageLast}${hasNext ? "+" : ""})`}</SectionLabel>
-              <ol aria-label="Notes" className="flex flex-col gap-0.5">
-                {displayNotes.map((n) => (
-                  <NoteRow
-                    key={n.id}
-                    note={n}
-                    pinnedTag={roles.pinned}
-                    archivedTag={roles.archived}
-                    quickTagSuggestions={preset === "untagged" ? (tags.data ?? []) : undefined}
+            {/* Views & folders — saved views + the lazy folder tree (full
+                list only; presets are already a view). */}
+            {!preset ? (
+              <div className="space-y-6">
+                <div>
+                  <SavedViewsSidebar
+                    views={savedViews.data}
+                    isPending={savedViews.isPending}
+                    error={savedViews.error}
+                    canUpdateWithCurrent={isFiltersNonEmpty(currentFilters)}
+                    onRename={(v) => setRenaming(v)}
+                    onUpdate={onUpdateView}
+                    onDelete={onDeleteView}
                   />
-                ))}
-              </ol>
-            </>
-          ) : (
-            <NotesEmptyBlock filtering={isFilteringActive(queryState) || !!preset} />
-          )}
+                  {filteringActive ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowSaveDialog(true)}
+                      className="btn btn-accent-soft btn-sm mt-3"
+                    >
+                      Save view…
+                    </button>
+                  ) : null}
+                </div>
+                {showFoldersAccordion ? (
+                  <details
+                    className="group"
+                    open={foldersOpen}
+                    onToggle={(e) => setFoldersOpen(e.currentTarget.open)}
+                  >
+                    <summary className="eyebrow flex cursor-pointer list-none items-center justify-between rounded-md px-1 py-1 hover:text-accent">
+                      <span>Folders</span>
+                      <span
+                        aria-hidden="true"
+                        className="font-mono text-xs transition-transform group-open:rotate-90"
+                      >
+                        ▸
+                      </span>
+                    </summary>
+                    <div className="mt-2">
+                      {showPathTree ? (
+                        <PathTree
+                          paths={treePaths}
+                          vaultId={activeVault.id}
+                          currentPrefix={pathPrefix}
+                          onSelect={(p) => setPathPrefix(p)}
+                        />
+                      ) : treeNotes.isLoading ? (
+                        <p className="px-1 text-xs text-fg-dim">Loading…</p>
+                      ) : (
+                        <p className="px-1 text-xs text-fg-dim">
+                          Not enough folder variety to show a tree yet.
+                        </p>
+                      )}
+                    </div>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
-          <div className="mt-6 flex items-center justify-between text-sm text-fg-dim">
-            <span>
-              {notes.data && notes.data.length > 0
-                ? `Showing ${pageFirst}–${pageLast}`
-                : notes.isFetching
-                  ? "Loading…"
-                  : ""}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={!hasPrev}
-                onClick={() => setOffset((o) => Math.max(0, o - DEFAULT_PAGE_SIZE))}
-                className="btn btn-secondary btn-touch"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                disabled={!hasNext}
-                onClick={() => setOffset((o) => o + DEFAULT_PAGE_SIZE)}
-                className="btn btn-secondary btn-touch"
-              >
-                Next
-              </button>
-            </div>
+      {notes.isPending ? (
+        <SkeletonRows />
+      ) : notes.isError && !notes.data ? (
+        // Keep the last-loaded list on screen when a background refetch
+        // fails (offline mid-session); only a truly empty cache errors.
+        <NotesErrorBlock error={notes.error} retry={() => notes.refetch()} />
+      ) : displayNotes && displayNotes.length > 0 ? (
+        <>
+          {notes.isError ? <OfflineRibbon /> : null}
+          <SectionLabel>{`${title} (${pageLast}${hasNext ? "+" : ""})`}</SectionLabel>
+          <NoteRowList aria-label="Notes">
+            {displayNotes.map((n) => (
+              <NoteRow
+                key={n.id}
+                note={n}
+                pinnedTag={roles.pinned}
+                archivedTag={roles.archived}
+                trailing={
+                  preset === "untagged" ? (
+                    <QuickTagControl
+                      noteId={n.id}
+                      existing={n.tags ?? []}
+                      suggestions={tags.data ?? []}
+                    />
+                  ) : undefined
+                }
+              />
+            ))}
+          </NoteRowList>
+        </>
+      ) : (
+        <NotesEmptyBlock filtering={isFilteringActive(queryState) || !!preset} />
+      )}
+
+      {/* The pager only exists when there is something to page (or a page
+          behind you) — an empty vault's arrival is search + chips + the
+          invitation, nothing more. */}
+      {showPagination ? (
+        <div className="mt-6 flex items-center justify-between text-fg-dim text-sm">
+          <span>
+            {notes.data && notes.data.length > 0
+              ? `Showing ${pageFirst}–${pageLast}`
+              : notes.isFetching
+                ? "Loading…"
+                : ""}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={!hasPrev}
+              onClick={() => setOffset((o) => Math.max(0, o - DEFAULT_PAGE_SIZE))}
+              className="btn btn-secondary btn-touch"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={!hasNext}
+              onClick={() => setOffset((o) => o + DEFAULT_PAGE_SIZE)}
+              className="btn btn-secondary btn-touch"
+            >
+              Next
+            </button>
           </div>
         </div>
-      </div>
+      ) : null}
 
       {showSaveDialog ? (
         <SaveViewDialog
@@ -793,73 +867,6 @@ function SaveViewDialog({
   );
 }
 
-function NoteRow({
-  note,
-  pinnedTag,
-  archivedTag,
-  quickTagSuggestions,
-}: {
-  note: Note;
-  pinnedTag: string;
-  archivedTag: string;
-  quickTagSuggestions?: TagSummary[];
-}) {
-  const title = noteTitle(note);
-  // The mono path is metadata under the human title — but only when it says
-  // something the title doesn't (a folder the leaf drops). Compare against the
-  // extension-stripped path so a bare root file ("Aaron.md" vs title "Aaron")
-  // doesn't render a redundant line that differs only by ".md".
-  const showPath = !!note.path && note.path.replace(/\.md$/i, "") !== title;
-  const stamp = note.updatedAt ?? note.createdAt;
-  const isPinned = (note.tags ?? []).includes(pinnedTag);
-  const isArchived = (note.tags ?? []).includes(archivedTag);
-  return (
-    <li className={isArchived ? "opacity-60 italic" : undefined}>
-      <div className="note-row items-stretch">
-        <span aria-hidden="true" className="note-dot" />
-        <Link
-          to={`/n/${encodeURIComponent(note.id)}`}
-          className="focus-ring block min-h-11 min-w-0 flex-1 md:min-h-0"
-        >
-          <div className="flex items-baseline justify-between gap-4">
-            <span className="flex min-w-0 items-baseline gap-1.5">
-              {isPinned ? (
-                <span className="shrink-0 text-accent" aria-label="pinned" title="pinned">
-                  ★
-                </span>
-              ) : null}
-              <span className="min-w-0 truncate text-sm font-medium text-fg">{title}</span>
-            </span>
-            <span className="shrink-0 text-xs text-fg-dim">{relativeTime(stamp)}</span>
-          </div>
-          {showPath ? <p className="mt-0.5 min-w-0 truncate note-id">{note.path}</p> : null}
-          {note.preview ? (
-            <p className="mt-1 truncate text-sm text-fg-muted">{note.preview}</p>
-          ) : null}
-          {note.tags && note.tags.length > 0 ? (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {note.tags.map((t) => (
-                <span key={t} className="chip chip-tag max-w-full break-all">
-                  #{t}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </Link>
-        {quickTagSuggestions ? (
-          <div className="shrink-0 self-center">
-            <QuickTagControl
-              noteId={note.id}
-              existing={note.tags ?? []}
-              suggestions={quickTagSuggestions}
-            />
-          </div>
-        ) : null}
-      </div>
-    </li>
-  );
-}
-
 function QuickTagControl({
   noteId,
   existing,
@@ -1060,83 +1067,6 @@ function PresetFilterBar({ active }: { active?: NotesPreset }) {
         );
       })}
     </nav>
-  );
-}
-
-function TagFilter({
-  tags,
-  selected,
-  onToggle,
-  tagMatch,
-  onTagMatchChange,
-  onClear,
-}: {
-  tags: TagSummary[];
-  selected: string[];
-  onToggle: (name: string) => void;
-  tagMatch: "any" | "all";
-  onTagMatchChange: (mode: "any" | "all") => void;
-  onClear: () => void;
-}) {
-  return (
-    <details className="rounded-md border border-border bg-card text-sm">
-      <summary className="cursor-pointer list-none px-3 py-2 text-fg-muted hover:text-accent">
-        Tags{selected.length > 0 ? ` (${selected.length})` : ""}
-      </summary>
-      <div className="border-t border-border p-3">
-        {selected.length > 1 ? (
-          <fieldset className="mb-3 flex items-center gap-3 text-xs">
-            <legend className="sr-only">Match mode</legend>
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="tag-match"
-                value="any"
-                checked={tagMatch === "any"}
-                onChange={() => onTagMatchChange("any")}
-              />
-              Any
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="tag-match"
-                value="all"
-                checked={tagMatch === "all"}
-                onChange={() => onTagMatchChange("all")}
-              />
-              All
-            </label>
-            <button
-              type="button"
-              onClick={onClear}
-              className="ml-auto text-xs text-fg-dim hover:text-accent"
-            >
-              Clear
-            </button>
-          </fieldset>
-        ) : null}
-        {tags.length === 0 ? (
-          <p className="text-xs text-fg-dim">No tags in this vault.</p>
-        ) : (
-          <ul className="max-h-56 space-y-1 overflow-y-auto pr-1">
-            {tags.map((t) => (
-              <li key={t.name}>
-                <label className="flex items-center gap-2 text-sm text-fg hover:text-accent">
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(t.name)}
-                    onChange={() => onToggle(t.name)}
-                  />
-                  <span className="flex-1 truncate">{t.name}</span>
-                  <span className="text-xs text-fg-dim">{t.count}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </details>
   );
 }
 

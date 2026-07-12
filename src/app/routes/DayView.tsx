@@ -1,8 +1,9 @@
-import { NoteTimelineRow, SectionLabel } from "@/components/RecentTimeline";
+import { NoteRow, NoteRowList } from "@/components/NoteRow";
+import { SectionLabel } from "@/components/RecentTimeline";
 import { EmptyState, ErrorState, OfflineRibbon, Skeleton } from "@/components/ui";
 import { formatLongDate, parseDateKey, shiftDay, toDateKey, todayKey } from "@/lib/dates";
 import { useHistoryAwareBack } from "@/lib/nav/history";
-import { useNotesForDateViews, useVaultStore } from "@/lib/vault";
+import { useNotesForDateViews, useTagRoles, useVaultStore } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
 import type { Note } from "@/lib/vault/types";
 import { useMemo } from "react";
@@ -145,16 +146,20 @@ function SingleDay({ dateParam }: { dateParam: string }) {
 }
 
 function Section({ title, notes }: { title: string; notes: Note[] }) {
+  // Same shared row + list shape as Today and /notes (W2-11 / F9 — one
+  // anatomy everywhere). Role tags resolve once per list, not per row.
+  const activeVault = useVaultStore((s) => s.getActiveVault());
+  const { roles } = useTagRoles(activeVault?.id ?? null);
   return (
     <section>
       <SectionLabel>
         {title} ({notes.length})
       </SectionLabel>
-      <ol className="divide-y divide-border rounded-md border border-border bg-card">
+      <NoteRowList>
         {notes.map((n) => (
-          <NoteTimelineRow key={n.id} note={n} />
+          <NoteRow key={n.id} note={n} pinnedTag={roles.pinned} archivedTag={roles.archived} />
         ))}
-      </ol>
+      </NoteRowList>
     </section>
   );
 }
