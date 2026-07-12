@@ -5,6 +5,7 @@ import {
   matchArchive,
   matchPinned,
   matchRecent,
+  matchVaultSurface,
   useNavBands,
 } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
@@ -188,6 +189,40 @@ describe("buildNavBands (pure)", () => {
     expect(matchPinned(loc("/?view=pinned"))).toBe(false); // param needs the /notes room
     expect(matchArchive(loc("/notes?view=archived"))).toBe(true);
     expect(matchArchive(loc("/notes"))).toBe(false);
+  });
+
+  // LZ-5: the 3-slot bar's one surface tab lights on the union of the lens
+  // territory — matchVaultSurface must claim exactly what the four lens
+  // matchers claim between them, and nothing a destination owns.
+  it("matchVaultSurface claims the whole one-surface footprint and nothing else (LENS-SPEC §5.2)", () => {
+    for (const url of [
+      "/",
+      "/notes",
+      "/notes?view=pinned",
+      "/notes?view=archived",
+      "/notes?view=untagged",
+      "/notes?search=moss&tag=daily",
+      "/n/some-note",
+      "/today",
+      "/today?date=2026-04-18",
+    ]) {
+      expect(matchVaultSurface(loc(url)), `${url} is the surface`).toBe(true);
+    }
+    for (const url of [
+      "/calendar",
+      "/tags",
+      "/activity",
+      "/map",
+      "/account",
+      "/vaults",
+      "/connect",
+      "/import",
+      "/settings",
+      "/new",
+      "/all", // the pre-rename shim redirects; active-state never claims it
+    ]) {
+      expect(matchVaultSurface(loc(url)), `${url} is not the surface`).toBe(false);
+    }
   });
 });
 

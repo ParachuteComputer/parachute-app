@@ -1,4 +1,5 @@
 import { BottomTabBar } from "@/components/BottomTabBar";
+import { LensStrip } from "@/components/LensStrip";
 import { NavSheet } from "@/components/NavSheet";
 import { Rail } from "@/components/Rail";
 import { SpeedDial } from "@/components/SpeedDial";
@@ -109,6 +110,37 @@ describe("Rail + BottomTabBar breakpoint contract (notes#147)", () => {
     expect(root, "NavSheet must render when open").not.toBeNull();
     expect(root?.className).toMatch(/\blg:hidden\b/);
     expect(root?.className).not.toMatch(/\bmd:hidden\b/);
+  });
+
+  // LZ-5: the on-surface lens strip joins the mobile side of the contract —
+  // below lg the strip + bottom bar carry the lens set and the surface tab;
+  // at lg+ the Rail owns both. Same gate, opposite direction, never both
+  // (rendering the lens set twice on one viewport is the redundancy D2
+  // rejected).
+  it("LensStrip is mobile-only (lg:hidden) on the SAME gate the Rail flips on — exactly one lens projection per viewport", async () => {
+    const { container } = await renderWithClient(<LensStrip />);
+    const strip = container.querySelector('nav[aria-label="Lenses"]');
+    expect(strip, "LensStrip must render when a vault is active").not.toBeNull();
+    expect(strip?.className).toMatch(/\blg:hidden\b/);
+    expect(strip?.className).not.toMatch(/\bmd:hidden\b/);
+    expect(strip?.className).not.toMatch(/\bmd:flex\b/);
+  });
+
+  it("LensStrip projects EXACTLY the rail's lens band — same ids, labels, hrefs, order (single source, F14)", async () => {
+    const { container: railContainer } = await renderWithClient(<Rail />);
+    const { container: stripContainer } = await renderWithClient(<LensStrip />);
+
+    const collect = (root: HTMLElement, selector: string) =>
+      Array.from(root.querySelectorAll(selector)).map((a) => [
+        a.getAttribute("data-nav-item") ?? "",
+        a.textContent ?? "",
+        a.getAttribute("href") ?? "",
+      ]);
+    const railLens = collect(railContainer, '[data-nav-band="notes"] a[data-nav-item]');
+    const stripChips = collect(stripContainer, 'nav[aria-label="Lenses"] a[data-nav-item]');
+
+    expect(stripChips.length).toBeGreaterThan(0);
+    expect(stripChips).toEqual(railLens);
   });
 
   // W2-9: the capture affordances split by form factor on the SAME gate —

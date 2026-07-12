@@ -115,6 +115,17 @@ export function matchArchive(loc: NavLocation): boolean {
   return loc.pathname === "/notes" && viewParam(loc) === "archived";
 }
 
+/**
+ * The whole one-surface footprint (LENS-SPEC §5.2, LZ-5) — every lens over
+ * the one collection: Recent (`/` plus the /n/:id and /today drill-ins that
+ * stay under it) and `/notes` in every `?view=` dress. The 3-slot mobile
+ * bar's single "Notes" tab lights on this — one surface, one surface tab;
+ * WHICH lens you're wearing is the on-surface LensStrip's job, not the bar's.
+ */
+export function matchVaultSurface(loc: NavLocation): boolean {
+  return matchRecent(loc) || loc.pathname === "/notes";
+}
+
 /** Route targets, single-sourced (W2-7 renamed these off `/all`/`/graph`). */
 export const RECENT_TO = "/";
 export const NOTES_TO = "/notes";

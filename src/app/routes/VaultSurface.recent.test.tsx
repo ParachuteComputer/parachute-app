@@ -198,6 +198,30 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
     expect(screen.queryByRole("heading", { level: 1, name: /recent/i })).toBeNull();
   });
 
+  // LZ-5: the mobile lens strip rides the Recent body too — the strip
+  // renders on EVERY lens, so a phone can leave any lens in one tap. At `/`
+  // the Recent chip is the active pill (the model's matcher, verbatim).
+  it("carries the mobile lens strip (lg:hidden) with Recent active at / (LZ-5)", async () => {
+    installFetch(WITH_USER_NOTE);
+    render(
+      <Wrap>
+        <VaultSurface lens="recent" />
+      </Wrap>,
+    );
+    const strip = await screen.findByRole("navigation", { name: /^lenses$/i });
+    expect(strip.className).toMatch(/\blg:hidden\b/);
+    const chips = within(strip).getAllByRole("link");
+    expect(chips.map((a) => a.getAttribute("href"))).toEqual([
+      "/",
+      "/notes",
+      "/notes?view=pinned",
+      "/notes?view=archived",
+    ]);
+    expect(
+      chips.filter((a) => a.getAttribute("aria-current") === "page").map((a) => a.textContent),
+    ).toEqual(["Recent"]);
+  });
+
   it("shows warm quick doors + a setup nudge + the focus-warmed composer for a fresh vault", async () => {
     installFetch(SEED_ONLY);
     render(
@@ -385,9 +409,11 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
       );
       expect(await screen.findByText("My first thought")).toBeInTheDocument();
       expect(screen.queryByText("Last month's plan")).not.toBeInTheDocument();
-      // The floor is visible: the quiet foot points at everything.
+      // The floor is visible: the quiet foot points at everything. (The
+      // "All notes →" arrow name keeps this distinct from the LZ-5 lens
+      // strip's own All-notes chip.)
       expect(screen.getByText(/looking for older notes\?/i)).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /all notes/i })).toHaveAttribute("href", "/notes");
+      expect(screen.getByRole("link", { name: /all notes →/i })).toHaveAttribute("href", "/notes");
     });
 
     it("caps the window at 100 notes even inside the 14 days", async () => {
@@ -428,9 +454,10 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
         </Wrap>,
       );
       expect(await screen.findByText(/nothing touched in the last two weeks/i)).toBeInTheDocument();
-      // Not the empty-vault invitation — the vault ISN'T empty.
+      // Not the empty-vault invitation — the vault ISN'T empty. (The arrow
+      // name targets the foot's door, not the lens strip's chip.)
       expect(screen.queryByText(/a quiet, empty page/i)).not.toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /all notes/i })).toHaveAttribute("href", "/notes");
+      expect(screen.getByRole("link", { name: /all notes →/i })).toHaveAttribute("href", "/notes");
     });
 
     it("the foot rides the populated window too — Recent always names its edge", async () => {
@@ -576,8 +603,13 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
       expect(screen.queryByText(/looking for older notes/i)).not.toBeInTheDocument();
     };
 
-    it("the All lens carries none of it — and never even fetches the summary", async () => {
+    it("the All lens carries none of it", async () => {
       // Hosted vault + a live trial: the strongest bait. Still nothing.
+      // (Since LZ-5 the surface hosts the lens strip, whose nav model reads
+      // the SHARED summary query for the Account trial chip — the same
+      // app-wide read the Rail/NavSheet already make at every viewport — so
+      // "never fetches" is no longer the confinement claim; "no visible
+      // furniture off Recent" is.)
       seedHostedStore();
       vi.mocked(getAccountSummaryState).mockResolvedValue(trialSummary(3));
       installFetch([]);
@@ -588,7 +620,6 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
       );
       await screen.findByText(/this vault has no notes yet/i);
       assertNoFurniture();
-      expect(getAccountSummaryState).not.toHaveBeenCalled();
     });
 
     it("the Pinned and Archive browse lenses carry none of it", async () => {
@@ -605,7 +636,6 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
         assertNoFurniture();
         view.unmount();
       }
-      expect(getAccountSummaryState).not.toHaveBeenCalled();
     });
   });
 
@@ -644,7 +674,7 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
     // runs. jsdom's fireEvent.click skips the implicit blur, so fire it in
     // the real order.
     fireEvent.blur(recentInput);
-    fireEvent.click(screen.getByRole("link", { name: /all notes/i }));
+    fireEvent.click(screen.getByRole("link", { name: /all notes →/i }));
     await screen.findByRole("heading", { name: /all notes · everything, searchable/i });
 
     // …and the words are already there. Nothing lost to the remount.

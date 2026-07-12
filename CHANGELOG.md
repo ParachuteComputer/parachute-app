@@ -1,5 +1,35 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.15.0] - 2026-07-12
+
+**LZ-5 — mobile gets the lens model: the on-surface lens strip + the 3-slot bar.** LENS-SPEC §5
+(ratified D2): below `lg` the surface itself carries the lens set, and the bottom bar slims from
+four slots to three — one surface, one surface tab. Every lens is ≤2 taps on a phone (the strip
+chip is 1); capture stays 1 tap. Minor bump: the mobile IA change.
+
+- **The lens strip** (`components/LensStrip.tsx`, §5.1): a horizontal chip row on the surface
+  directly under the masthead, `lg:hidden` (at lg+ the desktop rail owns the lens set — rendering
+  both would duplicate the vocabulary D2 rejected). The chips ARE the nav model's lens band —
+  `useNavBands()`'s "notes" items projected, same ids/labels/hrefs/order as the Rail and NavSheet
+  render (single source, the F14 no-drift lesson; pinned by a strip↔rail parity test). Active
+  chip wears the §3 grass-soft pill by the model's own matcher; tapping a chip is a push
+  navigation to the lens URL; the row scrolls horizontally if cramped and renders on every lens,
+  so a phone can leave Pinned/Archive in one tap. This is LZ-3's parked desktop `PresetFilterBar`
+  reborn — same spot in the anatomy, the model's vocabulary instead of its own five-view list.
+- **The bottom bar 4→3** (§5.2): **Notes · [+] · Search**. The LZ-2 interim Recent/Notes tab
+  pair collapses into ONE surface tab — "Notes" → `/` (the Recent lens is the front door), lit
+  across the whole surface via the new `matchVaultSurface` matcher (`/`, `/notes` in every
+  `?view=` dress, and the /n/:id + /today drill-ins that stay under it). The `?view=pinned|archived`
+  no-tab-lights gap of the 4-slot bar is resolved: the surface tab claims them; WHICH lens you're
+  wearing is the strip's job, not the bar's. The centre [+] stays the raised capture disc → `/new`
+  (unchanged size/behavior — capture speed sacred); Search stays the palette entry; the NavSheet
+  still carries everything including the Explore band and YOUR PARACHUTE.
+- **One projection per viewport, extended** (the notes#147 contract): the strip joins the mobile
+  side — Rail `hidden lg:flex` ≥lg; LensStrip + BottomTabBar `lg:hidden` <lg; never both, never
+  `md:`. The contract test now pins the strip's gate and its band parity with the rail.
+- Desktop untouched: rail, NavSheet contents, Explore band, SpeedDial all exactly as LZ-4 left
+  them.
+
 ## [0.14.0] - 2026-07-11
 
 **LZ-4 — Recent joins: `/` and `/notes` are one surface.** The centerpiece's second half
