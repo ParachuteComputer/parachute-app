@@ -512,6 +512,10 @@ export function useCreateNote() {
     onSuccess: (created) => {
       qc.setQueryData(["note", activeId, created.id], created);
       qc.invalidateQueries({ queryKey: ["notes", activeId] });
+      // W2-10: Home's in-place composer saves WITHOUT navigating — Today's
+      // recent timeline (a `notesForDateViews` consumer) must show the new
+      // note immediately, not on the next poll/live tick.
+      qc.invalidateQueries({ queryKey: ["notesForDateViews", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });
       qc.invalidateQueries({ queryKey: ["vaultInfo", activeId] });
     },
