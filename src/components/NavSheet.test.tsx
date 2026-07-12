@@ -80,24 +80,35 @@ describe("NavSheet (mobile projection, W2-5)", () => {
     expect(container.firstElementChild).toBeNull();
   });
 
-  it("renders the rail's bands: switcher on top, both zones, Settings foot (F14/F15)", async () => {
+  it("renders the rail's bands: switcher on top, all three zones, Settings foot (F14/F15)", async () => {
     await renderSheet();
     const sheet = within(screen.getByRole("dialog", { name: /^menu$/i }));
 
     // The hinge — the switcher band's inline rows.
     expect(sheet.getByText(/on this device/i)).toBeInTheDocument();
 
-    // The two named zones.
+    // The three named zones (LZ-2 adds Explore).
     expect(sheet.getByText(/^your notes$/i)).toBeInTheDocument();
+    expect(sheet.getByText(/^explore$/i)).toBeInTheDocument();
     expect(sheet.getByText(/^your parachute$/i)).toBeInTheDocument();
 
     // F14: Tags AND Vaults, reachable on mobile for the first time.
     expect(sheet.getByRole("link", { name: /^tags$/i })).toHaveAttribute("href", "/tags");
     expect(sheet.getByRole("link", { name: /^vaults$/i })).toHaveAttribute("href", "/vaults");
 
-    // The rest of the notes band.
-    expect(sheet.getByRole("link", { name: /^today$/i })).toHaveAttribute("href", "/");
-    expect(sheet.getByRole("link", { name: /^notes$/i })).toHaveAttribute("href", "/notes");
+    // The lens set (LZ-2) — all four, at today's exact URLs.
+    expect(sheet.getByRole("link", { name: /^recent$/i })).toHaveAttribute("href", "/");
+    expect(sheet.getByRole("link", { name: /^all notes$/i })).toHaveAttribute("href", "/notes");
+    expect(sheet.getByRole("link", { name: /^pinned$/i })).toHaveAttribute(
+      "href",
+      "/notes?view=pinned",
+    );
+    expect(sheet.getByRole("link", { name: /^archive$/i })).toHaveAttribute(
+      "href",
+      "/notes?view=archived",
+    );
+
+    // The Explore destinations.
     expect(sheet.getByRole("link", { name: /^calendar$/i })).toHaveAttribute("href", "/calendar");
     expect(sheet.getByRole("link", { name: /^activity$/i })).toHaveAttribute("href", "/activity");
 
@@ -134,7 +145,13 @@ describe("NavSheet (mobile projection, W2-5)", () => {
   it("marks the current room active", async () => {
     await renderSheet({}, "/vaults");
     expect(screen.getByRole("link", { name: /^vaults$/i })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: /^today$/i })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: /^recent$/i })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks the Pinned lens active on /notes?view=pinned (search-aware match — LZ-2)", async () => {
+    await renderSheet({}, "/notes?view=pinned");
+    expect(screen.getByRole("link", { name: /^pinned$/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /^all notes$/i })).not.toHaveAttribute("aria-current");
   });
 
   it("closes on scrim tap and on Escape", async () => {

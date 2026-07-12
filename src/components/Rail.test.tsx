@@ -73,22 +73,34 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
     expect(aside?.className).toMatch(/\blg:flex\b/);
   });
 
-  it("renders the two labeled zones with their rooms in spec order (§2.2)", async () => {
+  it("renders the three labeled zones with their rooms in spec order (LENS-SPEC §4)", async () => {
     seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
     const { container } = await renderRail();
 
-    // Both band labels present.
+    // All three band labels present.
     expect(screen.getByText(/^your notes$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^explore$/i)).toBeInTheDocument();
     expect(screen.getByText(/^your parachute$/i)).toBeInTheDocument();
 
-    // YOUR NOTES rooms, in order (Map absent — unearned).
+    // YOUR NOTES is the lens set — Recent · All notes · Pinned · Archive,
+    // every target an existing URL (§2 zero migration).
     const notesBand = container.querySelector('[data-nav-band="notes"]');
     const notesLinks = Array.from(notesBand?.querySelectorAll("a[data-nav-item]") ?? []).map(
       (a) => [a.textContent, a.getAttribute("href")],
     );
     expect(notesLinks).toEqual([
-      ["Today", "/"],
-      ["Notes", "/notes"],
+      ["Recent", "/"],
+      ["All notes", "/notes"],
+      ["Pinned", "/notes?view=pinned"],
+      ["Archive", "/notes?view=archived"],
+    ]);
+
+    // EXPLORE — the destinations, in order (Map absent — unearned).
+    const exploreBand = container.querySelector('[data-nav-band="explore"]');
+    const exploreLinks = Array.from(exploreBand?.querySelectorAll("a[data-nav-item]") ?? []).map(
+      (a) => [a.textContent, a.getAttribute("href")],
+    );
+    expect(exploreLinks).toEqual([
       ["Calendar", "/calendar"],
       ["Tags", "/tags"],
       ["Activity", "/activity"],
@@ -115,10 +127,13 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
     expect(screen.getByRole("button", { name: /theme:/i })).toBeInTheDocument();
   });
 
-  it("the old label vocabulary is gone ('All notes' → 'Notes'; no foot Account row)", async () => {
+  it("the old label vocabulary is gone ('Today' → 'Recent', 'Notes' → 'All notes'; no foot Account row)", async () => {
     seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
     await renderRail();
-    expect(screen.queryByRole("link", { name: /^all notes$/i })).toBeNull();
+    // LZ-2: the name "Today" died with the lens model (LENS-SPEC §6), and
+    // "Notes" grew back into "All notes" — the lens is honest about scope.
+    expect(screen.queryByRole("link", { name: /^today$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^notes$/i })).toBeNull();
     // Account lives in the parachute band as "Account & plan" now.
     expect(screen.getByRole("link", { name: /account & plan/i })).toHaveAttribute(
       "href",
@@ -146,13 +161,61 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
     seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
     await renderRail("/tags");
     expect(screen.getByRole("link", { name: /^tags$/i })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: /^today$/i })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: /^recent$/i })).not.toHaveAttribute("aria-current");
   });
 
-  it("marks Notes active on /notes (W2-7 rename)", async () => {
+  it("marks All notes active on /notes (the bare lens)", async () => {
     seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
     await renderRail("/notes");
-    expect(screen.getByRole("link", { name: /^notes$/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /^all notes$/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: /^pinned$/i })).not.toHaveAttribute("aria-current");
+  });
+
+  // LZ-2's search-aware active state — the rendered-rail half of the model's
+  // active-state matrix: the `?view=` lenses light their own row, and the
+  // maintenance filters stay under All notes.
+  it("marks Pinned active on /notes?view=pinned — and All notes goes quiet", async () => {
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    await renderRail("/notes?view=pinned");
+    expect(screen.getByRole("link", { name: /^pinned$/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /^all notes$/i })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks Archive active on /notes?view=archived — and All notes goes quiet", async () => {
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    await renderRail("/notes?view=archived");
+    expect(screen.getByRole("link", { name: /^archive$/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: /^all notes$/i })).not.toHaveAttribute("aria-current");
+  });
+
+  it("keeps the maintenance filters under All notes (/notes?view=untagged highlights All)", async () => {
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    await renderRail("/notes?view=untagged");
+    expect(screen.getByRole("link", { name: /^all notes$/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: /^pinned$/i })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: /^archive$/i })).not.toHaveAttribute("aria-current");
+  });
+
+  it("keeps reading a note under the Recent lens (/n/:id highlights Recent)", async () => {
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    await renderRail("/n/some-note");
+    expect(screen.getByRole("link", { name: /^recent$/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /^all notes$/i })).not.toHaveAttribute("aria-current");
+  });
+
+  it("keeps the day drill-in under the Recent lens (/today?date= highlights Recent)", async () => {
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    await renderRail("/today?date=2026-04-18");
+    expect(screen.getByRole("link", { name: /^recent$/i })).toHaveAttribute("aria-current", "page");
   });
 
   it("marks Map active on /map, once earned (W2-7 rename)", async () => {

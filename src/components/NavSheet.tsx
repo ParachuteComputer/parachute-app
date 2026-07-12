@@ -2,7 +2,7 @@ import { InstallPrompt } from "@/components/InstallPrompt";
 import { TextSizeControl } from "@/components/TextSizeControl";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
-import { type NavBand, type NavItem, useNavBands } from "@/lib/nav/model";
+import { type NavBand, type NavItem, type NavLocation, useNavBands } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault";
 import { useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
@@ -11,8 +11,9 @@ import { Link, useLocation } from "react-router";
 // replacement. A bottom sheet whose content is EXACTLY the rail's bands in
 // the rail's order, rendered from the same `useNavBands()` model (the F14
 // fix): switcher band on top (§2.4, inline rows — not a nested popover) →
-// YOUR NOTES → YOUR PARACHUTE → SET UP → foot (Settings + the ☰ era's
-// extras: InstallPrompt · TextSizeControl · ThemeToggle).
+// YOUR NOTES (the lens set) → EXPLORE → YOUR PARACHUTE → SET UP → foot
+// (Settings + the ☰ era's extras: InstallPrompt · TextSizeControl ·
+// ThemeToggle).
 //
 // Two entry points, one surface: the header's ☰ button and its vault pill
 // both open THIS sheet (the pill lands focus on the switcher band) — no
@@ -39,7 +40,8 @@ export function NavSheet({ open, onClose, initialFocus }: NavSheetProps) {
 function NavSheetPanel({ onClose, initialFocus }: Omit<NavSheetProps, "open">) {
   const hasVaults = useVaultStore((s) => Object.keys(s.vaults).length > 0);
   const bands = useNavBands();
-  const { pathname } = useLocation();
+  // The whole location — the Pinned/Archive lenses match on `?view=` (LZ-2).
+  const location = useLocation();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const touchStartY = useRef<number | null>(null);
@@ -174,7 +176,7 @@ function NavSheetPanel({ onClose, initialFocus }: Omit<NavSheetProps, "open">) {
           {/* Foot — Settings pinned, plus the ☰ era's utility extras. */}
           <div data-nav-band="foot" className="border-t border-border px-3 py-3">
             {foot?.items.map((item) => (
-              <SheetRow key={item.id} item={item} pathname={pathname} />
+              <SheetRow key={item.id} item={item} loc={location} />
             ))}
             <div className="mt-2 flex flex-wrap items-center gap-3 px-3">
               <InstallPrompt />
@@ -189,7 +191,7 @@ function NavSheetPanel({ onClose, initialFocus }: Omit<NavSheetProps, "open">) {
 }
 
 function SheetBand({ band }: { band: NavBand }) {
-  const { pathname } = useLocation();
+  const location = useLocation();
   return (
     <div data-nav-band={band.id}>
       {band.label ? (
@@ -201,7 +203,7 @@ function SheetBand({ band }: { band: NavBand }) {
         </p>
       ) : null}
       {band.items.map((item) => (
-        <SheetRow key={item.id} item={item} pathname={pathname} />
+        <SheetRow key={item.id} item={item} loc={location} />
       ))}
     </div>
   );
@@ -209,8 +211,8 @@ function SheetBand({ band }: { band: NavBand }) {
 
 // The sheet's row — the §3 row pattern at thumb scale: icon · label · badge,
 // grass-soft active pill (never underline/border selection).
-function SheetRow({ item, pathname }: { item: NavItem; pathname: string }) {
-  const active = item.match(pathname);
+function SheetRow({ item, loc }: { item: NavItem; loc: NavLocation }) {
+  const active = item.match(loc);
   return (
     <Link
       to={item.to}

@@ -137,4 +137,20 @@ describe("computeResults", () => {
       "orphaned",
     ]);
   });
+
+  it("the `/` command reads Recent (LZ-2 relabel) — labels only, keywords + target unchanged", () => {
+    const recent = COMMANDS.find((c) => c.id === "today");
+    expect(recent?.label).toBe("Recent");
+    expect(recent?.action).toEqual({ type: "navigate", to: "/" });
+    // Muscle memory keeps working: "today" and "home" still find it.
+    expect(recent?.keywords).toContain("today");
+    expect(recent?.keywords).toContain("home");
+
+    // The lens rows the palette already had are untouched (LENS-SPEC §4.5).
+    expect(COMMANDS.find((c) => c.id === "notes")?.label).toBe("All notes");
+    expect(COMMANDS.find((c) => c.id === "pinned")?.action.to).toBe("/notes?view=pinned");
+    expect(COMMANDS.find((c) => c.id === "archived")?.action.to).toBe("/notes?view=archived");
+    expect(COMMANDS.find((c) => c.id === "untagged")?.action.to).toBe("/notes?view=untagged");
+    expect(COMMANDS.find((c) => c.id === "orphaned")?.action.to).toBe("/notes?view=orphaned");
+  });
 });

@@ -14,7 +14,8 @@ import { Link, useLocation } from "react-router";
 //   · the vault switcher (the hinge — identity leads everything) + the
 //     collapse toggle,
 //   · a quiet Search affordance (opens the command palette),
-//   · YOUR NOTES — Today · Notes · Calendar · Tags · Activity · Map(earned),
+//   · YOUR NOTES — the lens set: Recent · All notes · Pinned · Archive (LZ-2),
+//   · EXPLORE — Calendar · Tags · Activity · Map(earned),
 //   · YOUR PARACHUTE — Account & plan · Vaults · Connect AI · Import notes,
 //   · SET UP — the guided shelf, hidden once done or dismissed,
 //   · Settings, pinned to the foot (theme toggle keeps its spot).
@@ -155,8 +156,10 @@ function RailBand({ band, collapsed }: { band: NavBand; collapsed: boolean }) {
 }
 
 function RailLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
-  const { pathname } = useLocation();
-  const active = item.match(pathname);
+  // The whole location, not just the pathname — the Pinned/Archive lenses
+  // live in the `?view=` param (LZ-2's search-aware match).
+  const location = useLocation();
+  const active = item.match(location);
   return (
     <Link
       to={item.to}
