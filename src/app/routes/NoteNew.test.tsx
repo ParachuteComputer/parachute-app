@@ -1,3 +1,4 @@
+import { Home } from "@/app/routes/Home";
 import { NoteNew } from "@/app/routes/NoteNew";
 import { loadDraft, saveDraft } from "@/lib/drafts/store";
 import { type LensDB, openLensDB } from "@/lib/sync/db";
@@ -1493,5 +1494,50 @@ describe("NoteNew — local draft persistence (notes#175)", () => {
     });
     await waitFor(() => expect(screen.getByText("NoteViewPage")).toBeInTheDocument());
     expect(loadDraft("dev", "new")).toBeNull();
+  });
+});
+
+// W2-10 — the honest composer's shared-draft contract, proven END TO END:
+// Home's in-place composer and this route read/write the SAME per-vault
+// draft (`NEW_NOTE_SCOPE`). Typing on Today and taking the "Open full
+// editor" escape must land on a /new that already holds the text — the
+// hop costs nothing. (Home.test.tsx pins the composer's own behaviors;
+// this lives here because the proof needs the REAL NoteNew on the other
+// side of the hop.)
+describe("W2-10 — one shared draft: Home's composer ↔ /new", () => {
+  beforeEach(async () => {
+    const db = await freshDb();
+    db.close();
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    seedStore();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("text typed on Today survives the 'Open full editor' hop — /new opens with it", async () => {
+    installFetch({ "/api/notes?": { body: [] } });
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/new" element={<NoteNew />} />
+        </Routes>
+      </MemoryRouter>,
+      { wrapper: Wrapper },
+    );
+
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    fireEvent.change(input, { target: { value: "a thought that must survive" } });
+    fireEvent.click(screen.getByRole("link", { name: /open full editor/i }));
+
+    // The REAL /new: the editor opens holding exactly the Today text, and
+    // the restore banner says so out loud.
+    const editor = await screen.findByTestId("cm-editor");
+    expect(editor).toHaveValue("a thought that must survive");
+    expect(screen.getByTestId("draft-restored")).toBeInTheDocument();
   });
 });

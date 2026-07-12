@@ -6,9 +6,11 @@ import { CodeMirrorEditor } from "@/components/CodeMirrorEditor";
 import { buildWikilinkResolver } from "@/components/MarkdownView";
 import { NoteRenderer } from "@/components/NoteRenderer";
 import { TagEditor, normalizeTag } from "@/components/TagEditor";
+import { VoiceUnavailableNote } from "@/components/VoiceUnavailableNote";
 import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { extractHashtags } from "@/lib/capture/hashtags";
 import { memoFilename, quickPath } from "@/lib/capture/recorder";
+import { buildTextNotePayload } from "@/lib/capture/text-note";
 import { useVoiceCapture } from "@/lib/capture/use-voice-capture";
 import { NEW_NOTE_SCOPE, clearDraft, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
@@ -28,7 +30,7 @@ import {
   useTranscriptionGate,
 } from "@/lib/vault/queries";
 import { ensureNotesSchema } from "@/lib/vault/schema-ensure";
-import type { Note, TranscriptionCapability } from "@/lib/vault/types";
+import type { Note } from "@/lib/vault/types";
 import { useSync } from "@/providers/SyncProvider";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -201,20 +203,16 @@ export function NoteNew() {
   // A typed note through this surface IS a capture: it carries the capture
   // role tag (default `capture`) + `metadata.source: "text"` so the how-it-
   // arrived axis lives in metadata, not tag identity (2026-07 one-tag
-  // simplification).
+  // simplification). The payload assembly is shared with Home's composer
+  // (W2-10) — `buildTextNotePayload` is the one place it happens.
   const saveTextOnly = useCallback(() => {
     if (!isValid || pending) return;
-    const explicit = draft.tags;
-    const extracted = extractHashtags(draft.content);
-    const allTags = Array.from(
-      new Set([roles.captureText, ...explicit, ...extracted].filter((t) => t.length > 0)),
-    );
-    const payload: CreateNotePayload = {
+    const payload = buildTextNotePayload({
       content: draft.content,
-      path: draft.path.trim(),
-      metadata: { source: "text" },
-    };
-    if (allTags.length) payload.tags = allTags;
+      path: draft.path,
+      tags: draft.tags,
+      captureTextRole: roles.captureText,
+    });
 
     // Fire-and-forget schema ensure — creates the `capture` tag row if the
     // vault doesn't have it yet. Never blocks the save; vault accepts notes
@@ -612,28 +610,6 @@ export function NoteNew() {
         </section>
       </article>
     </div>
-  );
-}
-
-// Rendered in the VoicePanel's slot when the vault explicitly declared
-// transcription disabled (launch-audit P0-3). One quiet line, matching the
-// muted-copy styling elsewhere on this screen — honest, not salesy. The
-// copy differentiates the two doors by the capability's shape: a metered
-// capability (`minutes_remaining` present) is the cloud plan gate, so name
-// the Voice plan; otherwise it's a self-host vault without a configured
-// transcription provider, where plan language would be wrong.
-function VoiceUnavailableNote({
-  capability,
-}: {
-  capability: TranscriptionCapability | undefined;
-}) {
-  const metered = typeof capability?.minutes_remaining === "number";
-  return (
-    <p className="mb-4 text-xs text-fg-dim" data-testid="voice-unavailable">
-      {metered
-        ? "Voice transcription comes with the Voice plan."
-        : "Voice transcription isn't enabled on this vault."}
-    </p>
   );
 }
 

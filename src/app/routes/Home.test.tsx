@@ -2,6 +2,7 @@ import { Home } from "@/app/routes/Home";
 import { getAccountSummaryState } from "@/lib/account/client";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import type { AccountSummary } from "@/lib/account/types";
+import { NEW_NOTE_SCOPE, loadDraft, saveDraft } from "@/lib/drafts/store";
 import { loadChecklistState } from "@/lib/home/checklist";
 import { __resetInstallAffordanceForTests } from "@/lib/pwa-install";
 import { useVaultStore } from "@/lib/vault/store";
@@ -23,6 +24,14 @@ vi.mock("@/lib/account/client", async () => {
   };
 });
 
+// The composer's save fires the same fire-and-forget schema ensure NoteNew's
+// does (audit GET + create PUT against the vault). The tests here mock fetch
+// but don't enumerate those calls; stub the module to a no-op (schema-ensure
+// has its own focused tests). Same pattern as NoteNew.test.tsx.
+vi.mock("@/lib/vault/schema-ensure", () => ({
+  ensureNotesSchema: vi.fn(async () => {}),
+}));
+
 interface Row {
   id: string;
   path: string;
@@ -35,6 +44,36 @@ interface Row {
 function installFetch(notes: Row[]) {
   const impl = vi.fn<typeof fetch>(async () => {
     return { ok: true, status: 200, json: async () => notes, text: async () => "" } as Response;
+  });
+  vi.stubGlobal("fetch", impl);
+  return impl;
+}
+
+// A routed fetch for the composer tests (W2-10): the blanket array-for-
+// everything stub above can't express "POST create succeeds" or "the vault
+// declares transcription disabled". Matching is deliberately narrow — the
+// notes LIST is `/api/notes?…` (query string present); anything unmatched
+// 404s so settings/tag-role reads fall back to their defaults.
+function installRoutedFetch(opts: {
+  notes?: Row[];
+  apiVault?: Record<string, unknown>;
+  createStatus?: number;
+}) {
+  const impl = vi.fn<typeof fetch>(async (input, init) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = (init?.method ?? "GET").toUpperCase();
+    const json = (body: unknown, status = 200) =>
+      ({ ok: status < 400, status, json: async () => body, text: async () => "" }) as Response;
+    if (method === "POST" && url.includes("/api/notes")) {
+      if (opts.createStatus && opts.createStatus >= 400) {
+        return json({ error: "nope" }, opts.createStatus);
+      }
+      const parsed = init?.body ? JSON.parse(String(init.body)) : {};
+      return json({ id: "created-1", createdAt: new Date().toISOString(), ...parsed });
+    }
+    if (url.includes("/api/vault")) return json(opts.apiVault ?? { name: "default" });
+    if (url.includes("/api/notes?")) return json(opts.notes ?? []);
+    return json(null, 404);
   });
   vi.stubGlobal("fetch", impl);
   return impl;
@@ -172,18 +211,162 @@ describe("Home — the warm front door", () => {
     expect(screen.getByText(/everything here is yours/i)).toBeInTheDocument();
   });
 
-  it("offers a focused composer that opens the real /new flow", async () => {
-    installFetch(SEED_ONLY);
-    render(
-      <Wrap>
-        <Home />
-      </Wrap>,
-    );
-    const composer = await screen.findByRole("link", { name: /write a note/i });
-    expect(within(composer).getByText(/what's on your mind\?/i)).toBeInTheDocument();
-    expect(within(composer).getByText(/autosaves to default/i)).toBeInTheDocument();
-    fireEvent.click(composer);
-    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/new"));
+  // -----------------------------------------------------------------------
+  // W2-10 — the honest composer (F10). The old card LOOKED like an input but
+  // was a <Link to="/new">: the first tap yanked you to a different screen.
+  // These pin the honest contract: type in place, save without leaving
+  // Today, one shared draft with /new, a capability-gated mic.
+  // -----------------------------------------------------------------------
+  describe("the honest composer (W2-10; F10)", () => {
+    it("is a real textarea — typing happens in place, no navigation", async () => {
+      installRoutedFetch({ notes: SEED_ONLY });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+      fireEvent.change(input, { target: { value: "a small thought" } });
+      expect(input).toHaveValue("a small thought");
+      // Still on Today — the affordance no longer lies.
+      expect(screen.getByRole("heading", { level: 1, name: "default" })).toBeInTheDocument();
+      expect(screen.queryByTestId("location")).not.toBeInTheDocument();
+    });
+
+    it("focus expands the card: Save-to-vault + the full-editor escape appear", async () => {
+      installRoutedFetch({ notes: SEED_ONLY });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+      // Resting: the quiet autosave line, no action row.
+      expect(screen.getByText(/autosaves to default/i)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /save to default/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /open full editor/i })).not.toBeInTheDocument();
+
+      fireEvent.focus(input);
+      expect(screen.getByRole("button", { name: /save to default/i })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /open full editor/i })).toHaveAttribute(
+        "href",
+        "/new",
+      );
+    });
+
+    it("Save creates the note through the NoteNew path and STAYS on Today", async () => {
+      const fetchImpl = installRoutedFetch({ notes: SEED_ONLY });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+      fireEvent.change(input, { target: { value: "quick capture #idea" } });
+      fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
+
+      // The create POST carries the same shape NoteNew's text save sends:
+      // capture role tag + extracted hashtag + metadata.source "text".
+      await waitFor(() => {
+        const post = fetchImpl.mock.calls.find(([, init]) => init?.method === "POST");
+        expect(post).toBeTruthy();
+        const body = JSON.parse(String(post?.[1]?.body));
+        expect(body.content).toBe("quick capture #idea");
+        expect(body.tags).toEqual(expect.arrayContaining(["capture", "idea"]));
+        expect(body.metadata).toEqual({ source: "text" });
+        expect(body.path).toMatch(/^Notes\//);
+      });
+
+      // No navigation away from Today; the composer clears; the shared draft
+      // is consumed.
+      expect(screen.queryByTestId("location")).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "default" })).toBeInTheDocument();
+      await waitFor(() => expect(input).toHaveValue(""));
+      expect(loadDraft("v1", NEW_NOTE_SCOPE)).toBeNull();
+    });
+
+    it("a failed save keeps the words and says why (no silent loss)", async () => {
+      installRoutedFetch({ notes: SEED_ONLY, createStatus: 500 });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+      fireEvent.change(input, { target: { value: "do not lose me" } });
+      fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      expect(input).toHaveValue("do not lose me");
+    });
+
+    it("the typed draft lands in the SHARED store on the full-editor hop (survives to /new)", async () => {
+      installRoutedFetch({ notes: SEED_ONLY });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+      fireEvent.change(input, { target: { value: "started on Today" } });
+      fireEvent.focus(input);
+      fireEvent.click(screen.getByRole("link", { name: /open full editor/i }));
+      await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/new"));
+      // The flush beat the debounce: the draft sits under the exact key
+      // NoteNew's restore reads (vault id + NEW_NOTE_SCOPE). The full
+      // Home→/new round-trip is pinned in NoteNew.test.tsx.
+      expect(loadDraft("v1", NEW_NOTE_SCOPE)?.body.content).toBe("started on Today");
+    });
+
+    it("restores a draft started on /new — one draft, both surfaces", async () => {
+      saveDraft("v1", NEW_NOTE_SCOPE, {
+        content: "started on /new",
+        path: "Notes/2026/07-11/09-00-00",
+        tags: ["capture"],
+      });
+      installRoutedFetch({ notes: SEED_ONLY });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+      expect(input).toHaveValue("started on /new");
+      // A draft-in-progress greets you expanded, ready to finish or save.
+      expect(screen.getByRole("button", { name: /save to default/i })).toBeInTheDocument();
+    });
+
+    it("the mic is the W2-9 voice arrival (/new?voice=1)", async () => {
+      installRoutedFetch({ notes: SEED_ONLY });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const mic = await screen.findByRole("link", { name: /record a voice note/i });
+      expect(mic).toHaveAttribute("href", "/new?voice=1");
+    });
+
+    it("the mic honors the transcription gate: disabled vault → no mic, the honest line", async () => {
+      installRoutedFetch({
+        notes: SEED_ONLY,
+        apiVault: { name: "default", transcription: { enabled: false } },
+      });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+      await waitFor(() =>
+        expect(screen.queryByRole("link", { name: /record a voice note/i })).toBeNull(),
+      );
+      // The honest line surfaces with the expanded card (same two-door copy
+      // as /new's recorder slot).
+      fireEvent.focus(input);
+      expect(await screen.findByTestId("voice-unavailable")).toHaveTextContent(
+        /isn't enabled on this vault/i,
+      );
+    });
   });
 
   it("shows warm quick doors + a setup nudge for a fresh vault", async () => {
@@ -282,10 +465,9 @@ describe("Home — the warm front door", () => {
       </Wrap>,
     );
     expect(await screen.findByText(/a quiet, empty page/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /write the first one/i })).toHaveAttribute(
-      "href",
-      "/new",
-    );
+    // W2-10: the CTA focuses the real composer in place — no hop to /new.
+    fireEvent.click(screen.getByRole("button", { name: /write the first one/i }));
+    expect(screen.getByRole("textbox", { name: /what's on your mind\?/i })).toHaveFocus();
   });
 
   it("shows an in-app /account backlink for a home-door vault (no cross-origin console hop)", async () => {

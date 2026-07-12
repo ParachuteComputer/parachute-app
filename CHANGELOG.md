@@ -1,5 +1,36 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.10.0] - 2026-07-11
+
+**W2-10 — the honest composer on Today (F10).** Home's "What's on your mind?" card looked like an
+input but was a `<Link to="/new">` — the first tap yanked you to a different screen; you could not
+type where the affordance said you could. Now it's real. Minor bump: the home hero goes from a
+navigation trick to an actual capture surface.
+
+- **A real expanding textarea** (`Home.tsx` Composer): focus blooms the card open (200ms min-height
+  ease, behind `prefers-reduced-motion`), the box auto-grows with the text, and typing happens in
+  place. Resting anatomy unchanged — placeholder line, quiet "Autosaves to {vault}" note, the mic
+  disc bottom-right.
+- **One shared draft with `/new`** — typing autosaves (debounced, + a synchronous flush on any
+  route hop/unmount) into the SAME per-vault draft store the full editor reads (`NEW_NOTE_SCOPE`,
+  notes#175 machinery — no second draft mechanism). A thought started on Today greets you on
+  `/new`, and vice versa; the "Open full editor →" escape therefore costs nothing. Round-trip
+  pinned end-to-end in NoteNew.test.
+- **"Save to {vault}" without leaving Today**: commits through the same path NoteNew's text save
+  uses — new shared `buildTextNotePayload` (`src/lib/capture/text-note.ts`: capture role tag +
+  `#hashtag` extraction + `metadata.source: "text"`), `useCreateNote`, fire-and-forget
+  `ensureNotesSchema`. No navigation: the composer clears, a quiet toast confirms, and the note
+  settles into the recent list (`useCreateNote` now also invalidates `notesForDateViews` so
+  Today/Calendar/Activity see creates immediately). A failed save keeps the words + says why.
+  ⌘/Ctrl-⏎ saves.
+- **Mic → the W2-9 voice arrival** (`/new?voice=1`, recorder auto-starts once the capability gate
+  settles), behind the same transcription gate as `/new`: an explicitly-disabled vault gets no mic
+  and the honest two-door line instead (`VoiceUnavailableNote` extracted to `src/components/` —
+  shared, not duplicated).
+- The empty-vault "Write the first one" CTA now focuses the composer in place instead of hopping
+  to `/new` — the affordance and the action finally agree. Vault switches mid-compose remount the
+  composer keyed by vault id (the notes#175 draft-clobber guard).
+
 ## [0.9.0] - 2026-07-11
 
 **W2-9 — speed-dial + command-palette presentation (adopt #5 #6).** The prototype's two
