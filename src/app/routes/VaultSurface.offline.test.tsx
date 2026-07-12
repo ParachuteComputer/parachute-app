@@ -1,17 +1,21 @@
-import { Notes } from "@/app/routes/Notes";
+import { VaultSurface } from "@/app/routes/VaultSurface";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { BrowserRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // FIX 2 (error-over-data) for the list route: a failed background refetch must
 // not blank the list you're reading. When the notes query is errored but still
-// holds the last-loaded list, Notes renders it (under a quiet offline ribbon)
-// rather than the error block; the error block only shows when there's
+// holds the last-loaded list, VaultSurface renders it (under a quiet offline
+// ribbon) rather than the error block; the error block only shows when there's
 // genuinely no cached list. We assert the rendering contract by driving
 // `useNotes` into the exact `{ isError, data }` combinations — the surrounding
 // hooks are mocked to benign values so the route renders without a network.
+// (LZ-3 mounts the Composer on the All lens, whose create/transcription hooks
+// are NOT part of this contract and stay unmocked — hence the QueryClient
+// wrapper + a stubbed fetch so they settle quietly.)
 const { mockUseNotes } = vi.hoisted(() => ({ mockUseNotes: vi.fn() }));
 
 vi.mock("@/lib/vault", async (importOriginal) => {
@@ -81,21 +85,31 @@ function seedStore() {
 }
 
 function renderNotes() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
-    <BrowserRouter>
-      <Notes />
-    </BrowserRouter>,
+    <QueryClientProvider client={client}>
+      <BrowserRouter>
+        <VaultSurface />
+      </BrowserRouter>
+    </QueryClientProvider>,
   );
 }
 
-describe("Notes — error-over-data rendering (FIX 2)", () => {
+describe("VaultSurface — error-over-data rendering (FIX 2)", () => {
   beforeEach(() => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     seedStore();
     window.history.replaceState({}, "", "/");
     mockUseNotes.mockReset();
+    // The unmocked Composer hooks (create-note mutation, transcription gate)
+    // fire real fetches without this stub; keep them quietly failing.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}), text: async () => "" })),
+    );
   });
   afterEach(() => {
+    vi.unstubAllGlobals();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
   });
 

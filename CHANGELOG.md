@@ -1,5 +1,51 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.13.0] - 2026-07-11
+
+**LZ-3 — one surface at `/notes`: Notes becomes the VaultSurface.** The centerpiece's first half
+(LENS-SPEC §3): `/notes` is no longer a "Notes room" with its own headline — it's THE surface over
+the vault, wearing the lens the rail picked. The vault name leads as the serif masthead on every
+lens; the composer rides the writing lens; the lens is a quiet label over the list, never a
+headline. `/` still renders the old Home this PR (Recent joins the surface in LZ-4). Minor bump:
+surface rebuild.
+
+- **`Notes.tsx` → `VaultSurface.tsx`** (git-mv for history — the VaultPopover→VaultSwitcher
+  precedent); component `Notes` → `VaultSurface`, still eager-loaded, lens derived from `?view=`
+  (`all` default · `pinned` · `archived` · the `untagged`/`orphaned` maintenance sub-views). Every
+  old URL — `/notes?view=…`, saved-view links (`?search=…&tag=…`), the `/pinned`-era shims —
+  resolves exactly as before. Exported type `NotesPreset` renamed `VaultView`.
+- **The vault masthead** (§3 anatomy 1, every lens): the vault-name serif H1 + "Everything here is
+  yours. Open format. Export anytime." — lifted from Home's masthead pattern, replacing the
+  "All notes" H1. The vault is the identity; the lens is a label.
+- **Composer on the writing lens** (§3 anatomy 2; ratified decision i): LZ-1's extracted
+  `<Composer>` mounts under the masthead on the **All lens only** for now (Recent joins in LZ-4).
+  Pinned/Archive are browse lenses and the maintenance sub-views are triage — no composer on any
+  `?view=`. Keyed by vault id (the draft-clobber guard, same as Home).
+- **Lens labels** (§3 anatomy 5): a sage eyebrow + quiet hint over the list — "ALL NOTES ·
+  everything, searchable" / "PINNED · starred" / "ARCHIVE · set aside, never deleted" /
+  "UNTAGGED · notes without any tags" / "ORPHANED · notes with no links" — replacing the
+  SectionLabel title+count (the pager's "Showing m–n" still carries the numbers). Display label
+  "Archive" (the param stays `view=archived`).
+- **Desktop chip row retired; maintenance views fold into Filters** (§1, §3 anatomy 4): the
+  resting `PresetFilterBar` (VIEWS: All·Pinned·Archived·Untagged·Orphaned) no longer renders —
+  the rail owns the lens set, and the chips duplicated Pinned/Archive on every desktop paint.
+  Untagged/Orphaned move INTO the Filters panel's Refine column as a "Show only: Untagged ·
+  Orphaned" row — same `?view=` URLs, quick-tag trailing control intact, the active chip links
+  back to `/notes` so the filter toggles off. `PresetFilterBar` stays exported-but-unrendered:
+  LENS-SPEC §5 rebirths it as the below-`lg` mobile lens strip in LZ-5.
+- **One width** (§3, `[spec-resolved]`): new token `--w-surface: 52rem` + a `.page-surface`
+  wrapper — the surface sits between prose (42) and the old page (72). The All-lens Filters panel
+  drops `md:grid-cols-3` → `md:grid-cols-2` (three columns are too cramped at 52rem — the
+  sanctioned builder-discretion call, flagged for the [F] design review).
+- **Capability preserved end-to-end**: search, the Filters disclosure + count badge, sort,
+  show-archived, path prefix, tags + pinned-tags + match mode, saved views (save/rename/update/
+  delete + link hydration), the lazy Folders tree (no eager fetch), pagination, the untagged
+  quick-tag control, Pinned/Archive's reduced chrome, the empty-vault calm arrival (now with the
+  composer as the writing invitation). NoteRow untouched.
+- Tests move with the rename (`VaultSurface.test.tsx` + saved-views + offline) and the resting
+  census re-baselines to search + Filters (2 controls); new coverage: masthead-on-every-lens,
+  composer on/off per lens, `?view=` URL derivation, the Show-only row + its toggle-off.
+
 ## [0.12.0] - 2026-07-11
 
 **LZ-2 — the lens rail: YOUR NOTES becomes the lens set, EXPLORE holds the destinations.** The

@@ -1,3 +1,4 @@
+import { Composer } from "@/components/Composer";
 import { NoteRow, NoteRowList } from "@/components/NoteRow";
 import { PathTree } from "@/components/PathTree";
 import { SectionLabel } from "@/components/RecentTimeline";
@@ -42,31 +43,39 @@ import type { TagSummary } from "@/lib/vault/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 
-export type NotesPreset = "pinned" | "archived" | "untagged" | "orphaned";
+export type VaultView = "pinned" | "archived" | "untagged" | "orphaned";
 
-const PRESET_ORDER: NotesPreset[] = ["pinned", "archived", "untagged", "orphaned"];
+const VIEW_ORDER: VaultView[] = ["pinned", "archived", "untagged", "orphaned"];
 
-const PRESET_TITLES: Record<NotesPreset, string> = {
-  pinned: "Pinned",
-  archived: "Archived",
-  untagged: "Untagged",
-  orphaned: "Orphaned",
+// The lens label (LENS-SPEC §3 anatomy item 5) — a sage eyebrow + quiet hint
+// naming the lens the list is wearing. It replaces BOTH the old "All notes"
+// H1 (the vault masthead owns the headline now) and the SectionLabel count.
+// Pinned/Archive are the browse lenses; Untagged/Orphaned are maintenance
+// sub-views (§1 — filters, not lenses: the rail keeps All notes lit).
+const LENS_LABELS: Record<VaultView | "all", { label: string; hint: string }> = {
+  all: { label: "All notes", hint: "everything, searchable" },
+  pinned: { label: "Pinned", hint: "starred" },
+  archived: { label: "Archive", hint: "set aside, never deleted" },
+  untagged: { label: "Untagged", hint: "notes without any tags" },
+  orphaned: { label: "Orphaned", hint: "notes with no links" },
 };
 
-const PRESET_SUBTITLES: Partial<Record<NotesPreset, string>> = {
-  untagged: "Notes without any tags. Add a tag inline to file them.",
-  orphaned: "Notes with no inbound or outbound links.",
-};
-
-function parsePreset(value: string | null): NotesPreset | undefined {
-  return PRESET_ORDER.find((p) => p === value);
+function parsePreset(value: string | null): VaultView | undefined {
+  return VIEW_ORDER.find((p) => p === value);
 }
 
+// VaultSurface — the ONE surface over the vault (LENS-SPEC §3): the lenses
+// (All · Pinned · Archive, with Recent joining in LZ-4) are dresses over this
+// component, derived from `?view=`, toggled in the rail. The vault name is
+// the masthead on every lens; the lens is a label, not a headline; the
+// composer rides the writing lens (All — Recent in LZ-4); Pinned/Archive are
+// composer-less browse lenses. Formerly `Notes.tsx` (git-mv'd for history).
+//
 // `preset` is normally read from the `?view=` query param — the four built-in
 // views are filters INSIDE the All-notes list now, not their own routes (the
 // old /pinned etc. redirect into /notes?view=). The optional prop is an
 // explicit override kept for direct-render callers (tests, embeds).
-export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
+export function VaultSurface({ preset: presetProp }: { preset?: VaultView } = {}) {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(activeVault?.id ?? null);
   const { pinnedTags } = usePinnedTags(activeVault?.id ?? null);
@@ -166,7 +175,7 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
   const pushToast = useToastStore((s) => s.push);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [renaming, setRenaming] = useState<SavedView | null>(null);
-  // W2-11 progressive disclosure: everything beyond search + view chips lives
+  // W2-11 progressive disclosure: everything beyond the resting search lives
   // behind ONE "Filters" disclosure. Deliberately NOT persisted — the page
   // rests calm on every arrival; the button's count badge carries any active
   // (but folded) filter state, so nothing is hidden surprisingly.
@@ -275,8 +284,7 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
   // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
-  const title = preset ? PRESET_TITLES[preset] : "All notes";
-  const subtitle = preset ? PRESET_SUBTITLES[preset] : null;
+  const lens = LENS_LABELS[preset ?? "all"];
   const pageFirst = offset + 1;
   const pageLast = offset + (displayNotes?.length ?? 0);
   const hasPrev = offset > 0;
@@ -293,8 +301,8 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
     (sort !== "desc" ? 1 : 0);
 
   // A genuinely empty vault (settled, unfiltered, first page) gets the calm
-  // arrival: search + view chips + the empty-state invitation ONLY — no
-  // filter chrome hovering over nothing (WALK-nav N3). The moment anything
+  // arrival: masthead + composer + search + the empty-state invitation ONLY —
+  // no filter chrome hovering over nothing (WALK-nav N3). The moment anything
   // is filterable (notes exist, a filter is live, or a preset scopes the
   // list) the disclosure comes back.
   const vaultEmpty =
@@ -308,58 +316,71 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
   const showPagination = hasPrev || hasNext || (displayNotes?.length ?? 0) > 0;
 
   return (
-    <div className="page">
-      <header className="mb-5 md:mb-6">
-        <p className="eyebrow">{activeVault.name}</p>
-        <h1 className="page-title">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-fg-muted">{subtitle}</p> : null}
+    <div className="page-surface">
+      {/* The masthead (§3 anatomy item 1, every lens) — the vault NAME leads
+          as the serif headline (identity everywhere; the same masthead the
+          old Home carried), with the ownership line under it. The lens gets
+          a quiet label above the list, never the headline. */}
+      <header className="mb-6">
+        <h1 className="page-title" style={{ fontSize: "clamp(2rem, 4vw, 2.6rem)" }}>
+          {activeVault.name}
+        </h1>
+        <p className="mt-1.5 text-fg-muted">
+          Everything here is yours. Open format. Export anytime.
+        </p>
       </header>
 
-      {/* The WHOLE at-rest chrome (W2-11 progressive disclosure): a search
-          field, one Filters disclosure, and the view chips. Everything else —
-          sort, archived visibility, path prefix, tags, pinned tags, saved
-          views, folders — lives in the panel below, folded until asked for.
-          `data-notes-chrome` scopes the resting-control census test. */}
-      <div data-notes-chrome className="mb-6 space-y-3">
-        <div className="flex items-center gap-3">
-          <input
-            type="search"
-            placeholder="Search…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input min-w-0 flex-1"
-            aria-label="Search notes"
-          />
-          {showFiltersControl ? (
-            <button
-              type="button"
-              onClick={() => setFiltersOpen((o) => !o)}
-              aria-expanded={filtersOpen}
-              aria-controls="notes-filters"
-              className="btn btn-secondary btn-touch shrink-0"
-            >
-              Filters
-              {foldedFilterCount > 0 ? (
-                <span className="rounded-full bg-grass-soft px-1.5 font-semibold text-grass-ink text-xs">
-                  {foldedFilterCount}
-                </span>
-              ) : null}
-              <span aria-hidden="true" className="font-mono text-xs">
-                {filtersOpen ? "▴" : "▾"}
+      {/* The composer rides the writing lens (§3 item 2; ratified decision i)
+          — All notes only for now, Recent joins in LZ-4. Pinned/Archive are
+          browse lenses and the maintenance sub-views are triage, not writing:
+          no composer on any `?view=`. Keyed by vault id (the notes#175
+          draft-clobber guard — a mid-session vault switch remounts a fresh
+          composer bound to the new vault's draft). */}
+      {!preset ? <Composer key={activeVault.id} vault={activeVault} focused={false} /> : null}
+
+      {/* The at-rest chrome (W2-11 progressive disclosure): a search field
+          and one Filters disclosure. Everything else — sort, archived
+          visibility, path prefix, tags, pinned tags, saved views, folders,
+          the Untagged/Orphaned maintenance views — lives in the panel below,
+          folded until asked for. The desktop view-chip row (PresetFilterBar)
+          retired in LZ-3: the rail owns the lens set now (LENS-SPEC §3 item
+          4). `data-notes-chrome` scopes the resting-control census test. */}
+      <div data-notes-chrome className="mb-6 flex items-center gap-3">
+        <input
+          type="search"
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="input min-w-0 flex-1"
+          aria-label="Search notes"
+        />
+        {showFiltersControl ? (
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((o) => !o)}
+            aria-expanded={filtersOpen}
+            aria-controls="notes-filters"
+            className="btn btn-secondary btn-touch shrink-0"
+          >
+            Filters
+            {foldedFilterCount > 0 ? (
+              <span className="rounded-full bg-grass-soft px-1.5 font-semibold text-grass-ink text-xs">
+                {foldedFilterCount}
               </span>
-            </button>
-          ) : null}
-        </div>
-        <PresetFilterBar active={preset} />
+            ) : null}
+            <span aria-hidden="true" className="font-mono text-xs">
+              {filtersOpen ? "▴" : "▾"}
+            </span>
+          </button>
+        ) : null}
       </div>
 
       {filtersOpen && showFiltersControl ? (
         <section id="notes-filters" aria-label="Filters" className="card mb-6 p-4 md:p-5">
-          <div
-            className={`grid gap-x-8 gap-y-6 ${
-              preset === "untagged" ? "" : preset ? "md:grid-cols-2" : "md:grid-cols-3"
-            }`}
-          >
+          {/* Two columns at most (was 3): the one-surface width (--w-surface,
+              52rem) leaves three columns too cramped for the tag browser and
+              saved views — [spec-resolved §3] builder's-discretion drop. */}
+          <div className={`grid gap-x-8 gap-y-6 ${preset === "untagged" ? "" : "md:grid-cols-2"}`}>
             {/* Refine — order, archived visibility, path narrowing. */}
             <div>
               <h2 className="eyebrow mb-3">Refine</h2>
@@ -390,6 +411,7 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
                   className="input w-full font-mono"
                   aria-label="Filter by path prefix"
                 />
+                <MaintenanceViewsRow active={preset} />
               </div>
             </div>
 
@@ -512,6 +534,21 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
         </section>
       ) : null}
 
+      {/* The lens label (§3 item 5) — names the lens over the list: a sage
+          eyebrow + quiet hint, replacing the old SectionLabel title+count
+          (the pager line below still carries "Showing m–n"). Skipped on the
+          fresh-empty-vault arrival (All by definition), where the composer +
+          invitation carry the whole surface — no label over nothing. */}
+      {!vaultEmpty ? (
+        <SectionLabel>
+          {lens.label}
+          <span className="font-sans normal-case tracking-normal text-fg-muted">
+            {" "}
+            · {lens.hint}
+          </span>
+        </SectionLabel>
+      ) : null}
+
       {notes.isPending ? (
         <SkeletonRows />
       ) : notes.isError && !notes.data ? (
@@ -521,7 +558,6 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
       ) : displayNotes && displayNotes.length > 0 ? (
         <>
           {notes.isError ? <OfflineRibbon /> : null}
-          <SectionLabel>{`${title} (${pageLast}${hasNext ? "+" : ""})`}</SectionLabel>
           <NoteRowList aria-label="Notes">
             {displayNotes.map((n) => (
               <NoteRow
@@ -547,8 +583,8 @@ export function Notes({ preset: presetProp }: { preset?: NotesPreset } = {}) {
       )}
 
       {/* The pager only exists when there is something to page (or a page
-          behind you) — an empty vault's arrival is search + chips + the
-          invitation, nothing more. */}
+          behind you) — an empty vault's arrival is the composer + search +
+          the invitation, nothing more. */}
       {showPagination ? (
         <div className="mt-6 flex items-center justify-between text-fg-dim text-sm">
           <span>
@@ -1036,11 +1072,47 @@ function PinnedTagsStrip({
   );
 }
 
-// The four built-in views live as inline filter chips at the top of the list
-// (progressive disclosure — they used to be their own routes + a sidebar
-// section). "All" clears the preset; each chip links to /notes?view=<preset>.
-function PresetFilterBar({ active }: { active?: NotesPreset }) {
-  const items: Array<{ to: string; label: string; preset?: NotesPreset; glyph?: string }> = [
+// The maintenance views (LENS-SPEC §1 — filters, NOT lenses), folded into the
+// Filters panel's Refine column: Untagged and Orphaned are vault-upkeep
+// passes over the full collection, so they live with the other refiners
+// instead of the retired resting chip row. Same `?view=` URLs as always (old
+// bookmarks + the /untagged & /orphaned shims keep working); the active chip
+// links back to /notes so the filter toggles off the way it toggled on.
+function MaintenanceViewsRow({ active }: { active?: VaultView }) {
+  const items: Array<{ view: VaultView; label: string }> = [
+    { view: "untagged", label: "Untagged" },
+    { view: "orphaned", label: "Orphaned" },
+  ];
+  return (
+    <nav aria-label="Show only" className="flex flex-wrap items-center gap-2">
+      <span className="text-fg-muted text-sm">Show only:</span>
+      {items.map((it) => {
+        const isActive = it.view === active;
+        return (
+          <Link
+            key={it.view}
+            to={isActive ? "/notes" : `/notes?view=${it.view}`}
+            aria-current={isActive ? "page" : undefined}
+            className={`chip focus-ring max-w-full ${
+              isActive ? "chip-tag-active font-medium" : "chip-tag"
+            }`}
+          >
+            {it.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+// PARKED (LZ-3): the desktop resting chip row (VIEWS: All · Pinned · Archived
+// · Untagged · Orphaned) retired when the rail took ownership of the lens set
+// — rendering both duplicated Pinned/Archive on every desktop paint. The
+// component stays exported (not dead-coded) because LENS-SPEC §5 rebirths it
+// as the below-`lg` mobile lens strip in LZ-5, projected from the nav model's
+// lens band; until then nothing renders it.
+export function PresetFilterBar({ active }: { active?: VaultView }) {
+  const items: Array<{ to: string; label: string; preset?: VaultView; glyph?: string }> = [
     { to: "/notes", label: "All" },
     { to: "/notes?view=pinned", label: "Pinned", preset: "pinned", glyph: "★" },
     { to: "/notes?view=archived", label: "Archived", preset: "archived" },

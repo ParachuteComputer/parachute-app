@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Notes } from "@/app/routes/Notes";
+import { VaultSurface } from "@/app/routes/VaultSurface";
 import { RecentTimeline } from "@/components/RecentTimeline";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
@@ -105,8 +105,8 @@ describe("NoteRow parity — Today and /notes render the same anatomy", () => {
   it("the SAME note renders byte-identical row markup on Today's timeline and the /notes list", async () => {
     installFetch({ notes: [FULL_NOTE], tags: [] });
 
-    // /notes — the managing room.
-    const notesRender = render(<Notes />, { wrapper: Wrapper });
+    // /notes — the one surface (VaultSurface since LZ-3), All lens.
+    const notesRender = render(<VaultSurface />, { wrapper: Wrapper });
     const notesList = await screen.findByRole("list", { name: "Notes" });
     const notesRow = rowFor(notesList as HTMLElement, "README");
     const notesRowHtml = notesRow.outerHTML;

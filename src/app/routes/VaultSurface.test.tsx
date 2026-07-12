@@ -1,4 +1,4 @@
-import { Notes } from "@/app/routes/Notes";
+import { VaultSurface } from "@/app/routes/VaultSurface";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -60,7 +60,7 @@ function Wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-// W2-11: everything beyond search + view chips folds behind ONE "Filters"
+// W2-11: everything beyond the resting search folds behind ONE "Filters"
 // disclosure — tests that touch sort/archived/prefix/tags/views/folders open
 // it first, exactly like a user would.
 async function openFilters() {
@@ -89,7 +89,7 @@ function lastNotesUrl(fetchImpl: ReturnType<typeof installFetch>): string {
   return noteCalls[noteCalls.length - 1] ?? "";
 }
 
-describe("Notes route", () => {
+describe("VaultSurface route (/notes)", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -120,7 +120,7 @@ describe("Notes route", () => {
       tags: [{ name: "project", count: 1 }],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     const pathLink = await screen.findByText("Projects/lens/README");
     expect(pathLink).toBeInTheDocument();
@@ -135,7 +135,7 @@ describe("Notes route", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const fetchImpl = installFetch({ notes: [], tags: [] });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     await waitFor(() => {
       expect(fetchImpl.mock.calls.some((c) => String(c[0]).includes("/api/notes"))).toBe(true);
@@ -171,7 +171,7 @@ describe("Notes route", () => {
       ],
       tags: [],
     });
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     await waitFor(() => {
       expect(lastNotesUrl(fetchImpl)).toContain("sort=desc");
@@ -187,14 +187,14 @@ describe("Notes route", () => {
 
   it("shows empty state when no notes and no active filters", async () => {
     installFetch({ notes: [], tags: [] });
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     expect(await screen.findByText(/this vault has no notes yet/i)).toBeInTheDocument();
   });
 
   it("shows filtered-empty state and hides the zero-vault copy", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     installFetch({ notes: [], tags: [] });
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     fireEvent.change(screen.getByLabelText(/search notes/i), { target: { value: "xyz" } });
     await act(async () => {
@@ -232,7 +232,7 @@ describe("Notes route", () => {
       tags: [],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     await screen.findByText("pinned-note");
     const list = screen.getByRole("list", { name: "Notes" });
@@ -260,7 +260,7 @@ describe("Notes route", () => {
       ],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
 
     // Strip buttons render as pressable chips, not links, so tag filters apply
@@ -285,7 +285,7 @@ describe("Notes route", () => {
       ],
       tags: [{ name: "daily", count: 2 }],
     });
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await screen.findByRole("list", { name: "Notes" });
     await openFilters();
     const strip = await screen.findByRole("navigation", { name: /pinned tags/i });
@@ -317,7 +317,7 @@ describe("Notes route", () => {
       tags: [],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     await screen.findByText("live-note");
     expect(screen.queryByText("archived-note")).not.toBeInTheDocument();
@@ -331,7 +331,7 @@ describe("Notes route", () => {
 
   it("preset=pinned sends the pinned role tag and hides the show-archived toggle", async () => {
     const fetchImpl = installFetch({ notes: [], tags: [] });
-    render(<Notes preset="pinned" />, { wrapper: Wrapper });
+    render(<VaultSurface preset="pinned" />, { wrapper: Wrapper });
 
     await waitFor(() => {
       expect(lastNotesUrl(fetchImpl)).toContain("tag=pinned");
@@ -340,17 +340,22 @@ describe("Notes route", () => {
     // show-archived toggle (presets have their own archived semantics).
     await openFilters();
     expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Pinned" })).toBeInTheDocument();
+    // LZ-3: the lens label (eyebrow + hint) names the lens; the H1 is the
+    // vault masthead now.
+    expect(screen.getByRole("heading", { name: /pinned · starred/i })).toBeInTheDocument();
   });
 
   it("preset=archived sends the archived role tag", async () => {
     const fetchImpl = installFetch({ notes: [], tags: [] });
-    render(<Notes preset="archived" />, { wrapper: Wrapper });
+    render(<VaultSurface preset="archived" />, { wrapper: Wrapper });
 
     await waitFor(() => {
       expect(lastNotesUrl(fetchImpl)).toContain("tag=archived");
     });
-    expect(screen.getByRole("heading", { name: "Archived" })).toBeInTheDocument();
+    // Label "Archive" (LENS-SPEC §1 — the param stays view=archived).
+    expect(
+      screen.getByRole("heading", { name: /archive · set aside, never deleted/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders the path tree once the auto threshold is met", async () => {
@@ -366,7 +371,7 @@ describe("Notes route", () => {
       tags: [],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     // Folders accordion (inside the Filters panel) is collapsed by default —
     // the tree is lazy-fetched on open.
@@ -390,7 +395,7 @@ describe("Notes route", () => {
       tags: [],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     await screen.findByText("Solo/note.md");
     expect(screen.queryByRole("complementary", { name: /path tree/i })).toBeNull();
@@ -410,7 +415,7 @@ describe("Notes route", () => {
       tags: [],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await screen.findByText("Solo/note.md");
     await openFilters();
     openFoldersAccordion();
@@ -429,7 +434,7 @@ describe("Notes route", () => {
       tags: [],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     await waitFor(() => {
       expect(fetchImpl.mock.calls.some((c) => String(c[0]).includes("/api/notes"))).toBe(true);
@@ -447,12 +452,14 @@ describe("Notes route", () => {
 
   it("preset=untagged sends has_tags=false and hides the tag filter", async () => {
     const fetchImpl = installFetch({ notes: [], tags: [] });
-    render(<Notes preset="untagged" />, { wrapper: Wrapper });
+    render(<VaultSurface preset="untagged" />, { wrapper: Wrapper });
 
     await waitFor(() => {
       expect(lastNotesUrl(fetchImpl)).toContain("has_tags=false");
     });
-    expect(screen.getByRole("heading", { name: "Untagged" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /untagged · notes without any tags/i }),
+    ).toBeInTheDocument();
     // The tags block is absent even inside the open Filters panel — the
     // untagged view is definitionally tag-free.
     await openFilters();
@@ -462,12 +469,14 @@ describe("Notes route", () => {
 
   it("preset=orphaned sends has_links=false", async () => {
     const fetchImpl = installFetch({ notes: [], tags: [] });
-    render(<Notes preset="orphaned" />, { wrapper: Wrapper });
+    render(<VaultSurface preset="orphaned" />, { wrapper: Wrapper });
 
     await waitFor(() => {
       expect(lastNotesUrl(fetchImpl)).toContain("has_links=false");
     });
-    expect(screen.getByRole("heading", { name: "Orphaned" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /orphaned · notes with no links/i }),
+    ).toBeInTheDocument();
   });
 
   it("untagged row has a quick-tag control that PATCHes the note with tags.add", async () => {
@@ -514,7 +523,7 @@ describe("Notes route", () => {
     });
     vi.stubGlobal("fetch", fetchImpl);
 
-    render(<Notes preset="untagged" />, { wrapper: Wrapper });
+    render(<VaultSurface preset="untagged" />, { wrapper: Wrapper });
 
     await screen.findByText("Inbox/loose-thought");
     fireEvent.click(screen.getByRole("button", { name: /add tag/i }));
@@ -541,7 +550,7 @@ describe("Notes route", () => {
       tags: [{ name: "idea", count: 2 }],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
 
     const tagNav = await screen.findByRole("navigation", { name: /browse by tag/i });
@@ -573,7 +582,7 @@ describe("Notes route", () => {
       tags: [],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     // Folders accordion starts closed; open it so the tree query fires.
     await screen.findByText("Canon/note-0.md");
@@ -602,7 +611,7 @@ describe("Notes route", () => {
       tags: [],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     // Wait for the main notes list to settle so we know queries had a chance.
     await screen.findByText("A/note-0.md");
@@ -625,12 +634,13 @@ describe("Notes route", () => {
   });
 
   // -------------------------------------------------------------------------
-  // W2-11 — progressive disclosure: the 8-control wall becomes ≤3 resting
-  // controls (search · view chips · Filters), everything else folds behind
-  // the Filters disclosure, and a fresh empty vault gets no wall at all.
+  // W2-11 — progressive disclosure, re-baselined by LZ-3: the resting chrome
+  // is search + ONE Filters disclosure (the desktop view-chip row retired —
+  // the rail owns the lens set now), everything else folds behind the
+  // Filters disclosure, and a fresh empty vault gets no wall at all.
   // -------------------------------------------------------------------------
 
-  it("rests with exactly three control groups: search, view chips, Filters (the wall is folded)", async () => {
+  it("rests with exactly two controls: search and Filters (chips retired, the wall folded)", async () => {
     installFetch({
       notes: [
         {
@@ -642,24 +652,31 @@ describe("Notes route", () => {
       ],
       tags: [{ name: "idea", count: 1 }],
     });
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await screen.findByText("some-note");
 
-    // The three resting groups.
+    // The two resting controls.
     const chrome = document.querySelector("[data-notes-chrome]") as HTMLElement;
     expect(chrome).not.toBeNull();
     expect(within(chrome).getByLabelText(/search notes/i)).toBeInTheDocument();
     const filtersBtn = within(chrome).getByRole("button", { name: /filters/i });
     expect(filtersBtn).toHaveAttribute("aria-expanded", "false");
-    expect(within(chrome).getByRole("navigation", { name: /views/i })).toBeInTheDocument();
 
-    // Census: besides the view-chip links, the resting chrome holds exactly
-    // TWO interactive controls — the search field and the Filters button.
-    const viewsNav = within(chrome).getByRole("navigation", { name: /views/i });
+    // Census: the resting chrome holds exactly TWO interactive controls —
+    // the search field and the Filters button. The composer sits above,
+    // outside the chrome block; the lens set lives in the rail.
     const interactive = Array.from(
       chrome.querySelectorAll("button, input, select, textarea, summary, a"),
-    ).filter((el) => !viewsNav.contains(el));
+    );
     expect(interactive).toHaveLength(2);
+
+    // LZ-3: the desktop chip row is gone from the resting surface entirely.
+    expect(screen.queryByRole("navigation", { name: /^views$/i })).not.toBeInTheDocument();
+
+    // The lens label names the lens over the list (eyebrow + quiet hint).
+    expect(
+      screen.getByRole("heading", { name: /all notes · everything, searchable/i }),
+    ).toBeInTheDocument();
 
     // The old wall is genuinely folded — none of it renders at rest.
     expect(screen.queryByRole("button", { name: /toggle sort/i })).not.toBeInTheDocument();
@@ -669,6 +686,7 @@ describe("Notes route", () => {
     expect(screen.queryByRole("navigation", { name: /pinned tags/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: /saved views/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^Folders$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /show only/i })).not.toBeInTheDocument();
   });
 
   it("the Filters disclosure opens the folded controls and closes cleanly", async () => {
@@ -683,7 +701,7 @@ describe("Notes route", () => {
       ],
       tags: [{ name: "idea", count: 1 }],
     });
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await screen.findByText("some-note");
 
     const filtersBtn = screen.getByRole("button", { name: /filters/i });
@@ -720,7 +738,7 @@ describe("Notes route", () => {
       ],
       tags: [{ name: "idea", count: 1 }],
     });
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await screen.findByText("some-note");
 
     const filtersBtn = screen.getByRole("button", { name: /filters/i });
@@ -729,24 +747,131 @@ describe("Notes route", () => {
     expect(filtersBtn.textContent).toContain("2");
   });
 
-  it("a fresh empty vault shows ONLY search + view chips + the empty state — no filter wall, no pager", async () => {
+  it("a fresh empty vault shows ONLY the masthead + composer + search + the empty state — no filter wall, no pager", async () => {
     installFetch({ notes: [], tags: [] });
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     expect(await screen.findByText(/this vault has no notes yet/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /create one/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/search notes/i)).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: /views/i })).toBeInTheDocument();
+    // LZ-3: the composer is the writing invitation on the fresh All lens.
+    expect(screen.getByLabelText(/what's on your mind\?/i)).toBeInTheDocument();
 
     // No filter chrome over nothing: no Filters disclosure, no folded
-    // controls, no pagination.
+    // controls, no chip row, no lens label over nothing, no pagination.
     expect(screen.queryByRole("button", { name: /filters/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /toggle sort/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/filter by path prefix/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /pinned tags/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /^views$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /all notes · everything, searchable/i }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /previous/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /next/i })).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // LZ-3 — the one surface: vault masthead, composer-on-All, lens labels,
+  // maintenance views folded into the Filters panel.
+  // -------------------------------------------------------------------------
+
+  it("leads with the vault masthead — the vault name is the H1 on every lens", async () => {
+    installFetch({ notes: [], tags: [] });
+    const all = render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText(/this vault has no notes yet/i);
+    expect(screen.getByRole("heading", { level: 1, name: "dev" })).toBeInTheDocument();
+    expect(screen.getByText(/everything here is yours\. open format\./i)).toBeInTheDocument();
+    // "All notes" is a lens label now, never a headline.
+    expect(screen.queryByRole("heading", { level: 1, name: /all notes/i })).toBeNull();
+    all.unmount();
+
+    // Browse lens: same masthead, same identity.
+    render(<VaultSurface preset="pinned" />, { wrapper: Wrapper });
+    await screen.findByRole("heading", { name: /pinned · starred/i });
+    expect(screen.getByRole("heading", { level: 1, name: "dev" })).toBeInTheDocument();
+  });
+
+  it("mounts the composer on the All lens, above the search chrome", async () => {
+    installFetch({
+      notes: [{ id: "n1", path: "some-note", tags: [], createdAt: "2026-04-18T10:00:00.000Z" }],
+      tags: [],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const composerInput = screen.getByLabelText(/what's on your mind\?/i);
+    expect(composerInput).toBeInTheDocument();
+    // Anatomy order (§3): composer above the search/Filters chrome.
+    const searchInput = screen.getByLabelText(/search notes/i);
+    expect(
+      composerInput.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps the composer OFF the browse lenses and maintenance views", async () => {
+    installFetch({ notes: [], tags: [] });
+    const cases: Array<["pinned" | "archived" | "untagged" | "orphaned", RegExp]> = [
+      ["pinned", /pinned · starred/i],
+      ["archived", /archive · set aside, never deleted/i],
+      ["untagged", /untagged · notes without any tags/i],
+      ["orphaned", /orphaned · notes with no links/i],
+    ];
+    for (const [preset, label] of cases) {
+      const view = render(<VaultSurface preset={preset} />, { wrapper: Wrapper });
+      await screen.findByRole("heading", { name: label });
+      expect(screen.queryByLabelText(/what's on your mind\?/i)).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it("derives the lens from the ?view= URL param — old bookmarks keep working", async () => {
+    const fetchImpl = installFetch({ notes: [], tags: [] });
+    window.history.replaceState({}, "", "/notes?view=pinned");
+    render(<VaultSurface />, { wrapper: Wrapper });
+
+    expect(await screen.findByRole("heading", { name: /pinned · starred/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/what's on your mind\?/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(lastNotesUrl(fetchImpl)).toContain("tag=pinned");
+    });
+  });
+
+  it("folds Untagged/Orphaned into the Filters panel as Show-only links (their ?view= URLs preserved)", async () => {
+    installFetch({
+      notes: [{ id: "n1", path: "some-note", tags: [], createdAt: "2026-04-18T10:00:00.000Z" }],
+      tags: [],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+    await openFilters();
+
+    const row = screen.getByRole("navigation", { name: /show only/i });
+    expect(within(row).getByRole("link", { name: "Untagged" })).toHaveAttribute(
+      "href",
+      "/notes?view=untagged",
+    );
+    expect(within(row).getByRole("link", { name: "Orphaned" })).toHaveAttribute(
+      "href",
+      "/notes?view=orphaned",
+    );
+  });
+
+  it("marks the active maintenance view in the Show-only row and links it back to /notes", async () => {
+    installFetch({ notes: [], tags: [] });
+    render(<VaultSurface preset="untagged" />, { wrapper: Wrapper });
+    await screen.findByRole("heading", { name: /untagged · notes without any tags/i });
+    await openFilters();
+
+    const row = screen.getByRole("navigation", { name: /show only/i });
+    const untagged = within(row).getByRole("link", { name: "Untagged" });
+    expect(untagged).toHaveAttribute("aria-current", "page");
+    expect(untagged).toHaveAttribute("href", "/notes");
+    expect(within(row).getByRole("link", { name: "Orphaned" })).toHaveAttribute(
+      "href",
+      "/notes?view=orphaned",
+    );
   });
 
   it("constrains long paths and tag chips inside the note row instead of overflowing", async () => {
@@ -767,7 +892,7 @@ describe("Notes route", () => {
       tags: [{ name: longTag, count: 1 }],
     });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
 
     const pathSpan = await screen.findByText(longPath);
     // The path must live inside a flex-item with min-w-0 AND truncate;

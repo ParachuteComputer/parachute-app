@@ -199,10 +199,14 @@
      the dark gates repoint it to a 5% whisper over the night ground. */
   --canvas-wash: color-mix(in srgb, var(--color-grass) 7%, transparent);
 
-  /* --- Container widths (consolidated; Header/footer/content now agree) --- */
+  /* --- Container widths (consolidated; Header/footer/content now agree) ---
+     --w-surface is the ONE-SURFACE width (LENS-SPEC §3, LZ-3): the
+     VaultSurface's lens body — between prose (a reading column) and page
+     (the old wide manager). DayView + the other rooms keep their widths. */
   --w-prose: 42rem;
   --w-page: 72rem;
   --w-narrow: 32rem;
+  --w-surface: 52rem;
 
   /* View-level text-size knob (lib/text-size.ts). Defaults below; the
      `:root[data-text-size="…"]` blocks override for the two larger
@@ -928,6 +932,21 @@ body {
   @media (min-width: 768px) {
     .page {
       padding-inline: 2.5rem;
+      padding-block: 2.75rem;
+    }
+  }
+  /* The one-surface width (LZ-3): VaultSurface's wrapper — the lens body
+     breathes wider than prose (a filterable list, not a reading column) but
+     never sprawls to the old 72rem manager width. */
+  .page-surface {
+    margin-inline: auto;
+    max-width: var(--w-surface);
+    padding-inline: 1.25rem;
+    padding-block: 1.5rem;
+  }
+  @media (min-width: 768px) {
+    .page-surface {
+      padding-inline: 2rem;
       padding-block: 2.75rem;
     }
   }
