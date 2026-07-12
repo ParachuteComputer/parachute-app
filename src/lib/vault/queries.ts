@@ -193,7 +193,7 @@ export function useNotesForDateViews() {
     return p;
   }, []);
 
-  // Live layer for Today / Activity / Calendar — same reconcile-into-cache
+  // Live layer for Recent / Activity / Calendar — same reconcile-into-cache
   // pattern as `useNotes`. The capped recent-notes window is a plain
   // sort+limit query (subscribable). When live, relax the 60s staleTime; when
   // not, the same polling floor as `useNotes` (interval + focus refetch).
@@ -512,8 +512,8 @@ export function useCreateNote() {
     onSuccess: (created) => {
       qc.setQueryData(["note", activeId, created.id], created);
       qc.invalidateQueries({ queryKey: ["notes", activeId] });
-      // W2-10: Home's in-place composer saves WITHOUT navigating — Today's
-      // recent timeline (a `notesForDateViews` consumer) must show the new
+      // W2-10: Home's in-place composer saves WITHOUT navigating — the Recent
+      // timeline (a `notesForDateViews` consumer) must show the new
       // note immediately, not on the next poll/live tick.
       qc.invalidateQueries({ queryKey: ["notesForDateViews", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });

@@ -59,7 +59,7 @@ below).
 | `--radius-xs … --radius-2xl, --radius-full` | radii — xs/sm/md for code/tables/tiny chrome; lg 12px (nav rows), xl 16px, **2xl 24px** (cards, modals, sheets, drawers); interactive controls are pills (`-full`) |
 | `--shadow-sm` / `-md` / `-lg` | forest-tinted utility elevation ramp |
 | `--shadow-soft` / `-lift` | the sage-tinted negative-spread pair — `-soft` = resting card lift, `-lift` = floating sheet/FAB/popover/palette. Nothing may use a plain gray drop shadow |
-| `--w-prose` / `-page` / `-narrow` | container widths (42 / 72 / 32 rem) |
+| `--w-prose` / `-surface` / `-page` / `-narrow` | container widths (42 / 52 / 72 / 32 rem). **`--w-surface` (52rem, LZ-3)** is the ONE width the unified `VaultSurface` uses — the reading+managing surface, sat between `--w-prose` (42rem, a reading column) and `--w-page` (72rem, the old wide manager). DayView + the other rooms keep their own widths |
 
 The Tailwind v4 `@theme` block means every `--color-*`, `--text-*`, `--radius-*`
 token is also a utility (`bg-accent`, `text-fg-muted`, `text-2xs`,

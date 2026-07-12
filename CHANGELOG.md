@@ -1,5 +1,31 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.15.1] - 2026-07-12
+
+**LZ-6 — lens wave close: docs, the stale-"Today" sweep, cruft removal.** The final PR of the
+Lens-Model wave (LENS-SPEC §7). No runtime behavior change — docs + comment hygiene + repo
+cleanup. Patch bump.
+
+- **`NAVIGATION.md`** gains one decision-table row (LENS-SPEC §2): the All-lens filter writeback
+  (`setSearchParams(…, { replace: true })` — VaultSurface mirroring the active search/tag filters
+  into `?search=&tag=…` as they change) is **replace** — state mirroring, not a place change.
+- **`STYLE.md`** documents the width token `--w-surface: 52rem` (added in LZ-3): the ONE width the
+  unified `VaultSurface` uses, between `--w-prose` (42rem) and `--w-page` (72rem). DayView + the
+  other rooms keep their own widths.
+- **The stale-"Today" sweep** (LENS-SPEC §6 — the name "Today" died with the lens model): renamed
+  the room-name references to the home surface (now the Recent lens) across code comments, one CSS
+  comment, and test titles/fixtures — the WizardShell wordmark comment, `note-title`/`NoteRow`/
+  `RecentTimeline`/`queries`/`use-summary` comments, the `.note-row` CSS comment, the `NoteRow`
+  parity test (incl. the `todayRow`→`recentRow` local), and AddVault's `/`-route test stub. Kept
+  untouched: every **date-domain** "Today" (DayView's day labels + `/today?date=` route, Calendar's
+  today-cell + button, Activity's Today/Yesterday grouping, `RecentTimeline`'s day-group labels,
+  `events.ts` grouping label) and the **historical/explanatory** references that document the arc
+  (`model.tsx` "what Today was", `Rail.test`/`quick-switch` "Today retired", `App.tsx` "formerly
+  Today's route", the offline/groupNotesByDay history comments).
+- **`app-audit/` removed from the repo** — four review screenshots (`w3-textsize-shots/*.png`)
+  accidentally committed earlier; deleted and `app-audit/` added to `.gitignore` so review
+  screenshots can never be committed again.
+
 ## [0.15.0] - 2026-07-12
 
 **LZ-5 — mobile gets the lens model: the on-surface lens strip + the 3-slot bar.** LENS-SPEC §5

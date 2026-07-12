@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import { Link } from "react-router";
 
 // The day-grouped recent-notes list on the front-door home (`/`). The rows
-// themselves are the shared NoteRow (W2-11 / F9 — one anatomy across Today,
+// themselves are the shared NoteRow (W2-11 / F9 — one anatomy across Recent,
 // the day drill-in, and /notes); this module owns only the day bucketing and
 // the day-header links into the single-day view.
 

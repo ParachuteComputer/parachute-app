@@ -8,12 +8,12 @@ import { Link } from "react-router";
 //
 //   dot/status · title · preview · time · chips
 //
-// Today's timeline (RecentTimeline), the day drill-in (DayView), and the
+// The Recent timeline (RecentTimeline), the day drill-in (DayView), and the
 // /notes list all consume this component, so the same note renders
 // identically in every room — the room's WIDTH (reading `page-prose` vs
 // managing `page`) is the only deliberate difference. Before this component
 // existed, Home and /notes each hand-rolled a row and the two had drifted
-// (no dot / no pinned star on Today; different containers) — the F9 finding.
+// (no dot / no pinned star on Home; different containers) — the F9 finding.
 //
 // States follow the design system's row pattern (`.note-row` in index.css):
 // transparent at rest, card-tint hover, grass-soft on press — never an
@@ -83,7 +83,7 @@ export function NoteRow({
 }
 
 // The shared list container for NoteRows — the flat, hover-card list shape
-// (prototype `.note` stack). Exported so Today and /notes wrap rows the same
+// (prototype `.note` stack). Exported so Recent and /notes wrap rows the same
 // way; day-group headers / section labels stay with the callers.
 export function NoteRowList({
   children,

@@ -86,7 +86,7 @@ function renderAddVault(initialPath = "/add") {
             </>
           }
         />
-        <Route path="/" element={<div>Today timeline</div>} />
+        <Route path="/" element={<div>Recent timeline</div>} />
         <Route path="/import" element={<div>Import wizard</div>} />
       </Routes>
     </MemoryRouter>,
@@ -159,7 +159,7 @@ describe("AddVault self-hosted restyle (SYNTHESIS #11)", () => {
     mockFetchOnce({ throwNetwork: true });
     renderAddVault();
     fireEvent.click(screen.getByRole("button", { name: /^← back$/i }));
-    await waitFor(() => expect(screen.getByText("Today timeline")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Recent timeline")).toBeInTheDocument());
   });
 
   it("shows no announced-hop box until the address looks valid, then names the live host", async () => {
@@ -464,7 +464,7 @@ describe("AddVault ?add= connect deep link", () => {
 
     // No redirect companion → lands on the index route (the connected
     // vault's home), no OAuth.
-    expect(await screen.findByText("Today timeline")).toBeInTheDocument();
+    expect(await screen.findByText("Recent timeline")).toBeInTheDocument();
     expect(useVaultStore.getState().activeVaultId).toBe(id);
     expect(window.location.assign).not.toHaveBeenCalled();
     expect(loadPendingOAuth()).toBeNull();

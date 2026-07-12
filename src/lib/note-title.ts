@@ -1,7 +1,7 @@
 import type { Note, NoteSummary } from "@/lib/vault/types";
 
 // Human-readable title for a note, shared by every surface that renders a note
-// in a list or header (Notes rows, the Today timeline, QuickSwitch results).
+// in a list or header (Notes rows, the Recent timeline, QuickSwitch results).
 // The mono path stays as dim metadata beside the title, never the headline —
 // this helper is what makes the headline human.
 //
