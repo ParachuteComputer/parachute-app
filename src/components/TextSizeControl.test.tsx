@@ -65,6 +65,117 @@ describe("TextSizeControl button + popover", () => {
   });
 });
 
+describe("TextSizeControl popover placement (measure-and-flip)", () => {
+  const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+  const originalInnerWidth = window.innerWidth;
+  const originalInnerHeight = window.innerHeight;
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-text-size");
+  });
+  afterEach(() => {
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-text-size");
+    HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    Object.defineProperty(window, "innerWidth", { value: originalInnerWidth, configurable: true });
+    Object.defineProperty(window, "innerHeight", {
+      value: originalInnerHeight,
+      configurable: true,
+    });
+  });
+
+  function rect(partial: Partial<DOMRect>): DOMRect {
+    return {
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON() {
+        return this;
+      },
+      ...partial,
+    } as DOMRect;
+  }
+
+  // Simulates the diagnosed bug's exact shape: the control sitting at the
+  // foot of a tablet-sized viewport (the NavSheet bottom sheet's foot row),
+  // where opening downward has zero room and would push the 160px panel
+  // below the physical screen.
+  it("opens upward (data-placement=up) when there is no room below the trigger", () => {
+    Object.defineProperty(window, "innerWidth", { value: 820, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 800, configurable: true });
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this.getAttribute("role") === "dialog") {
+        // The popover panel itself — 160×160, position irrelevant to the
+        // height/width read.
+        return rect({ width: 160, height: 160 });
+      }
+      // The trigger (rootRef) sits flush with the bottom of the viewport —
+      // exactly the sheet-foot case.
+      return rect({ top: 760, left: 600, right: 644, bottom: 800, width: 44, height: 40 });
+    };
+
+    render(<TextSizeControl />);
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /text size:/i }));
+    });
+
+    const dialog = screen.getByRole("dialog", { name: /text size/i });
+    expect(dialog).toHaveAttribute("data-placement", "up");
+  });
+
+  it("stays downward (data-placement=down) when there is ample room below", () => {
+    Object.defineProperty(window, "innerWidth", { value: 1024, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 1200, configurable: true });
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this.getAttribute("role") === "dialog") {
+        return rect({ width: 160, height: 160 });
+      }
+      // Trigger near the TOP of a tall viewport — plenty of room below.
+      return rect({ top: 40, left: 600, right: 644, bottom: 80, width: 44, height: 40 });
+    };
+
+    render(<TextSizeControl />);
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /text size:/i }));
+    });
+
+    const dialog = screen.getByRole("dialog", { name: /text size/i });
+    expect(dialog).toHaveAttribute("data-placement", "down");
+  });
+
+  it("clamps horizontally so the panel never crosses the left viewport edge", () => {
+    // A narrow viewport with the trigger flush against the left edge — the
+    // default right-0 anchor (panel's right edge == trigger's right edge)
+    // would push the panel's left edge to a negative x, off-screen.
+    Object.defineProperty(window, "innerWidth", { value: 375, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 800, configurable: true });
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this.getAttribute("role") === "dialog") {
+        return rect({ width: 160, height: 160 });
+      }
+      return rect({ top: 40, left: 5, right: 49, bottom: 80, width: 44, height: 40 });
+    };
+
+    render(<TextSizeControl />);
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /text size:/i }));
+    });
+
+    const dialog = screen.getByRole("dialog", { name: /text size/i });
+    // Unclamped, desiredLeft would be 49 - 160 = -111 (relative to viewport),
+    // i.e. -116px relative to the trigger's own left edge (5). Clamped to the
+    // 8px margin: leftOverridePx = 8 - 5 = 3.
+    expect(dialog.style.left).toBe("3px");
+    expect(dialog.style.right).toBe("auto");
+  });
+});
+
 describe("TextSizeShortcutsMount keyboard handlers", () => {
   beforeEach(() => {
     localStorage.clear();

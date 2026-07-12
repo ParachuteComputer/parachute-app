@@ -1,5 +1,34 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.11.2] - 2026-07-11
+
+**W3 — text-size popover stays on-screen on tablet.** `TextSizeControl`'s "aA" popover always
+opened downward (`mt-2`) and right-anchored (`right-0`). The control renders at the FOOT of every
+container it's mounted in — currently the mobile/tablet NavSheet's bottom-sheet foot (InstallPrompt
+· TextSizeControl · ThemeToggle) — so opening downward from a trigger already near the bottom of
+the screen pushed the 160px panel below the physical viewport. Live-reproduced pre-fix at two
+tablet viewports via Playwright: the popover's measured bounding box landed at `y=1188` (height
+118) against an 1180px-tall viewport, and `x=-92` against the left edge — off-screen on BOTH axes.
+
+- **Measure-and-flip** (`TextSizeControl.tsx`): on open, a `useLayoutEffect` reads the trigger's
+  real on-screen position via `getBoundingClientRect()` (viewport-relative regardless of how many
+  scrollable ancestors — e.g. the NavSheet sheet — sit in between) and the panel's own size, then:
+  flips to `bottom-full mb-2` (upward) when there isn't room below, `mt-2` (downward, the original
+  behavior) otherwise; clamps the panel horizontally via an inline `left`/`right:auto` override so
+  neither edge can cross the viewport (an 8px margin on both axes). Recomputes on resize and on
+  scroll (capturing listener — catches scroll on any nested scrollable ancestor) while the popover
+  is open. `null` measurement state falls back to the original `right-0` anchor, so first paint is
+  pixel-identical to before this fix in the common (non-clipping) case. Exposes `data-placement`
+  for tests; everything else about the popover (click-outside close, the three size options, the
+  `role="dialog"`/`aria-expanded` a11y, the "current" pill) is unchanged. No new transitions added,
+  so no `prefers-reduced-motion` handling was needed.
+- Pinned with three new tests (`TextSizeControl.test.tsx`): opens upward when there's no room
+  below (the diagnosed sheet-foot shape), stays downward with ample room, and clamps horizontally
+  at a narrow/left-edge trigger position.
+- Verified with Playwright at 820×1180 and 768×1024 (tablet) against the real dev server + NavSheet:
+  popover fully within the viewport at both sizes post-fix (screenshots in
+  `app-audit/w3-textsize-shots/`).
+
 ## [0.11.1] - 2026-07-11
 
 **W2-12 — identity → "Parachute" + brand favicon (F17).** The surface manifest still called

@@ -8,7 +8,7 @@ import {
   textSizeLabel,
   writeStoredTextSize,
 } from "@/lib/text-size";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // Header chrome control + global keyboard shortcuts for text-size. The
 // Settings dropdown (notes#123) is canonical for "set my preferred size";
@@ -78,10 +78,29 @@ export function TextSizeShortcutsMount() {
   return null;
 }
 
+// Popover viewport clearance, px, kept on both axes so the panel never
+// touches the screen edge (tablet Safari's rounded corners + gesture bar eat
+// a few px too).
+const VIEWPORT_MARGIN = 8;
+
 export function TextSizeControl() {
   const [size, setSize] = useState<TextSize>(() => readStoredTextSize());
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  // Where the popover renders. The control sits at the FOOT of every
+  // container it's mounted in (desktop rail, mobile/tablet NavSheet bottom
+  // sheet) — opening downward unconditionally (the old behavior) pushes the
+  // panel below the sheet/viewport whenever the trigger is near the bottom
+  // edge. `placement` flips it upward when there isn't room below;
+  // `leftOverridePx` clamps the panel horizontally so it can't cross either
+  // side of the viewport (same risk if the trigger sits near a screen edge).
+  // `null` means "no measurement yet — fall back to the default `right-0`
+  // anchor," so first paint looks exactly like before this fix in the
+  // common (non-clipping) case.
+  const [placement, setPlacement] = useState<"up" | "down">("down");
+  const [leftOverridePx, setLeftOverridePx] = useState<number | null>(null);
 
   // Wraps the persist+apply+mirror trio so callers (popover buttons,
   // future onChange consumers) don't have to remember the order. Also
@@ -126,6 +145,47 @@ export function TextSizeControl() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
+  // Measure-and-flip: on open, read the trigger's real on-screen position
+  // (`getBoundingClientRect` is viewport-relative regardless of how many
+  // scrollable ancestors — e.g. the NavSheet bottom sheet — sit in between)
+  // and the panel's own size, then decide placement + a horizontal clamp.
+  // `useLayoutEffect` so this resolves before the browser paints — no
+  // visible flash of the wrong position. Recomputes on resize/scroll while
+  // open (rail collapse, keyboard-triggered viewport resize, sheet scroll)
+  // via a capturing `scroll` listener, which is how you observe scroll on
+  // ANY nested scrollable ancestor since `scroll` doesn't bubble.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const trigger = rootRef.current;
+      const panel = popoverRef.current;
+      if (!trigger || !panel) return;
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const panelHeight = panelRect.height || panel.offsetHeight;
+      const panelWidth = panelRect.width || panel.offsetWidth;
+
+      const spaceBelow = window.innerHeight - triggerRect.bottom;
+      setPlacement(spaceBelow < panelHeight + VIEWPORT_MARGIN ? "up" : "down");
+
+      // Mirror the default `right-0` anchor (panel's right edge == trigger's
+      // right edge), then clamp so neither edge crosses the viewport.
+      const desiredLeft = triggerRect.right - panelWidth;
+      const minLeft = VIEWPORT_MARGIN;
+      const maxLeft = Math.max(minLeft, window.innerWidth - panelWidth - VIEWPORT_MARGIN);
+      const clampedLeft = Math.min(Math.max(desiredLeft, minLeft), maxLeft);
+      setLeftOverridePx(clampedLeft - triggerRect.left);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open]);
+
   return (
     <div ref={rootRef} className="relative">
       <button
@@ -145,8 +205,15 @@ export function TextSizeControl() {
         // biome-ignore lint/a11y/useSemanticElements: a native <dialog> requires imperative show()/showModal() calls; this is a popover, not a modal.
         <div
           role="dialog"
+          ref={popoverRef}
           aria-label="Text size"
-          className="absolute right-0 z-30 mt-2 w-40 rounded-md border border-border bg-card p-2 text-sm shadow-lg"
+          data-placement={placement}
+          className={`absolute right-0 z-30 w-40 rounded-md border border-border bg-card p-2 text-sm shadow-lg ${
+            placement === "up" ? "bottom-full mb-2" : "mt-2"
+          }`}
+          style={
+            leftOverridePx != null ? { left: `${leftOverridePx}px`, right: "auto" } : undefined
+          }
         >
           <ul className="flex flex-col gap-0.5">
             {TEXT_SIZES.map((s) => {
