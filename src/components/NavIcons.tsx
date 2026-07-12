@@ -131,6 +131,18 @@ export function IconImport(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// An arrow rising out of a tray — the Export mark (⇈, mirrors Import's ⇊:
+// same tray, arrow reversed — data leaving the vault instead of settling in).
+export function IconExport(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <path d="M12 13V4" />
+      <path d="m8.5 7.5 3.5-3.5 3.5 3.5" />
+      <path d="M4.5 15v3.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V15" />
+    </svg>
+  );
+}
+
 // A pen over a baseline — the speed-dial's "New note" verb (prototype 15's
 // write glyph).
 export function IconPen(props: SVGProps<SVGSVGElement>) {

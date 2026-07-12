@@ -116,6 +116,7 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
       ["Vaults", "/vaults"],
       ["Connect AI", "/connect"],
       ["Import notes", "/import"],
+      ["Export notes", "/export"],
     ]);
   });
 

@@ -73,6 +73,7 @@ describe("buildNavBands (pure)", () => {
       ["vaults", "Vaults", "/vaults"],
       ["connect", "Connect AI", "/connect"],
       ["import", "Import notes", "/import"],
+      ["export", "Export notes", "/export"],
     ]);
 
     const foot = bands[3];
@@ -217,6 +218,7 @@ describe("buildNavBands (pure)", () => {
       "/vaults",
       "/connect",
       "/import",
+      "/export",
       "/settings",
       "/new",
       "/all", // the pre-rename shim redirects; active-state never claims it

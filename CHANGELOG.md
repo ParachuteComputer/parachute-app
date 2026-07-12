@@ -1,5 +1,46 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.16.0] - 2026-07-12
+
+**Export surface — download your vault (Wave-3).** The app promises "Open format. Export
+anytime." on every surface, but had no export door — only Import. Adds one, mirroring Import's
+shell. Minor bump — a new room in the IA, no behavior change to anything existing.
+
+- **New route `/export`** (`src/app/routes/Export.tsx`, lazy-loaded like every other secondary
+  room): explains the promise ("a portable folder of your notes — plain Markdown, with your tags,
+  links, and attachments included"), lists what's in the download, and one primary action —
+  "Export my vault." Honest states only: "Preparing your export…" while in flight (no fake
+  progress bar — a `.tar` stream has no meaningful percent), a plain error ("Couldn't reach your
+  vault — try again.") on a network/server failure, and a **distinct** state for a 404.
+- **The 404 case is the load-bearing finding of this PR.** The vault REST contract's
+  `GET /api/export` (read-scoped) exists **only on the cloud Durable-Object vault**
+  (`workers/vault/src/vault-do.ts` `handleExport` — ships attachment binaries as
+  `.parachute/attachments/<id>/<file>` sidecars, a complete backup). **The self-hosted bun vault
+  has no HTTP route for this at all** — its `routing.ts` dispatch table only knows `/notes`,
+  `/tags`, `/vault`, `/storage`, `/find-path`, `/subscribe`, `/health`, `/unresolved-wikilinks`;
+  export there is CLI-only (`parachute-vault export <dir>`). Rather than assume the door-agnostic
+  premise, this page calls the real endpoint and lets the response decide: a self-host vault 404s,
+  which the client surfaces as `VaultNotFoundError` — the page renders a specific note ("Export
+  over the web isn't available on this vault yet…") with the CLI pointer, instead of the generic
+  network-error copy. No client-side door-type detection (unreliable — a self-hosted hub can also
+  be the app's "home door"); the behavior itself is the source of truth.
+- **`exportVault()`** added to `src/lib/vault/client.ts`'s `VaultClient` — reuses the base
+  `@openparachute/surface-client` class's protected `requestBlobWithRetry` (the same
+  auth/refresh/reachability/404 contract `fetchAttachmentBlob` rides) rather than reimplementing a
+  retry loop; the only new part is the URL (`GET /api/export`).
+- **The download**: the resolved `Blob` triggers a real browser download via the object-URL +
+  briefly-attached-anchor trick (`{vault-name}-export-{date}.tar`, date derived at click time).
+- **Surfaced as Import's sibling**: an "Export notes" row in `/account`'s Connections card
+  (next to "Import notes," same row shape, a new `sun`-toned icon circle — `IconExport` in
+  `NavIcons.tsx`, mirroring `IconImport`'s tray with the arrow reversed) and a matching
+  `EXPORT_ITEM` in the "Your parachute" nav band (desktop Rail + mobile NavSheet share the one
+  model, so both projections pick it up for free). Left untouched, deliberately: the SpeedDial
+  capture menu, the fresh-vault `QuickDoors` tiles, and the SET UP checklist — all three are
+  onboarding/capture verbs ("get content in"), not a fit for "get your data out."
+- Tests: `Export.test.tsx` (renders, no-vault redirect, the authed GET + download trigger, the 404
+  vs. network-error distinction) + updated exact-list assertions in `model.test.tsx`,
+  `Rail.test.tsx`, and `Account.test.tsx` for the new nav item / Connections row.
+
 ## [0.15.1] - 2026-07-12
 
 **LZ-6 — lens wave close: docs, the stale-"Today" sweep, cruft removal.** The final PR of the
