@@ -57,7 +57,7 @@ const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "./package.json"), "
 };
 
 const serviceInfo = buildServiceInfo({
-  name: "parachute-notes",
+  name: "parachute-app",
   displayName: DISPLAY_NAME,
   tagline: TAGLINE,
   version: pkg.version,

@@ -12,7 +12,7 @@
  *     historical localStorage entries rather than re-DCR on first load.
  *   - `redirectUriForOrigin` derived from `detectMountBase()` so
  *     a hub-mounted Notes (`/notes/`), a parachute-app-mounted Notes
- *     (`/surface/notes/`), and a renamed-install Notes (`/surface/<slug>/`)
+ *     (`/surface/parachute/`), and a renamed-install Notes (`/surface/<slug>/`)
  *     all land back on a URL the SPA actually serves. The detector
  *     reads from `window.location.pathname` at call time — the same
  *     built bundle picks up the correct mount regardless of where
@@ -64,7 +64,7 @@ export const DEFAULT_SCOPE: TokenScope = "vault:read vault:write";
 // Notes can be mounted at several paths depending on the host:
 //
 //   - `/notes/`          (legacy notes-daemon)
-//   - `/surface/notes/`      (parachute-surface default)
+//   - `/surface/parachute/`  (parachute-surface default)
 //   - `/surface/<slug>/`     (parachute-surface with a renamed install)
 //
 // The OAuth callback must include the live mount prefix so the
