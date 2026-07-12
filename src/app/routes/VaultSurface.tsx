@@ -1,4 +1,5 @@
 import { COMPOSER_INPUT_ID, Composer } from "@/components/Composer";
+import { LensStrip } from "@/components/LensStrip";
 import { NoteRow, NoteRowList } from "@/components/NoteRow";
 import { PathTree } from "@/components/PathTree";
 import { RecentTimeline, SectionLabel } from "@/components/RecentTimeline";
@@ -361,6 +362,12 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   return (
     <div className="page-surface">
       <VaultMasthead name={activeVault.name} />
+
+      {/* The mobile lens strip (§5.1, LZ-5) — below lg the rail is gone, so
+          the surface itself carries the lens set: the nav model's lens band
+          as a chip row under the masthead, on every lens. `lg:hidden` — the
+          desktop rail owns the set at lg+. */}
+      <LensStrip />
 
       {/* The composer rides the writing lenses (§3 item 2; ratified decision
           i) — here that means All notes (Recent mounts its own above). The
@@ -761,6 +768,10 @@ function RecentLens() {
   return (
     <div className="page-surface">
       <VaultMasthead name={vault.name} />
+
+      {/* The mobile lens strip (§5.1, LZ-5) — same row as the searchable
+          body's: the one lens vocabulary, on every lens, below lg only. */}
+      <LensStrip />
 
       {/* The composer rides the writing lenses (§3 item 2; ratified decision
           i). Keyed by vault id (the notes#175 draft-clobber guard — a
@@ -1491,42 +1502,10 @@ function MaintenanceViewsRow({ active }: { active?: VaultView }) {
   );
 }
 
-// PARKED (LZ-3): the desktop resting chip row (VIEWS: All · Pinned · Archived
-// · Untagged · Orphaned) retired when the rail took ownership of the lens set
-// — rendering both duplicated Pinned/Archive on every desktop paint. The
-// component stays exported (not dead-coded) because LENS-SPEC §5 rebirths it
-// as the below-`lg` mobile lens strip in LZ-5, projected from the nav model's
-// lens band; until then nothing renders it.
-export function PresetFilterBar({ active }: { active?: VaultView }) {
-  const items: Array<{ to: string; label: string; preset?: VaultView; glyph?: string }> = [
-    { to: "/notes", label: "All" },
-    { to: "/notes?view=pinned", label: "Pinned", preset: "pinned", glyph: "★" },
-    { to: "/notes?view=archived", label: "Archived", preset: "archived" },
-    { to: "/notes?view=untagged", label: "Untagged", preset: "untagged" },
-    { to: "/notes?view=orphaned", label: "Orphaned", preset: "orphaned" },
-  ];
-  return (
-    <nav aria-label="Views" className="mb-6 flex flex-wrap items-center gap-2">
-      <span className="eyebrow">Views</span>
-      {items.map((it) => {
-        const isActive = it.preset === active;
-        return (
-          <Link
-            key={it.to}
-            to={it.to}
-            aria-current={isActive ? "page" : undefined}
-            className={`chip focus-ring max-w-full ${
-              isActive ? "chip-tag-active font-medium" : "chip-tag"
-            }`}
-          >
-            {it.glyph ? <span aria-hidden="true">{it.glyph}</span> : null}
-            <span className="min-w-0 break-all">{it.label}</span>
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
+// The PARKED PresetFilterBar that lived here (LZ-3) was reborn in LZ-5 as
+// the mobile LensStrip (components/LensStrip.tsx) — same spot in the anatomy
+// (a chip row under the masthead), but projected from the nav model's lens
+// band instead of carrying its own view list.
 
 function SkeletonRows() {
   return (

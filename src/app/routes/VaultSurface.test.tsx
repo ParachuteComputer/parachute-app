@@ -81,10 +81,16 @@ function openFoldersAccordion() {
 
 function lastNotesUrl(fetchImpl: ReturnType<typeof installFetch>): string {
   // The saved-views sidebar also queries /api/notes (tag=view & views path
-  // prefix). Filter those out so assertions target the primary list query.
+  // prefix), and the capped 5000-row window queries (the lens strip's nav
+  // model reads notesForDateViews; the folders accordion reads the path
+  // tree) share the endpoint too. Filter those out so assertions target the
+  // primary list query.
   const calls = fetchImpl.mock.calls.map((c) => String(c[0]));
   const noteCalls = calls.filter(
-    (u) => u.includes("/api/notes") && !u.includes("path_prefix=UI%2FViews%2F"),
+    (u) =>
+      u.includes("/api/notes") &&
+      !u.includes("path_prefix=UI%2FViews%2F") &&
+      !u.includes("limit=5000"),
   );
   return noteCalls[noteCalls.length - 1] ?? "";
 }
@@ -439,14 +445,18 @@ describe("VaultSurface route (/notes)", () => {
     await waitFor(() => {
       expect(fetchImpl.mock.calls.some((c) => String(c[0]).includes("/api/notes"))).toBe(true);
     });
-    // Two /api/notes queries fire when the tree is enabled (one filtered, one
-    // capped). When `never`, only the filtered list query goes out — so the
-    // unfiltered limit=5000 capped query should be absent.
-    const treeCall = fetchImpl.mock.calls.find((c) => {
+    // When `never`, the path tree's capped (limit=5000) query must not go
+    // out. The lens strip's nav model reads notesForDateViews on the SAME
+    // capped URL (one query at rest, LZ-5) — so the honest bound is: no
+    // capped calls beyond that baseline, and the tree's own accordion is
+    // gone entirely (its query can only fire from inside it).
+    const cappedCalls = fetchImpl.mock.calls.filter((c) => {
       const u = String(c[0]);
       return u.includes("/api/notes") && u.includes("limit=5000");
     });
-    expect(treeCall).toBeUndefined();
+    expect(cappedCalls.length).toBeLessThanOrEqual(1);
+    await openFilters();
+    expect(screen.queryByText(/^Folders$/)).toBeNull();
     expect(screen.queryByRole("complementary", { name: /path tree/i })).toBeNull();
   });
 
@@ -616,20 +626,23 @@ describe("VaultSurface route (/notes)", () => {
     // Wait for the main notes list to settle so we know queries had a chance.
     await screen.findByText("A/note-0.md");
 
-    const pathTreeCalls = fetchImpl.mock.calls
-      .map((c) => String(c[0]))
-      .filter((u) => u.includes("/api/notes") && u.includes("limit=5000"));
-    expect(pathTreeCalls.length).toBe(0);
+    // The capped-window (limit=5000) calls at rest belong to the lens
+    // strip's nav model (notesForDateViews, one query) — the path tree
+    // itself must NOT have fired while the accordion is closed, so the
+    // count stays at exactly that baseline.
+    const countCapped = () =>
+      fetchImpl.mock.calls
+        .map((c) => String(c[0]))
+        .filter((u) => u.includes("/api/notes") && u.includes("limit=5000")).length;
+    const baseline = countCapped();
+    expect(baseline).toBeLessThanOrEqual(1);
 
     // Opening the accordion (inside the Filters panel) triggers the fetch.
     await openFilters();
     openFoldersAccordion();
 
     await waitFor(() => {
-      const after = fetchImpl.mock.calls
-        .map((c) => String(c[0]))
-        .filter((u) => u.includes("/api/notes") && u.includes("limit=5000"));
-      expect(after.length).toBeGreaterThan(0);
+      expect(countCapped()).toBeGreaterThan(baseline);
     });
   });
 
@@ -687,6 +700,41 @@ describe("VaultSurface route (/notes)", () => {
     expect(screen.queryByRole("list", { name: /saved views/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^Folders$/)).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /show only/i })).not.toBeInTheDocument();
+  });
+
+  // LZ-5: the mobile lens strip rides the surface (below lg — the desktop
+  // census above is untouched because the strip is lg:hidden and lives
+  // outside the data-notes-chrome block). Four chips from the nav model, on
+  // the searchable body too — so a phone can leave Pinned/Archive in one tap.
+  it("carries the mobile lens strip under the masthead — the nav model's four lenses, lg:hidden (LZ-5)", async () => {
+    installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "some-note",
+          tags: ["idea"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    window.history.replaceState({}, "", "/notes");
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const strip = screen.getByRole("navigation", { name: /^lenses$/i });
+    expect(strip.className).toMatch(/\blg:hidden\b/);
+    const chips = within(strip).getAllByRole("link");
+    expect(chips.map((a) => a.getAttribute("href"))).toEqual([
+      "/",
+      "/notes",
+      "/notes?view=pinned",
+      "/notes?view=archived",
+    ]);
+    // At /notes the All-notes chip is the active one.
+    expect(
+      chips.filter((a) => a.getAttribute("aria-current") === "page").map((a) => a.textContent),
+    ).toEqual(["All notes"]);
   });
 
   it("the Filters disclosure opens the folded controls and closes cleanly", async () => {

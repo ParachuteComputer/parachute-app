@@ -1,24 +1,25 @@
-import { IconClock, IconNotes, IconPlus, IconSearch } from "@/components/NavIcons";
-import { NOTES_TO, RECENT_TO, matchAllNotes, matchRecent } from "@/lib/nav/model";
+import { IconNotes, IconPlus, IconSearch } from "@/components/NavIcons";
+import { RECENT_TO, matchVaultSurface } from "@/lib/nav/model";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
 import { useVaultStore } from "@/lib/vault";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 
-// Mobile + tablet fixed bottom navigation — the D6 four-slot set, in its
-// LZ-2 interim dress: Recent · Notes · [ + ] · Search, where the centre + is
-// a raised capture action, not a peer tab. LENS-SPEC §5's 3-slot bar is
-// LZ-5's; until then the shipped 4-slot layout stays, but the "Today" tab is
-// relabeled Recent NOW so the tab and the rail's Recent lens never disagree
-// on what `/` is called (the F14 no-drift lesson). Hidden on >= lg where the
-// desktop Rail handles navigation. The `lg:hidden` gate MUST match the
-// Rail's `lg:flex` gate — at any width exactly one of them shows (the
-// notes#147 contract, now Rail↔BottomTabBar).
+// Mobile + tablet fixed bottom navigation — LENS-SPEC §5.2's 3-slot bar
+// (ratified D2): Notes · [ + ] · Search, where the centre + is a raised
+// capture action, not a peer tab. One surface ⇒ ONE surface tab: "Notes"
+// goes to `/` (the Recent lens is the front door) and stays lit across the
+// whole surface — `/`, `/notes` in every `?view=` dress, and the drill-ins
+// (/n/:id, /today?date=) that stay under it. WHICH lens you're wearing is
+// the on-surface LensStrip's job — carrying the lens set in the bar too is
+// the redundancy D2 rejected. Hidden on >= lg where the desktop Rail handles
+// navigation. The `lg:hidden` gate MUST match the Rail's `lg:flex` gate — at
+// any width exactly one projection shows (the notes#147 contract, now
+// Rail ↔ LensStrip+BottomTabBar).
 //
 // Settings left the bottom bar with the D6 pass — it lives behind the header
 // ⋯ menu and in the desktop rail foot (the dissolved console is a room, not a
-// tab). Reading a note (/n/:id) and the day drill-in (/today?date=) stay
-// under Recent.
+// tab).
 export function BottomTabBar() {
   const hasActiveVault = useVaultStore((s) => s.activeVaultId !== null);
   const setSwitcherOpen = useQuickSwitchOpen((s) => s.setOpen);
@@ -27,12 +28,11 @@ export function BottomTabBar() {
   if (!hasActiveVault) return null;
 
   // Active-state grammar comes from the shared nav model (W2-5) — the tab
-  // bar is a subset projection of the notes band, so it can't drift from the
-  // Rail/NavSheet's matching rules. Using the model's matchers verbatim means
-  // the Pinned/Archive lenses (`/notes?view=…`) light NO tab here — those
-  // lenses aren't in the 4-slot set (the NavSheet carries them until LZ-5).
-  const isRecent = matchRecent(location);
-  const isNotes = matchAllNotes(location);
+  // bar is a projection of the model, so it can't drift from the Rail/
+  // NavSheet's matching rules. `matchVaultSurface` is the union of the four
+  // lens matchers' territory: the Pinned/Archive lenses light THIS tab now
+  // (they're the one surface too), never a separate All/Pinned tab.
+  const isSurface = matchVaultSurface(location);
 
   return (
     <nav
@@ -41,8 +41,7 @@ export function BottomTabBar() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-[--w-page] items-stretch justify-around px-2">
-        <Tab to={RECENT_TO} label="Recent" active={isRecent} icon={<IconClock />} />
-        <Tab to={NOTES_TO} label="Notes" active={isNotes} icon={<IconNotes />} />
+        <Tab to={RECENT_TO} label="Notes" active={isSurface} icon={<IconNotes />} />
         <CenterCapture />
         <TabButton label="Search" icon={<IconSearch />} onClick={() => setSwitcherOpen(true)} />
       </ul>

@@ -31,7 +31,7 @@ function renderAt(path: string) {
   );
 }
 
-describe("BottomTabBar (D6 four-slot, LZ-2 interim dress)", () => {
+describe("BottomTabBar (LENS-SPEC §5.2 — the 3-slot bar, ratified D2)", () => {
   beforeEach(() => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useQuickSwitchOpen.setState({ open: false });
@@ -43,17 +43,25 @@ describe("BottomTabBar (D6 four-slot, LZ-2 interim dress)", () => {
     useQuickSwitchOpen.setState({ open: false });
   });
 
-  it("renders Recent · Notes · [+] · Search when a vault is active (LZ-2 relabels the D6 slots)", () => {
+  it("renders EXACTLY three slots — Notes · [+] · Search — when a vault is active", () => {
     renderAt("/");
     const nav = screen.getByRole("navigation", { name: /primary/i });
-    // LZ-2: the `/` tab reads "Recent" — the rail's lens name — so the two
-    // projections never disagree about what `/` is called (the F14 lesson).
-    expect(within(nav).getByLabelText(/^recent$/i)).toBeInTheDocument();
-    expect(within(nav).queryByLabelText(/^today$/i)).toBeNull();
+    // One surface ⇒ one surface tab. The LZ-2 interim "Recent" tab is gone;
+    // lens switching lives in the on-surface LensStrip, not the bar (the
+    // redundancy D2 rejected).
     expect(within(nav).getByLabelText(/^notes$/i)).toBeInTheDocument();
-    // The centre capture action (the raised + disc).
+    expect(within(nav).queryByLabelText(/^recent$/i)).toBeNull();
+    expect(within(nav).queryByLabelText(/^today$/i)).toBeNull();
+    // The centre capture action (the raised + disc) and the palette entry.
     expect(within(nav).getByLabelText(/new note/i)).toBeInTheDocument();
     expect(within(nav).getByLabelText(/search/i)).toBeInTheDocument();
+    // The hard count: 3 slots, no more.
+    expect(nav.querySelectorAll("li")).toHaveLength(3);
+  });
+
+  it("the Notes tab goes to / (the Recent lens is the front door)", () => {
+    renderAt("/settings");
+    expect(screen.getByLabelText(/^notes$/i)).toHaveAttribute("href", "/");
   });
 
   it("no longer carries Tags or Settings tabs (they moved off the bottom bar)", () => {
@@ -79,31 +87,34 @@ describe("BottomTabBar (D6 four-slot, LZ-2 interim dress)", () => {
     expect(nav.className).not.toMatch(/\bmd:hidden\b/);
   });
 
-  it("marks Recent active on / and on a note (/n/:id stays under Recent)", () => {
-    renderAt("/");
-    expect(screen.getByLabelText(/^recent$/i)).toHaveAttribute("aria-current", "page");
-    renderAt("/n/abc");
-    const recents = screen.getAllByLabelText(/^recent$/i);
-    expect(recents.some((el) => el.getAttribute("aria-current") === "page")).toBe(true);
-  });
+  // The one surface tab lights across the WHOLE surface (§5.2): every lens
+  // URL plus the drill-ins that stay under it.
+  it.each(["/", "/notes", "/n/abc", "/today", "/today?date=2026-04-18"])(
+    "marks Notes active on %s",
+    (path) => {
+      renderAt(path);
+      expect(screen.getByLabelText(/^notes$/i)).toHaveAttribute("aria-current", "page");
+    },
+  );
 
-  it("marks Recent active on the day drill-in (/today?date=)", () => {
-    renderAt("/today?date=2026-04-18");
-    expect(screen.getByLabelText(/^recent$/i)).toHaveAttribute("aria-current", "page");
-  });
-
-  it("marks Notes active on /notes (W2-7 rename)", () => {
-    renderAt("/notes");
-    expect(screen.getByLabelText(/^notes$/i)).toHaveAttribute("aria-current", "page");
-  });
-
-  it("lights NO tab on the Pinned/Archive lenses — they're not in the interim 4-slot set (LZ-2)", () => {
-    // The tab bar shares the nav model's matchers verbatim: /notes?view=pinned
-    // is the Pinned lens (rail + NavSheet highlight Pinned), not All notes —
-    // so the Notes tab must not claim it. LZ-5's 3-slot bar resolves this.
+  it("marks Notes active on the Pinned/Archive lenses — one surface, one tab, no separate lens tabs", () => {
+    // LZ-2's interim bar lit NO tab here (Pinned/Archive weren't in the
+    // 4-slot set). The 3-slot bar resolves it: `?view=` dresses are the same
+    // surface, so the one surface tab claims them; WHICH lens is the
+    // LensStrip's job.
     renderAt("/notes?view=pinned");
-    expect(screen.getByLabelText(/^notes$/i)).not.toHaveAttribute("aria-current");
-    expect(screen.getByLabelText(/^recent$/i)).not.toHaveAttribute("aria-current");
+    expect(screen.getByLabelText(/^notes$/i)).toHaveAttribute("aria-current", "page");
+    renderAt("/notes?view=archived");
+    const tabs = screen.getAllByLabelText(/^notes$/i);
+    expect(tabs.some((el) => el.getAttribute("aria-current") === "page")).toBe(true);
+  });
+
+  it("marks Notes inactive off the surface (a destination is not a lens)", () => {
+    for (const path of ["/calendar", "/tags", "/activity", "/settings", "/account"]) {
+      const { unmount } = renderAt(path);
+      expect(screen.getByLabelText(/^notes$/i)).not.toHaveAttribute("aria-current");
+      unmount();
+    }
   });
 
   it("opens the quick-switch via the Search tab", () => {
@@ -113,7 +124,7 @@ describe("BottomTabBar (D6 four-slot, LZ-2 interim dress)", () => {
     expect(useQuickSwitchOpen.getState().open).toBe(true);
   });
 
-  it("the centre + navigates to /new (the unified create surface)", () => {
+  it("the centre + navigates to /new in one tap (capture speed sacred — unchanged by LZ-5)", () => {
     renderAt("/");
     expect(screen.getByLabelText(/new note/i)).toHaveAttribute("href", "/new");
   });
