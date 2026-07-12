@@ -1,5 +1,60 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.16.1] - 2026-07-12
+
+**The SET UP shelf is state-derived, not a per-device sticky checklist (Wave-3).** Fixes the bug
+the owner hit: the shelf ("Write a note / Connect your AI / Bring notes over") re-appeared on
+every new device, because completion lived in per-device `localStorage` — an established account
+looked un-onboarded on a fresh browser. Patch bump — a bug fix + a removed affordance
+(`ConnectAI`'s manual tick), no new room.
+
+- **`write` is now the ONLY tracked step.** `src/lib/home/checklist.ts`'s `deriveSteps` takes just
+  live signals (`{ hasUserNote }`) and returns one step, done exactly when a real (non-seed,
+  non-system) note exists in the vault — the same cross-device fact on every device, always. There
+  is no more `HomeChecklistState`, no `overrides`, no `dismissed` flag, and no localStorage read or
+  write anywhere in the module.
+- **`connect` investigated, then dropped as a tracked step** (per the owner's ratified fallback).
+  No client-detectable, door-agnostic signal exists for "an AI is connected to this vault":
+  the vault's own `oauth_clients` table is vestigial (parachute-vault 0.4.x moved OAuth issuance to
+  the hub — vault is resource-server-only now); the hub's grant/consent list
+  (`GET /api/grants`) is gated on `parachute:host:admin` — unreachable by an ordinary vault user,
+  hub-only, nothing equivalent exists on the cloud door; and the cloud account-summary contract
+  (`GET /account/summary`, `AccountSummary` in `src/lib/account/types.ts`) carries no connection
+  field at all. A manual per-device tick here WAS the bug this rework closes, so rather than keep
+  one, the step — and `ConnectAI.tsx`'s "I've connected my AI" button/badge — is gone; the page is
+  now pure instructions with a plain "Done — back to your vault" link.
+- **`import` folded into `write`** — both were always just "get notes into the vault" from
+  `hasUserAuthoredNote`'s point of view (an imported note is exactly as real as a typed one), so a
+  second row tracking the identical fact was redundant even before this rework.
+- **`install` moved out of the shelf entirely.** Installing a PWA is legitimately per-device, so it
+  has no business in a cross-device "is this vault set up" signal — and it already had its own
+  fully independent, always-live nudge (`@/components/InstallPrompt` in the nav sheet, driven
+  directly by `useInstallAffordance()`, never persisted). That nudge is untouched; it just can no
+  longer make the whole multi-step shelf reappear, because there is no more multi-step shelf.
+- **`use-home-checklist.ts` reworked**: no persisted state left to load/save. It now holds only an
+  in-memory, per-mount "hide this for now" (the shelf's ✕ still works, but dismissing is a
+  this-session courtesy, not a lie that outlives the tab — reload, or switch vaults, and the shelf
+  re-evaluates fresh from real state). Resets on a vault switch via React's "adjust state during
+  render" pattern (comparing the incoming `vaultId` against the last-seen one), not an effect —
+  keeps the hook lint-clean (biome's exhaustive-deps rightly flagged an effect whose body never
+  read its own dependency).
+- **`nav/model.tsx`'s "Set up" band no longer reads any checklist/localStorage state at all** — it
+  derives straight from `hasUserAuthoredNote`, the same signal the Recent lens's inline nudge uses,
+  so the rail/sheet band and the inline nudge can never disagree about progress.
+- **Cross-device fix, proven**: `VaultSurface.recent.test.tsx` and `nav/model.test.tsx` each add a
+  test that seeds ONLY a vault + its access token (no checklist blob of any kind) plus a real
+  (non-seed) note, and asserts NO setup shelf/band renders — i.e. an established vault reads as
+  onboarded on a simulated brand-new device. A companion test confirms a genuinely fresh/empty
+  vault (seed guide only) still shows the guidance. Playwright screenshots (light + dark,
+  fresh-vault-vs-established-vault) captured to a scratch path, not committed.
+- Tests: `checklist.test.ts` rewritten around the state-derived model (drops the five
+  localStorage-persistence tests — there's no persistence left to test — adds a step-shape check
+  and an imported-note-counts-as-write check); `ConnectAI.test.tsx` replaces the "marks connect
+  done" test with one asserting no manual tick exists and nothing is written to storage;
+  `VaultSurface.recent.test.tsx` and `nav/model.test.tsx` gain the cross-device proof tests above.
+  Net **1537 → 1534** (the removed persistence-layer tests outnumber the new state-derived +
+  cross-device ones) — all passing.
+
 ## [0.16.0] - 2026-07-12
 
 **Export surface — download your vault (Wave-3).** The app promises "Open format. Export

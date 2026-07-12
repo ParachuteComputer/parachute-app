@@ -21,7 +21,6 @@ import {
 } from "@/lib/home/checklist";
 import { useHomeChecklist } from "@/lib/home/use-home-checklist";
 import { meetsAutoThreshold, usePathTreeMode } from "@/lib/path-tree";
-import { useInstallAffordance } from "@/lib/pwa-install";
 import {
   useDeleteView,
   useRenameView,
@@ -704,8 +703,7 @@ export const RECENT_NOTE_CAP = 100;
 function RecentLens() {
   const vault = useVaultStore((s) => s.getActiveVault());
   const notes = useNotesForDateViews();
-  const install = useInstallAffordance();
-  const { state: checklistState, dismiss } = useHomeChecklist(vault?.id ?? null);
+  const { dismissed, dismiss } = useHomeChecklist(vault?.id ?? null);
   const { roles } = useTagRoles(vault?.id ?? null);
 
   // Trial ambience (DESIGN-SPEC §3.1, sanctioned places 2 + 4) — the SHARED
@@ -743,13 +741,9 @@ function RecentLens() {
   const settled = notes.data !== undefined;
   const hasUserNote = hasUserAuthoredNote(notes.data);
 
-  const steps = deriveSteps(checklistState, {
-    hasUserNote,
-    installed: install.state === "installed",
-    installable: install.state === "available",
-  });
+  const steps = deriveSteps({ hasUserNote });
   const allDone = stepsComplete(steps);
-  const showSetup = !checklistState.dismissed && !allDone;
+  const showSetup = !dismissed && !allDone;
   const incomplete = steps.filter((s) => !s.done);
   const doneCount = steps.length - incomplete.length;
 
@@ -940,14 +934,15 @@ function DoorTile({
 
 // ---------------------------------------------------------------------------
 // Setup nudge — ONE quiet sun row (prototype's "✦ Finish setting up 1/3"), not
-// a wall of checkboxes. It points at the next incomplete step; dismissible.
+// a wall of checkboxes. Points at the next incomplete step; dismissible FOR
+// THIS SESSION only (W3 — see use-home-checklist.ts). `write` is the only
+// step left (state-derived: `connect` was dropped, `import` folded in — see
+// checklist.ts's docstring), so this shelf disappears for good, on every
+// device, the moment a real note exists.
 // ---------------------------------------------------------------------------
 
 const SETUP_DEST: Record<HomeStepId, { label: string; to: string }> = {
   write: { label: "Write your first note", to: "/new" },
-  connect: { label: "Connect your AI", to: "/connect" },
-  import: { label: "Bring your notes over", to: "/import" },
-  install: { label: "Install the app", to: "/settings" },
 };
 
 function SetupNudge({

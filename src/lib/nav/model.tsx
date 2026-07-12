@@ -17,8 +17,6 @@ import {
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import { type HomeStepId, deriveSteps, hasUserAuthoredNote } from "@/lib/home/checklist";
-import { useHomeChecklist } from "@/lib/home/use-home-checklist";
-import { useInstallAffordance } from "@/lib/pwa-install";
 import { useMapEarned, useNotesForDateViews, useVaultStore } from "@/lib/vault";
 import type { ReactNode } from "react";
 
@@ -276,12 +274,13 @@ const SETTINGS_ITEM: NavItem = {
 
 // The SET UP shelf's step rows — guided actions, not rooms, so they carry no
 // active state (`match: () => false`); their destinations are rooms that also
-// exist elsewhere in the bands.
+// exist elsewhere in the bands. `write` is the only step left (W3 — state-
+// derived rework: `connect` had no client-detectable, cross-device signal and
+// was dropped; `import` folded into `write`; `install` moved out entirely to
+// its own per-device nudge, `@/components/InstallPrompt`, which never gates
+// this shelf). See checklist.ts's docstring for the full accounting.
 const SETUP_DEST: Record<HomeStepId, Omit<NavItem, "id">> = {
   write: { label: "Write a note", to: "/new", icon: <SetupTick />, match: () => false },
-  connect: { label: "Connect your AI", to: "/connect", icon: <SetupTick />, match: () => false },
-  import: { label: "Bring notes over", to: "/import", icon: <SetupTick />, match: () => false },
-  install: { label: "Install the app", to: "/settings", icon: <SetupTick />, match: () => false },
 };
 
 function SetupTick() {
@@ -369,19 +368,17 @@ export function buildNavBands(signals: NavBandSignals): NavBand[] {
 
 /**
  * Derives the full band list: earned gates (`useMapEarned`), setup-shelf
- * state (checklist + live signals — same sources as Home's nudge), and the
- * trial chip (`useAccountSummary`, lazily — see below). Returns `[]` with no
- * active vault (both projections render nothing vault-scoped without one).
+ * state (state-derived live signals only — W3; no checklist/localStorage
+ * dependency left, so the rail/sheet's "Set up" band and the Recent lens's
+ * inline nudge can never disagree — both derive from the same vault-note
+ * signal), and the trial chip (`useAccountSummary`, lazily — see below).
+ * Returns `[]` with no active vault (both projections render nothing
+ * vault-scoped without one).
  */
 export function useNavBands(): NavBand[] {
   const vault = useVaultStore((s) => s.getActiveVault());
   const mapEarned = useMapEarned();
-
-  // SET UP shelf signals — shared with Home's checklist (same storage, same
-  // derivation), so the shelf and the nudge can never disagree on progress.
-  const { state: checklistState } = useHomeChecklist(vault?.id ?? null);
   const notes = useNotesForDateViews();
-  const install = useInstallAffordance();
 
   // Trial ambience (§3.1 slot 3) — the shared summary hook, enabled only for
   // home-door (account-minted) vaults: a self-host door has no summary
@@ -396,16 +393,13 @@ export function useNavBands(): NavBand[] {
 
   if (!vault) return [];
 
-  const steps = deriveSteps(checklistState, {
-    hasUserNote: hasUserAuthoredNote(notes.data),
-    installed: install.state === "installed",
-    installable: install.state === "available",
-  });
+  const steps = deriveSteps({ hasUserNote: hasUserAuthoredNote(notes.data) });
   const incomplete = steps.filter((s) => !s.done);
-  // Hidden entirely once complete or dismissed (adopt #12 — no persistent
-  // "You're all set" row; done guidance gets out of the way).
+  // Hidden entirely once complete (no more "dismissed" flag — W3: a
+  // state-derived shelf just stops rendering when the state says onboarded;
+  // adopt #12's "no persistent You're-all-set row" still holds).
   const setup =
-    checklistState.dismissed || incomplete.length === 0
+    incomplete.length === 0
       ? null
       : {
           steps: incomplete.map((s) => s.id),

@@ -118,18 +118,18 @@ describe("buildNavBands (pure)", () => {
   });
 
   it("renders the SET UP shelf with only incomplete steps + the n-of-m count; hides it when null", () => {
+    // W3: `write` is the only tracked step left (state-derived — `connect`
+    // dropped for no cross-device signal, `import` folded in, `install`
+    // moved to its own always-separate per-device nudge).
     const withSetup = buildNavBands({
       ...base,
-      setup: { steps: ["connect", "import"], done: 2, total: 4 },
+      setup: { steps: ["write"], done: 0, total: 1 },
     });
     const shelf = withSetup.find((b) => b.id === "setup");
     expect(shelf).toBeDefined();
     expect(shelf?.label).toBe("Set up");
-    expect(shelf?.sublabel).toBe("2 of 4");
-    expect(shelf?.items.map((i) => [i.label, i.to])).toEqual([
-      ["Connect your AI", "/connect"],
-      ["Bring notes over", "/import"],
-    ]);
+    expect(shelf?.sublabel).toBe("0 of 1");
+    expect(shelf?.items.map((i) => [i.label, i.to])).toEqual([["Write a note", "/new"]]);
     // The shelf sits between the parachute band and the foot (§2.2).
     expect(withSetup.map((b) => b.id)).toEqual(["notes", "explore", "parachute", "setup", "foot"]);
 
@@ -274,18 +274,44 @@ describe("useNavBands (hook)", () => {
     expect(ids).toContain("setup");
   });
 
-  it("drops the SET UP shelf once the checklist is dismissed", async () => {
+  // THE CRUX (W3): the shelf must never resurface for an established vault on
+  // a brand-new device. Before this rework, `connect`/`import` were per-device
+  // localStorage ticks and `dismissed` was too — so a real account, viewed
+  // from a browser with empty storage, looked un-onboarded. Now the ONLY
+  // tracked signal is a real note in the vault, so a fresh browser (empty
+  // localStorage, seeded here only with the vault + its access token — never
+  // a checklist blob) reads the SAME "done" a device that did the onboarding
+  // would.
+  it("W3: an established vault (a real user note) never shows the SET UP shelf — even with empty localStorage", async () => {
     useVaultStore.setState({
       vaults: { a: makeVault({ id: "a", url: "http://localhost:1940" }) },
       activeVaultId: "a",
     });
     localStorage.setItem(
-      "notes:home-checklist:a",
-      JSON.stringify({ dismissed: true, overrides: {} }),
+      "lens:token:a",
+      JSON.stringify({ accessToken: "t", scope: "full", vault: "default" }),
     );
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [
+        {
+          id: "u1",
+          path: "My real note",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    })) as unknown as typeof fetch;
+
     const { result } = renderHook(() => useNavBands(), { wrapper });
     await waitFor(() => expect(result.current.length).toBeGreaterThan(0));
-    expect(result.current.map((b) => b.id)).not.toContain("setup");
+    // No setup band at all — not "hidden", not "dismissed": state-derived
+    // means it was never a candidate to show in the first place.
+    await waitFor(() => expect(result.current.map((b) => b.id)).not.toContain("setup"));
+    // And nothing was ever read from or written to the old per-device key —
+    // there's no checklist storage left to check.
+    expect(localStorage.getItem("notes:home-checklist:a")).toBeNull();
   });
 
   it("earns the Map row at ≥2 vaults — the one gate both projections share (F14)", async () => {

@@ -1,23 +1,27 @@
 import { CopyField } from "@/components/CopyField";
 import { claudeConnectCommand, mcpEndpoint } from "@/lib/home/connect";
-import { useHomeChecklist } from "@/lib/home/use-home-checklist";
-import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault";
-import { Link, Navigate, useNavigate } from "react-router";
+import { Link, Navigate } from "react-router";
 
 // The "Connect your AI" moment. A vault speaks MCP, so any assistant that
 // speaks MCP can read and write it. This is guidance, never a wall: the user
-// reaches it from the home quick action / checklist and can leave any time.
+// reaches it from the home quick action / nav room and can leave any time.
 //
 // Connecting an AI happens in the assistant's own settings and isn't
-// detectable from here — so completion is a manual "I've connected it" tick,
-// never faked. Copy-to-clipboard on the vault URL is the one thing this screen
-// does for you.
+// detectable from here — investigated for W3 (the state-derived setup-shelf
+// rework): neither the vault (its oauth_clients table is vestigial —
+// parachute-vault 0.4.x moved OAuth issuance to the hub) nor the hub (its
+// grant/consent list is `parachute:host:admin`-scoped, unreachable by an
+// ordinary vault user, and doesn't exist on the cloud door at all) nor the
+// cloud account-summary contract expose a "this vault has an AI connected"
+// signal a client could read. So this step carries NO completion tracking at
+// all anymore — no manual tick, no checklist tie-in, nothing written to
+// storage. A per-device "I've connected it" flag was exactly the bug the
+// setup-shelf rework closed (it lied on a fresh browser), so rather than keep
+// one here too, this page is pure instructions. Copy-to-clipboard on the
+// vault URL is the one thing it does for you.
 export function ConnectAI() {
   const vault = useVaultStore((s) => s.getActiveVault());
-  const { state, setOverride } = useHomeChecklist(vault?.id ?? null);
-  const pushToast = useToastStore((s) => s.push);
-  const navigate = useNavigate();
 
   // No vault → nothing to connect to. Bounce to the index (which shows the
   // no-vault landing). NAVIGATION.md: route guard, no active vault — replace.
@@ -25,15 +29,6 @@ export function ConnectAI() {
 
   const mcpUrl = mcpEndpoint(vault.url);
   const cliCommand = claudeConnectCommand(vault.name, mcpUrl);
-  const connected = state.overrides.connect === true;
-
-  const markConnected = () => {
-    setOverride("connect", true);
-    pushToast("Marked as connected.", "success");
-    // User-initiated ("I've connected it") — push (NAVIGATION.md's default
-    // rule; not one of the table's named exceptions).
-    navigate("/");
-  };
 
   return (
     <div className="page-prose">
@@ -96,15 +91,13 @@ export function ConnectAI() {
       </section>
 
       <div className="mt-10 flex flex-wrap items-center gap-3 border-t border-border pt-6">
-        {connected ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-positive-soft px-3 py-1 text-sm font-medium text-positive">
-            <span aria-hidden="true">✓</span> Your AI is connected
-          </span>
-        ) : (
-          <button type="button" onClick={markConnected} className="btn btn-primary btn-touch">
-            I've connected my AI
-          </button>
-        )}
+        {/* No "mark as connected" tick — W3 dropped it (see the module
+            docstring): there's no honest, cross-device way to know an AI is
+            connected, so this is a plain way back rather than a step that
+            could lie on a new device. */}
+        <Link to="/" className="btn btn-primary btn-touch">
+          Done — back to your vault
+        </Link>
       </div>
     </div>
   );
