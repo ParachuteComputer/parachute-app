@@ -286,7 +286,7 @@ export function App() {
         {/*
           Mount-agnostic basename: detected at runtime from window.location
           so the same built bundle works at `/notes/` (legacy daemon),
-          `/surface/notes/` (parachute-surface default), or `/surface/<custom-slug>/`
+          `/surface/parachute/` (parachute-surface default), or `/surface/<custom-slug>/`
           (parachute-surface with a renamed install). See `src/lib/base-url.ts`
           for the detector + the design rationale.
         */}

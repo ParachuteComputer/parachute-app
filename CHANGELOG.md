@@ -1,5 +1,40 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.11.1] - 2026-07-11
+
+**W2-12 — identity → "Parachute" + brand favicon (F17).** The surface manifest still called
+itself "Notes" at `/surface/notes`, and the browser tab/PWA-install icon was a placeholder green
+ring-and-dot titled "Parachute Notes" — never the real brand. Patch bump: metadata + assets only,
+no runtime logic changes.
+
+- **`meta.json` identity flip**: `name` `"notes"` → `"parachute"`, `displayName` `"Notes"` →
+  `"Parachute"`, `path` `"/surface/notes"` → `"/surface/parachute"`, tagline → "The Parachute app
+  — your parachute's front door." `pwa`, `pwa_service_worker`, `scopes_required`, `iconUrl`,
+  `required_schema`, `$schema`, and meta.json's own `version` are unchanged. This rename only
+  affects **future** surface installs — an existing on-disk `notes` install keeps its mount
+  unless the operator re-installs; an in-place upgrade without an explicit `mount_path` is
+  covered by the corresponding hub-side alias (companion PR).
+- **`vite.config.ts`**: `serviceInfo.name` `"parachute-notes"` → `"parachute-app"` so the built
+  `dist/.parachute/info` matches the hub's `manifestName` discovery contract. `DISPLAY_NAME` was
+  already `"Parachute"`.
+- **Brand favicon** — replaced the generic green `#4a7c59` ring-and-dot (titled "Parachute
+  Notes") with the real Parachute mark from parachute.computer (coral canopy, suspension lines,
+  golden payload box): `public/icon.svg` now carries the site's `parachute-favicon.svg` (titled
+  "Parachute"); `apple-touch-icon-180x180.png`, `pwa-192x192.png`, `pwa-512x512.png`, and
+  `maskable-icon-512x512.png` are the site's matching rasters (the maskable variant reuses the
+  512 asset — the site itself ships no dedicated safe-zone-padded maskable icon); `pwa-64x64.png`
+  is a fresh high-quality downscale (no 64px source existed); `favicon.ico` was regenerated as a
+  proper multi-size (16/32/48) ICO from the same mark (was single-size 48×48 of the old green
+  icon). `index.html` gained explicit `<link rel="icon">` (SVG + ICO) and
+  `<link rel="apple-touch-icon">` tags — previously the tab icon relied entirely on the browser's
+  implicit `/favicon.ico` fallback; the SVG link now wins in modern browsers. Verified Vite
+  correctly base-prefixes these absolute-path `<link>` hrefs under `VITE_BASE_PATH` (e.g.
+  `/surface/parachute/icon.svg`), matching the existing JS/CSS asset convention — so the mark
+  renders whether the app is root-hosted or surface-mounted.
+- Rider: freshened stale `/surface/notes/` example paths in comments (`main.tsx`, `App.tsx`,
+  `oauth.ts`) to `/surface/parachute/` — the mount-detection logic itself is unchanged
+  (`base-url.ts`/`sw-bootstrap.ts`/`pwa-manifest.ts` are already mount-generic).
+
 ## [0.11.0] - 2026-07-11
 
 **W2-11 — one NoteRow + `/notes` progressive disclosure (F9, N3).** The same note used to render
