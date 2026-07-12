@@ -11,11 +11,16 @@ navigation trick to an actual capture surface.
   ease, behind `prefers-reduced-motion`), the box auto-grows with the text, and typing happens in
   place. Resting anatomy unchanged — placeholder line, quiet "Autosaves to {vault}" note, the mic
   disc bottom-right.
-- **One shared draft with `/new`** — typing autosaves (debounced, + a synchronous flush on any
-  route hop/unmount) into the SAME per-vault draft store the full editor reads (`NEW_NOTE_SCOPE`,
-  notes#175 machinery — no second draft mechanism). A thought started on Today greets you on
-  `/new`, and vice versa; the "Open full editor →" escape therefore costs nothing. Round-trip
-  pinned end-to-end in NoteNew.test.
+- **One shared draft with `/new`** — typing autosaves (debounced) into the SAME per-vault draft
+  store the full editor reads (`NEW_NOTE_SCOPE`, notes#175 machinery — no second draft mechanism).
+  A thought started on Today greets you on `/new`, and vice versa; the "Open full editor →" escape
+  therefore costs nothing. Round-trip pinned end-to-end in NoteNew.test.
+- **No dropped tail on any hop (review fold)** — the debounced write is flushed synchronously on
+  the composer's **blur** (fires on pointerdown, before ANY outside door — the mobile "+",
+  speed-dial, palette, setup-nudge — navigates to `/new`, whose render-phase draft read would
+  otherwise beat an unmount-time flush and lose the just-typed tail; worst case the whole note,
+  since the autosave debounce re-arms on every keystroke). Per-link `onClick` flushes stay as
+  belt-and-suspenders; a regression test pins the blur path.
 - **"Save to {vault}" without leaving Today**: commits through the same path NoteNew's text save
   uses — new shared `buildTextNotePayload` (`src/lib/capture/text-note.ts`: capture role tag +
   `#hashtag` extraction + `metadata.source: "text"`), `useCreateNote`, fire-and-forget

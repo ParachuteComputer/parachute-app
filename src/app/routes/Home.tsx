@@ -304,6 +304,14 @@ function Composer({ vault, focused }: { vault: VaultRecord; focused: boolean }) 
       }}
       onFocus={() => setFocusWithin(true)}
       onBlur={(e) => {
+        // Flush the debounced draft the instant focus leaves the composer —
+        // blur fires on pointerdown, BEFORE any outside door (the mobile "+",
+        // speed-dial, palette, setup-nudge) activates its click and navigates
+        // to /new, whose render-phase draft read would otherwise beat Home's
+        // unmount flush and drop the just-typed tail (worst case the whole
+        // note, since the autosave debounce re-arms on every keystroke). The
+        // per-link onClick flushes stay as belt-and-suspenders.
+        flushDraft();
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusWithin(false);
       }}
     >

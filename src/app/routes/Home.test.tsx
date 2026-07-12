@@ -317,6 +317,25 @@ describe("Home — the warm front door", () => {
       expect(loadDraft("v1", NEW_NOTE_SCOPE)?.body.content).toBe("started on Today");
     });
 
+    it("flushes on blur so an OUTSIDE door (mobile +, speed-dial, palette) can't drop the tail", async () => {
+      installRoutedFetch({ notes: SEED_ONLY });
+      render(
+        <Wrap>
+          <Home />
+        </Wrap>,
+      );
+      const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "typed then left by an outside door" } });
+      // Focus leaves the composer WITHOUT touching its own flush-wired links —
+      // the real hop is the mobile "+", speed-dial, or palette, which steal
+      // focus (focusout) before their click navigates to /new. Without the
+      // onBlur flush the 600ms debounce is still armed and the store is empty,
+      // so NoteNew's render-phase restore reads nothing and the tail is lost.
+      fireEvent.focusOut(input);
+      expect(loadDraft("v1", NEW_NOTE_SCOPE)?.body.content).toBe("typed then left by an outside door");
+    });
+
     it("restores a draft started on /new — one draft, both surfaces", async () => {
       saveDraft("v1", NEW_NOTE_SCOPE, {
         content: "started on /new",
