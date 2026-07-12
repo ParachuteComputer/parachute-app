@@ -7,7 +7,7 @@ import type { AccountSummary } from "./types";
  * `GET /account/summary` for every plan/trial consumer: the vault switcher
  * (vault-limit upsell + trial foot line), the rail/sheet's Account badge
  * (W2-5), `/account`'s Plan & billing card (W2-8), Home's PlanBacklink and the
- * Today trial nudge (W2-8). Sharing the query key means they all read the same
+ * Recent-lens trial nudge (W2-8). Sharing the query key means they all read the same
  * cached answer instead of racing fetches.
  *
  * LAZY by design — it never gates first paint. Consumers pass `enabled` for

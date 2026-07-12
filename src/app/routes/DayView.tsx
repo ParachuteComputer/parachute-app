@@ -146,7 +146,7 @@ function SingleDay({ dateParam }: { dateParam: string }) {
 }
 
 function Section({ title, notes }: { title: string; notes: Note[] }) {
-  // Same shared row + list shape as Today and /notes (W2-11 / F9 — one
+  // Same shared row + list shape as Recent and /notes (W2-11 / F9 — one
   // anatomy everywhere). Role tags resolve once per list, not per row.
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(activeVault?.id ?? null);

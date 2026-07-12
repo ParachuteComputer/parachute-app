@@ -11,10 +11,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // W2-11 / F9 — the parity contract: the SAME note renders the SAME anatomy
 // (dot/status · title · preview · time · chips) through the shared NoteRow on
-// BOTH Today's timeline and the /notes list. Before this, Home and /notes
+// BOTH the Recent timeline and the /notes list. Before this, Home and /notes
 // each hand-rolled a row and the two had drifted (no dot, no pinned star, no
-// archived state on Today). These tests pin the unification structurally —
-// the /notes row and the Today row must be byte-identical markup.
+// archived state on Home). These tests pin the unification structurally —
+// the /notes row and the Recent row must be byte-identical markup.
 
 function installFetch(state: { notes: unknown[]; tags: unknown[] }) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
@@ -89,7 +89,7 @@ function rowFor(scope: HTMLElement, title: string): HTMLElement {
   return li as HTMLElement;
 }
 
-describe("NoteRow parity — Today and /notes render the same anatomy", () => {
+describe("NoteRow parity — Recent and /notes render the same anatomy", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -102,7 +102,7 @@ describe("NoteRow parity — Today and /notes render the same anatomy", () => {
     vi.unstubAllGlobals();
   });
 
-  it("the SAME note renders byte-identical row markup on Today's timeline and the /notes list", async () => {
+  it("the SAME note renders byte-identical row markup on the Recent timeline and the /notes list", async () => {
     installFetch({ notes: [FULL_NOTE], tags: [] });
 
     // /notes — the one surface (VaultSurface since LZ-3), All lens.
@@ -112,26 +112,26 @@ describe("NoteRow parity — Today and /notes render the same anatomy", () => {
     const notesRowHtml = notesRow.outerHTML;
     notesRender.unmount();
 
-    // Today — the reading room (RecentTimeline is Home's list renderer).
+    // Recent — the reading room (RecentTimeline is the Recent lens's list renderer).
     render(<RecentTimeline notes={[FULL_NOTE]} />, { wrapper: Wrapper });
-    const todayRow = rowFor(document.body, "README");
+    const recentRow = rowFor(document.body, "README");
 
     // Byte-identical markup = identical anatomy, identical order, identical
     // states. (The rooms differ only by their page width — page-prose vs
     // page — which lives outside the row.)
-    expect(todayRow.outerHTML).toBe(notesRowHtml);
+    expect(recentRow.outerHTML).toBe(notesRowHtml);
 
     // And the anatomy itself, spelled out: dot · title · path · preview ·
     // time · chips.
-    expect(todayRow.querySelector(".note-dot")).not.toBeNull();
-    expect(within(todayRow).getByText("README")).toBeInTheDocument();
-    expect(within(todayRow).getByText("Projects/lens/README")).toBeInTheDocument();
-    expect(within(todayRow).getByText("A lens onto any Parachute Vault.")).toBeInTheDocument();
-    expect(within(todayRow).getByText("#project")).toBeInTheDocument();
-    expect(within(todayRow).getByText("#idea")).toBeInTheDocument();
+    expect(recentRow.querySelector(".note-dot")).not.toBeNull();
+    expect(within(recentRow).getByText("README")).toBeInTheDocument();
+    expect(within(recentRow).getByText("Projects/lens/README")).toBeInTheDocument();
+    expect(within(recentRow).getByText("A lens onto any Parachute Vault.")).toBeInTheDocument();
+    expect(within(recentRow).getByText("#project")).toBeInTheDocument();
+    expect(within(recentRow).getByText("#idea")).toBeInTheDocument();
   });
 
-  it("pinned and archived status render on Today's timeline too (the old divergence)", async () => {
+  it("pinned and archived status render on the Recent timeline too (the old divergence)", async () => {
     installFetch({ notes: PINNED_ARCHIVED_NOTES, tags: [] });
     render(<RecentTimeline notes={PINNED_ARCHIVED_NOTES} />, { wrapper: Wrapper });
 

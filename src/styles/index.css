@@ -1010,7 +1010,7 @@ body {
   }
 
   /* THE note row — dot · title · preview · time · chips (prototype .note).
-     One anatomy everywhere a note is listed (Today's timeline, the day
+     One anatomy everywhere a note is listed (the Recent timeline, the day
      drill-in, /notes — see NoteRow.tsx). States: transparent at rest,
      card-tint hover, grass-soft press — never underline/border selection. */
   .note-row {

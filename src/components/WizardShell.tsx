@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
  * AddVault, CheckEmail, OAuthCallback) renders inside this shell instead of
  * its own local copy. The rules, verbatim from the spec:
  *
- * 1. The Wordmark is a LINK (active vault → `/` Today; signed out → `/` front
+ * 1. The Wordmark is a LINK (active vault → `/` Recent; signed out → `/` front
  *    door) — with no active vault these screens have no Rail/Header chrome,
  *    so the wordmark must never be a dead `<span>`.
  * 2. A quiet escape on every step — "← Back" when a prior step exists,
