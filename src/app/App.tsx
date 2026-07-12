@@ -33,12 +33,12 @@ import {
 } from "react-router";
 import { Home } from "./routes/Home";
 import { Landing } from "./routes/Landing";
-import { Notes } from "./routes/Notes";
+import { VaultSurface } from "./routes/VaultSurface";
 
-// Home + Landing + Notes stay eager: the index dispatcher paints the guided
-// Home (with a vault) or the Landing (without) on first load, so splitting
-// them would block FCP on a network round-trip. Every other route gets its
-// own chunk so the editor's CodeMirror, the graph's force-graph layer,
+// Home + Landing + VaultSurface stay eager: the index dispatcher paints the
+// guided Home (with a vault) or the Landing (without) on first load, so
+// splitting them would block FCP on a network round-trip. Every other route
+// gets its own chunk so the editor's CodeMirror, the graph's force-graph layer,
 // settings, etc. don't pile into the initial download. DayView (the day
 // drill-in, formerly Today's dual-purpose route) moved into this lazy set in
 // W2-3 — the no-param front-door timeline it used to render (which DID need
@@ -314,8 +314,10 @@ export function App() {
                       <Route path="/" element={<BootGate />} />
                       <Route path="/check-email" element={<CheckEmail />} />
                       {/*
-                    W2-7: /notes is the canonical Notes room (label "Notes"
-                    matches address). Registered here — well before the
+                    /notes is the ONE SURFACE over the vault (LZ-3): the
+                    VaultSurface, wearing the lens `?view=` names (All by
+                    default; pinned/archived; the untagged/orphaned
+                    maintenance views). Registered here — well before the
                     dynamic /:id bare-path shim below — so a note literally
                     named "notes" can never shadow this route; that note is
                     reachable only at /n/notes (same accepted tradeoff as the
@@ -324,7 +326,7 @@ export function App() {
                     declaration order (see App.test.tsx's "/settings wins"
                     guard), but the order stays literal/readable here too.
                   */}
-                      <Route path="/notes" element={<Notes />} />
+                      <Route path="/notes" element={<VaultSurface />} />
                       {/*
                     /all is the pre-W2-7 address — a shim to /notes,
                     preserving any query string. NAVIGATION.md: (a) redirect

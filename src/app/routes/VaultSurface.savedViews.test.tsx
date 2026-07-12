@@ -1,4 +1,4 @@
-import { Notes } from "@/app/routes/Notes";
+import { VaultSurface } from "@/app/routes/VaultSurface";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -123,7 +123,7 @@ describe("SavedViewsSidebar management menu", () => {
   it("renders saved views with a per-row management menu trigger", async () => {
     installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
 
     const list = await screen.findByRole("list", { name: /saved views/i });
@@ -136,7 +136,7 @@ describe("SavedViewsSidebar management menu", () => {
   it("opens the menu and disables 'Update with current filters' when no filters are active", async () => {
     installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
     const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
     fireEvent.click(trigger);
@@ -149,7 +149,7 @@ describe("SavedViewsSidebar management menu", () => {
     const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
     vi.stubGlobal("confirm", () => true);
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
     const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
     fireEvent.click(trigger);
@@ -172,7 +172,7 @@ describe("SavedViewsSidebar management menu", () => {
     const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
     vi.stubGlobal("confirm", () => false);
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
     const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
     fireEvent.click(trigger);
@@ -191,7 +191,7 @@ describe("SavedViewsSidebar management menu", () => {
   it("Rename opens a dialog and PATCHes the new path on save", async () => {
     const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
-    render(<Notes />, { wrapper: Wrapper });
+    render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
     const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
     fireEvent.click(trigger);
