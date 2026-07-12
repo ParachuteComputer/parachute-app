@@ -87,6 +87,24 @@ const viewNote = {
   metadata: { kind: "saved-view", filters: { tags: ["journal"] } },
 };
 
+// A vault with at least one note — W2-11 hides the Filters disclosure (and
+// with it the saved-views block) on a genuinely empty vault, so these tests
+// need something in the list.
+const plainNote = {
+  id: "n1",
+  path: "Journal/morning",
+  tags: [],
+  createdAt: "2026-04-25T09:00:00Z",
+  updatedAt: "2026-04-25T09:00:00Z",
+};
+
+// The saved-views block lives inside the W2-11 "Filters" disclosure — open it
+// the way a user would before reaching for the management menu.
+async function openFilters() {
+  fireEvent.click(await screen.findByRole("button", { name: /filters/i }));
+  await screen.findByRole("region", { name: /^filters$/i });
+}
+
 describe("SavedViewsSidebar management menu", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -103,9 +121,10 @@ describe("SavedViewsSidebar management menu", () => {
   });
 
   it("renders saved views with a per-row management menu trigger", async () => {
-    installFetch({ notes: [], tags: [], views: [viewNote] });
+    installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
     render(<Notes />, { wrapper: Wrapper });
+    await openFilters();
 
     const list = await screen.findByRole("list", { name: /saved views/i });
     const item = within(list).getByText("Daily").closest("li") as HTMLElement;
@@ -115,9 +134,10 @@ describe("SavedViewsSidebar management menu", () => {
   });
 
   it("opens the menu and disables 'Update with current filters' when no filters are active", async () => {
-    installFetch({ notes: [], tags: [], views: [viewNote] });
+    installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
     render(<Notes />, { wrapper: Wrapper });
+    await openFilters();
     const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
     fireEvent.click(trigger);
 
@@ -126,10 +146,11 @@ describe("SavedViewsSidebar management menu", () => {
   });
 
   it("Delete sends DELETE to the view note id when confirmed", async () => {
-    const fetchImpl = installFetch({ notes: [], tags: [], views: [viewNote] });
+    const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
     vi.stubGlobal("confirm", () => true);
 
     render(<Notes />, { wrapper: Wrapper });
+    await openFilters();
     const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
     fireEvent.click(trigger);
 
@@ -148,10 +169,11 @@ describe("SavedViewsSidebar management menu", () => {
   });
 
   it("Delete is a no-op when the user cancels the confirm prompt", async () => {
-    const fetchImpl = installFetch({ notes: [], tags: [], views: [viewNote] });
+    const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
     vi.stubGlobal("confirm", () => false);
 
     render(<Notes />, { wrapper: Wrapper });
+    await openFilters();
     const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("menuitem", { name: /^delete$/i }));
@@ -167,9 +189,10 @@ describe("SavedViewsSidebar management menu", () => {
   });
 
   it("Rename opens a dialog and PATCHes the new path on save", async () => {
-    const fetchImpl = installFetch({ notes: [], tags: [], views: [viewNote] });
+    const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
     render(<Notes />, { wrapper: Wrapper });
+    await openFilters();
     const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("menuitem", { name: /rename/i }));

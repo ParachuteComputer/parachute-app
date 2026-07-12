@@ -333,7 +333,9 @@ describe("Home — the warm front door", () => {
       // onBlur flush the 600ms debounce is still armed and the store is empty,
       // so NoteNew's render-phase restore reads nothing and the tail is lost.
       fireEvent.focusOut(input);
-      expect(loadDraft("v1", NEW_NOTE_SCOPE)?.body.content).toBe("typed then left by an outside door");
+      expect(loadDraft("v1", NEW_NOTE_SCOPE)?.body.content).toBe(
+        "typed then left by an outside door",
+      );
     });
 
     it("restores a draft started on /new — one draft, both surfaces", async () => {

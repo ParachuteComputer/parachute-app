@@ -60,9 +60,17 @@ function Wrapper({ children }: { children: ReactNode }) {
   );
 }
 
+// W2-11: everything beyond search + view chips folds behind ONE "Filters"
+// disclosure — tests that touch sort/archived/prefix/tags/views/folders open
+// it first, exactly like a user would.
+async function openFilters() {
+  fireEvent.click(await screen.findByRole("button", { name: /filters/i }));
+  await screen.findByRole("region", { name: /^filters$/i });
+}
+
 function openFoldersAccordion() {
   const details = document
-    .getElementById("notes-sidebar")
+    .getElementById("notes-filters")
     ?.querySelector("details") as HTMLDetailsElement | null;
   if (!details) throw new Error("Folders accordion not found");
   act(() => {
@@ -151,14 +159,25 @@ describe("Notes route", () => {
     });
   });
 
-  it("toggles sort direction via the header button", async () => {
-    const fetchImpl = installFetch({ notes: [], tags: [] });
+  it("toggles sort direction via the Filters panel", async () => {
+    const fetchImpl = installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "some-note",
+          tags: [],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [],
+    });
     render(<Notes />, { wrapper: Wrapper });
 
     await waitFor(() => {
       expect(lastNotesUrl(fetchImpl)).toContain("sort=desc");
     });
 
+    await openFilters();
     fireEvent.click(screen.getByRole("button", { name: /toggle sort/i }));
 
     await waitFor(() => {
@@ -224,10 +243,17 @@ describe("Notes route", () => {
     expect(firstRow.getByLabelText(/pinned/i)).toBeInTheDocument();
   });
 
-  it("renders a Pinned tags strip on the home view when the vault has pinned tags", async () => {
+  it("renders the Pinned tags strip inside the Filters panel when the vault has pinned tags", async () => {
     localStorage.setItem("lens:pinned-tags:dev", JSON.stringify(["daily", "idea"]));
     installFetch({
-      notes: [],
+      notes: [
+        {
+          id: "n1",
+          path: "daily-note",
+          tags: ["daily"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
       tags: [
         { name: "daily", count: 7 },
         { name: "idea", count: 3 },
@@ -235,9 +261,10 @@ describe("Notes route", () => {
     });
 
     render(<Notes />, { wrapper: Wrapper });
+    await openFilters();
 
     // Strip buttons render as pressable chips, not links, so tag filters apply
-    // in-place rather than routing away. Sidebar TagBrowser also renders a
+    // in-place rather than routing away. The panel's TagBrowser also renders a
     // #daily button — scope the query to the strip explicitly.
     const strip = await screen.findByRole("navigation", { name: /pinned tags/i });
     const dailyChip = within(strip).getByRole("button", { name: /#daily/i });
@@ -247,9 +274,20 @@ describe("Notes route", () => {
   });
 
   it("renders a first-run hint in the pinned-tags strip when no tags are pinned", async () => {
-    installFetch({ notes: [], tags: [{ name: "daily", count: 2 }] });
+    installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "daily-note",
+          tags: ["daily"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [{ name: "daily", count: 2 }],
+    });
     render(<Notes />, { wrapper: Wrapper });
-    await screen.findByRole("list", { name: "Notes" }).catch(() => null);
+    await screen.findByRole("list", { name: "Notes" });
+    await openFilters();
     const strip = await screen.findByRole("navigation", { name: /pinned tags/i });
     expect(within(strip).getByText(/Pin tags here for quick access/i)).toBeInTheDocument();
     expect(within(strip).getByRole("link", { name: /open the tag browser/i })).toHaveAttribute(
@@ -284,6 +322,7 @@ describe("Notes route", () => {
     await screen.findByText("live-note");
     expect(screen.queryByText("archived-note")).not.toBeInTheDocument();
 
+    await openFilters();
     fireEvent.click(screen.getByLabelText(/show archived/i));
     await waitFor(() => {
       expect(screen.getByText("archived-note")).toBeInTheDocument();
@@ -297,6 +336,9 @@ describe("Notes route", () => {
     await waitFor(() => {
       expect(lastNotesUrl(fetchImpl)).toContain("tag=pinned");
     });
+    // Even with the Filters panel open, a preset view carries no
+    // show-archived toggle (presets have their own archived semantics).
+    await openFilters();
     expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pinned" })).toBeInTheDocument();
   });
@@ -326,9 +368,10 @@ describe("Notes route", () => {
 
     render(<Notes />, { wrapper: Wrapper });
 
-    // Folders accordion is collapsed by default — the tree is lazy-fetched
-    // on open.
+    // Folders accordion (inside the Filters panel) is collapsed by default —
+    // the tree is lazy-fetched on open.
     await screen.findByText("A/note-0.md");
+    await openFilters();
     openFoldersAccordion();
     expect(await screen.findByRole("complementary", { name: /path tree/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^A\b/ })).toBeInTheDocument();
@@ -369,6 +412,7 @@ describe("Notes route", () => {
 
     render(<Notes />, { wrapper: Wrapper });
     await screen.findByText("Solo/note.md");
+    await openFilters();
     openFoldersAccordion();
     expect(await screen.findByRole("complementary", { name: /path tree/i })).toBeInTheDocument();
   });
@@ -409,7 +453,10 @@ describe("Notes route", () => {
       expect(lastNotesUrl(fetchImpl)).toContain("has_tags=false");
     });
     expect(screen.getByRole("heading", { name: "Untagged" })).toBeInTheDocument();
-    // Tag filter is hidden — its summary disclosure is gone.
+    // The tags block is absent even inside the open Filters panel — the
+    // untagged view is definitionally tag-free.
+    await openFilters();
+    expect(screen.queryByRole("navigation", { name: /browse by tag/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^Tags$/)).not.toBeInTheDocument();
   });
 
@@ -483,7 +530,7 @@ describe("Notes route", () => {
     expect(patchCalls[0]?.body).toEqual({ tags: { add: ["project"] } });
   });
 
-  it("sidebar renders the tag browser above the collapsed Folders details", async () => {
+  it("the Filters panel renders the tag browser before the collapsed Folders details", async () => {
     installFetch({
       notes: ["A", "B", "C", "D", "E"].map((root, i) => ({
         id: `n${i}`,
@@ -495,15 +542,15 @@ describe("Notes route", () => {
     });
 
     render(<Notes />, { wrapper: Wrapper });
+    await openFilters();
 
     const tagNav = await screen.findByRole("navigation", { name: /browse by tag/i });
-    const sidebar = document.getElementById("notes-sidebar");
-    expect(sidebar).not.toBeNull();
-    expect(sidebar?.contains(tagNav)).toBe(true);
-    // Folders is now a collapsed <details>. Waits for the async path-tree
-    // fetch to settle before the wrapper is mounted.
+    const panel = document.getElementById("notes-filters");
+    expect(panel).not.toBeNull();
+    expect(panel?.contains(tagNav)).toBe(true);
+    // Folders is a collapsed <details> in the panel's views column.
     const details = await waitFor(() => {
-      const d = (sidebar as HTMLElement).querySelector("details");
+      const d = (panel as HTMLElement).querySelector("details");
       expect(d).not.toBeNull();
       return d as HTMLDetailsElement;
     });
@@ -530,6 +577,7 @@ describe("Notes route", () => {
 
     // Folders accordion starts closed; open it so the tree query fires.
     await screen.findByText("Canon/note-0.md");
+    await openFilters();
     openFoldersAccordion();
 
     const canonNode = await screen.findByRole("button", { name: /^Canon\b/ });
@@ -564,7 +612,8 @@ describe("Notes route", () => {
       .filter((u) => u.includes("/api/notes") && u.includes("limit=5000"));
     expect(pathTreeCalls.length).toBe(0);
 
-    // Opening the accordion should trigger the fetch.
+    // Opening the accordion (inside the Filters panel) triggers the fetch.
+    await openFilters();
     openFoldersAccordion();
 
     await waitFor(() => {
@@ -573,6 +622,131 @@ describe("Notes route", () => {
         .filter((u) => u.includes("/api/notes") && u.includes("limit=5000"));
       expect(after.length).toBeGreaterThan(0);
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // W2-11 — progressive disclosure: the 8-control wall becomes ≤3 resting
+  // controls (search · view chips · Filters), everything else folds behind
+  // the Filters disclosure, and a fresh empty vault gets no wall at all.
+  // -------------------------------------------------------------------------
+
+  it("rests with exactly three control groups: search, view chips, Filters (the wall is folded)", async () => {
+    installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "some-note",
+          tags: ["idea"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    render(<Notes />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    // The three resting groups.
+    const chrome = document.querySelector("[data-notes-chrome]") as HTMLElement;
+    expect(chrome).not.toBeNull();
+    expect(within(chrome).getByLabelText(/search notes/i)).toBeInTheDocument();
+    const filtersBtn = within(chrome).getByRole("button", { name: /filters/i });
+    expect(filtersBtn).toHaveAttribute("aria-expanded", "false");
+    expect(within(chrome).getByRole("navigation", { name: /views/i })).toBeInTheDocument();
+
+    // Census: besides the view-chip links, the resting chrome holds exactly
+    // TWO interactive controls — the search field and the Filters button.
+    const viewsNav = within(chrome).getByRole("navigation", { name: /views/i });
+    const interactive = Array.from(
+      chrome.querySelectorAll("button, input, select, textarea, summary, a"),
+    ).filter((el) => !viewsNav.contains(el));
+    expect(interactive).toHaveLength(2);
+
+    // The old wall is genuinely folded — none of it renders at rest.
+    expect(screen.queryByRole("button", { name: /toggle sort/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/filter by path prefix/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /browse by tag/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /pinned tags/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: /saved views/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Folders$/)).not.toBeInTheDocument();
+  });
+
+  it("the Filters disclosure opens the folded controls and closes cleanly", async () => {
+    installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "some-note",
+          tags: ["idea"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    render(<Notes />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const filtersBtn = screen.getByRole("button", { name: /filters/i });
+    fireEvent.click(filtersBtn);
+    expect(filtersBtn).toHaveAttribute("aria-expanded", "true");
+
+    // The whole wall lives in the panel.
+    const panel = await screen.findByRole("region", { name: /^filters$/i });
+    expect(within(panel).getByRole("button", { name: /toggle sort/i })).toBeInTheDocument();
+    expect(within(panel).getByLabelText(/show archived/i)).toBeInTheDocument();
+    expect(within(panel).getByLabelText(/filter by path prefix/i)).toBeInTheDocument();
+    expect(within(panel).getByRole("navigation", { name: /browse by tag/i })).toBeInTheDocument();
+    expect(within(panel).getByRole("navigation", { name: /pinned tags/i })).toBeInTheDocument();
+
+    // Close: the panel unmounts, nothing lingers.
+    fireEvent.click(filtersBtn);
+    expect(filtersBtn).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("region", { name: /^filters$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /toggle sort/i })).not.toBeInTheDocument();
+  });
+
+  it("the closed Filters button wears a count badge when folded filters are active", async () => {
+    // Arrive with a shared/deep-linked filter URL — the panel stays closed
+    // ("remember nothing surprising") but the active state must show.
+    window.history.replaceState({}, "", "/?tag=idea&path_prefix=Projects");
+    installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "Projects/some-note",
+          tags: ["idea"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    render(<Notes />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const filtersBtn = screen.getByRole("button", { name: /filters/i });
+    expect(filtersBtn).toHaveAttribute("aria-expanded", "false");
+    // Two folded dimensions live: the tag pick and the path prefix.
+    expect(filtersBtn.textContent).toContain("2");
+  });
+
+  it("a fresh empty vault shows ONLY search + view chips + the empty state — no filter wall, no pager", async () => {
+    installFetch({ notes: [], tags: [] });
+    render(<Notes />, { wrapper: Wrapper });
+
+    expect(await screen.findByText(/this vault has no notes yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /create one/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/search notes/i)).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /views/i })).toBeInTheDocument();
+
+    // No filter chrome over nothing: no Filters disclosure, no folded
+    // controls, no pagination.
+    expect(screen.queryByRole("button", { name: /filters/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /toggle sort/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/filter by path prefix/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /pinned tags/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /previous/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /next/i })).not.toBeInTheDocument();
   });
 
   it("constrains long paths and tag chips inside the note row instead of overflowing", async () => {

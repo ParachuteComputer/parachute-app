@@ -1,14 +1,14 @@
+import { NoteRow, NoteRowList } from "@/components/NoteRow";
 import { formatLongDate, shiftDay, toDateKey, todayKey } from "@/lib/dates";
-import { noteTitle } from "@/lib/note-title";
-import { relativeTime } from "@/lib/time";
+import { useTagRoles, useVaultStore } from "@/lib/vault";
 import type { Note } from "@/lib/vault/types";
 import { useMemo } from "react";
 import { Link } from "react-router";
 
-// The day-grouped recent-notes list, shared by the front-door home (`/`) and
-// the Today route (`/today`). Both surfaces want the same "recent notes,
-// newest day first, human titles" list; only their surrounding chrome differs,
-// so the list itself lives here once.
+// The day-grouped recent-notes list on the front-door home (`/`). The rows
+// themselves are the shared NoteRow (W2-11 / F9 — one anatomy across Today,
+// the day drill-in, and /notes); this module owns only the day bucketing and
+// the day-header links into the single-day view.
 
 export interface DayGroup {
   key: string;
@@ -56,51 +56,16 @@ export function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-// One note row, shared by the timeline and the single-day sections: human
-// title as the headline, the mono path as dim metadata only when it adds
-// something the title doesn't, then preview and tag chips.
-export function NoteTimelineRow({ note }: { note: Note }) {
-  const title = noteTitle(note);
-  // Show the mono path only when it carries a folder the title's leaf drops;
-  // compare extension-stripped so a bare "Morning.md" isn't shown under
-  // the title "Morning".
-  const showPath = !!note.path && note.path.replace(/\.md$/i, "") !== title;
-  const stamp = note.updatedAt ?? note.createdAt;
-  return (
-    <li>
-      <Link
-        to={`/n/${encodeURIComponent(note.id)}`}
-        className="focus-ring block px-4 py-3 hover:bg-bg/60 focus:bg-bg/60"
-      >
-        <div className="flex items-baseline justify-between gap-4">
-          <span className="min-w-0 truncate text-sm font-medium text-fg">{title}</span>
-          <span className="shrink-0 text-xs text-fg-dim">{relativeTime(stamp)}</span>
-        </div>
-        {showPath ? <p className="mt-0.5 min-w-0 truncate note-id">{note.path}</p> : null}
-        {note.preview ? (
-          <p className="mt-1 truncate text-sm text-fg-muted">{note.preview}</p>
-        ) : null}
-        {note.tags && note.tags.length > 0 ? (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {note.tags.map((t) => (
-              <span key={t} className="chip chip-tag max-w-full break-all">
-                #{t}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </Link>
-    </li>
-  );
-}
-
 // The day-grouped list itself. Callers own loading / empty / error states and
 // pass the resolved notes; this renders only the grouped sections. Day headers
-// link into the single-day view at `/today?date=<key>`.
+// link into the single-day view at `/today?date=<key>`. Role tags (pinned /
+// archived status on the shared row) resolve ONCE here, not per row.
 export function RecentTimeline({ notes }: { notes: Note[] }) {
+  const activeVault = useVaultStore((s) => s.getActiveVault());
+  const { roles } = useTagRoles(activeVault?.id ?? null);
   const groups = useMemo(() => groupNotesByDay(notes), [notes]);
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       {groups.map((g) => (
         <section key={g.key}>
           <SectionLabel>
@@ -108,11 +73,11 @@ export function RecentTimeline({ notes }: { notes: Note[] }) {
               {relativeDayLabel(g.key)}
             </Link>
           </SectionLabel>
-          <ol className="divide-y divide-border rounded-md border border-border bg-card">
+          <NoteRowList>
             {g.notes.map((n) => (
-              <NoteTimelineRow key={n.id} note={n} />
+              <NoteRow key={n.id} note={n} pinnedTag={roles.pinned} archivedTag={roles.archived} />
             ))}
-          </ol>
+          </NoteRowList>
         </section>
       ))}
     </div>
