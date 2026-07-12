@@ -207,6 +207,37 @@ export class VaultClient extends BaseVaultClient {
     return this.request<VaultLandingInfo>("");
   }
 
+  // ---------- Notes-only vault export ----------
+
+  /**
+   * `GET /api/export` — stream the vault's portable-markdown export as a
+   * downloadable `.tar`. Read-scoped on both doors' verb model.
+   *
+   * **Cloud-only today**: the Workers DO vault (`workers/vault/src/
+   * vault-do.ts`, `handleExport`) implements this route — attachment
+   * binaries (images/audio/PDF/video) ride along as `.parachute/
+   * attachments/<id>/<file>` sidecars (the byte-identity export engine,
+   * cloud 0.0.8-rc.25), so a cloud export is a complete, self-contained
+   * backup. **The self-hosted bun vault has no HTTP route for this** —
+   * its `routing.ts` dispatch table only knows `/notes`, `/tags`,
+   * `/vault`, `/storage`, `/find-path`, `/subscribe`, `/health`,
+   * `/unresolved-wikilinks`; export there is CLI-only
+   * (`parachute-vault export <dir>`, also attachment-complete when
+   * `assetsDir` is wired). A self-host vault answers this call with a
+   * plain 404 — the base class's `requestBlobWithRetry` throws
+   * `VaultNotFoundError` for that case, which callers should render as
+   * "not available on this vault yet" (with the CLI pointer) rather than
+   * a generic network failure.
+   *
+   * Reuses the base class's protected blob-retry loop (the same
+   * auth/refresh/reachability contract `fetchAttachmentBlob` rides) —
+   * there's nothing export-specific about the transport, only the URL.
+   */
+  async exportVault(): Promise<Blob> {
+    const target = `${this.vaultBaseUrl}/api/export`;
+    return this.requestBlobWithRetry(target, "/api/export", true);
+  }
+
   // ---------- Notes-only tag-curation endpoints ----------
 
   // `listTags` but with the full tag-identity record per row

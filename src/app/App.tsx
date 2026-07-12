@@ -65,6 +65,7 @@ const AddVaultReady = lazy(() =>
 const Calendar = lazy(() => import("./routes/Calendar").then((m) => ({ default: m.Calendar })));
 const ConnectAI = lazy(() => import("./routes/ConnectAI").then((m) => ({ default: m.ConnectAI })));
 const DayView = lazy(() => import("./routes/DayView").then((m) => ({ default: m.DayView })));
+const Export = lazy(() => import("./routes/Export").then((m) => ({ default: m.Export })));
 const Import = lazy(() => import("./routes/Import").then((m) => ({ default: m.Import })));
 const NoteEditor = lazy(() =>
   import("./routes/NoteEditor").then((m) => ({ default: m.NoteEditor })),
@@ -370,6 +371,7 @@ export function App() {
                   */}
                       <Route path="/capture" element={<Navigate to="/new" replace />} />
                       <Route path="/import" element={<Import />} />
+                      <Route path="/export" element={<Export />} />
                       <Route path="/connect" element={<ConnectAI />} />
                       {/*
                     W2-7: /map is the canonical Map room (label "Map" matches

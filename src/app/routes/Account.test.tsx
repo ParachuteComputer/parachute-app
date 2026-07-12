@@ -153,6 +153,7 @@ function renderAccount(navLog?: NavLogEntry[]) {
           <Route path="/" element={<div>Home surface</div>} />
           <Route path="/connect" element={<div>Connect surface</div>} />
           <Route path="/import" element={<div>Import surface</div>} />
+          <Route path="/export" element={<div>Export surface</div>} />
           <Route path="/vaults" element={<div>Vaults surface</div>} />
           <Route path="/add-vault" element={<div>Chooser surface</div>} />
           <Route path="/add" element={<div>Add surface</div>} />
@@ -597,6 +598,11 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
         "href",
         "/import",
       );
+      // Export is Import's sibling row (Wave-3).
+      expect(screen.getByRole("link", { name: /export notes/i })).toHaveAttribute(
+        "href",
+        "/export",
+      );
     });
 
     it("dims the AI row with the honest pointer when no vault is active", async () => {
@@ -608,8 +614,10 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
       await waitFor(() => expect(screen.getByText("ag@unforced.org")).toBeInTheDocument());
       expect(screen.getByText(/open a vault above to connect an ai to it/i)).toBeInTheDocument();
       expect(screen.queryByRole("link", { name: /connect your ai/i })).not.toBeInTheDocument();
-      // Import stays reachable — its own page holds the no-vault state.
+      // Import and Export both stay reachable — each page holds its own
+      // no-vault state.
       expect(screen.getByRole("link", { name: /import notes/i })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /export notes/i })).toBeInTheDocument();
     });
   });
 

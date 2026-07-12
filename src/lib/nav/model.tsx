@@ -4,6 +4,7 @@ import {
   IconCalendar,
   IconClock,
   IconCog,
+  IconExport,
   IconImport,
   IconMap,
   IconNotes,
@@ -34,8 +35,8 @@ import type { ReactNode } from "react";
 //   EXPLORE        — the destinations (Calendar · Tags · Activity ·
 //                    Map-once-earned): different visualizations/objects.
 //   YOUR PARACHUTE — the manager rooms (Account & plan · Vaults · Connect AI ·
-//                    Import notes). "The app AS the manager" finally has a
-//                    named home in the IA.
+//                    Import notes · Export notes). "The app AS the manager"
+//                    finally has a named home in the IA.
 // plus the SET UP shelf (incomplete guided steps, hidden when done/dismissed)
 // and the foot (Settings — pinned, unlabeled band).
 //
@@ -256,6 +257,15 @@ const IMPORT_ITEM: NavItem = {
   match: pathIs("/import"),
 };
 
+// Export's sibling nav entry (Wave-3) — same band, right after Import.
+const EXPORT_ITEM: NavItem = {
+  id: "export",
+  label: "Export notes",
+  to: "/export",
+  icon: <IconExport />,
+  match: pathIs("/export"),
+};
+
 const SETTINGS_ITEM: NavItem = {
   id: "settings",
   label: "Settings",
@@ -336,7 +346,7 @@ export function buildNavBands(signals: NavBandSignals): NavBand[] {
     {
       id: "parachute",
       label: "Your parachute",
-      items: [accountItem, VAULTS_ITEM, CONNECT_ITEM, IMPORT_ITEM],
+      items: [accountItem, VAULTS_ITEM, CONNECT_ITEM, IMPORT_ITEM, EXPORT_ITEM],
     },
   ];
 

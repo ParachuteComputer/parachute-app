@@ -1,4 +1,4 @@
-import { IconImport, IconSpark } from "@/components/NavIcons";
+import { IconExport, IconImport, IconSpark } from "@/components/NavIcons";
 import {
   BillingApiError,
   SessionExpiredError,
@@ -783,9 +783,12 @@ function VaultGlyph({ name }: { name: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Card 4 — Connections. Two icon-in-soft-circle rows (adopt #9): Connect your
-// AI → /connect, Import notes → /import. With no active vault the AI row dims
-// with the honest pointer — a vault is the thing an AI connects TO.
+// Card 4 — Connections. Icon-in-soft-circle rows (adopt #9): Connect your
+// AI → /connect, Import notes → /import, Export notes → /export (Wave-3 —
+// Import's sibling: "Open format. Export anytime." finally has a door). With
+// no active vault the AI row dims with the honest pointer — a vault is the
+// thing an AI connects TO. Import and Export both stay reachable regardless —
+// each page holds its own no-vault state (route-guard redirect).
 // ---------------------------------------------------------------------------
 
 function ConnectionsCard({ hasActiveVault }: { hasActiveVault: boolean }) {
@@ -821,6 +824,13 @@ function ConnectionsCard({ hasActiveVault }: { hasActiveVault: boolean }) {
           title="Import notes"
           description="Bring your notes over from anywhere markdown lives."
         />
+        <ConnectionRow
+          to="/export"
+          tone="sun"
+          icon={<IconExport width={18} height={18} />}
+          title="Export notes"
+          description="Download your vault as open Markdown — yours to keep."
+        />
       </div>
     </section>
   );
@@ -834,7 +844,7 @@ function ConnectionRow({
   description,
 }: {
   to: string;
-  tone: "sky" | "grass";
+  tone: "sky" | "grass" | "sun";
   icon: ReactNode;
   title: string;
   description: string;
@@ -858,14 +868,25 @@ function ConnectionRow({
 }
 
 // The 36–40px tinted soft circle behind a thin-stroke icon (adopt #9). Sky =
-// the "connected apps" voice; grass = notes coming home to the vault.
-function ConnectionCircle({ tone, children }: { tone: "sky" | "grass"; children: ReactNode }) {
+// the "connected apps" voice; grass = notes coming home to the vault; sun =
+// notes going back out into the light (Export's mirror of grass).
+function ConnectionCircle({
+  tone,
+  children,
+}: {
+  tone: "sky" | "grass" | "sun";
+  children: ReactNode;
+}) {
+  const toneClass =
+    tone === "grass"
+      ? "bg-grass-soft text-grass-ink"
+      : tone === "sun"
+        ? "bg-sun-soft text-sun-ink"
+        : "bg-bg-soft";
   return (
     <span
       aria-hidden
-      className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${
-        tone === "grass" ? "bg-grass-soft text-grass-ink" : "bg-bg-soft"
-      }`}
+      className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${toneClass}`}
       style={tone === "sky" ? { color: "var(--color-sky)" } : undefined}
     >
       {children}
