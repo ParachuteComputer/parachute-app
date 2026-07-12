@@ -1,5 +1,42 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.14.0] - 2026-07-11
+
+**LZ-4 — Recent joins: `/` and `/notes` are one surface.** The centerpiece's second half
+(LENS-SPEC §1.1 + §3): BootGate's vault-active branches render `<VaultSurface lens="recent"/>`,
+`Home.tsx` dissolves into the surface and is deleted. The lens rail now truly navigates between
+lenses of ONE component — Recent · All · Pinned · Archive are dresses over the same VaultSurface.
+Minor bump: the surface unification.
+
+- **The Recent lens** (§3 anatomy): vault masthead (shared with every lens) · the composer
+  (Recent + All are the writing lenses, decision i; focus-warmed while the vault is fresh) · the
+  Recent-only furniture · the lens label "RECENT · what you've touched lately" · the day-grouped
+  `RecentTimeline` window. `VaultSurface` internally dispatches two bodies — the capped live
+  window vs the paginated searchable query (decision ii: different data machinery, one surface).
+- **Archived notes drop OUT of Recent** (§1.1): Home used to show them dimmed in the timeline;
+  Recent now filters them out entirely — archived means set aside, not "touched lately". The
+  show-archived capability lives on the All lens (Filters panel), unchanged.
+- **The floor** (§1.1): Recent caps at the most recent **14 days or 100 notes, whichever comes
+  first** (local calendar days back from today, sorted by the same touch stamp the timeline
+  buckets by), with a quiet foot line — "Looking for older notes? All notes →" — naming the edge
+  and carrying the old header's All-notes door. A vault with notes but none inside the window
+  gets an honest dormant line instead of a false "empty vault" invitation. The cap is what makes
+  Recent *mean* recent.
+- **Recent-only furniture, confined** (§3 item 3): TrialCountdownNudge, QuickDoors, SetupNudge,
+  PlanBacklink, and the fresh-mode composer warmth relocate from Home verbatim — on the Recent
+  lens exclusively. DESIGN-SPEC §3.1's "on Today only" ambience rule now reads "on the Recent
+  lens only": the same four sanctioned places, no expansion (the All/Pinned/Archive bodies never
+  even fire the account-summary fetch). Fresh-vault onboarding is identical to the old Home.
+- **`Home.tsx` deleted**; its tests migrate to `VaultSurface.recent(.offline).test.tsx` with
+  nothing losing coverage. `/today` bare → `/` and `/today?date=` → DayView stay exactly as
+  they were; BootGate's own logic (`?add=` shim, signed-out Landing, session check, net-error)
+  is untouched; VaultSurface stays the one eager FCP chunk for both doors.
+- **Remount honesty** (§3.2, accepted): `/`=BootGate vs `/notes`=VaultSurface are different
+  element types, so a Recent↔All switch remounts — the composer restores its draft synchronously
+  at mount, the LZ-1 blur/unmount flush protects mid-type switches, and the lists paint from the
+  react-query cache. Covered by a test that types on Recent, switches to All, and finds the words
+  intact.
+
 ## [0.13.0] - 2026-07-11
 
 **LZ-3 — one surface at `/notes`: Notes becomes the VaultSurface.** The centerpiece's first half

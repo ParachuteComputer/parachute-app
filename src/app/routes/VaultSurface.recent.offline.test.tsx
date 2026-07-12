@@ -1,4 +1,4 @@
-import { Home } from "@/app/routes/Home";
+import { VaultSurface } from "@/app/routes/VaultSurface";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -8,19 +8,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // FIX 2 (error-over-data): the phone-first PWA must never blank what you're
 // reading because a background refetch failed. When the notes query is in an
-// error state but still holds the previously-loaded notes, Home renders them
-// (under a quiet offline ribbon) instead of the error block; the error block
-// only shows when there is genuinely no cached data.
+// error state but still holds the previously-loaded notes, the Recent lens
+// renders them (under a quiet offline ribbon) instead of the error block; the
+// error block only shows when there is genuinely no cached data.
 //
 // This coverage used to live on the Today route's no-param front-door
-// timeline; F8/W2-3 folded that timeline into Home (Today's `/today` no-param
-// case is now a redirect shim — see DayView.test.tsx), so the test moved with
-// the behavior it exercises.
+// timeline; F8/W2-3 folded that timeline into Home, and LZ-4 dissolved Home
+// into VaultSurface's Recent lens — the test moved with the behavior it
+// exercises both times.
 //
 // react-query's observer almost never surfaces `isError: true` WITH `data`
 // present on its own (a same-key refetch failure stays `status: success`),
 // so we assert the RENDERING CONTRACT directly by driving the data hook into
-// the exact `{ isError, data }` combinations the route must handle.
+// the exact `{ isError, data }` combinations the lens must handle.
 const { mockDateViews } = vi.hoisted(() => ({ mockDateViews: vi.fn() }));
 
 vi.mock("@/lib/vault", async (importOriginal) => {
@@ -28,12 +28,14 @@ vi.mock("@/lib/vault", async (importOriginal) => {
   return { ...actual, useNotesForDateViews: () => mockDateViews() };
 });
 
+// Stamped RELATIVE to now: the Recent floor (14 days) would age a fixed date
+// out of the window and turn the kept-note case into the dormant line.
 const KEPT_NOTE: Note = {
   id: "n1",
   path: "journal/kept.md",
   preview: "Saved locally.",
-  createdAt: "2026-04-18T09:00:00Z",
-  updatedAt: "2026-04-18T09:00:00Z",
+  createdAt: new Date(Date.now() - 3600_000).toISOString(),
+  updatedAt: new Date(Date.now() - 3600_000).toISOString(),
 };
 
 function seedStore() {
@@ -54,23 +56,23 @@ function seedStore() {
   });
 }
 
-function renderHome() {
-  // The notes hook is mocked above, but Home's trial-ambience summary hook
-  // (W2-8) is a real useQuery — it needs a client in context even while
+function renderRecent() {
+  // The notes hook is mocked above, but the lens's trial-ambience summary
+  // hook (W2-8) is a real useQuery — it needs a client in context even while
   // disabled (the seed vault's OAuth clientId keeps it disabled here).
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
     <MemoryRouter initialEntries={["/"]}>
       <QueryClientProvider client={qc}>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<VaultSurface lens="recent" />} />
         </Routes>
       </QueryClientProvider>
     </MemoryRouter>,
   );
 }
 
-describe("Home — error-over-data rendering (FIX 2)", () => {
+describe("VaultSurface Recent lens — error-over-data rendering (FIX 2)", () => {
   beforeEach(() => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     seedStore();
@@ -87,7 +89,7 @@ describe("Home — error-over-data rendering (FIX 2)", () => {
       isError: true,
       error: new Error("offline"),
     });
-    renderHome();
+    renderRecent();
 
     expect(screen.getByText("kept")).toBeInTheDocument();
     expect(screen.queryByText(/couldn't load recent notes/i)).toBeNull();
@@ -101,7 +103,7 @@ describe("Home — error-over-data rendering (FIX 2)", () => {
       isError: true,
       error: new Error("offline"),
     });
-    renderHome();
+    renderRecent();
 
     expect(screen.getByText(/couldn't load recent notes/i)).toBeInTheDocument();
     expect(screen.queryByText(/showing what's saved/i)).toBeNull();

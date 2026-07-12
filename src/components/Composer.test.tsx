@@ -13,9 +13,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // merge can drop it onto both the Recent and All lenses. This file is the
 // composer's own test suite, moved out of Home.test.tsx and re-pointed at the
 // extracted component — same assertions, same regressions pinned, now
-// exercising `<Composer>` directly instead of through `<Home>`. Home.test.tsx
-// keeps the surrounding-chrome tests (masthead, quick doors, setup nudge,
-// trial ambience) that still exercise Home end to end.
+// exercising `<Composer>` directly instead of through `<Home>`. The
+// surrounding-chrome tests (masthead, quick doors, setup nudge, trial
+// ambience) live in VaultSurface.recent.test.tsx — Home dissolved into the
+// Recent lens in LZ-4.
 //
 // These pin the honest contract: type in place, save without navigating away,
 // one shared draft with /new, a capability-gated mic — and the flush-on-blur
