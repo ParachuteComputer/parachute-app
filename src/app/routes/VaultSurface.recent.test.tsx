@@ -2,7 +2,6 @@ import { VaultSurface } from "@/app/routes/VaultSurface";
 import { getAccountSummaryState } from "@/lib/account/client";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import type { AccountSummary } from "@/lib/account/types";
-import { loadChecklistState } from "@/lib/home/checklist";
 import { __resetInstallAffordanceForTests } from "@/lib/pwa-install";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -258,7 +257,37 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
     expect(screen.getByRole("form", { name: /write a note/i })).not.toHaveClass("composer-focus");
   });
 
-  it("dismisses the setup nudge and remembers it", async () => {
+  // THE CRUX (W3): this is the new-device fix, proven in place. `beforeEach`
+  // already clears localStorage for every test in this file — so this vault
+  // is exactly what an established account looks like on a brand-new browser
+  // (a real note, zero local storage). Before the rework this still showed
+  // the shelf (connect/import were per-device ticks that never got made on a
+  // fresh device); now `write` is the only tracked signal, and a real note
+  // satisfies it everywhere.
+  it("W3: an established vault shows NO setup shelf, even with empty localStorage (the cross-device fix)", async () => {
+    installFetch(WITH_USER_NOTE);
+    render(
+      <Wrap>
+        <VaultSurface lens="recent" />
+      </Wrap>,
+    );
+    expect(await screen.findByText("My first thought")).toBeInTheDocument();
+    expect(screen.queryByText(/finish setting up/i)).not.toBeInTheDocument();
+    expect(localStorage.getItem("notes:home-checklist:v1")).toBeNull();
+  });
+
+  it("shows the setup shelf for a genuinely fresh/empty vault (seed guide only, no user note)", async () => {
+    installFetch(SEED_ONLY);
+    render(
+      <Wrap>
+        <VaultSurface lens="recent" />
+      </Wrap>,
+    );
+    expect(await screen.findByText(/finish setting up/i)).toBeInTheDocument();
+    expect(screen.getByText(/write your first note/i)).toBeInTheDocument();
+  });
+
+  it("dismisses the setup nudge for this session only — no longer persisted (W3)", async () => {
     installFetch(SEED_ONLY);
     render(
       <Wrap>
@@ -268,7 +297,10 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
     await screen.findByText(/finish setting up/i);
     fireEvent.click(screen.getByRole("button", { name: /dismiss setup/i }));
     await waitFor(() => expect(screen.queryByText(/finish setting up/i)).not.toBeInTheDocument());
-    expect(loadChecklistState("v1").dismissed).toBe(true);
+    // Nothing written to storage — dismissing is in-memory only now. A fresh
+    // mount (new tab, reload) re-evaluates from the real vault state instead
+    // of trusting a stale per-device flag.
+    expect(localStorage.getItem("notes:home-checklist:v1")).toBeNull();
   });
 
   it("hides the account backlink for a self-host (OAuth) vault", async () => {

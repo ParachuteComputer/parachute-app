@@ -1,5 +1,4 @@
 import { ConnectAI } from "@/app/routes/ConnectAI";
-import { loadChecklistState } from "@/lib/home/checklist";
 import { useVaultStore } from "@/lib/vault/store";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -75,11 +74,15 @@ describe("ConnectAI", () => {
     );
   });
 
-  it("marks the connect step done and returns home", async () => {
+  it("W3: has no manual 'connected' tick — a plain way back home instead", async () => {
     renderConnect();
-    fireEvent.click(screen.getByRole("button", { name: /i've connected my ai/i }));
+    // The old per-device "I've connected my AI" tick is gone (checklist.ts's
+    // docstring: no client-detectable, cross-device signal exists for this),
+    // so there's nothing here to mark done and nothing to write to storage.
+    expect(screen.queryByRole("button", { name: /connected/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: /done.*back to your vault/i }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/"));
-    expect(loadChecklistState("v1").overrides.connect).toBe(true);
+    expect(localStorage.getItem("notes:home-checklist:v1")).toBeNull();
   });
 
   it("redirects to the index when no vault is connected", () => {
