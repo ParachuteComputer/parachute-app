@@ -31,19 +31,21 @@ import {
   useParams,
   useSearchParams,
 } from "react-router";
-import { Home } from "./routes/Home";
 import { Landing } from "./routes/Landing";
 import { VaultSurface } from "./routes/VaultSurface";
 
-// Home + Landing + VaultSurface stay eager: the index dispatcher paints the
-// guided Home (with a vault) or the Landing (without) on first load, so
-// splitting them would block FCP on a network round-trip. Every other route
-// gets its own chunk so the editor's CodeMirror, the graph's force-graph layer,
-// settings, etc. don't pile into the initial download. DayView (the day
-// drill-in, formerly Today's dual-purpose route) moved into this lazy set in
-// W2-3 — the no-param front-door timeline it used to render (which DID need
-// to be eager) is gone, absorbed into Home; what's left is a secondary
-// destination reached from Calendar / day headers, same as any other room.
+// Landing + VaultSurface stay eager: the index dispatcher paints the vault
+// surface's Recent lens (with a vault) or the Landing (without) on first
+// load, so splitting them would block FCP on a network round-trip — and
+// since LZ-4 the `/` and `/notes` doors share the ONE eager VaultSurface
+// chunk (Home dissolved into it). Every other route gets its own chunk so
+// the editor's CodeMirror, the graph's force-graph layer, settings, etc.
+// don't pile into the initial download. DayView (the day drill-in, formerly
+// Today's dual-purpose route) moved into this lazy set in W2-3 — the
+// no-param front-door timeline it used to render (which DID need to be
+// eager) is gone, absorbed into Home and now the Recent lens; what's left is
+// a secondary destination reached from Calendar / day headers, same as any
+// other room.
 const Account = lazy(() => import("./routes/Account").then((m) => ({ default: m.Account })));
 const Activity = lazy(() => import("./routes/Activity").then((m) => ({ default: m.Activity })));
 const AddVault = lazy(() => import("./routes/AddVault").then((m) => ({ default: m.AddVault })));
@@ -85,11 +87,13 @@ const CheckEmail = lazy(() =>
 
 // The boot dispatcher (`/`) — SYNTHESIS "boot dispatcher"; Aaron's confusion #2
 // (a signed-in person never gets sent to an auth screen). Precedence: a vault
-// connected on THIS device → Home immediately (no network); else ask the hosted
-// door for the session and render the front door (signed-out), the "already
-// signed in" card (signed-in, #9), or the net-error weather (#12). The session
-// check gates first paint on `/` only — deep routes with a local vault are
-// unaffected. `?add=<url>` stays a connect deep-link into `/add`.
+// connected on THIS device → the VaultSurface's Recent lens immediately (no
+// network — `/` and `/notes` are one component since LZ-4, wearing different
+// lenses); else ask the hosted door for the session and render the front door
+// (signed-out), the "already signed in" card (signed-in, #9), or the net-error
+// weather (#12). The session check gates first paint on `/` only — deep routes
+// with a local vault are unaffected. `?add=<url>` stays a connect deep-link
+// into `/add`.
 function BootGate() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const [searchParams] = useSearchParams();
@@ -120,14 +124,14 @@ function BootGate() {
   if (searchParams.get("add")) {
     return <Navigate to={`/add?${searchParams.toString()}`} replace />;
   }
-  // A vault already lives on this device — the notes layer owns it.
-  if (activeVault) return <Home />;
+  // A vault already lives on this device — the surface owns it, Recent lens.
+  if (activeVault) return <VaultSurface lens="recent" />;
   // Resolving the session (brief) — a calm neutral loader, not "signing you in"
   // (we don't yet know who they are).
   if (!decision) return <BootLoading />;
   switch (decision.kind) {
     case "home":
-      return <Home />;
+      return <VaultSurface lens="recent" />;
     case "signed-in":
       return (
         <Landing

@@ -1,5 +1,5 @@
-import { Home } from "@/app/routes/Home";
 import { NoteNew } from "@/app/routes/NoteNew";
+import { VaultSurface } from "@/app/routes/VaultSurface";
 import { loadDraft, saveDraft } from "@/lib/drafts/store";
 import { type LensDB, openLensDB } from "@/lib/sync/db";
 import { listPending } from "@/lib/sync/queue";
@@ -1498,13 +1498,13 @@ describe("NoteNew — local draft persistence (notes#175)", () => {
 });
 
 // W2-10 — the honest composer's shared-draft contract, proven END TO END:
-// Home's in-place composer and this route read/write the SAME per-vault
-// draft (`NEW_NOTE_SCOPE`). Typing on Today and taking the "Open full
-// editor" escape must land on a /new that already holds the text — the
-// hop costs nothing. (Home.test.tsx pins the composer's own behaviors;
+// the Recent lens's in-place composer and this route read/write the SAME
+// per-vault draft (`NEW_NOTE_SCOPE`). Typing on Recent and taking the "Open
+// full editor" escape must land on a /new that already holds the text — the
+// hop costs nothing. (Composer.test.tsx pins the composer's own behaviors;
 // this lives here because the proof needs the REAL NoteNew on the other
 // side of the hop.)
-describe("W2-10 — one shared draft: Home's composer ↔ /new", () => {
+describe("W2-10 — one shared draft: the Recent lens's composer ↔ /new", () => {
   beforeEach(async () => {
     const db = await freshDb();
     db.close();
@@ -1518,12 +1518,12 @@ describe("W2-10 — one shared draft: Home's composer ↔ /new", () => {
     vi.unstubAllGlobals();
   });
 
-  it("text typed on Today survives the 'Open full editor' hop — /new opens with it", async () => {
+  it("text typed on Recent survives the 'Open full editor' hop — /new opens with it", async () => {
     installFetch({ "/api/notes?": { body: [] } });
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<VaultSurface lens="recent" />} />
           <Route path="/new" element={<NoteNew />} />
         </Routes>
       </MemoryRouter>,
@@ -1534,8 +1534,8 @@ describe("W2-10 — one shared draft: Home's composer ↔ /new", () => {
     fireEvent.change(input, { target: { value: "a thought that must survive" } });
     fireEvent.click(screen.getByRole("link", { name: /open full editor/i }));
 
-    // The REAL /new: the editor opens holding exactly the Today text, and
-    // the restore banner says so out loud.
+    // The REAL /new: the editor opens holding exactly the Recent-lens text,
+    // and the restore banner says so out loud.
     const editor = await screen.findByTestId("cm-editor");
     expect(editor).toHaveValue("a thought that must survive");
     expect(screen.getByTestId("draft-restored")).toBeInTheDocument();

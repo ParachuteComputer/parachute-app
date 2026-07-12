@@ -1,4 +1,4 @@
-import { Home } from "@/app/routes/Home";
+import { VaultSurface } from "@/app/routes/VaultSurface";
 import { getAccountSummaryState } from "@/lib/account/client";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import type { AccountSummary } from "@/lib/account/types";
@@ -11,8 +11,15 @@ import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The Recent lens (LZ-4) — the old Home dissolved into VaultSurface. This
+// suite is Home.test.tsx migrated (masthead, quick doors, setup nudge, trial
+// ambience, day-header hop, first-capture invitation — nothing Home tested
+// loses coverage), plus the LZ-4 changes: the archived drop-out, the
+// 14-day/100-note floor + foot line, the Recent-only furniture confinement,
+// and the draft surviving a Recent→All lens switch.
+
 // The shared account-summary read (trial ambience, §3.1 places 2 + 4) — mocked
-// so Home tests control the plan state without wiring a whole account door.
+// so these tests control the plan state without wiring a whole account door.
 // Spreads the real module so everything else (error classes etc.) stays real.
 vi.mock("@/lib/account/client", async () => {
   const actual =
@@ -85,13 +92,18 @@ function Wrap({ children }: { children: ReactNode }) {
   );
 }
 
+// Fixture stamps are RELATIVE to now — the Recent floor (14 days) would age
+// fixed dates out of the window and time-bomb the suite.
+const hoursAgo = (n: number) => new Date(Date.now() - n * 3600_000).toISOString();
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+
 const SEED_ONLY: Row[] = [
   {
     id: "g1",
     path: "Welcome to your vault 🪂",
     tags: ["guide"],
-    createdAt: "2026-07-01T09:00:00.000Z",
-    updatedAt: "2026-07-01T09:00:00.000Z",
+    createdAt: hoursAgo(5),
+    updatedAt: hoursAgo(5),
   },
 ];
 
@@ -102,8 +114,8 @@ const WITH_USER_NOTE: Row[] = [
     path: "My first thought",
     preview: "Something I wrote.",
     tags: ["capture"],
-    createdAt: "2026-07-02T09:00:00.000Z",
-    updatedAt: "2026-07-02T09:00:00.000Z",
+    createdAt: hoursAgo(2),
+    updatedAt: hoursAgo(2),
   },
 ];
 
@@ -143,7 +155,7 @@ const PAID_SUMMARY: AccountSummary = {
   has_billing_customer: true,
 };
 
-describe("Home — the warm front door", () => {
+describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
   beforeEach(() => {
     localStorage.clear();
     __resetInstallAffordanceForTests();
@@ -163,7 +175,7 @@ describe("Home — the warm front door", () => {
     installFetch(SEED_ONLY);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     // The H1 is the vault name — not "Home", not "Welcome". The name is the
@@ -172,16 +184,25 @@ describe("Home — the warm front door", () => {
     expect(screen.getByText(/everything here is yours/i)).toBeInTheDocument();
   });
 
-  // W2-10's honest composer (F10: type in place, save without leaving,
-  // one shared draft with /new, the flush-on-blur guard, a capability-gated
-  // mic) — LZ-1 extracted the component to src/components/Composer.tsx; its
-  // own test suite moved with it: see Composer.test.tsx.
+  it("wears the lens label over the list — RECENT · what you've touched lately", async () => {
+    installFetch(WITH_USER_NOTE);
+    render(
+      <Wrap>
+        <VaultSurface lens="recent" />
+      </Wrap>,
+    );
+    expect(
+      await screen.findByRole("heading", { name: /recent · what you've touched lately/i }),
+    ).toBeInTheDocument();
+    // The lens is a label, never the headline — the H1 stays the vault name.
+    expect(screen.queryByRole("heading", { level: 1, name: /recent/i })).toBeNull();
+  });
 
-  it("shows warm quick doors + a setup nudge for a fresh vault", async () => {
+  it("shows warm quick doors + a setup nudge + the focus-warmed composer for a fresh vault", async () => {
     installFetch(SEED_ONLY);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     await screen.findByRole("heading", { level: 1, name: "default" });
@@ -191,6 +212,9 @@ describe("Home — the warm front door", () => {
     expect(within(quickNav).getByText(/bring your notes over/i)).toBeInTheDocument();
     // The single quiet sun nudge (not a wall of checkboxes).
     expect(screen.getByText(/finish setting up/i)).toBeInTheDocument();
+    // The fresh-mode focus warmth rides the composer (`focused` → the
+    // composer-focus ring), exactly as on the old Home.
+    expect(screen.getByRole("form", { name: /write a note/i })).toHaveClass("composer-focus");
     // The seed guide note shows in the timeline (it's a real note).
     expect(screen.getByText(/welcome to your vault/i)).toBeInTheDocument();
   });
@@ -199,20 +223,22 @@ describe("Home — the warm front door", () => {
     installFetch(WITH_USER_NOTE);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     expect(await screen.findByText("My first thought")).toBeInTheDocument();
     // Vault name still leads; the fresh-only quick doors are gone.
     expect(screen.getByRole("heading", { level: 1, name: "default" })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /quick actions/i })).not.toBeInTheDocument();
+    // No focus warmth once the vault is lived-in.
+    expect(screen.getByRole("form", { name: /write a note/i })).not.toHaveClass("composer-focus");
   });
 
   it("dismisses the setup nudge and remembers it", async () => {
     installFetch(SEED_ONLY);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     await screen.findByText(/finish setting up/i);
@@ -227,18 +253,18 @@ describe("Home — the warm front door", () => {
     installFetch(SEED_ONLY);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     await screen.findByRole("heading", { level: 1, name: "default" });
     expect(screen.queryByRole("link", { name: /manage your account/i })).not.toBeInTheDocument();
   });
 
-  it("W2-5: the header's stopgap Calendar link is gone (the nav bands carry Calendar now)", async () => {
+  it("W2-5: the header's stopgap Calendar link stays gone (the nav bands carry Calendar)", async () => {
     installFetch(SEED_ONLY);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     await screen.findByRole("heading", { level: 1, name: "default" });
@@ -246,21 +272,30 @@ describe("Home — the warm front door", () => {
   });
 
   it("F8/W2-3: the day-header hop still lands on the day drill-in", async () => {
-    // Pin the clock so WITH_USER_NOTE's 2026-07-02 row reads as "Today" — a
-    // deterministic day-group label regardless of host locale/timezone.
+    // Pin the clock so the 2026-07-02 row reads as "Today" — a deterministic
+    // day-group label regardless of host locale/timezone (and safely inside
+    // the 14-day floor).
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date(2026, 6, 2, 12, 0, 0));
-    installFetch(WITH_USER_NOTE);
+    installFetch([
+      {
+        id: "u1",
+        path: "My first thought",
+        preview: "Something I wrote.",
+        tags: ["capture"],
+        createdAt: "2026-07-02T09:00:00.000Z",
+        updatedAt: "2026-07-02T09:00:00.000Z",
+      },
+    ]);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     await screen.findByText("My first thought");
-    // WITH_USER_NOTE's second row is dated 2026-07-02 — its day-group header
-    // is a link into the single-day view (shared RecentTimeline component;
-    // this asserts the hop still works now that Home is the only renderer of
-    // this list).
+    // The row's day-group header is a link into the single-day view (shared
+    // RecentTimeline component; this asserts the hop still works now that
+    // the Recent lens is the only renderer of this list).
     const dayHeader = screen.getByRole("link", { name: /^today$/i });
     expect(dayHeader).toHaveAttribute("href", "/today?date=2026-07-02");
   });
@@ -269,35 +304,27 @@ describe("Home — the warm front door", () => {
     installFetch([]);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     expect(await screen.findByText(/a quiet, empty page/i)).toBeInTheDocument();
+    // The calm arrival: no lens label over nothing, no floor foot (All notes
+    // would be exactly as empty).
+    expect(
+      screen.queryByRole("heading", { name: /recent · what you've touched lately/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/looking for older notes/i)).not.toBeInTheDocument();
     // W2-10: the CTA focuses the real composer in place — no hop to /new.
     fireEvent.click(screen.getByRole("button", { name: /write the first one/i }));
     expect(screen.getByRole("textbox", { name: /what's on your mind\?/i })).toHaveFocus();
   });
 
   it("shows an in-app /account backlink for a home-door vault (no cross-origin console hop)", async () => {
-    useVaultStore.setState({
-      vaults: {
-        v1: {
-          id: "v1",
-          url: "https://u.parachute.computer/vault/aaron",
-          name: "aaron",
-          issuer: "https://u.parachute.computer",
-          clientId: HOSTED_CLIENT_ID, // home-door (account-minted) vault
-          scope: "full",
-          addedAt: "2026-07-01T00:00:00.000Z",
-          lastUsedAt: "2026-07-01T00:00:00.000Z",
-        },
-      },
-      activeVaultId: "v1",
-    });
+    seedHostedStore();
     installFetch(SEED_ONLY);
     render(
       <Wrap>
-        <Home />
+        <VaultSurface lens="recent" />
       </Wrap>,
     );
     await screen.findByRole("heading", { level: 1, name: "aaron" });
@@ -308,9 +335,124 @@ describe("Home — the warm front door", () => {
   });
 
   // ---------------------------------------------------------------------
-  // Trial ambience (DESIGN-SPEC §3.1) — Home carries sanctioned places 2
-  // (the PlanBacklink trial line) and 4 (the ≤7-day countdown nudge under
-  // the composer, Today only). Nowhere else on this page.
+  // LZ-4 §1.1 — archived notes drop OUT of Recent, and the window wears a
+  // visible floor: 14 days or 100 notes, whichever comes first, with the
+  // quiet "All notes →" foot.
+  // ---------------------------------------------------------------------
+  describe("the archived drop + the floor", () => {
+    it("drops archived notes out of Recent entirely (Home used to show them dimmed)", async () => {
+      installFetch([
+        ...WITH_USER_NOTE,
+        {
+          id: "a1",
+          path: "Set-aside plan",
+          tags: ["archived"],
+          createdAt: hoursAgo(1),
+          updatedAt: hoursAgo(1),
+        },
+      ]);
+      render(
+        <Wrap>
+          <VaultSurface lens="recent" />
+        </Wrap>,
+      );
+      expect(await screen.findByText("My first thought")).toBeInTheDocument();
+      // Fresher than every other note, and still not here — archived means
+      // set aside, not "touched lately".
+      expect(screen.queryByText("Set-aside plan")).not.toBeInTheDocument();
+      // And Recent carries no All-lens chrome to toggle them back: no search,
+      // no Filters, no show-archived. That capability lives on All.
+      expect(screen.queryByLabelText(/search notes/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /filters/i })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
+    });
+
+    it("cuts the window at 14 days — older notes belong to All notes", async () => {
+      installFetch([
+        ...WITH_USER_NOTE,
+        {
+          id: "old1",
+          path: "Last month's plan",
+          tags: ["capture"],
+          createdAt: daysAgo(20),
+          updatedAt: daysAgo(20),
+        },
+      ]);
+      render(
+        <Wrap>
+          <VaultSurface lens="recent" />
+        </Wrap>,
+      );
+      expect(await screen.findByText("My first thought")).toBeInTheDocument();
+      expect(screen.queryByText("Last month's plan")).not.toBeInTheDocument();
+      // The floor is visible: the quiet foot points at everything.
+      expect(screen.getByText(/looking for older notes\?/i)).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /all notes/i })).toHaveAttribute("href", "/notes");
+    });
+
+    it("caps the window at 100 notes even inside the 14 days", async () => {
+      const many: Row[] = Array.from({ length: 120 }, (_, i) => ({
+        id: `m${i}`,
+        path: `quick/thought-${i}`,
+        tags: ["capture"],
+        createdAt: hoursAgo(i * 0.1),
+        updatedAt: hoursAgo(i * 0.1),
+      }));
+      installFetch(many);
+      render(
+        <Wrap>
+          <VaultSurface lens="recent" />
+        </Wrap>,
+      );
+      await screen.findByText("quick/thought-0");
+      const section = screen.getByRole("region", { name: /recent notes/i });
+      // The 100 most recent rows render; the 20 oldest wait behind the foot.
+      expect(within(section).getAllByRole("listitem")).toHaveLength(100);
+      expect(within(section).queryByText("quick/thought-119")).not.toBeInTheDocument();
+      expect(within(section).getByText(/looking for older notes\?/i)).toBeInTheDocument();
+    });
+
+    it("a dormant vault (notes exist, none inside the window) gets the honest line + the door — not the empty-page invite", async () => {
+      installFetch([
+        {
+          id: "old1",
+          path: "Last month's plan",
+          tags: ["capture"],
+          createdAt: daysAgo(30),
+          updatedAt: daysAgo(30),
+        },
+      ]);
+      render(
+        <Wrap>
+          <VaultSurface lens="recent" />
+        </Wrap>,
+      );
+      expect(await screen.findByText(/nothing touched in the last two weeks/i)).toBeInTheDocument();
+      // Not the empty-vault invitation — the vault ISN'T empty.
+      expect(screen.queryByText(/a quiet, empty page/i)).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /all notes/i })).toHaveAttribute("href", "/notes");
+    });
+
+    it("the foot rides the populated window too — Recent always names its edge", async () => {
+      installFetch(WITH_USER_NOTE);
+      render(
+        <Wrap>
+          <VaultSurface lens="recent" />
+        </Wrap>,
+      );
+      await screen.findByText("My first thought");
+      const foot = screen.getByText(/looking for older notes\?/i);
+      expect(within(foot).getByRole("link", { name: /all notes/i })).toHaveAttribute(
+        "href",
+        "/notes",
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Trial ambience (DESIGN-SPEC §3.1) — the Recent lens carries sanctioned
+  // places 2 (the PlanBacklink trial line) and 4 (the ≤7-day countdown nudge
+  // under the composer, Recent lens only). Nowhere else on this surface.
   // ---------------------------------------------------------------------
   describe("trial ambience — the backlink line + the ≤7-day nudge", () => {
     it("the backlink carries the trial countdown while trialing (place 2)", async () => {
@@ -319,7 +461,7 @@ describe("Home — the warm front door", () => {
       installFetch(SEED_ONLY);
       render(
         <Wrap>
-          <Home />
+          <VaultSurface lens="recent" />
         </Wrap>,
       );
       await screen.findByRole("heading", { level: 1, name: "aaron" });
@@ -335,7 +477,7 @@ describe("Home — the warm front door", () => {
       installFetch(SEED_ONLY);
       render(
         <Wrap>
-          <Home />
+          <VaultSurface lens="recent" />
         </Wrap>,
       );
       await screen.findByRole("heading", { level: 1, name: "aaron" });
@@ -349,7 +491,7 @@ describe("Home — the warm front door", () => {
       installFetch(SEED_ONLY);
       render(
         <Wrap>
-          <Home />
+          <VaultSurface lens="recent" />
         </Wrap>,
       );
       const nudge = await screen.findByRole("link", {
@@ -367,7 +509,7 @@ describe("Home — the warm front door", () => {
       installFetch(SEED_ONLY);
       render(
         <Wrap>
-          <Home />
+          <VaultSurface lens="recent" />
         </Wrap>,
       );
       await screen.findByRole("heading", { level: 1, name: "aaron" });
@@ -383,7 +525,7 @@ describe("Home — the warm front door", () => {
       installFetch(SEED_ONLY);
       render(
         <Wrap>
-          <Home />
+          <VaultSurface lens="recent" />
         </Wrap>,
       );
       expect(
@@ -398,7 +540,7 @@ describe("Home — the warm front door", () => {
       installFetch(SEED_ONLY);
       const { unmount } = render(
         <Wrap>
-          <Home />
+          <VaultSurface lens="recent" />
         </Wrap>,
       );
       await screen.findByRole("heading", { level: 1, name: "aaron" });
@@ -410,12 +552,103 @@ describe("Home — the warm front door", () => {
       seedStore();
       render(
         <Wrap>
-          <Home />
+          <VaultSurface lens="recent" />
         </Wrap>,
       );
       await screen.findByRole("heading", { level: 1, name: "default" });
       expect(getAccountSummaryState).not.toHaveBeenCalled();
       expect(screen.queryByText(/your trial ends/i)).not.toBeInTheDocument();
     });
+  });
+
+  // ---------------------------------------------------------------------
+  // LZ-4 — furniture confinement: the Recent-only furniture (trial nudge,
+  // quick doors, setup nudge, plan backlink) appears on the Recent lens
+  // EXCLUSIVELY. Same four sanctioned ambience places, no expansion, no
+  // leakage onto All/Pinned/Archive.
+  // ---------------------------------------------------------------------
+  describe("Recent-only furniture stays off the other lenses", () => {
+    const assertNoFurniture = () => {
+      expect(screen.queryByRole("navigation", { name: /quick actions/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/finish setting up/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/your trial ends/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /manage your account/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/looking for older notes/i)).not.toBeInTheDocument();
+    };
+
+    it("the All lens carries none of it — and never even fetches the summary", async () => {
+      // Hosted vault + a live trial: the strongest bait. Still nothing.
+      seedHostedStore();
+      vi.mocked(getAccountSummaryState).mockResolvedValue(trialSummary(3));
+      installFetch([]);
+      render(
+        <Wrap>
+          <VaultSurface />
+        </Wrap>,
+      );
+      await screen.findByText(/this vault has no notes yet/i);
+      assertNoFurniture();
+      expect(getAccountSummaryState).not.toHaveBeenCalled();
+    });
+
+    it("the Pinned and Archive browse lenses carry none of it", async () => {
+      seedHostedStore();
+      vi.mocked(getAccountSummaryState).mockResolvedValue(trialSummary(3));
+      installFetch([]);
+      for (const preset of ["pinned", "archived"] as const) {
+        const view = render(
+          <Wrap>
+            <VaultSurface preset={preset} />
+          </Wrap>,
+        );
+        await screen.findByRole("heading", { level: 1, name: "aaron" });
+        assertNoFurniture();
+        view.unmount();
+      }
+      expect(getAccountSummaryState).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // LZ-4 §3.2 — remount honesty: a Recent↔All switch remounts the composer
+  // (different lens bodies), and the draft must ride through — restored
+  // synchronously at mount from the per-vault draft store, the unmount
+  // flush catching anything mid-debounce.
+  // ---------------------------------------------------------------------
+  it("the composer draft survives a Recent→All lens switch intact", async () => {
+    installFetch(WITH_USER_NOTE);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <QueryClientProvider client={qc}>
+          <Routes>
+            <Route path="/" element={<VaultSurface lens="recent" />} />
+            <Route path="/notes" element={<VaultSurface />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    // Wait for the timeline (and with it the floor's foot) to settle.
+    await screen.findByText("My first thought");
+
+    // Type on Recent…
+    const recentInput = screen.getByRole("textbox", { name: /what's on your mind\?/i });
+    fireEvent.change(recentInput, { target: { value: "a thought mid-flight" } });
+
+    // …switch lenses through the floor's own door (same push semantics as the
+    // rail's All notes item). A real pointerdown on any outside door fires
+    // blur BEFORE the click lands — and that blur-flush (LZ-1) is exactly
+    // what protects a mid-type switch: the incoming lens reads the draft
+    // store during RENDER, before the outgoing composer's unmount cleanup
+    // runs. jsdom's fireEvent.click skips the implicit blur, so fire it in
+    // the real order.
+    fireEvent.blur(recentInput);
+    fireEvent.click(screen.getByRole("link", { name: /all notes/i }));
+    await screen.findByRole("heading", { name: /all notes · everything, searchable/i });
+
+    // …and the words are already there. Nothing lost to the remount.
+    const allInput = screen.getByRole("textbox", { name: /what's on your mind\?/i });
+    expect(allInput).toHaveValue("a thought mid-flight");
   });
 });

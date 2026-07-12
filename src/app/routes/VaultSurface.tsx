@@ -1,7 +1,7 @@
-import { Composer } from "@/components/Composer";
+import { COMPOSER_INPUT_ID, Composer } from "@/components/Composer";
 import { NoteRow, NoteRowList } from "@/components/NoteRow";
 import { PathTree } from "@/components/PathTree";
-import { SectionLabel } from "@/components/RecentTimeline";
+import { RecentTimeline, SectionLabel } from "@/components/RecentTimeline";
 import { TagBrowser } from "@/components/TagBrowser";
 import { normalizeTag } from "@/components/TagEditor";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -9,7 +9,18 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { OfflineRibbon } from "@/components/ui/OfflineRibbon";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
+import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
+import { shiftDay, toDateKey, todayKey } from "@/lib/dates";
+import {
+  type HomeStepId,
+  deriveSteps,
+  hasUserAuthoredNote,
+  stepsComplete,
+} from "@/lib/home/checklist";
+import { useHomeChecklist } from "@/lib/home/use-home-checklist";
 import { meetsAutoThreshold, usePathTreeMode } from "@/lib/path-tree";
+import { useInstallAffordance } from "@/lib/pwa-install";
 import {
   useDeleteView,
   useRenameView,
@@ -31,6 +42,7 @@ import {
   type NoteQueryState,
   isFilteringActive,
   useNotes,
+  useNotesForDateViews,
   useNotesForPathTree,
   usePinnedTags,
   useTagRoles,
@@ -39,7 +51,7 @@ import {
   useVaultStore,
 } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
-import type { TagSummary } from "@/lib/vault/types";
+import type { Note, TagSummary } from "@/lib/vault/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 
@@ -50,9 +62,11 @@ const VIEW_ORDER: VaultView[] = ["pinned", "archived", "untagged", "orphaned"];
 // The lens label (LENS-SPEC §3 anatomy item 5) — a sage eyebrow + quiet hint
 // naming the lens the list is wearing. It replaces BOTH the old "All notes"
 // H1 (the vault masthead owns the headline now) and the SectionLabel count.
-// Pinned/Archive are the browse lenses; Untagged/Orphaned are maintenance
-// sub-views (§1 — filters, not lenses: the rail keeps All notes lit).
-const LENS_LABELS: Record<VaultView | "all", { label: string; hint: string }> = {
+// Recent + All are the writing lenses; Pinned/Archive are the browse lenses;
+// Untagged/Orphaned are maintenance sub-views (§1 — filters, not lenses: the
+// rail keeps All notes lit).
+const LENS_LABELS: Record<VaultView | "all" | "recent", { label: string; hint: string }> = {
+  recent: { label: "Recent", hint: "what you've touched lately" },
   all: { label: "All notes", hint: "everything, searchable" },
   pinned: { label: "Pinned", hint: "starred" },
   archived: { label: "Archive", hint: "set aside, never deleted" },
@@ -65,17 +79,46 @@ function parsePreset(value: string | null): VaultView | undefined {
 }
 
 // VaultSurface — the ONE surface over the vault (LENS-SPEC §3): the lenses
-// (All · Pinned · Archive, with Recent joining in LZ-4) are dresses over this
-// component, derived from `?view=`, toggled in the rail. The vault name is
-// the masthead on every lens; the lens is a label, not a headline; the
-// composer rides the writing lens (All — Recent in LZ-4); Pinned/Archive are
-// composer-less browse lenses. Formerly `Notes.tsx` (git-mv'd for history).
+// (Recent · All · Pinned · Archive) are dresses over this component, toggled
+// in the rail; only the list changes. The vault name is the masthead on every
+// lens; the lens is a label, not a headline; the composer rides the writing
+// lenses (Recent + All); Pinned/Archive are composer-less browse lenses.
+// Formerly `Notes.tsx` (git-mv'd for history).
 //
-// `preset` is normally read from the `?view=` query param — the four built-in
-// views are filters INSIDE the All-notes list now, not their own routes (the
-// old /pinned etc. redirect into /notes?view=). The optional prop is an
-// explicit override kept for direct-render callers (tests, embeds).
-export function VaultSurface({ preset: presetProp }: { preset?: VaultView } = {}) {
+// Two bodies, one surface (owner decision ii — Recent and All stay distinct
+// lenses because their data machinery differs): `lens="recent"` is the capped
+// live window (day-grouped, floored — BootGate's vault-active branches render
+// it at `/`; the old Home dissolved into it in LZ-4); everything else is the
+// paginated searchable query, its lens normally read from the `?view=` query
+// param (the four built-in views are filters INSIDE the All-notes list, not
+// their own routes — the old /pinned etc. redirect into /notes?view=). The
+// optional `preset` prop is an explicit override kept for direct-render
+// callers (tests, embeds).
+export function VaultSurface({ preset, lens }: { preset?: VaultView; lens?: "recent" } = {}) {
+  if (lens === "recent") return <RecentLens />;
+  return <SearchableLenses preset={preset} />;
+}
+
+// The masthead (§3 anatomy item 1, every lens) — the vault NAME leads as the
+// serif headline (identity everywhere; the same masthead the old Home
+// carried), with the ownership line under it. The lens gets a quiet label
+// above the list, never the headline.
+function VaultMasthead({ name }: { name: string }) {
+  return (
+    <header className="mb-6">
+      <h1 className="page-title" style={{ fontSize: "clamp(2rem, 4vw, 2.6rem)" }}>
+        {name}
+      </h1>
+      <p className="mt-1.5 text-fg-muted">Everything here is yours. Open format. Export anytime.</p>
+    </header>
+  );
+}
+
+// The paginated, searchable side of the surface — the All lens plus the
+// Pinned/Archive browse lenses and the Untagged/Orphaned maintenance
+// sub-views. (The Recent lens below is the other body: same masthead, same
+// composer, different machinery.)
+function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(activeVault?.id ?? null);
   const { pinnedTags } = usePinnedTags(activeVault?.id ?? null);
@@ -317,21 +360,10 @@ export function VaultSurface({ preset: presetProp }: { preset?: VaultView } = {}
 
   return (
     <div className="page-surface">
-      {/* The masthead (§3 anatomy item 1, every lens) — the vault NAME leads
-          as the serif headline (identity everywhere; the same masthead the
-          old Home carried), with the ownership line under it. The lens gets
-          a quiet label above the list, never the headline. */}
-      <header className="mb-6">
-        <h1 className="page-title" style={{ fontSize: "clamp(2rem, 4vw, 2.6rem)" }}>
-          {activeVault.name}
-        </h1>
-        <p className="mt-1.5 text-fg-muted">
-          Everything here is yours. Open format. Export anytime.
-        </p>
-      </header>
+      <VaultMasthead name={activeVault.name} />
 
-      {/* The composer rides the writing lens (§3 item 2; ratified decision i)
-          — All notes only for now, Recent joins in LZ-4. Pinned/Archive are
+      {/* The composer rides the writing lenses (§3 item 2; ratified decision
+          i) — here that means All notes (Recent mounts its own above). The
           browse lenses and the maintenance sub-views are triage, not writing:
           no composer on any `?view=`. Keyed by vault id (the notes#175
           draft-clobber guard — a mid-session vault switch remounts a fresh
@@ -633,6 +665,360 @@ export function VaultSurface({ preset: presetProp }: { preset?: VaultView } = {}
           onSave={(name) => onRenameView(renaming, name)}
         />
       ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The Recent lens (LZ-4, LENS-SPEC §1 + §3) — the old Home, dissolved into
+// the one surface. BootGate's vault-active branches render it at `/`. The
+// body is the capped live window over the vault (`useNotesForDateViews`),
+// day-grouped by RecentTimeline, with the two §1.1 changes from Home's list:
+// archived notes drop OUT of Recent (they're set aside, not "touched
+// lately" — Home used to show them dimmed), and the window wears a visible
+// FLOOR — the most recent 14 days or 100 notes, whichever comes first — with
+// a quiet foot line pointing at All notes. The cap is what makes Recent
+// *mean* recent, and what keeps Recent ≠ All sharp.
+//
+// Recent + All are the writing lenses (ratified decision i): the composer
+// rides here too, warmed (focus ring) while the vault is fresh. The
+// Recent-only furniture — trial countdown, quick doors, setup nudge, plan
+// backlink — relocated from Home verbatim: DESIGN-SPEC §3.1's "on Today
+// only" ambience rule now reads "on the Recent lens only" (the same four
+// sanctioned places, no expansion).
+// ---------------------------------------------------------------------------
+
+// The Recent floor (§1.1): most recent 14 days OR 100 notes, whichever comes
+// first. Days are local calendar days counted back from today (the same
+// day-keys the timeline buckets by), today inclusive.
+export const RECENT_WINDOW_DAYS = 14;
+export const RECENT_NOTE_CAP = 100;
+
+function RecentLens() {
+  const vault = useVaultStore((s) => s.getActiveVault());
+  const notes = useNotesForDateViews();
+  const install = useInstallAffordance();
+  const { state: checklistState, dismiss } = useHomeChecklist(vault?.id ?? null);
+  const { roles } = useTagRoles(vault?.id ?? null);
+
+  // Trial ambience (DESIGN-SPEC §3.1, sanctioned places 2 + 4) — the SHARED
+  // account-summary query, enabled only for a home-door (account-minted)
+  // vault: a self-host door has no summary, so the fetch never fires. Lazy,
+  // never gates paint; failed/absent read the same here (no ambience — the
+  // retry affordance lives on /account).
+  const isHosted = vault !== null && isHostedVaultRecord(vault.clientId);
+  const summaryQuery = useAccountSummary({ enabled: isHosted });
+  const plan = (isHosted ? summaryOrNull(summaryQuery.data) : null)?.plan ?? null;
+  const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
+
+  // The floored window: archived drops out first, then the 14-day cut, then
+  // the 100-note cap — sorted by the same touch stamp the timeline buckets
+  // by, so "the most recent 100" is exact regardless of the server's sort
+  // field. `undefined` until the query settles (the skeleton's cue).
+  const recent = useMemo(() => {
+    if (!notes.data) return undefined;
+    const floorKey = shiftDay(todayKey(), -(RECENT_WINDOW_DAYS - 1));
+    const stamp = (n: Note) => n.updatedAt ?? n.createdAt;
+    return notes.data
+      .filter((n) => !(n.tags ?? []).includes(roles.archived))
+      .filter((n) => (toDateKey(stamp(n)) ?? "") >= floorKey)
+      .sort((a, b) => (stamp(a) < stamp(b) ? 1 : stamp(a) > stamp(b) ? -1 : 0))
+      .slice(0, RECENT_NOTE_CAP);
+  }, [notes.data, roles.archived]);
+
+  // BootGate only renders this lens when a vault is active, but guard anyway:
+  // a vault removed mid-session falls back to the arrival (via the index).
+  // NAVIGATION.md: route guard, no active vault — replace.
+  if (!vault) return <Navigate to="/" replace />;
+
+  // `settled` gates the "fresh" warmth on notes having loaded, so a returning
+  // user never flashes the newcomer state before their notes come back.
+  const settled = notes.data !== undefined;
+  const hasUserNote = hasUserAuthoredNote(notes.data);
+
+  const steps = deriveSteps(checklistState, {
+    hasUserNote,
+    installed: install.state === "installed",
+    installable: install.state === "available",
+  });
+  const allDone = stepsComplete(steps);
+  const showSetup = !checklistState.dismissed && !allDone;
+  const incomplete = steps.filter((s) => !s.done);
+  const doneCount = steps.length - incomplete.length;
+
+  // Fresh = a brand-new vault the user hasn't made their own yet. Once a real
+  // note exists (or they dismiss/finish setup) the lens goes quiet.
+  const mode: "fresh" | "returning" = settled && !hasUserNote && showSetup ? "fresh" : "returning";
+
+  // A genuinely EMPTY vault (settled, zero notes) gets the warm first-capture
+  // invitation with no lens label over nothing and no foot (All notes would
+  // be exactly as empty — same calm-arrival rule as the All lens). A vault
+  // with notes but none inside the floor gets the honest dormant line + the
+  // door to everything.
+  const vaultEmpty = !notes.isPending && (notes.data?.length ?? 0) === 0;
+  const lens = LENS_LABELS.recent;
+
+  return (
+    <div className="page-surface">
+      <VaultMasthead name={vault.name} />
+
+      {/* The composer rides the writing lenses (§3 item 2; ratified decision
+          i). Keyed by vault id (the notes#175 draft-clobber guard — a
+          mid-session vault switch remounts a fresh composer bound to the new
+          vault's draft); the focus warmth only while the vault is fresh. */}
+      <Composer key={vault.id} vault={vault} focused={mode === "fresh"} />
+
+      <TrialCountdownNudge daysLeft={trialDaysLeft} />
+
+      {mode === "fresh" ? <QuickDoors /> : null}
+
+      {showSetup && incomplete.length > 0 ? (
+        <SetupNudge
+          to={SETUP_DEST[incomplete[0].id].to}
+          label={SETUP_DEST[incomplete[0].id].label}
+          done={doneCount}
+          total={steps.length}
+          onDismiss={dismiss}
+        />
+      ) : null}
+
+      <section aria-label="Recent notes">
+        {/* The lens label (§3 item 5) — replaces Home's Today/Recent header
+            (whose "All notes" link now lives in the floor's foot line). */}
+        {!vaultEmpty ? (
+          <SectionLabel>
+            {lens.label}
+            <span className="font-sans normal-case tracking-normal text-fg-muted">
+              {" "}
+              · {lens.hint}
+            </span>
+          </SectionLabel>
+        ) : null}
+        {notes.isPending ? (
+          <RecentSkeleton />
+        ) : notes.isError && !notes.data ? (
+          <p className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-fg-muted">
+            Couldn't load recent notes. They'll appear once you're back online.
+          </p>
+        ) : (notes.data?.length ?? 0) === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-8 text-center shadow-soft">
+            <p className="mb-1 font-serif text-fg text-lg">A quiet, empty page.</p>
+            <p className="mb-5 text-fg-muted text-sm">
+              Anything at all can land here — a thought, a list, a memory.
+            </p>
+            {/* W2-10: the composer above is real — the first-capture CTA
+                focuses it in place instead of hopping to /new (the affordance
+                and the action finally agree). */}
+            <button
+              type="button"
+              onClick={() => document.getElementById(COMPOSER_INPUT_ID)?.focus()}
+              className="inline-flex rounded-full bg-accent px-5 py-2.5 font-round font-semibold text-on-accent text-sm shadow-soft hover:bg-accent-hover"
+            >
+              Write the first one
+            </button>
+          </div>
+        ) : (recent?.length ?? 0) === 0 ? (
+          // Dormant: the vault has notes, none touched inside the window
+          // (or everything recent is archived). Honest, quiet, with the door.
+          <>
+            <p className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-fg-muted">
+              Nothing touched in the last two weeks.
+            </p>
+            <RecentFoot />
+          </>
+        ) : (
+          <>
+            {notes.isError ? <OfflineRibbon /> : null}
+            <RecentTimeline notes={recent ?? []} />
+            <RecentFoot />
+          </>
+        )}
+      </section>
+
+      <PlanBacklink clientId={vault.clientId} trialDaysLeft={trialDaysLeft} />
+    </div>
+  );
+}
+
+// The floor's visible edge (§1.1) — a quiet foot line under the timeline:
+// Recent ends on purpose, and the door to everything is one step. Also the
+// successor to old Home's header "All notes" link (the lens label that
+// replaced that header carries no link). NAVIGATION.md: user-initiated
+// navigation — push.
+function RecentFoot() {
+  return (
+    <p className="mt-6 text-fg-dim text-sm">
+      Looking for older notes?{" "}
+      <Link to="/notes" className="text-accent hover:underline">
+        All notes →
+      </Link>
+    </p>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Trial countdown nudge — sanctioned ambience place 4 of exactly four
+// (DESIGN-SPEC §3.1): a single sun row under the composer, ONLY when
+// `trial_days_left <= 7`, ONLY on the Recent lens. Not dismissible (it
+// exists for ≤7 days by definition), never a modal, never on any other lens
+// or page.
+// ---------------------------------------------------------------------------
+
+function TrialCountdownNudge({ daysLeft }: { daysLeft: number | null }) {
+  if (daysLeft === null || daysLeft > 7) return null;
+  return (
+    <div className="nudge-sun mb-6">
+      <span aria-hidden="true">✦</span>
+      <Link to="/account" className="min-w-0 flex-1 truncate hover:underline">
+        {daysLeft === 0
+          ? "Your trial ends today — see plans →"
+          : `Your trial ends in ${daysLeft} day${daysLeft === 1 ? "" : "s"} — see plans →`}
+      </Link>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Quick doors — warm tiles for the two always-relevant next steps beyond
+// writing (which the composer covers). Shown while the vault is fresh; they
+// recede once it's lived-in so a returning user isn't nagged.
+// ---------------------------------------------------------------------------
+
+function QuickDoors() {
+  return (
+    <nav aria-label="Quick actions" className="mb-6 grid gap-3 sm:grid-cols-2">
+      <DoorTile
+        to="/connect"
+        emoji="⚡"
+        title="Connect your AI"
+        description="Let Claude or ChatGPT read and write your vault."
+      />
+      <DoorTile
+        to="/import"
+        emoji="↯"
+        title="Bring your notes over"
+        description="Import from Obsidian or plain markdown."
+      />
+    </nav>
+  );
+}
+
+function DoorTile({
+  to,
+  emoji,
+  title,
+  description,
+}: {
+  to: string;
+  emoji: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link to={to} className="focus-ring tile flex items-start gap-3 p-4">
+      <span aria-hidden="true" className="text-lg leading-none">
+        {emoji}
+      </span>
+      <span className="min-w-0">
+        <span className="block font-medium text-fg">{title}</span>
+        <span className="mt-0.5 block text-fg-muted text-sm">{description}</span>
+      </span>
+    </Link>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Setup nudge — ONE quiet sun row (prototype's "✦ Finish setting up 1/3"), not
+// a wall of checkboxes. It points at the next incomplete step; dismissible.
+// ---------------------------------------------------------------------------
+
+const SETUP_DEST: Record<HomeStepId, { label: string; to: string }> = {
+  write: { label: "Write your first note", to: "/new" },
+  connect: { label: "Connect your AI", to: "/connect" },
+  import: { label: "Bring your notes over", to: "/import" },
+  install: { label: "Install the app", to: "/settings" },
+};
+
+function SetupNudge({
+  to,
+  label,
+  done,
+  total,
+  onDismiss,
+}: {
+  to: string;
+  label: string;
+  done: number;
+  total: number;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="nudge-sun mb-8">
+      <span aria-hidden="true">✦</span>
+      <Link to={to} className="min-w-0 flex-1 truncate hover:underline">
+        Finish setting up — {label}
+      </Link>
+      <span className="font-round text-sm opacity-80">
+        {done} / {total}
+      </span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss setup"
+        className="ml-1 text-sun-ink/70 hover:text-sun-ink"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
+function RecentSkeleton() {
+  return (
+    <div className="space-y-3" aria-busy="true">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="h-14 animate-pulse rounded-xl bg-border/30" />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Account backlink — a quiet in-app door to the account manager, shown only for
+// HOME-DOOR (account-minted) vaults. Navigates to `/account` (same origin, via
+// react-router) rather than hopping to a cross-origin console — the /account
+// surface owns plan + billing (Stripe-direct) + hosted vaults, so there's no
+// re-login. A foreign self-hosted vault (connected via `/add` OAuth) has no
+// account on THIS door, so no backlink is shown — never a dead affordance.
+// ---------------------------------------------------------------------------
+
+function PlanBacklink({
+  clientId,
+  trialDaysLeft,
+}: {
+  clientId: string;
+  trialDaysLeft: number | null;
+}) {
+  if (!isHostedVaultRecord(clientId)) return null;
+  return (
+    <div className="mt-10 border-t border-border pt-4 text-sm">
+      {/* Sanctioned ambience place 2 (§3.1): the backlink carries the trial
+          line while trialing — plain otherwise. One link, one destination. */}
+      <Link to="/account" className="text-fg-dim hover:text-accent">
+        {trialDaysLeft !== null ? (
+          <>
+            <span className="font-medium text-sun-ink">
+              Free trial ·{" "}
+              {trialDaysLeft === 0
+                ? "ends today"
+                : `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`}
+            </span>{" "}
+            · Manage your account →
+          </>
+        ) : (
+          "Manage your account →"
+        )}
+      </Link>
     </div>
   );
 }
