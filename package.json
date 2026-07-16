@@ -1,6 +1,6 @@
 {
   "name": "@openparachute/parachute-app",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "description": "Parachute — the super-surface. A single-page app for interfacing with your Parachute: name a vault, capture and browse notes, connect your AI, and manage the cloud + hub via their APIs. Seeded from notes-ui; the calm centered arrival + warm home lead the experience.",
@@ -33,7 +33,7 @@
     "@fontsource-variable/figtree": "^5.2.10",
     "@fontsource-variable/fraunces": "^5.2.9",
     "@lezer/highlight": "^1.2.3",
-    "@openparachute/surface-client": "^0.3.4",
+    "@openparachute/surface-client": "^0.3.5",
     "@openparachute/surface-render": "^0.2.0",
     "@tanstack/react-query": "^5",
     "highlight.js": "^11.11.1",

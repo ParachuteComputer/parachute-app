@@ -1,3 +1,4 @@
+import { insertHardOrPlainBreak, insertParagraphBreak } from "@/lib/editor/paragraph-break";
 import { createSlashCompletionSource } from "@/lib/editor/slash-completion";
 import { autocompletion } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -178,6 +179,14 @@ export function buildExtensions({
       },
     }),
     keymap.of([
+      // Ahead of defaultKeymap so these win the same-precedence race for
+      // Enter/Shift-Enter (defaultKeymap binds both to insertNewlineAndIndent —
+      // see CodeMirrorEditor.newline.test.ts for the precedence proof). The
+      // slash-menu's own Enter-commits-completion binding lives at
+      // Prec.highest (inside autocompletion(), below) and is tried before
+      // this keymap entirely, so it's never in the race.
+      { key: "Enter", run: insertParagraphBreak },
+      { key: "Shift-Enter", run: insertHardOrPlainBreak },
       ...defaultKeymap,
       ...historyKeymap,
       {
