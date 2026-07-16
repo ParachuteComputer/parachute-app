@@ -1,5 +1,5 @@
 import { AttachmentDropZone } from "@/components/AttachmentDropZone";
-import { AttachmentPicker } from "@/components/AttachmentPicker";
+import { AttachmentPicker, type AttachmentPickerHandle } from "@/components/AttachmentPicker";
 import { AttachmentUploadList } from "@/components/AttachmentUploadList";
 import type { CodeMirrorEditorHandle } from "@/components/CodeMirrorEditor";
 import { CodeMirrorEditor } from "@/components/CodeMirrorEditor";
@@ -119,6 +119,7 @@ export function NoteNew() {
   const [staged, setStaged] = useState<StagedUpload[]>([]);
   const [isSavingAudio, setIsSavingAudio] = useState(false);
   const editorRef = useRef<CodeMirrorEditorHandle>(null);
+  const attachmentPickerRef = useRef<AttachmentPickerHandle>(null);
   const voice = useVoiceCapture();
   // Voice-transcription capability gate (launch-audit P0-3). Hide the mic
   // ONLY when the vault EXPLICITLY declares transcription disabled —
@@ -557,6 +558,10 @@ export function NoteNew() {
                 uploader.start(files);
                 return true;
               }}
+              // The "/"-menu's Image/attachment command reuses the
+              // Attachments section's own picker below, rather than a
+              // second upload path.
+              onRequestAttachment={() => attachmentPickerRef.current?.open()}
             />
           </AttachmentDropZone>
           <div className="card min-w-0 overflow-auto p-4">
@@ -574,7 +579,7 @@ export function NoteNew() {
         <section className="mt-6 border-t border-border pt-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-serif text-xl">Attachments</h2>
-            <AttachmentPicker onPickFiles={uploader.start} />
+            <AttachmentPicker ref={attachmentPickerRef} onPickFiles={uploader.start} />
           </div>
           <p className="mb-3 text-xs text-fg-dim">
             Drop or paste files into the editor. Attachments link to the note when you save. Max 100

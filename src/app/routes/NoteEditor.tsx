@@ -1,5 +1,5 @@
 import { AttachmentDropZone } from "@/components/AttachmentDropZone";
-import { AttachmentPicker } from "@/components/AttachmentPicker";
+import { AttachmentPicker, type AttachmentPickerHandle } from "@/components/AttachmentPicker";
 import { AttachmentUploadList } from "@/components/AttachmentUploadList";
 import type { CodeMirrorEditorHandle } from "@/components/CodeMirrorEditor";
 import { CodeMirrorEditor } from "@/components/CodeMirrorEditor";
@@ -19,6 +19,7 @@ import { useToastStore } from "@/lib/toast/store";
 import { useNote, useUpdateNote, useVaultStore } from "@/lib/vault";
 import { type UpdateNotePayload, VaultAuthError, VaultConflictError } from "@/lib/vault/client";
 import type { Note, NoteAttachment } from "@/lib/vault/types";
+import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 
@@ -99,6 +100,7 @@ function EditorSurface({ note }: { note: Note }) {
   const mutation = useUpdateNote(note.id);
   const lastServerNote = useRef<Note>(note);
   const editorRef = useRef<CodeMirrorEditorHandle>(null);
+  const attachmentPickerRef = useRef<AttachmentPickerHandle>(null);
 
   const uploader = useAttachmentUploader({
     noteId: note.id,
@@ -405,6 +407,10 @@ function EditorSurface({ note }: { note: Note }) {
               uploader.start(files);
               return true;
             }}
+            // The "/"-menu's Image/attachment command reuses the
+            // Attachments section's own picker below, rather than a second
+            // upload path.
+            onRequestAttachment={() => attachmentPickerRef.current?.open()}
           />
         </AttachmentDropZone>
         <div
@@ -418,6 +424,7 @@ function EditorSurface({ note }: { note: Note }) {
 
       <AttachmentsSection
         noteId={note.id}
+        pickerRef={attachmentPickerRef}
         attachments={note.attachments ?? []}
         uploads={uploader.uploads}
         onPickFiles={uploader.start}
@@ -444,6 +451,7 @@ const ALLOWLIST_HINT = (
 
 function AttachmentsSection({
   noteId,
+  pickerRef,
   attachments,
   uploads,
   onPickFiles,
@@ -451,6 +459,7 @@ function AttachmentsSection({
   onDismiss,
 }: {
   noteId: string;
+  pickerRef: RefObject<AttachmentPickerHandle | null>;
   attachments: NoteAttachment[];
   uploads: ReturnType<typeof useAttachmentUploader>["uploads"];
   onPickFiles: (files: File[]) => void;
@@ -461,7 +470,7 @@ function AttachmentsSection({
     <section className="mt-6 border-t border-border pt-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-serif text-xl">Attachments</h2>
-        <AttachmentPicker onPickFiles={onPickFiles} />
+        <AttachmentPicker ref={pickerRef} onPickFiles={onPickFiles} />
       </div>
       <p className="mb-3 text-xs text-fg-dim">
         Drop or paste files into the editor. Max 100 MB each. {ALLOWLIST_HINT}.

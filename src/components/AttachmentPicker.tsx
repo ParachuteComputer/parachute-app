@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { forwardRef, useImperativeHandle, useRef } from "react";
 
 interface Props {
   onPickFiles: (files: File[]) => void;
@@ -6,11 +6,23 @@ interface Props {
   className?: string;
 }
 
+export interface AttachmentPickerHandle {
+  // Opens the native file dialog without a click on the visible button —
+  // the "/"-menu's Image/attachment command drives this to reuse THIS
+  // picker's upload flow rather than duplicating it (CodeMirrorEditor's
+  // onRequestAttachment prop).
+  open(): void;
+}
+
 const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,audio/wav,audio/mpeg,audio/mp4,audio/ogg,audio/webm,video/webm,.wav,.mp3,.m4a,.ogg,.webm,.png,.jpg,.jpeg,.gif,.webp";
 
-export function AttachmentPicker({ onPickFiles, label = "Attach files…", className }: Props) {
+export const AttachmentPicker = forwardRef<AttachmentPickerHandle, Props>(function AttachmentPicker(
+  { onPickFiles, label = "Attach files…", className },
+  ref,
+) {
   const inputRef = useRef<HTMLInputElement>(null);
+  useImperativeHandle(ref, () => ({ open: () => inputRef.current?.click() }), []);
 
   return (
     <>
@@ -39,4 +51,4 @@ export function AttachmentPicker({ onPickFiles, label = "Attach files…", class
       />
     </>
   );
-}
+});
