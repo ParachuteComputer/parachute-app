@@ -72,10 +72,15 @@ export function describeProvenance(note: ProvenanceAttribution): ProvenanceParts
   const updatedId = note.lastUpdatedBy ?? note.lastUpdatedVia ?? null;
   const differs = updatedId !== null && updatedId !== createdId;
 
+  // When the principal DOESN'T differ, both compact and detail tell the
+  // CREATED story (detail only ever shows "created" in this case — see
+  // ProvenanceBadge's detail variant) — prefer `created` here too, so the
+  // two mount points never disagree about which channel to name for the
+  // same note.
   const compact =
     differs && created && updated
       ? `created ${created} · updated ${updated}`
-      : (updated ?? created ?? "");
+      : (created ?? updated ?? "");
 
   const raw = [
     note.createdBy ? `createdBy: ${note.createdBy}` : null,

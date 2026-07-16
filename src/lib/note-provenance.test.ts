@@ -39,6 +39,21 @@ describe("describeProvenance", () => {
     expect(parts?.compact).toBe("via MCP");
   });
 
+  it("same principal, DIFFERENT channel: compact tells the created story too — matches detail's created-only display (PR #34 review finding 2)", () => {
+    const parts = describeProvenance({
+      createdBy: "user:aaron",
+      createdVia: "surface:notes",
+      lastUpdatedBy: "user:aaron",
+      lastUpdatedVia: "mcp",
+    });
+    expect(parts?.differs).toBe(false);
+    expect(parts?.created).toBe("via Notes");
+    expect(parts?.updated).toBe("via MCP");
+    // Detail only ever shows "created" when differs is false — compact must
+    // agree, not surface the (suppressed-in-detail) updated channel instead.
+    expect(parts?.compact).toBe("via Notes");
+  });
+
   it("created and updated by DIFFERENT principals: compact shows both sides", () => {
     const parts = describeProvenance({
       createdBy: "user:aaron",
