@@ -170,6 +170,13 @@ export function useAllNotesForSwitcher(enabled: boolean) {
     queryFn: () => {
       const params = new URLSearchParams();
       params.set("include_content", "true");
+      // Without an explicit sort, the vault's default is created_at ASC —
+      // on a vault past the VAULT_GRAPH_NOTE_CAP, that silently drops the
+      // NEWEST notes from the switcher instead of the oldest. `desc` matches
+      // the other capped-window queries below (useNotesForDateViews,
+      // useNotesForPathTree) so "capped at N" always means "the N most
+      // recent," never "the N oldest."
+      params.set("sort", "desc");
       params.set("limit", String(VAULT_GRAPH_NOTE_CAP));
       return client!.queryNotes(params);
     },
@@ -242,6 +249,10 @@ export function useAllNotesWithLinks() {
     queryFn: () => {
       const params = new URLSearchParams();
       params.set("include_links", "true");
+      // Same fix as useAllNotesForSwitcher above: no explicit sort defaults
+      // to created_at ASC, which drops the newest notes (not the oldest)
+      // off a >VAULT_GRAPH_NOTE_CAP vault's graph.
+      params.set("sort", "desc");
       params.set("limit", String(VAULT_GRAPH_NOTE_CAP));
       return client!.queryNotes(params);
     },
