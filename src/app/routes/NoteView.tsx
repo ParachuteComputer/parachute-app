@@ -3,6 +3,7 @@ import { buildWikilinkResolver } from "@/components/MarkdownView";
 import { NeighborhoodGraph } from "@/components/NeighborhoodGraph";
 import { NoteRenderer } from "@/components/NoteRenderer";
 import { PinArchiveButtons } from "@/components/PinArchiveButtons";
+import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import { TranscriptionStatus } from "@/components/TranscriptionStatus";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -167,6 +168,7 @@ function MetadataPanel({ note }: { note: Note }) {
           />
         ))}
       </dl>
+      <ProvenanceBadge note={note} variant="detail" className="mt-3" />
     </section>
   );
 }

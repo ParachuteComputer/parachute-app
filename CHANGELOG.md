@@ -1,5 +1,53 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.18.0] - 2026-07-16
+
+**Provenance badge + paragraph-break Enter (A2+A3 of the editor arc).** Two independent,
+Aaron-ratified pieces bundled in one PR: who/what wrote a note, and how Enter behaves while
+writing one. Minor bump — new display data + a keymap behavior change, no wire/data-shape
+change.
+
+- **`ProvenanceBadge`** (`src/components/ProvenanceBadge.tsx`, `src/lib/note-provenance.ts`) —
+  a small, factual attribution line reading the write-attribution fields vault#298 landed on the
+  wire (`createdBy`/`createdVia`/`lastUpdatedBy`/`lastUpdatedVia`, all nullable), now on the app's
+  `Note`/`NoteSummary` types via `@openparachute/surface-client` 0.3.5 (bumped from `^0.3.4`; see
+  the PR description for why a dependency bump won over local types). Mounted in BOTH `NoteRow`
+  (compact — one short fragment beside the relative-time stamp) and `NoteView`'s metadata panel
+  (detail — the fuller created/updated pair, shown only when the two differ). FACTUAL PROVENANCE
+  ONLY: `*Via` channels map to a friendly noun (`mcp` → "via MCP", `agent:<id>` → "via agent",
+  `surface:notes` → "via Notes") — never a human-vs-AI guess. The raw principal (`*By`) never
+  appears as visible text, only in a `title` tooltip. Null/legacy records render nothing — no
+  "unknown" placeholder noise.
+- **Enter — context-aware paragraph break** (`src/lib/editor/paragraph-break.ts`, wired into
+  `CodeMirrorEditor.tsx`'s keymap ahead of `defaultKeymap`, which otherwise binds Enter to
+  `insertNewlineAndIndent`): in prose, a REAL blank line (two `\n`) so the file stays unambiguous
+  CommonMark; in a list item or blockquote, delegates to `@codemirror/lang-markdown`'s own
+  `insertNewlineContinueMarkup` (marker continuation, and an empty list item still exits the
+  list — native behavior, untouched); inside a fenced code block, a single plain newline. **Shift
+  +Enter — explicit hard break**: `\`-before-newline in prose (survives whitespace trimming,
+  deliberately not the trailing-two-spaces convention); a plain single newline in
+  lists/quotes/fences (a bare backslash there would land on a marker-less continuation line and
+  misparse, or corrupt a fence's literal bytes). Both commands sit at the editor's default keymap
+  precedence, so the slash-menu's own Enter-commits-completion binding (`Prec.highest` inside
+  `@codemirror/autocomplete`) is tried first and still wins while the menu is open — nothing
+  about A1 changed.
+
+| Context | Enter | Shift+Enter |
+|---|---|---|
+| Prose | blank line (`\n\n`) | hard break (`\\\n`) |
+| List item | marker continuation (empty item exits) | plain newline |
+| Blockquote | marker continuation | plain newline |
+| Fenced code | plain newline | plain newline |
+| Slash-menu open | commits the completion | commits the completion |
+
+- Tests: `src/lib/note-provenance.test.ts` (12 — the null/legacy case, created-only, same-vs-
+  differing-principal, the raw-tooltip/never-visible-label contract, and the full via-label
+  mapping table) and `src/components/ProvenanceBadge.test.tsx` (8 — both mount-point variants:
+  renders-nothing, created-only, created+updated-differ, and the same-principal-suppresses-
+  updated case in detail). `src/components/CodeMirrorEditor.newline.test.ts` (7 — prose/list/
+  empty-list/fence Enter, prose/fence Shift+Enter, and Enter-with-menu-open-still-commits) against
+  a real headless CM6 `EditorView`, the same pattern `CodeMirrorEditor.slash-menu.test.ts` uses.
+
 ## [0.17.0] - 2026-07-16
 
 **The "/"-command menu (Editor P0, editor arc).** First visible step of the "Notion-feel,

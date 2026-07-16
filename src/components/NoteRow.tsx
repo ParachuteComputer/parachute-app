@@ -1,3 +1,4 @@
+import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import { noteTitle } from "@/lib/note-title";
 import { relativeTime } from "@/lib/time";
 import type { Note } from "@/lib/vault/types";
@@ -60,7 +61,10 @@ export function NoteRow({
               ) : null}
               <span className="min-w-0 truncate text-sm font-medium text-fg">{title}</span>
             </span>
-            <span className="shrink-0 text-xs text-fg-dim">{relativeTime(stamp)}</span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <span className="text-xs text-fg-dim">{relativeTime(stamp)}</span>
+              <ProvenanceBadge note={note} />
+            </span>
           </div>
           {showPath ? <p className="mt-0.5 min-w-0 truncate note-id">{note.path}</p> : null}
           {note.preview ? (
