@@ -124,3 +124,33 @@ describe("Shift+Enter — explicit hard break", () => {
     expect(view.state.selection.main.head).toBe(12);
   });
 });
+
+// A4-SPEC R2 (closes app#35): GFM tables only enter the tree once the editor
+// parses with `markdown({ base: markdownLanguage })` (the live-preview
+// parser switch) — with that in place, a table row is a single
+// pipe-delimited line, so Enter there must behave like a fence: a plain
+// newline, never a paragraph break (which would explode a blank line into
+// the middle of the table) and never a hard-break backslash either.
+describe("Enter / Shift+Enter inside a GFM table row", () => {
+  const tableDoc = "| a | b |\n| - | - |\n| 1 | 2 |";
+
+  it("Enter inserts a single plain newline, not a paragraph break", () => {
+    const cursor = tableDoc.indexOf("1") + 1; // right after "1" in the last row
+    const view = makeEditor(tableDoc, cursor);
+    pressEnter(view);
+    expect(view.state.doc.toString()).toBe(
+      `${tableDoc.slice(0, cursor)}\n${tableDoc.slice(cursor)}`,
+    );
+    expect(view.state.selection.main.head).toBe(cursor + 1);
+  });
+
+  it("Shift+Enter inserts a plain newline too — no backslash hard-break", () => {
+    const cursor = tableDoc.indexOf("2") + 1; // right after "2" in the last row
+    const view = makeEditor(tableDoc, cursor);
+    pressEnter(view, true);
+    expect(view.state.doc.toString()).toBe(
+      `${tableDoc.slice(0, cursor)}\n${tableDoc.slice(cursor)}`,
+    );
+    expect(view.state.selection.main.head).toBe(cursor + 1);
+  });
+});

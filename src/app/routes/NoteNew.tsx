@@ -14,6 +14,7 @@ import { buildTextNotePayload } from "@/lib/capture/text-note";
 import { useVoiceCapture } from "@/lib/capture/use-voice-capture";
 import { NEW_NOTE_SCOPE, clearDraft, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
+import { readStoredLivePreview } from "@/lib/editor-mode";
 import { blobRef, enqueue, newBlobId, newLocalId } from "@/lib/sync";
 import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
@@ -91,6 +92,8 @@ export function NoteNew() {
   // path-gen behaviour (see notes#126) — we never silently fall back to
   // vault-auto-assign.
   const defaultPathRef = useRef(quickPath());
+  // A4-SPEC §7: read once — see the identical comment in NoteEditor.tsx.
+  const livePreviewOn = useRef(readStoredLivePreview()).current;
   // Pin the compose session's vault at MOUNT. The vault switcher lives in the
   // app header, so the active vault can change while this screen stays mounted;
   // keying the draft to the LIVE active vault would persist this session's text
@@ -542,7 +545,7 @@ export function NoteNew() {
           </>
         )}
 
-        <div className="grid min-h-[60vh] gap-4 lg:grid-cols-2">
+        <div className={`grid min-h-[60vh] gap-4 ${livePreviewOn ? "" : "lg:grid-cols-2"}`}>
           <AttachmentDropZone
             onDropFiles={uploader.start}
             className="card min-w-0"
@@ -562,18 +565,21 @@ export function NoteNew() {
               // Attachments section's own picker below, rather than a
               // second upload path.
               onRequestAttachment={() => attachmentPickerRef.current?.open()}
+              livePreview={livePreviewOn}
             />
           </AttachmentDropZone>
-          <div className="card min-w-0 overflow-auto p-4">
-            {draft.content.trim() ? (
-              <NoteRenderer
-                note={{ path: draft.path, content: draft.content }}
-                resolve={resolver}
-              />
-            ) : (
-              <p className="text-sm text-fg-dim">Preview appears here as you type.</p>
-            )}
-          </div>
+          {livePreviewOn ? null : (
+            <div className="card min-w-0 overflow-auto p-4">
+              {draft.content.trim() ? (
+                <NoteRenderer
+                  note={{ path: draft.path, content: draft.content }}
+                  resolve={resolver}
+                />
+              ) : (
+                <p className="text-sm text-fg-dim">Preview appears here as you type.</p>
+              )}
+            </div>
+          )}
         </div>
 
         <section className="mt-6 border-t border-border pt-4">

@@ -13,8 +13,16 @@ import type { SyntaxNode } from "@lezer/common";
 
 const CODE_NODE_NAMES = new Set(["FencedCode", "CodeBlock"]);
 const MARKUP_NODE_NAMES = new Set(["ListItem", "BulletList", "OrderedList", "Blockquote"]);
+// GFM tables (only in the tree once the editor parses with
+// `markdown({ base: markdownLanguage })` — the live-preview parser switch,
+// CodeMirrorEditor.tsx). A table row is one pipe-delimited line; treat Enter
+// there like a fence — a plain newline, never a paragraph break (which would
+// explode a blank line into the middle of the table) and never a hard-break
+// backslash (which the GFM table grammar doesn't tolerate mid-row either).
+// Closes app#35.
+const TABLE_NODE_NAMES = new Set(["Table"]);
 
-type LineContext = "code" | "markup" | "prose";
+type LineContext = "code" | "table" | "markup" | "prose";
 
 // Walk the syntax tree up from the cursor to classify where it sits. `-1`
 // side on resolveInner prefers the node ENDING at pos (the line just typed),
@@ -24,6 +32,7 @@ function lineContextAt(state: EditorState, pos: number): LineContext {
   let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1);
   for (; node; node = node.parent) {
     if (CODE_NODE_NAMES.has(node.name)) return "code";
+    if (TABLE_NODE_NAMES.has(node.name)) return "table";
     if (MARKUP_NODE_NAMES.has(node.name)) return "markup";
   }
   return "prose";
@@ -41,7 +50,7 @@ export const insertParagraphBreak: StateCommand = ({ state, dispatch }) => {
   if (context === "markup" && insertNewlineContinueMarkup({ state, dispatch })) {
     return true;
   }
-  if (context === "code") {
+  if (context === "code" || context === "table") {
     return insertNewline({ state, dispatch });
   }
 

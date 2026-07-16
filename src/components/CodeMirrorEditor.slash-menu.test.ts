@@ -182,3 +182,52 @@ describe("the slash menu, wired the same way CodeMirrorEditor mounts it", () => 
     });
   });
 });
+
+// N3 (from PR #33's `slash-commands.ts:153` comment, closed by A4's parser
+// switch putting the syntax tree in play): "/" inside code isn't "starting a
+// line" in the markdown sense. Gated on the tree in slash-completion.ts,
+// applies in BOTH editor modes (the tree is available regardless of
+// live-preview) — this file's `makeEditor` builds without `livePreview`, so
+// these cases prove the raw-mode side of that claim.
+describe("N3 — the slash menu never opens inside code", () => {
+  it("does not open on '/' at the start of a line inside a fenced code block", async () => {
+    const doc = "```js\n/\n```";
+    const view = makeEditor(doc, 7); // cursor right after the "/" on the fence's second line
+    startCompletion(view);
+    await flush();
+    expect(currentCompletions(view.state)).toEqual([]);
+  });
+
+  it("does not open inside a 4-space indented code block", async () => {
+    const doc = "para\n\n    /\n";
+    const view = makeEditor(doc, 11); // cursor right after the indented "/"
+    startCompletion(view);
+    await flush();
+    expect(currentCompletions(view.state)).toEqual([]);
+  });
+
+  it("does not open inside inline code", async () => {
+    const doc = "text `/` more";
+    const view = makeEditor(doc, 7); // cursor right after the "/" inside the backticks
+    startCompletion(view);
+    await flush();
+    expect(currentCompletions(view.state)).toEqual([]);
+  });
+
+  it("still opens at a plain line start, unaffected by the gate", async () => {
+    const view = makeEditor("/", 1);
+    startCompletion(view);
+    await flush();
+    expect(currentCompletions(view.state).length).toBeGreaterThan(0);
+  });
+
+  it("still opens on a 4-space-indented line that's a LIST continuation, not an indented code block — the tree gate gets this right where the old regex couldn't (A4-SPEC §9)", async () => {
+    // "- top item" then a continuation line indented 4 spaces resolves to
+    // Paragraph > ListItem > BulletList to lezer, NOT CodeBlock — list
+    // context wins over the indent threshold.
+    const view = makeEditor("- top item\n    /\n", 16);
+    startCompletion(view);
+    await flush();
+    expect(currentCompletions(view.state).length).toBeGreaterThan(0);
+  });
+});

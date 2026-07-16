@@ -1,8 +1,9 @@
+import { livePreview } from "@/lib/editor/live-preview";
 import { insertHardOrPlainBreak, insertParagraphBreak } from "@/lib/editor/paragraph-break";
 import { createSlashCompletionSource } from "@/lib/editor/slash-completion";
 import { autocompletion } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -21,23 +22,33 @@ const lensHighlight = HighlightStyle.define([
   { tag: t.quote, color: "var(--color-fg-muted)", fontStyle: "italic" },
 ]);
 
+// Mode-agnostic chrome only — NO font-family/font-size/inline-padding here.
+// Those are a raw-vs-live TIE, not a shared value (M1 review finding): CM6's
+// theme system scopes every rule under a per-theme generated class on
+// `.cm-editor`, so two themes setting the SAME selector at EQUAL specificity
+// resolve by observed stylesheet order — not by array position in
+// buildExtensions, which is what the original single lensTheme + a live-only
+// override assumed ("ordered after lensTheme so it wins"; verified false
+// in a real browser via the review's font-probe.mjs). The fix is to make the
+// tie impossible: `rawModeTypographyTheme` below and `livePreviewChromeTheme`
+// (live-preview.ts) are MUTUALLY EXCLUSIVE per buildExtensions' opts fork —
+// one font/padding authority per mode, never two themes competing for the
+// same property.
 const lensTheme = EditorView.theme({
   "&": {
-    fontFamily: "var(--font-mono)",
-    // Reads from the text-size knob (lib/text-size.ts → styles/index.css)
-    // so editor scales together with the markdown preview. Falls back to
-    // 14px on legacy stylesheets that pre-date the variable.
-    fontSize: "var(--font-size-editor, 14px)",
     backgroundColor: "var(--color-card)",
     color: "var(--color-fg)",
     height: "100%",
   },
   ".cm-content": {
-    padding: "1rem 0",
+    // Vertical padding is shared — nothing in live mode's own theme sets
+    // `paddingBlock`, so this is uncontested regardless of mode. Only the
+    // INLINE half is mode-specific (0 in raw, 1rem in live) and lives in
+    // each mode's own theme below.
+    paddingBlock: "1rem",
     caretColor: "var(--color-accent)",
   },
   ".cm-scroller": {
-    fontFamily: "var(--font-mono)",
     lineHeight: "1.6",
   },
   ".cm-gutters": {
@@ -55,6 +66,28 @@ const lensTheme = EditorView.theme({
     // then sits on a light-coral wash (9.6:1 in both themes) instead of a solid
     // accent-light fill.
     backgroundColor: "color-mix(in srgb, var(--color-accent-light) 30%, transparent) !important",
+  },
+});
+
+// Raw mode's ONLY font/padding authority (mirrors live-preview.ts's
+// `livePreviewChromeTheme`, which is live mode's) — included only when
+// `!opts.livePreview` in buildExtensions below, so it never shares a
+// selector with a live-mode theme at the same specificity. Preserves
+// today's editor byte-for-byte: mono, the text-size knob's editor step,
+// zero inline padding.
+const rawModeTypographyTheme = EditorView.theme({
+  "&": {
+    fontFamily: "var(--font-mono)",
+    // Reads from the text-size knob (lib/text-size.ts → styles/index.css)
+    // so editor scales together with the markdown preview. Falls back to
+    // 14px on legacy stylesheets that pre-date the variable.
+    fontSize: "var(--font-size-editor, 14px)",
+  },
+  ".cm-content": {
+    paddingInline: "0",
+  },
+  ".cm-scroller": {
+    fontFamily: "var(--font-mono)",
   },
 });
 
@@ -123,6 +156,10 @@ interface Props {
   // caller is expected to trigger that picker's file dialog, not implement
   // a second upload path here.
   onRequestAttachment?(): void;
+  // A4-SPEC §7: the Settings-controlled mode. Read ONCE at mount — the
+  // editor builds its extension set once per mount; a mode change arrives
+  // as a remount (the caller keys the element), not a live prop flip.
+  livePreview?: boolean;
 }
 
 interface ExtensionRefs {
@@ -133,23 +170,40 @@ interface ExtensionRefs {
   onRequestAttachmentRef: MutableRefObject<Props["onRequestAttachment"]>;
 }
 
+interface BuildExtensionsOpts {
+  // Default false so CodeMirrorEditor.slash-menu.test.ts and every other
+  // existing call site are untouched — raw mode stays byte-for-byte
+  // today's editor. Live-preview mode is opt-in per A4-SPEC §1.
+  livePreview?: boolean;
+}
+
 // Pulled out of the mount effect so it's independently testable against a
 // real (non-React) EditorView — trigger behavior and keymap precedence
 // (the Esc-closes-menu-first layering) are exercised against this exact
 // wiring, not a re-description of it, in CodeMirrorEditor.slash-menu.test.ts.
-export function buildExtensions({
-  onChangeRef,
-  onSaveRef,
-  onCancelRef,
-  onPasteFileRef,
-  onRequestAttachmentRef,
-}: ExtensionRefs) {
+export function buildExtensions(
+  { onChangeRef, onSaveRef, onCancelRef, onPasteFileRef, onRequestAttachmentRef }: ExtensionRefs,
+  opts: BuildExtensionsOpts = {},
+) {
+  const livePreviewOn = opts.livePreview ?? false;
   return [
     history(),
-    lineNumbers(),
-    markdown(),
+    // Live preview drops the gutter entirely (A4-SPEC §5) — raw mode keeps
+    // it, unchanged.
+    ...(livePreviewOn ? [] : [lineNumbers()]),
+    // `markdownLanguage` (GFM: Task/TaskMarker, Strikethrough, Table) instead
+    // of the bare `markdown()` default (commonmarkLanguage, no GFM nodes) —
+    // required by live-preview's decoration inventory, applied in BOTH modes
+    // since it only affects parsing/highlight fidelity, not editing behavior.
+    markdown({ base: markdownLanguage }),
     syntaxHighlighting(lensHighlight),
     lensTheme,
+    // Exactly one font/padding theme per mode (M1 fix) — `livePreview()`
+    // bundles `livePreviewChromeTheme` for live mode, `rawModeTypographyTheme`
+    // is raw mode's mirror. Never both: a theme-vs-theme tie on the same
+    // selector resolves by observed stylesheet order, not array position
+    // here, so the only reliable fix is to make the tie impossible.
+    ...(livePreviewOn ? livePreview() : [rawModeTypographyTheme]),
     slashMenuTheme,
     autocompletion({
       // The ONLY completion source in this editor — see
@@ -212,7 +266,15 @@ export function buildExtensions({
 }
 
 export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, Props>(function CodeMirrorEditor(
-  { value, onChange, onSave, onCancel, onPasteFile, onRequestAttachment },
+  {
+    value,
+    onChange,
+    onSave,
+    onCancel,
+    onPasteFile,
+    onRequestAttachment,
+    livePreview: livePreviewOn,
+  },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -253,13 +315,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, Props>(functi
     if (!host.current) return;
     const state = EditorState.create({
       doc: value,
-      extensions: buildExtensions({
-        onChangeRef,
-        onSaveRef,
-        onCancelRef,
-        onPasteFileRef,
-        onRequestAttachmentRef,
-      }),
+      extensions: buildExtensions(
+        {
+          onChangeRef,
+          onSaveRef,
+          onCancelRef,
+          onPasteFileRef,
+          onRequestAttachmentRef,
+        },
+        { livePreview: livePreviewOn },
+      ),
     });
     const v = new EditorView({ state, parent: host.current });
     view.current = v;
