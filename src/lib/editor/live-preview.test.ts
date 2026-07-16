@@ -54,6 +54,25 @@ function makeEditor(doc: string, cursor: number | { anchor: number; head: number
   return new EditorView({ state, parent: host });
 }
 
+// Raw mode — the same wiring `CodeMirrorEditor` mounts when the Settings
+// toggle is off. Used only by the M1 typography-authority test below; every
+// other test in this file exercises live mode.
+function makeRawEditor(doc: string) {
+  host = document.createElement("div");
+  document.body.appendChild(host);
+  const state = EditorState.create({
+    doc,
+    extensions: buildExtensions({
+      onChangeRef: { current: () => {} },
+      onSaveRef: { current: undefined },
+      onCancelRef: { current: undefined },
+      onPasteFileRef: { current: undefined },
+      onRequestAttachmentRef: { current: undefined },
+    }),
+  });
+  return new EditorView({ state, parent: host });
+}
+
 // jsdom reports zero real layout, so CM's own viewport heuristic clamps
 // `visibleRanges` to roughly its first ~1000-char estimate rather than the
 // whole doc (confirmed empirically against the 11k+-char morning-pages
@@ -237,6 +256,31 @@ describe("live-preview — checkbox toggle exactness (A4-SPEC §4)", () => {
     expect(view.dom.querySelector(".cm-lp-checkbox")).toBeNull();
     expect(view.dom.querySelector(".cm-content")?.textContent).toBe("- [ ] buy milk");
   });
+
+  it("a click on a STALE widget reference never corrupts the document (S2 guard)", () => {
+    // Something else edits the doc out from under a checkbox widget
+    // WITHOUT going through it — the same effective staleness an IME
+    // composition between build and tap would cause (S2 review finding):
+    // the decoration rebuild replaces this widget's DOM, but this test
+    // keeps holding the OLD element reference, exactly like a stale
+    // build-time `markerFrom` closure would still exist post-composition.
+    const doc = "intro\n\n- [ ] buy milk\n";
+    const view = makeEditor(doc, 0);
+    const staleBox = view.dom.querySelector(".cm-lp-checkbox") as HTMLInputElement;
+    expect(staleBox).toBeTruthy();
+
+    const bracketInterior = doc.indexOf("[ ]") + 1;
+    view.dispatch({ changes: { from: bracketInterior, to: bracketInterior + 1, insert: "x" } });
+    expect(view.state.doc.toString()).toBe("intro\n\n- [x] buy milk\n");
+    expect(staleBox.isConnected).toBe(false); // confirms the widget really was replaced
+
+    // Clicking the STALE reference must not write anywhere: posAtDOM on a
+    // detached node resolves to a fallback position (doc end, empirically)
+    // where the live text doesn't match "[ ]"/"[x]", so the guard bails —
+    // a missed tap, never a license to corrupt some other character.
+    staleBox.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(view.state.doc.toString()).toBe("intro\n\n- [x] buy milk\n");
+  });
 });
 
 describe("live-preview — touch target (A4-SPEC §4/§6, ≥2.5rem)", () => {
@@ -250,6 +294,37 @@ describe("live-preview — touch target (A4-SPEC §4/§6, ≥2.5rem)", () => {
     expect(cs.width).toBe("1.25rem");
     expect(cs.padding).toBe("0.625rem");
     expect(cs.margin).toContain("-0.625rem");
+  });
+});
+
+describe("live-preview — one font/padding authority per mode (M1 fix)", () => {
+  // Regression: `livePreviewChromeTheme` and the old shared `lensTheme` set
+  // fontFamily/fontSize/padding-inline on the SAME selectors at EQUAL
+  // specificity — a theme-vs-theme tie CM resolves by observed stylesheet
+  // order, not by position in the buildExtensions array (verified false in
+  // a real browser via the review's font-probe.mjs/pad-probe.mjs). The fix
+  // makes live mode and raw mode mutually exclusive typography authorities
+  // (`rawModeTypographyTheme` vs. `livePreviewChromeTheme`) so there's
+  // never a tie to lose. jsdom's getComputedStyle resolves CM's injected
+  // theme stylesheet the same way the real-browser probes did.
+  it("live mode: prose sans font, live font-size step, 1rem inline padding", () => {
+    const view = makeEditor("hello\n", 0);
+    const root = getComputedStyle(view.dom);
+    expect(root.fontFamily).toContain("var(--font-sans)");
+    const content = getComputedStyle(view.dom.querySelector(".cm-content") as HTMLElement);
+    expect(content.paddingInline).toBe("1rem");
+    const scroller = getComputedStyle(view.dom.querySelector(".cm-scroller") as HTMLElement);
+    expect(scroller.fontFamily).toContain("var(--font-sans)");
+  });
+
+  it("raw mode: mono editor font, editor font-size step, zero inline padding (byte-for-byte today's editor)", () => {
+    const view = makeRawEditor("hello\n");
+    const root = getComputedStyle(view.dom);
+    expect(root.fontFamily).toContain("var(--font-mono)");
+    const content = getComputedStyle(view.dom.querySelector(".cm-content") as HTMLElement);
+    expect(content.paddingInline).toBe("0");
+    const scroller = getComputedStyle(view.dom.querySelector(".cm-scroller") as HTMLElement);
+    expect(scroller.fontFamily).toContain("var(--font-mono)");
   });
 });
 
@@ -363,6 +438,35 @@ describe("live-preview — wikilinks and embeds", () => {
     const view = makeEditor("intro\n\nUse `[[this]]` to link.\n", 0);
     expect(view.dom.querySelector(".wikilink")).toBeNull();
     expect(view.dom.querySelector(".cm-content")?.textContent).toBe("introUse [[this]] to link.");
+  });
+});
+
+describe("live-preview — reference-style links/images render raw, out of A4 v1 scope (S1)", () => {
+  it("a shortcut reference link like '[sic]' is not decorated", () => {
+    const view = makeEditor("intro\n\neditorial [sic] aside\n", 0);
+    expect(view.dom.querySelector(".cm-lp-link")).toBeNull();
+    expect(view.dom.querySelector(".cm-content")?.textContent).toBe("introeditorial [sic] aside");
+  });
+
+  it("a full reference-style link '[text][ref]' is not decorated, even WITH a matching definition", () => {
+    // lezer never resolves the reference into a URL node in the tree
+    // regardless of whether a `[ref]: url` definition exists elsewhere —
+    // confirmed against the actual parse output, not assumed.
+    const doc = "intro\n\nsee [text][ref] here\n\n[ref]: https://example.com\n";
+    const view = makeEditor(doc, 0);
+    expect(view.dom.querySelector(".cm-lp-link")).toBeNull();
+    expect(view.dom.querySelector(".cm-content")?.textContent).toContain("see [text][ref] here");
+  });
+
+  it("a bare/shortcut image reference like '![alt text]' is not decorated", () => {
+    const view = makeEditor("intro\n\nwow ![alt text] here\n", 0);
+    expect(view.dom.querySelector(".cm-lp-embed-chip")).toBeNull();
+    expect(view.dom.querySelector(".cm-content")?.textContent).toBe("introwow ![alt text] here");
+  });
+
+  it("an in-scope inline link/image is still decorated normally (the fix doesn't over-reach)", () => {
+    const view = makeEditor("intro\n\nsee [text](https://x.y) here\n", 0);
+    expect(view.dom.querySelector(".cm-lp-link")).not.toBeNull();
   });
 });
 

@@ -22,23 +22,33 @@ const lensHighlight = HighlightStyle.define([
   { tag: t.quote, color: "var(--color-fg-muted)", fontStyle: "italic" },
 ]);
 
+// Mode-agnostic chrome only — NO font-family/font-size/inline-padding here.
+// Those are a raw-vs-live TIE, not a shared value (M1 review finding): CM6's
+// theme system scopes every rule under a per-theme generated class on
+// `.cm-editor`, so two themes setting the SAME selector at EQUAL specificity
+// resolve by observed stylesheet order — not by array position in
+// buildExtensions, which is what the original single lensTheme + a live-only
+// override assumed ("ordered after lensTheme so it wins"; verified false
+// in a real browser via the review's font-probe.mjs). The fix is to make the
+// tie impossible: `rawModeTypographyTheme` below and `livePreviewChromeTheme`
+// (live-preview.ts) are MUTUALLY EXCLUSIVE per buildExtensions' opts fork —
+// one font/padding authority per mode, never two themes competing for the
+// same property.
 const lensTheme = EditorView.theme({
   "&": {
-    fontFamily: "var(--font-mono)",
-    // Reads from the text-size knob (lib/text-size.ts → styles/index.css)
-    // so editor scales together with the markdown preview. Falls back to
-    // 14px on legacy stylesheets that pre-date the variable.
-    fontSize: "var(--font-size-editor, 14px)",
     backgroundColor: "var(--color-card)",
     color: "var(--color-fg)",
     height: "100%",
   },
   ".cm-content": {
-    padding: "1rem 0",
+    // Vertical padding is shared — nothing in live mode's own theme sets
+    // `paddingBlock`, so this is uncontested regardless of mode. Only the
+    // INLINE half is mode-specific (0 in raw, 1rem in live) and lives in
+    // each mode's own theme below.
+    paddingBlock: "1rem",
     caretColor: "var(--color-accent)",
   },
   ".cm-scroller": {
-    fontFamily: "var(--font-mono)",
     lineHeight: "1.6",
   },
   ".cm-gutters": {
@@ -56,6 +66,28 @@ const lensTheme = EditorView.theme({
     // then sits on a light-coral wash (9.6:1 in both themes) instead of a solid
     // accent-light fill.
     backgroundColor: "color-mix(in srgb, var(--color-accent-light) 30%, transparent) !important",
+  },
+});
+
+// Raw mode's ONLY font/padding authority (mirrors live-preview.ts's
+// `livePreviewChromeTheme`, which is live mode's) — included only when
+// `!opts.livePreview` in buildExtensions below, so it never shares a
+// selector with a live-mode theme at the same specificity. Preserves
+// today's editor byte-for-byte: mono, the text-size knob's editor step,
+// zero inline padding.
+const rawModeTypographyTheme = EditorView.theme({
+  "&": {
+    fontFamily: "var(--font-mono)",
+    // Reads from the text-size knob (lib/text-size.ts → styles/index.css)
+    // so editor scales together with the markdown preview. Falls back to
+    // 14px on legacy stylesheets that pre-date the variable.
+    fontSize: "var(--font-size-editor, 14px)",
+  },
+  ".cm-content": {
+    paddingInline: "0",
+  },
+  ".cm-scroller": {
+    fontFamily: "var(--font-mono)",
   },
 });
 
@@ -166,10 +198,12 @@ export function buildExtensions(
     markdown({ base: markdownLanguage }),
     syntaxHighlighting(lensHighlight),
     lensTheme,
-    // Ordered AFTER lensTheme so its font-family/font-size overrides win on
-    // the same-specificity CSS ties (mirrors how slashMenuTheme already
-    // composes below).
-    ...(livePreviewOn ? livePreview() : []),
+    // Exactly one font/padding theme per mode (M1 fix) — `livePreview()`
+    // bundles `livePreviewChromeTheme` for live mode, `rawModeTypographyTheme`
+    // is raw mode's mirror. Never both: a theme-vs-theme tie on the same
+    // selector resolves by observed stylesheet order, not array position
+    // here, so the only reliable fix is to make the tie impossible.
+    ...(livePreviewOn ? livePreview() : [rawModeTypographyTheme]),
     slashMenuTheme,
     autocompletion({
       // The ONLY completion source in this editor — see

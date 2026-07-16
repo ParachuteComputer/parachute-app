@@ -82,17 +82,33 @@ class TaskCheckboxWidget extends WidgetType {
     box.addEventListener("mousedown", stop);
     box.addEventListener("click", (e) => {
       stop(e);
-      // THE ONLY view.dispatch call in this module (invariant 1). Flips the
-      // bracket interior at the TaskMarker (`markerFrom` is the "[", the
-      // interior char sits one past it) — doc is otherwise byte-identical,
-      // undoable via the normal history extension, and flows out onChange
-      // like any other edit.
+      // THE ONLY view.dispatch call in this module (invariant 1). Position
+      // is derived FRESH at tap time (S2 review finding) rather than
+      // trusting this widget's build-time `markerFrom` closure: an IME
+      // composition between when this widget was built and when it's
+      // tapped remaps the DECORATION SET's ranges (see the plugin's
+      // update() below) but never touches a widget instance's own captured
+      // fields, so a stale `markerFrom` would silently write into whatever
+      // character now sits at that OLD offset — 1-char corruption
+      // elsewhere in the doc, not just a missed toggle. `posAtDOM` gives
+      // this widget's CURRENT position (doesn't throw for a detached/stale
+      // widget either — it falls back to a position that won't match
+      // below); the live doc text right after it is then checked against
+      // the actual "[ ]"/"[x]" pattern before writing anything. No match →
+      // treat it as a missed tap, never a license to write somewhere wrong.
+      let pos: number;
+      try {
+        pos = view.posAtDOM(wrap);
+      } catch {
+        return;
+      }
+      const nearby = view.state.doc.sliceString(pos, Math.min(pos + 10, view.state.doc.length));
+      const match = /\[([ xX])\]/.exec(nearby);
+      if (!match) return;
+      const bracketFrom = pos + (match.index ?? 0);
+      const isChecked = /[xX]/.test(match[1]);
       view.dispatch({
-        changes: {
-          from: this.markerFrom + 1,
-          to: this.markerFrom + 2,
-          insert: this.checked ? " " : "x",
-        },
+        changes: { from: bracketFrom + 1, to: bracketFrom + 2, insert: isChecked ? " " : "x" },
       });
     });
     wrap.appendChild(box);
@@ -372,12 +388,18 @@ export function buildDecorations(view: EditorView): DecorationSet {
             if (insideWikilinkOrEmbed(nodeRef.from, nodeRef.to)) return false; // it's really an embed
             const marks = nodeRef.node.getChildren("LinkMark");
             const url = nodeRef.node.getChild("URL");
+            // Reference-style `![alt][ref]` / shortcut `![alt]` — no URL
+            // child (lezer never resolves the reference into one, even
+            // when a matching `[ref]: url` definition exists elsewhere —
+            // confirmed against the actual tree, not assumed). Out of A4
+            // v1 scope (A4-SPEC §2): render raw, same as a table.
+            if (!url) return false;
             if (marks.length >= 2) {
               const altFrom = marks[0].to;
               const altTo = marks[1].from;
               const alt = doc.sliceString(altFrom, altTo).trim();
-              const urlText = url ? doc.sliceString(url.from, url.to) : "";
-              const label = alt || (urlText ? filenameFromUrl(urlText) : "");
+              const urlText = doc.sliceString(url.from, url.to);
+              const label = alt || filenameFromUrl(urlText);
               hide(nodeRef.from, nodeRef.to, new EmbedChipWidget(label));
             }
             return false; // the chip fully replaces alt text + url, no need to descend
@@ -386,18 +408,18 @@ export function buildDecorations(view: EditorView): DecorationSet {
             if (insideWikilinkOrEmbed(nodeRef.from, nodeRef.to)) break; // it's really a wikilink
             const marks = nodeRef.node.getChildren("LinkMark");
             const url = nodeRef.node.getChild("URL");
+            // Reference-style `[text][ref]` / shortcut `[sic]` — no URL
+            // child either (same lezer behavior as Image above). Explicitly
+            // out of scope (A4-SPEC §2: "reference-style links [text][ref]"):
+            // render raw.
+            if (!url) break;
             if (marks.length >= 2) {
               const openMark = marks[0];
               const closeMark = marks[marks.length - 1];
               hide(openMark.from, openMark.to); // "["
               hide(marks[1].from, closeMark.to); // "](url)"
-              const urlText = url ? doc.sliceString(url.from, url.to) : "";
-              style(
-                openMark.to,
-                marks[1].from,
-                "cm-lp-link",
-                urlText ? { title: urlText } : undefined,
-              );
+              const urlText = doc.sliceString(url.from, url.to);
+              style(openMark.to, marks[1].from, "cm-lp-link", { title: urlText });
             }
             break; // descend — nested emphasis inside link text
           }

@@ -55,21 +55,44 @@ default-ON behavior change to the editing surface, no wire/data-shape change.
   indented 4+ spaces, which is NOT code to lezer (list context wins), where the old pure-regex
   matcher couldn't tell the difference. Applies to both editor modes.
 
-**Manual pass:** dev server boots clean, root route serves. A full real-browser tablet/phone pass
-against representative vault notes (tap-toggle checkboxes, caret-jump check on headings, Settings
-toggle both ways, save/autosave/conflict flows) was **not performed in this session** — no browser-
-automation tool or connected test vault was available. The corpus-fixture test suite below
-exercises the same four note shapes + an edge-case fixture headlessly (mount, cursor walk,
-multi-line selection, rebuild) as the closest available proxy, but this is NOT a substitute for
-the real-browser tablet/phone pass A4-SPEC.md §10 calls for — flagging this explicitly for the
-reviewer/Aaron rather than reporting it as done.
+**Review fixes (pre-merge, PR #36):** the PR's review pass (33/33 scripted real-browser checks at
+tablet + phone viewports, via Playwright) caught three issues fixed before merge:
 
-- Tests: `src/lib/editor/live-preview.test.ts` (26 — the invariant test across 5 corpus fixtures,
-  reveal correctness, checkbox toggle exactness/undo/onChange-once/tap-never-eaten-by-reveal,
-  touch-target computed style, fence/indented-code/table sanctity, frontmatter guard, wikilink/
-  embed decoration incl. the Link-node double-decoration regression, and the <50ms full-doc perf
-  bound), `src/lib/editor-mode.test.ts` (3), `src/lib/vault/queries.sort.test.tsx` (2 — real fetch
-  URL assertions, not a mocked `queryNotes`), plus additions to
+- **M1 (font/theme precedence):** live mode was silently rendering mono@15px with zero inline
+  padding instead of the intended prose look — `livePreviewChromeTheme` and the original shared
+  `lensTheme` set `fontFamily`/`fontSize`/inline-padding on the SAME selectors at EQUAL
+  specificity, and CM6 resolves that tie by observed stylesheet order, not by position in the
+  `buildExtensions` array (the original "ordered after `lensTheme` so it wins" comment was
+  verified false in a real browser). Fixed by making the two modes mutually exclusive font/padding
+  authorities: `lensTheme` now carries only mode-agnostic chrome, a new `rawModeTypographyTheme`
+  (`CodeMirrorEditor.tsx`) is raw mode's authority, `livePreviewChromeTheme` stays live mode's —
+  never both included at once, so there's no tie to lose.
+- **S1 (reference-style links/images should render raw):** `[sic]` / `[text][ref]` / `![alt text]`
+  have no `URL` child in the tree (confirmed against the actual parse output — true even when a
+  matching `[ref]: url` definition exists elsewhere), so the `Link`/`Image` decoration cases now
+  bail (`if (!url) break`/`return false`) before decorating — they were being treated as real
+  links/embeds, which A4-SPEC §2 explicitly puts out of v1 scope.
+- **S2 (IME staleness, silent 1-char corruption):** the checkbox widget's tap handler used its
+  build-time `markerFrom` closure to compute the dispatch range; a composition edit between when
+  the widget was built and when it's tapped remaps the decoration set's ranges but never touches a
+  widget instance's own captured fields, so a stale `markerFrom` could silently write into whatever
+  character now sits at that old offset. Fixed: the tap handler derives its position FRESH via
+  `view.posAtDOM`, then guards the dispatch on the live doc text at that position actually matching
+  `[ ]`/`[x]` — a mismatch (including a fully detached/stale widget) downgrades to a missed tap,
+  never a write.
+
+**Manual pass:** the review's own scripted Playwright pass (33/33 checks, tablet 768×1024 + phone
+390×844) covers A4-SPEC §10's manual checklist — live-mode chrome, markup fade/reveal, zero
+scroll-jump on reveal, checkbox tap-toggle + buffer proof, slash-menu-still-opens, and the full
+Settings-toggle round trip (ON → OFF raw mode → back ON). Re-run clean against this fix commit.
+
+- Tests: `src/lib/editor/live-preview.test.ts` (33 — the invariant test across 5 corpus fixtures,
+  reveal correctness, checkbox toggle exactness/undo/onChange-once/tap-never-eaten-by-reveal/
+  stale-widget-guard, touch-target computed style, one-font-authority-per-mode computed style,
+  fence/indented-code/table sanctity, frontmatter guard, wikilink/embed decoration incl. the
+  Link-node double-decoration regression and reference-style links/images rendering raw, and the
+  <50ms full-doc perf bound), `src/lib/editor-mode.test.ts` (3), `src/lib/vault/queries.sort.test.tsx`
+  (2 — real fetch URL assertions, not a mocked `queryNotes`), plus additions to
   `src/components/CodeMirrorEditor.slash-menu.test.ts` (+5 — the N3 gate) and
   `src/components/CodeMirrorEditor.newline.test.ts` (+2 — the table Enter route). Fixtures:
   `src/lib/editor/__fixtures__/corpus/` (representative, not real vault content).
