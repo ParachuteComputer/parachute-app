@@ -1,3 +1,4 @@
+import { readStoredLivePreview, writeStoredLivePreview } from "@/lib/editor-mode";
 import { PATH_TREE_MODES, type PathTreeMode, usePathTreeMode } from "@/lib/path-tree";
 import { isStandalone } from "@/lib/pwa";
 import {
@@ -54,6 +55,7 @@ export function Settings() {
         <ManageSection />
         <ImportSection />
         <VoiceRetentionSection vaultId={activeVault.id} />
+        <EditorSection />
         <TextSizeSection />
         <PathTreeSection vaultId={activeVault.id} />
         <TagRolesSection vaultId={activeVault.id} />
@@ -274,6 +276,49 @@ function VoiceRetentionSection({ vaultId }: { vaultId: string }) {
           ) : null}
         </>
       )}
+    </section>
+  );
+}
+
+// A4-SPEC §7: one toggle, no other options — the escape hatch (raw split-
+// pane editor) exists for when live preview gets in the way, but it doesn't
+// need to be one tap away from the editor chrome itself. Lazy initializer
+// for the same flash-avoidance reason as TextSizeSection below.
+function EditorSection() {
+  const [on, setOn] = useState<boolean>(() => readStoredLivePreview());
+
+  const onChange = (next: boolean) => {
+    setOn(next);
+    writeStoredLivePreview(next);
+  };
+
+  return (
+    <section className="card space-y-4 rounded-xl p-6 shadow-soft">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-serif text-xl text-fg">Live preview</h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            Formats your writing as you type — Markdown stays underneath. Turn off for the raw
+            editor with a side-by-side preview.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-label="Live preview"
+          onClick={() => onChange(!on)}
+          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+            on ? "bg-accent" : "bg-border"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
+              on ? "translate-x-5" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
     </section>
   );
 }

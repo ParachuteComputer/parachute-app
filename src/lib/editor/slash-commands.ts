@@ -150,11 +150,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 export function matchSlashTrigger(
   lineTextBeforeCursor: string,
 ): { leadingWhitespace: string; query: string } | null {
-  // Known edge, deliberately deferred: 4+ leading spaces is a CommonMark
-  // indented code block, where "/" isn't really "starting a line" in the
-  // markdown sense — this regex still opens the menu there. Left alone
-  // until the live-preview phase, which is what actually needs to reason
-  // about block-type context per line.
+  // The 4+-leading-spaces-is-indented-code edge (N3) is closed now — see
+  // `isInCodeContext` in slash-completion.ts, which gates the completion
+  // SOURCE on the syntax tree instead of teaching this pure-string matcher
+  // about block context. This regex still matches on indented lines; the
+  // completion source is what refuses to open the menu there.
   const match = /^(\s*)\/(\w*)$/.exec(lineTextBeforeCursor);
   if (!match) return null;
   const [, leadingWhitespace, query] = match;

@@ -1,8 +1,9 @@
+import { livePreview } from "@/lib/editor/live-preview";
 import { insertHardOrPlainBreak, insertParagraphBreak } from "@/lib/editor/paragraph-break";
 import { createSlashCompletionSource } from "@/lib/editor/slash-completion";
 import { autocompletion } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -123,6 +124,10 @@ interface Props {
   // caller is expected to trigger that picker's file dialog, not implement
   // a second upload path here.
   onRequestAttachment?(): void;
+  // A4-SPEC §7: the Settings-controlled mode. Read ONCE at mount — the
+  // editor builds its extension set once per mount; a mode change arrives
+  // as a remount (the caller keys the element), not a live prop flip.
+  livePreview?: boolean;
 }
 
 interface ExtensionRefs {
@@ -133,23 +138,38 @@ interface ExtensionRefs {
   onRequestAttachmentRef: MutableRefObject<Props["onRequestAttachment"]>;
 }
 
+interface BuildExtensionsOpts {
+  // Default false so CodeMirrorEditor.slash-menu.test.ts and every other
+  // existing call site are untouched — raw mode stays byte-for-byte
+  // today's editor. Live-preview mode is opt-in per A4-SPEC §1.
+  livePreview?: boolean;
+}
+
 // Pulled out of the mount effect so it's independently testable against a
 // real (non-React) EditorView — trigger behavior and keymap precedence
 // (the Esc-closes-menu-first layering) are exercised against this exact
 // wiring, not a re-description of it, in CodeMirrorEditor.slash-menu.test.ts.
-export function buildExtensions({
-  onChangeRef,
-  onSaveRef,
-  onCancelRef,
-  onPasteFileRef,
-  onRequestAttachmentRef,
-}: ExtensionRefs) {
+export function buildExtensions(
+  { onChangeRef, onSaveRef, onCancelRef, onPasteFileRef, onRequestAttachmentRef }: ExtensionRefs,
+  opts: BuildExtensionsOpts = {},
+) {
+  const livePreviewOn = opts.livePreview ?? false;
   return [
     history(),
-    lineNumbers(),
-    markdown(),
+    // Live preview drops the gutter entirely (A4-SPEC §5) — raw mode keeps
+    // it, unchanged.
+    ...(livePreviewOn ? [] : [lineNumbers()]),
+    // `markdownLanguage` (GFM: Task/TaskMarker, Strikethrough, Table) instead
+    // of the bare `markdown()` default (commonmarkLanguage, no GFM nodes) —
+    // required by live-preview's decoration inventory, applied in BOTH modes
+    // since it only affects parsing/highlight fidelity, not editing behavior.
+    markdown({ base: markdownLanguage }),
     syntaxHighlighting(lensHighlight),
     lensTheme,
+    // Ordered AFTER lensTheme so its font-family/font-size overrides win on
+    // the same-specificity CSS ties (mirrors how slashMenuTheme already
+    // composes below).
+    ...(livePreviewOn ? livePreview() : []),
     slashMenuTheme,
     autocompletion({
       // The ONLY completion source in this editor — see
@@ -212,7 +232,15 @@ export function buildExtensions({
 }
 
 export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, Props>(function CodeMirrorEditor(
-  { value, onChange, onSave, onCancel, onPasteFile, onRequestAttachment },
+  {
+    value,
+    onChange,
+    onSave,
+    onCancel,
+    onPasteFile,
+    onRequestAttachment,
+    livePreview: livePreviewOn,
+  },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -253,13 +281,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, Props>(functi
     if (!host.current) return;
     const state = EditorState.create({
       doc: value,
-      extensions: buildExtensions({
-        onChangeRef,
-        onSaveRef,
-        onCancelRef,
-        onPasteFileRef,
-        onRequestAttachmentRef,
-      }),
+      extensions: buildExtensions(
+        {
+          onChangeRef,
+          onSaveRef,
+          onCancelRef,
+          onPasteFileRef,
+          onRequestAttachmentRef,
+        },
+        { livePreview: livePreviewOn },
+      ),
     });
     const v = new EditorView({ state, parent: host.current });
     view.current = v;

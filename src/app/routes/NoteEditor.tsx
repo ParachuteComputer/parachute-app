@@ -14,6 +14,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { type StoredDraft, bodyEquals, clearDraft, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
+import { readStoredLivePreview } from "@/lib/editor-mode";
 import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
 import { useNote, useUpdateNote, useVaultStore } from "@/lib/vault";
@@ -79,6 +80,10 @@ function EditorSurface({ note }: { note: Note }) {
   // this note's draft under a different vault's key. The draft belongs to the
   // vault the note lives in (notes#175 F1).
   const vaultId = useRef(useVaultStore.getState().activeVaultId).current;
+  // A4-SPEC §7: read once — the editor builds its extension set once per
+  // mount, and Settings changing this pref takes effect on the NEXT note
+  // opened (a runtime kill-switch, not a live Compartment swap).
+  const livePreviewOn = useRef(readStoredLivePreview()).current;
   const resolver = useMemo(() => buildWikilinkResolver(note), [note]);
   const [baseline, setBaseline] = useState<EditorState>(() => toEditorState(note));
   const [draft, setDraft] = useState<EditorState>(() => toEditorState(note));
@@ -370,31 +375,33 @@ function EditorSurface({ note }: { note: Note }) {
         </div>
       ) : null}
 
-      <div
-        role="tablist"
-        aria-label="Editor view"
-        className="mb-3 inline-flex rounded-lg border border-border bg-card p-0.5 text-sm lg:hidden"
-      >
-        {(["edit", "preview"] as const).map((p) => (
-          <button
-            key={p}
-            type="button"
-            role="tab"
-            aria-selected={mobilePane === p}
-            onClick={() => setMobilePane(p)}
-            className={`rounded-md px-3 py-1.5 capitalize ${
-              mobilePane === p ? "bg-accent text-on-accent" : "text-fg-muted hover:text-accent"
-            }`}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
+      {livePreviewOn ? null : (
+        <div
+          role="tablist"
+          aria-label="Editor view"
+          className="mb-3 inline-flex rounded-lg border border-border bg-card p-0.5 text-sm lg:hidden"
+        >
+          {(["edit", "preview"] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              aria-selected={mobilePane === p}
+              onClick={() => setMobilePane(p)}
+              className={`rounded-md px-3 py-1.5 capitalize ${
+                mobilePane === p ? "bg-accent text-on-accent" : "text-fg-muted hover:text-accent"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="grid min-h-[60vh] gap-4 lg:grid-cols-2">
+      <div className={`grid min-h-[60vh] gap-4 ${livePreviewOn ? "" : "lg:grid-cols-2"}`}>
         <AttachmentDropZone
           onDropFiles={uploader.start}
-          className={`card min-w-0 ${mobilePane === "edit" ? "" : "hidden lg:block"}`}
+          className={`card min-w-0 ${livePreviewOn || mobilePane === "edit" ? "" : "hidden lg:block"}`}
           hint={ALLOWLIST_HINT}
         >
           <CodeMirrorEditor
@@ -411,15 +418,18 @@ function EditorSurface({ note }: { note: Note }) {
             // Attachments section's own picker below, rather than a second
             // upload path.
             onRequestAttachment={() => attachmentPickerRef.current?.open()}
+            livePreview={livePreviewOn}
           />
         </AttachmentDropZone>
-        <div
-          className={`card min-w-0 overflow-auto p-4 ${
-            mobilePane === "preview" ? "" : "hidden lg:block"
-          }`}
-        >
-          <NoteRenderer note={{ path: draft.path, content: previewContent }} resolve={resolver} />
-        </div>
+        {livePreviewOn ? null : (
+          <div
+            className={`card min-w-0 overflow-auto p-4 ${
+              mobilePane === "preview" ? "" : "hidden lg:block"
+            }`}
+          >
+            <NoteRenderer note={{ path: draft.path, content: previewContent }} resolve={resolver} />
+          </div>
+        )}
       </div>
 
       <AttachmentsSection

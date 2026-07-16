@@ -1,6 +1,27 @@
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
+import { syntaxTree } from "@codemirror/language";
+import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import type { SyntaxNode } from "@lezer/common";
 import { SLASH_COMMANDS, matchSlashTrigger, matchesQuery } from "./slash-commands";
+
+// N3 (from PR #33, closed now that the live-preview parser change put the
+// syntax tree in play — see slash-commands.ts:153): a "/" inside a fenced or
+// indented code block, or inline code, isn't "starting a line" in the
+// markdown sense — it's a literal character in the code's content. Gate the
+// completion SOURCE on block context here rather than teaching
+// `matchSlashTrigger` about the tree (keeps that matcher pure-string,
+// testable without an EditorState). Applies in both editor modes — the tree
+// is available regardless of live-preview being on.
+const CODE_CONTEXT_NODE_NAMES = new Set(["FencedCode", "CodeBlock", "InlineCode", "CodeText"]);
+
+function isInCodeContext(state: EditorState, pos: number): boolean {
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1);
+  for (; node; node = node.parent) {
+    if (CODE_CONTEXT_NODE_NAMES.has(node.name)) return true;
+  }
+  return false;
+}
 
 // The `@codemirror/autocomplete` completion source for the "/"-command
 // menu. Passed as the sole entry in `autocompletion({ override: [...] })`
@@ -20,6 +41,7 @@ export function createSlashCompletionSource(onRequestAttachment: () => void) {
     const before = line.text.slice(0, pos - line.from);
     const trigger = matchSlashTrigger(before);
     if (!trigger) return null;
+    if (isInCodeContext(state, pos)) return null;
 
     const options: Completion[] = SLASH_COMMANDS.filter((cmd) =>
       matchesQuery(cmd, trigger.query),

@@ -1,5 +1,79 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.19.0] - 2026-07-16
+
+**Live-preview editor — markup fades, todos become checkboxes, one calm pane (A4, the editor
+arc's flagship).** The CM6 editor stops dressing like a code editor: every line renders formatted
+(markup faded/hidden, `**bold**` styled bold, headings scaled up), the line(s) the cursor touches
+reveal raw markdown underneath. Live preview is the new default single-pane editing mode; the
+split-pane raw editor stays reachable via one Settings toggle (the escape hatch). Minor bump —
+default-ON behavior change to the editing surface, no wire/data-shape change.
+
+- **Engine: `src/lib/editor/live-preview.ts`** (new) — a `ViewPlugin` computing decorations from
+  the syntax tree over `view.visibleRanges` ONLY (never the whole doc), rebuilding on
+  `docChanged || selectionSet || viewportChanged` and skipping rebuilds mid-IME-composition. Two
+  invariants the whole design hangs on: (1) the module has exactly ONE `view.dispatch` call — the
+  checkbox widget's tap handler; everything else only ever reads state and produces decorations;
+  (2) reveal never changes vertical layout — heading font-size / code background / widget heights
+  apply unconditionally, only marker VISIBILITY toggles on reveal.
+- **Parser switch (both modes):** `markdown()` → `markdown({ base: markdownLanguage })` — the bare
+  default is commonmark-only; the GFM base is what puts `Task`/`TaskMarker` (todos),
+  `Strikethrough`, and `Table` in the tree at all.
+- **Decoration inventory:** ATX headings (scaled, marker hidden), bold/italic/strikethrough
+  (marker hidden, existing highlight already styles the span), inline code (chip), links (text
+  styled, `](url)` hidden), wikilinks/embeds (regex-mirrored from
+  `parachute-surface/packages/surface-render`'s `remark-wikilinks.ts` — neutral styling only, no
+  resolved/unresolved split; a follow-up issue is filed there to export the regex so this mirror
+  can be deleted), task checkboxes (real tappable `<input type="checkbox">`, ≥2.5rem hit area via
+  a negative-margin padding trick, toggle writes exactly the one bracket character), bullet/
+  ordered lists, blockquotes (border + existing italic), horizontal rules (widget), images/embeds
+  (placeholder chip, v1 — no inline rendering). Fenced/indented code interiors and frontmatter are
+  fully opaque to every pass — provably undecorated, tested. GFM tables render raw (out of scope
+  for v1; dedicated editing UI later).
+- **Chrome (live mode only):** gutter gone (`lineNumbers()` omitted), prose font stack + size
+  mirroring `.prose-note`, capped measure (`--w-prose`). Raw mode is byte-for-byte today's editor.
+- **Flag + Settings:** `src/lib/editor-mode.ts` (mirrors `text-size.ts`'s read/write pattern),
+  key `notes:livePreview`, default ON (`"off"` is the one persisted sentinel). New "Live preview"
+  toggle in Settings, adjacent to Text size. `CodeMirrorEditor` gains a `livePreview` prop, read
+  once at `NoteEditor`/`NoteNew` mount — a runtime kill-switch, not a live Compartment swap. When
+  ON, both routes collapse to single-pane (no `NoteRenderer` preview column, no mobile edit/
+  preview tab strip); OFF is the exact split-pane raw editor, unchanged.
+
+**Riders (separate commits, same PR):**
+- **R1 — `useAllNotesForSwitcher` (Cmd+K) and `useAllNotesWithLinks` (the graph) send `sort:
+  "desc"`** (`src/lib/vault/queries.ts`): both previously sent a hard `limit` with no explicit
+  sort, so the vault's `created_at ASC` default silently dropped the NEWEST notes — not the
+  oldest — off a vault past `VAULT_GRAPH_NOTE_CAP`. Now matches the other capped-window queries.
+- **R2 — GFM table Enter/Shift+Enter route** (`src/lib/editor/paragraph-break.ts`, closes app#35):
+  once the parser switch put `Table` in the tree, a table row gets the same treatment as a fence
+  — a plain newline, never a paragraph break (which would explode a blank line into the table) or
+  a hard-break backslash.
+- **N3 — the slash-menu's deliberately-deferred indented-code edge is closed**
+  (`src/lib/editor/slash-completion.ts`): the completion SOURCE now gates on
+  `syntaxTree(state).resolveInner(pos, -1)`, refusing to open inside `FencedCode`/`CodeBlock`/
+  `InlineCode`/`CodeText` — while correctly still opening on a list-item continuation line
+  indented 4+ spaces, which is NOT code to lezer (list context wins), where the old pure-regex
+  matcher couldn't tell the difference. Applies to both editor modes.
+
+**Manual pass:** dev server boots clean, root route serves. A full real-browser tablet/phone pass
+against representative vault notes (tap-toggle checkboxes, caret-jump check on headings, Settings
+toggle both ways, save/autosave/conflict flows) was **not performed in this session** — no browser-
+automation tool or connected test vault was available. The corpus-fixture test suite below
+exercises the same four note shapes + an edge-case fixture headlessly (mount, cursor walk,
+multi-line selection, rebuild) as the closest available proxy, but this is NOT a substitute for
+the real-browser tablet/phone pass A4-SPEC.md §10 calls for — flagging this explicitly for the
+reviewer/Aaron rather than reporting it as done.
+
+- Tests: `src/lib/editor/live-preview.test.ts` (26 — the invariant test across 5 corpus fixtures,
+  reveal correctness, checkbox toggle exactness/undo/onChange-once/tap-never-eaten-by-reveal,
+  touch-target computed style, fence/indented-code/table sanctity, frontmatter guard, wikilink/
+  embed decoration incl. the Link-node double-decoration regression, and the <50ms full-doc perf
+  bound), `src/lib/editor-mode.test.ts` (3), `src/lib/vault/queries.sort.test.tsx` (2 — real fetch
+  URL assertions, not a mocked `queryNotes`), plus additions to
+  `src/components/CodeMirrorEditor.slash-menu.test.ts` (+5 — the N3 gate) and
+  `src/components/CodeMirrorEditor.newline.test.ts` (+2 — the table Enter route). Fixtures:
+  `src/lib/editor/__fixtures__/corpus/` (representative, not real vault content).
+
 ## [0.18.0] - 2026-07-16
 
 **Provenance badge + paragraph-break Enter (A2+A3 of the editor arc).** Two independent,
