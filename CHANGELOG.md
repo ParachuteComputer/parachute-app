@@ -1,5 +1,59 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.17.0] - 2026-07-16
+
+**The "/"-command menu (Editor P0, editor arc).** First visible step of the "Notion-feel,
+markdown-underneath" editor direction (EDITOR-RESEARCH.md, Aaron's 2026-07-14 morning-pages
+mandate) — deliberately narrow: no live-preview work here, just a fast way to insert common
+markdown blocks without hand-typing `#`/`-`/`` ``` ``. Minor bump — a new interaction on the
+existing editor, no behavior change to anything that isn't typing `/`.
+
+- **Engine: `@codemirror/autocomplete`**, wired into `CodeMirrorEditor.tsx` as the editor's
+  ONLY completion source (`autocompletion({ override: [...] })`) — no clash surface with
+  anything else, and it's a no-op outside its own trigger. ↑/↓, Enter, Esc, and click all come
+  free from the library; nothing hand-rolled for keyboard nav or click-to-select.
+- **Trigger**: `/` at the start of a line, or with only whitespace before it on the line — never
+  mid-word (`src/lib/editor/slash-commands.ts`'s `matchSlashTrigger`, a plain regex against the
+  current line's text up to the cursor). Typing "and/or" never opens it. Filters live as more
+  characters follow the `/`, matching against each command's label or a short keyword list
+  (`matchesQuery`).
+- **The v1 command set** (label — inserts): Heading 1/2/3 — `# ` / `## ` / `### `; Bulleted list
+  — `- `; Numbered list — `1. `; To-do — `- [ ] ` (GFM task list); Quote — `> `; Code block —
+  fenced ` ``` ` pair with the cursor on the blank line inside; Divider — `---`, padded with a
+  blank line on either side that doesn't already have one (a bare `---` right under a text line
+  is a CommonMark Setext-heading underline, not a divider — `"Heading\n---"` renders as an H2);
+  Image / attachment — opens the SAME upload flow the page's Attachments section already uses
+  (`AttachmentPicker`'s new imperative `open()`, wired through a new `onRequestAttachment` prop on
+  `CodeMirrorEditor`), not a second upload path.
+- **Every insert is a plain-text buffer edit** — literal markdown characters written straight into
+  the doc via the same primitive `CodeMirrorEditorHandle.insertAtCursor` already uses for uploads,
+  never a structured object that gets serialized afterward. That's the whole point of staying on
+  CodeMirror 6 rather than a block-WYSIWYG engine (EDITOR-RESEARCH.md §5): there's only ever one
+  representation of the note, so there's nothing for a second implementation to drift out of sync
+  with.
+- **Esc layering preserved**: `@codemirror/autocomplete`'s own keymap runs at `Prec.highest`, so
+  the first Escape closes an open menu (`closeCompletion`) without ever reaching the editor's own
+  Escape binding; only a second Escape (menu already closed) falls through to the existing
+  `onCancel`. Same precedence protects ⌘S, paste-file handling, and draft autosave — none of them
+  sit inside the completion keymap, so they're untouched.
+- **Menu styling**: CodeMirror's own tooltip positioning (flip/clamp to stay on-screen) handles
+  the same on-screen-on-tablet job the recent `TextSizeControl` fix did by hand — nothing bespoke
+  needed here. Themed as a `.glass-panel`-family popover per STYLE.md's "command palette" surface,
+  with touch-sized (2.5rem-min) rows.
+- **Deliberately out of scope**: live-preview decoration (Phase 1 of the editor arc), a GFM table
+  skeleton (real tables are painful to hand-edit as raw markdown even with live preview — a
+  dedicated table UI is a later, separate piece of work), and a `[[`-triggered wikilink
+  autocomplete (needs a note-index search the editor doesn't have inline access to yet — a natural
+  v1.1).
+- Tests: `src/lib/editor/slash-commands.test.ts` (22 tests — trigger matching incl. the mid-word
+  negative, query filtering, and every command's `apply()` against a real headless CM6
+  `EditorView`, exact-string doc + cursor-position assertions) and
+  `src/components/CodeMirrorEditor.slash-menu.test.ts` (8 tests — the actual wiring
+  `buildExtensions()` assembles, not a re-description of it: the full 10-command list opening on
+  bare `/`, the "and/or" negative through the real completion source, live filtering, a
+  real-Enter-keypress commit, the image command driving `onRequestAttachment`, and all three legs
+  of the Esc-layering behavior via real `KeyboardEvent` dispatch on `contentDOM`).
+
 ## [0.16.1] - 2026-07-12
 
 **The SET UP shelf is state-derived, not a per-device sticky checklist (Wave-3).** Fixes the bug
