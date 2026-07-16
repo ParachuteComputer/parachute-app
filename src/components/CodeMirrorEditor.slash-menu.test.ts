@@ -76,7 +76,7 @@ async function flush() {
 }
 
 describe("the slash menu, wired the same way CodeMirrorEditor mounts it", () => {
-  it("opens with all 9 commands on a bare '/' at the start of a line", async () => {
+  it("opens with all 10 commands on a bare '/' at the start of a line", async () => {
     const view = makeEditor("/", 1);
     startCompletion(view);
     await flush();

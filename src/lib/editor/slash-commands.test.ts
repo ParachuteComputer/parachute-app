@@ -127,17 +127,26 @@ describe("SLASH_COMMANDS apply()", () => {
     expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe("");
   });
 
-  it("Divider on an otherwise-empty doc inserts a bare '---'", () => {
+  // The cursor must ALWAYS land on the line after the divider — never
+  // appended straight onto "---" itself (that would read "---text" the
+  // instant the user keeps typing). Every case below asserts this via
+  // `lineAt(cursor)` rather than a raw offset, so it reads as "which line
+  // is the cursor actually on" regardless of how the padding math shifts
+  // the absolute position.
+
+  it("Divider on an otherwise-empty doc inserts '---' followed by a newline, cursor on the line after", () => {
     const view = makeView("/hr", 3);
     command("divider").apply(view, 0, 3);
-    expect(view.state.doc.toString()).toBe("---");
+    expect(view.state.doc.toString()).toBe("---\n");
+    expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe("");
   });
 
   it("Divider pads a leading blank line when the previous line has content (Setext-heading guard)", () => {
     // Doc: "Some heading\n/hr" — "/hr" is the whole second line.
     const view = makeView("Some heading\n/hr", 16);
     command("divider").apply(view, 13, 16);
-    expect(view.state.doc.toString()).toBe("Some heading\n\n---");
+    expect(view.state.doc.toString()).toBe("Some heading\n\n---\n");
+    expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe("");
   });
 
   it("Divider pads a trailing blank line when the next line has content", () => {
@@ -145,12 +154,24 @@ describe("SLASH_COMMANDS apply()", () => {
     const view = makeView("/hr\nMore text", 3);
     command("divider").apply(view, 0, 3);
     expect(view.state.doc.toString()).toBe("---\n\nMore text");
+    expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe("");
   });
 
   it("Divider pads both sides when squeezed between two lines of content", () => {
     const view = makeView("Above\n/hr\nBelow", 9);
     command("divider").apply(view, 6, 9);
     expect(view.state.doc.toString()).toBe("Above\n\n---\n\nBelow");
+    expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe("");
+  });
+
+  it("Divider does NOT double-pad when the next line is already blank — cursor still lands there, not on '---'", () => {
+    // Doc: "/hr\n\nBelow" — "/hr" is the whole first line, line 2 is
+    // already blank. No padding is needed (one already exists), but the
+    // cursor still has to move off the divider's own line onto it.
+    const view = makeView("/hr\n\nBelow", 3);
+    command("divider").apply(view, 0, 3);
+    expect(view.state.doc.toString()).toBe("---\n\nBelow");
+    expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe("");
   });
 
   it("Image/attachment clears the query text and calls onRequestAttachment, without inserting markdown itself", () => {

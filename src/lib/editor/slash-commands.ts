@@ -104,10 +104,27 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       const line = state.doc.lineAt(from);
       const prevLine = line.number > 1 ? state.doc.line(line.number - 1) : null;
       const nextLine = line.number < state.doc.lines ? state.doc.line(line.number + 1) : null;
-      const leadingBlank = prevLine && prevLine.text.trim() !== "" ? "\n" : "";
-      const trailingBlank = nextLine && nextLine.text.trim() !== "" ? "\n" : "";
-      const insert = `${leadingBlank}---${trailingBlank}`;
-      replaceWithCursor(view, from, to, insert, insert.length);
+      const needsLeadingBlank = prevLine !== null && prevLine.text.trim() !== "";
+      const nextLineHasContent = nextLine !== null && nextLine.text.trim() !== "";
+      const atEnd = nextLine === null;
+      // A "\n" right after "---" is only ours to add when nothing already
+      // follows it: if there IS a next line (blank or not), the untouched
+      // remainder past `to` already starts with the original line break
+      // that separated the divider's line from it — inserting a second one
+      // here would double the blank-line pad (see the trailing-content
+      // case below).
+      const insert = `${needsLeadingBlank ? "\n" : ""}---${nextLineHasContent ? "\n" : ""}${atEnd ? "\n" : ""}`;
+      // Cursor ALWAYS lands on the line after the divider, never appended
+      // straight onto "---" (that would read "---text" the instant the
+      // user keeps typing). When our own insert supplied the separating
+      // "\n" (padding a real next line, or at EOF), landing right after it
+      // is enough. When it didn't (the next line was already blank), that
+      // separator lives in the remainder just past `to` — step one more
+      // character into it so the cursor sits unambiguously on that
+      // pre-existing blank line rather than the boundary CM still
+      // attributes to the divider's own line.
+      const cursorOffset = insert.length + (nextLineHasContent || atEnd ? 0 : 1);
+      replaceWithCursor(view, from, to, insert, cursorOffset);
     },
   },
   {
@@ -133,6 +150,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 export function matchSlashTrigger(
   lineTextBeforeCursor: string,
 ): { leadingWhitespace: string; query: string } | null {
+  // Known edge, deliberately deferred: 4+ leading spaces is a CommonMark
+  // indented code block, where "/" isn't really "starting a line" in the
+  // markdown sense — this regex still opens the menu there. Left alone
+  // until the live-preview phase, which is what actually needs to reason
+  // about block-type context per line.
   const match = /^(\s*)\/(\w*)$/.exec(lineTextBeforeCursor);
   if (!match) return null;
   const [, leadingWhitespace, query] = match;
