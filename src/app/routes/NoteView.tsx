@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { OfflineRibbon } from "@/components/ui/OfflineRibbon";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { leadingH1, pathLeaf, stripLeadingH1 } from "@/lib/note-title";
+import { leadingH1, pathDisplayTitle, stripLeadingH1 } from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
 import { useActiveVaultClient, useNote, useVaultStore } from "@/lib/vault";
@@ -61,11 +61,20 @@ export function NoteView() {
 function NoteBody({ note }: { note: Note }) {
   const resolver = useMemo(() => buildWikilinkResolver(note), [note]);
   const label = note.path ?? note.id;
-  // Human title: the content's leading H1 when it has one, else the path leaf.
+  // Human title: the content's leading H1 when it has one, else the path
+  // leaf — an untouched quickPath() default becomes a timestamp variant
+  // (metadata voice, never a headline) rather than the raw "22-10-48" leaf.
   // When the H1 becomes the page title we strip it from the rendered body so
-  // the note isn't headed by its own title twice.
+  // the note isn't headed by its own title twice. Deliberately not
+  // `noteTitle()`'s first-line fallback: an untitled first line would stay
+  // unstripped in the body below it, so titling by it here would duplicate
+  // that line on screen.
   const h1 = leadingH1(note.content);
-  const title = h1 ?? (note.path ? pathLeaf(note.path) : note.id);
+  const title = h1
+    ? { kind: "title" as const, text: h1 }
+    : note.path
+      ? pathDisplayTitle(note.path)
+      : { kind: "title" as const, text: note.id };
   const bodyNote = useMemo(
     () => (h1 ? { ...note, content: stripLeadingH1(note.content ?? "") } : note),
     [note, h1],
@@ -95,7 +104,9 @@ function NoteBody({ note }: { note: Note }) {
     <article className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="min-w-0">
         <header className="mb-8 border-b border-border pb-5">
-          <h1 className="page-title">{title}</h1>
+          <h1 className={title.kind === "timestamp" ? "page-title title-timestamp" : "page-title"}>
+            {title.text}
+          </h1>
           {note.tags && note.tags.length > 0 ? <HeaderTags tags={note.tags} /> : null}
           <p className="note-id mt-2">{label}</p>
           {summary ? <p className="mt-3 text-fg-muted">{summary}</p> : null}

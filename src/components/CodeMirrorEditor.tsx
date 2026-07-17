@@ -6,7 +6,13 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { EditorView, placeholder as cmPlaceholder, keymap, lineNumbers } from "@codemirror/view";
+import {
+  EditorView,
+  placeholder as cmPlaceholder,
+  keymap,
+  lineNumbers,
+  scrollPastEnd,
+} from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import type { MutableRefObject } from "react";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
@@ -234,6 +240,16 @@ export function buildExtensions(
       override: [createSlashCompletionSource(() => onRequestAttachmentRef.current?.())],
     }),
     EditorView.lineWrapping,
+    // Wave 1 §3.1: scroll-past-end (not typewriter mode — full centering
+    // fights virtual-keyboard scroll-into-view on mobile, A4-SPEC's own
+    // typing-canvas study). `scrollPastEnd()` is CM6's stock extension so
+    // any line can reach the viewport top; `scrollMargins` keeps ~30% of
+    // the viewport below the active line whenever CM auto-scrolls to keep
+    // the cursor in view, so typing at the bottom of a long note never
+    // pins the caret to the floor. Mode-agnostic — both raw and live mode
+    // benefit, this is a scroll behavior, not a typography concern.
+    scrollPastEnd(),
+    EditorView.scrollMargins.of((view) => ({ bottom: view.dom.clientHeight * 0.3 })),
     EditorView.domEventHandlers({
       paste(event) {
         const items = event.clipboardData?.items;

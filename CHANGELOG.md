@@ -1,5 +1,37 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.5] - 2026-07-17
+
+**Editor Wave 1 — "one voice."** From the editor-experience design study: the editor and the
+reader become the same room. Presentation-only, no storage/path/wire changes.
+
+- **Type-scale unification.** The page-title clamp is retuned to
+  `clamp(var(--text-2xl), calc(var(--text-xl) + 1.2vw), 2.25rem)` — ~27px phone / ~31px tablet
+  portrait / 36px desktop cap, a document heading rather than a poster. Live-editor headings move
+  onto the shared serif ramp (`.cm-lp-h1` → `--font-serif` + `--text-3xl`, H2 → `--text-2xl`, H3 →
+  `--text-xl`, H4-6 → `--text-lg`/600) instead of an ad-hoc sans em scale, so a heading is the same
+  object at the same size in edit and read. A new `--lh-live: 1.7` token (meeting reading's 1.78
+  and the old code-editor 1.6 in the middle) drives the live editor's scroller and every
+  height-locked live-preview widget (`.cm-lp-hr`, `.cm-lp-embed-chip`) together, so the
+  reveal-never-reflows invariant holds.
+- **Humanized default titles.** A `displayTitle()` refinement in `note-title.ts` pattern-matches
+  `quickPath()`-shaped leaves (`Notes/YYYY/MM-DD/HH-MM-SS`) and renders them as a formatted
+  timestamp ("July 16 · 10:48 PM", muted, placeholder weight) instead of the raw date-path leaf —
+  in NoteRow, the Recent timeline (via NoteRow), QuickSwitch, and NoteView's page-title slot.
+  Notes with real content keep today's title logic byte-identical. Composer placeholder copy is
+  now "Name your note — or just start writing."
+- **Scroll-past-end.** CM6's stock `scrollPastEnd()` plus a ~30%-viewport bottom scroll margin, so
+  typing at the bottom of a long note no longer pins the caret to the floor.
+- **Wikilink/external link distinction.** Solid underline for wikilinks ("stays home"), dashed
+  underline for external links ("leaves") — in both the live editor (`.cm-lp-link` vs
+  `.wikilink`) and the read view, which additionally gets a small departing-arrow after external
+  links (CSS `::after`, no extra DOM).
+- **Tailwind v4 bracket-syntax fix (app#41).** 17 `text-[--color-x]`/`max-w-[--w-x]`-style
+  arbitrary values across the app were silently compiling to invalid CSS (`color: --color-x`,
+  missing the `var()` wrap) — converted to the `(--var)` parens shorthand, matching the fix
+  already landed in Toaster.tsx. This restores the dark-accent WCAG-AA on-accent color override on
+  every affected button/badge.
+
 ## [0.20.4] - 2026-07-16
 
 **Atmosphere set (uni-surface adoption, display-only — awaits Aaron's morning review, not

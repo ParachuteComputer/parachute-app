@@ -1192,7 +1192,7 @@ function RenameViewDialog({
       aria-modal="true"
       aria-label="Rename view"
     >
-      <div className="dialog-panel max-w-[--w-narrow]">
+      <div className="dialog-panel max-w-(--w-narrow)">
         <h3 className="mb-3 font-serif text-lg text-fg">Rename view</h3>
         <label className="block text-sm">
           <span className="mb-1 block text-fg-muted">Name</span>
@@ -1255,7 +1255,7 @@ function SaveViewDialog({
       aria-modal="true"
       aria-label="Save view"
     >
-      <div className="dialog-panel max-w-[--w-narrow]">
+      <div className="dialog-panel max-w-(--w-narrow)">
         <h3 className="mb-3 font-serif text-lg text-fg">Save view</h3>
         <label className="block text-sm">
           <span className="mb-1 block text-fg-muted">Name</span>

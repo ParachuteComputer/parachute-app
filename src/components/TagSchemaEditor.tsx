@@ -352,7 +352,7 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
                 type="button"
                 onClick={onSave}
                 disabled={mutation.isPending}
-                className="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
+                className="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-(--color-on-accent) hover:bg-accent-hover disabled:opacity-40"
               >
                 {mutation.isPending ? "Saving…" : "Save schema"}
               </button>

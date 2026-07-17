@@ -75,7 +75,7 @@ export function SpeedDial() {
         aria-expanded={open}
         aria-controls={menuId}
         title={open ? undefined : "Create"}
-        className="focus-ring grid h-12 w-12 place-items-center rounded-full bg-accent text-[--color-on-accent] shadow-lift transition-transform duration-(--dur-move) ease-out hover:scale-105 hover:bg-accent-hover motion-reduce:hover:scale-100"
+        className="focus-ring grid h-12 w-12 place-items-center rounded-full bg-accent text-(--color-on-accent) shadow-lift transition-transform duration-(--dur-move) ease-out hover:scale-105 hover:bg-accent-hover motion-reduce:hover:scale-100"
       >
         <span
           aria-hidden="true"

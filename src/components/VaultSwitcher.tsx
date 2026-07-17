@@ -466,7 +466,7 @@ function SwitcherPanel({
       ) : null}
 
       {connectError || openError ? (
-        <div className="border-b border-border-light px-3 py-2 text-xs text-[--color-danger]">
+        <div className="border-b border-border-light px-3 py-2 text-xs text-(--color-danger)">
           {connectError ?? openError}
         </div>
       ) : null}

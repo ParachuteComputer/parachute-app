@@ -73,6 +73,53 @@ export function pathLeaf(path: string): string {
   return last.replace(/\.md$/i, "");
 }
 
+// A note's title, distinguishing a GENUINE title (from content, or an
+// operator-chosen path) from an untouched `quickPath()` default — a
+// machine-generated timestamp that isn't a name yet. Callers that render
+// titles in a list/header use this instead of `noteTitle()` so they can
+// render the timestamp variant in metadata voice (muted, placeholder
+// weight) rather than as a headline. Storage/paths/wire are untouched —
+// this is presentation-only, the same resolution order as `noteTitle()`.
+export type DisplayTitle = { kind: "title"; text: string } | { kind: "timestamp"; text: string };
+
+// Matches `quickPath()`'s shape (`lib/capture/recorder.ts`):
+// `Notes/YYYY/MM-DD/HH-MM-SS`, optionally leading-slashed and/or
+// `.md`-suffixed. Anchored to the FULL path, not the leaf alone — the
+// human-readable stamp needs the year/month/day the leaf doesn't carry.
+const QUICK_PATH_RE = /^\/?Notes\/(\d{4})\/(\d{2})-(\d{2})\/(\d{2})-(\d{2})-(\d{2})(?:\.md)?$/i;
+
+// The path-only half of `displayTitle()`'s resolution, exported separately
+// so `NoteView` — which has its own content-based title step (leading-H1
+// only, not `noteTitle()`'s first-line fallback, since the first line isn't
+// stripped from the body there) — can still share this one path-timestamp
+// rule rather than re-deriving it.
+export function pathDisplayTitle(path: string): DisplayTitle {
+  const m = path.match(QUICK_PATH_RE);
+  if (m) {
+    const [, yyyy, mm, dd, hh, mi] = m;
+    // Local-time construction mirrors quickPath()'s own local getFullYear/
+    // getMonth/… reads, so the digits round-trip to the same wall-clock
+    // moment the note was captured at, not a UTC reinterpretation of them.
+    const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(mi));
+    if (!Number.isNaN(date.getTime())) {
+      const day = date.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+      const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      return { kind: "timestamp", text: `${day} · ${time}` };
+    }
+  }
+  return { kind: "title", text: pathLeaf(path) };
+}
+
+export function displayTitle(note: TitleSource): DisplayTitle {
+  const content = (note as { content?: string }).content;
+  if (typeof content === "string") {
+    const fromContent = titleFromContent(content);
+    if (fromContent) return { kind: "title", text: fromContent };
+  }
+  if (note.path) return pathDisplayTitle(note.path);
+  return { kind: "title", text: note.id };
+}
+
 function titleFromContent(content: string): string | null {
   const h1 = leadingH1(content);
   if (h1) return truncateTitle(h1);

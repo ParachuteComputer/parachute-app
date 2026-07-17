@@ -290,7 +290,13 @@ function ResultRow({
       {entry.kind === "note" ? (
         <>
           <span className="text-xs uppercase tracking-wider text-fg-dim">note</span>
-          <span className="truncate font-medium">{entry.title}</span>
+          <span
+            className={
+              entry.titleKind === "timestamp" ? "truncate title-timestamp" : "truncate font-medium"
+            }
+          >
+            {entry.title}
+          </span>
           {entry.path ? (
             <span className="ml-auto truncate font-mono text-xs text-fg-dim">{entry.path}</span>
           ) : null}

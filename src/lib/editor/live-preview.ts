@@ -570,10 +570,18 @@ const livePreviewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
 // handled by CodeMirrorEditor.tsx simply omitting `lineNumbers()`).
 
 const livePreviewDecorationTheme = EditorView.theme({
-  ".cm-lp-h1": { fontSize: "1.5em", fontWeight: "650" },
-  ".cm-lp-h2": { fontSize: "1.3em", fontWeight: "650" },
-  ".cm-lp-h3": { fontSize: "1.15em", fontWeight: "600" },
-  ".cm-lp-h4, .cm-lp-h5, .cm-lp-h6": { fontSize: "1em", fontWeight: "600" },
+  // Wave 1 §2.2 — editor headings join the shared type ramp, in serif: the
+  // same token at the same size as a prose heading (index.css's
+  // `.prose-note h1-h4`), not a parallel ad-hoc em scale. Reveal still only
+  // gates marker visibility (invariant 2) — these sizes apply unconditionally.
+  ".cm-lp-h1": { fontFamily: "var(--font-serif)", fontSize: "var(--text-3xl)", fontWeight: "650" },
+  ".cm-lp-h2": { fontFamily: "var(--font-serif)", fontSize: "var(--text-2xl)", fontWeight: "650" },
+  ".cm-lp-h3": { fontFamily: "var(--font-serif)", fontSize: "var(--text-xl)", fontWeight: "600" },
+  ".cm-lp-h4, .cm-lp-h5, .cm-lp-h6": {
+    fontFamily: "var(--font-serif)",
+    fontSize: "var(--text-lg)",
+    fontWeight: "600",
+  },
   ".cm-lp-quote": {
     borderLeft: "3px solid var(--color-accent-light)",
     paddingLeft: "0.75rem",
@@ -595,8 +603,18 @@ const livePreviewDecorationTheme = EditorView.theme({
     borderRadius: "var(--radius-sm)",
     padding: "0 0.25em",
   },
-  ".cm-lp-link": { color: "var(--color-accent)", textDecoration: "underline" },
-  // Neutral wikilink styling — the editor deliberately has no
+  // Wave 1 §4.3 — wikilink/external distinction: solid = stays home
+  // (wikilink), dashed = leaves (external). `.cm-lp-link` decorates the
+  // engine's `Link` case, i.e. standard `[text](url)` markdown links — in
+  // this app's markdown covenant those are the "leaves the vault" form,
+  // exactly as `[[wikilink]]` is the "stays home" form, so the split needs
+  // no per-link URL inspection.
+  ".cm-lp-link": {
+    color: "var(--color-accent)",
+    textDecoration: "underline",
+    textDecorationStyle: "dashed",
+  },
+  // Neutral wikilink styling otherwise — the editor deliberately has no
   // resolved/unresolved split (A4-SPEC §2/§8); `.wikilink` mirrors
   // WIKILINK_CLASS's value from @openparachute/surface-render so a future
   // shared stylesheet could target the same class both places.
@@ -611,7 +629,11 @@ const livePreviewDecorationTheme = EditorView.theme({
   ".cm-lp-hr": {
     display: "flex",
     alignItems: "center",
-    height: "1.6em", // line-height-locked — no reflow when the line reveals
+    // Line-height-locked to `--lh-live` (Wave 1 §2.3) — no reflow when the
+    // line reveals. Must track the scroller's own line-height in
+    // `livePreviewChromeTheme` below, or this widget's fixed height stops
+    // matching a text line's height.
+    height: "calc(var(--lh-live) * 1em)",
   },
   ".cm-lp-hr::after": {
     content: '""',
@@ -628,7 +650,7 @@ const livePreviewDecorationTheme = EditorView.theme({
     borderRadius: "var(--radius-sm)",
     padding: "0 0.5em",
     fontSize: "0.9em",
-    lineHeight: "1.6",
+    lineHeight: "var(--lh-live)", // tracks .cm-lp-hr/.cm-scroller — Wave 1 §2.3
     color: "var(--color-fg-muted)",
     verticalAlign: "middle",
   },
@@ -665,8 +687,15 @@ const livePreviewChromeTheme = EditorView.theme({
   },
   ".cm-scroller": {
     fontFamily: "var(--font-sans)",
-    // Line-height stays 1.6 (lensTheme, unchanged) — NOT `.prose-note`'s
-    // 1.78; A4-SPEC §5 keeps the editor's own rhythm.
+    // Wave 1 §2.3: `--lh-live` (1.7) — meets `.prose-note`'s 1.78 and the
+    // old code-editor 1.6 in the middle. Overrides lensTheme's shared 1.6
+    // for LIVE mode only (this rule sits later in buildExtensions' theme
+    // order than lensTheme, so it wins the same-selector tie per the M1
+    // fix's own resolution rule); raw mode keeps lensTheme's 1.6 untouched
+    // — the mono power surface's own rhythm, A4-SPEC §5. Every
+    // height-locked live-preview widget (`.cm-lp-hr`, `.cm-lp-embed-chip`)
+    // consumes the same token so they move together.
+    lineHeight: "var(--lh-live)",
   },
   ".cm-content": {
     maxWidth: "var(--w-prose, 42rem)",
