@@ -312,6 +312,36 @@ describe("Composer — the honest write-in-place hero (W2-10; F10)", () => {
     expect(loadDraft("v1", NEW_NOTE_SCOPE)).toBeNull();
   });
 
+  // Review fold (#49): the touched-freeze must survive a REMOUNT, not just
+  // one mount's lifetime. VaultSurface remounts Composer during ordinary
+  // browsing; a stored draft that already reflects a deliberate chip
+  // removal (tags: []) must not get the capture tag auto-repopulated on
+  // return — a fresh `tagsTouchedRef` (naively `useRef(false)`) would have
+  // let the auto-populate effect fire again on the new mount and re-inject it.
+  it("a restored draft with the capture chip already removed does NOT get it re-populated on remount", async () => {
+    saveDraft("v1", NEW_NOTE_SCOPE, {
+      content: "removed capture before leaving",
+      path: "Notes/2026/07-17/09-00-00",
+      tags: [],
+    });
+    const fetchImpl = installRoutedFetch({ notes: SEED_ONLY });
+    renderComposer();
+
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    expect(input).toHaveValue("removed capture before leaving");
+    fireEvent.focus(input);
+    // No "capture" chip anywhere in the (now-visible) tag row.
+    expect(screen.queryByText("capture")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
+    await waitFor(() => {
+      const post = fetchImpl.mock.calls.find(([, init]) => init?.method === "POST");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.[1]?.body));
+      expect(body.tags ?? []).not.toContain("capture");
+    });
+  });
+
   it("the mic honors the transcription gate: disabled vault → no mic, the honest line", async () => {
     installRoutedFetch({
       notes: SEED_ONLY,

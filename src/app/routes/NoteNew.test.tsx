@@ -446,6 +446,45 @@ describe("NoteNew route — unified create surface", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
+  // Review fold (#49): the touched-freeze must survive a REMOUNT — a stored
+  // draft that already reflects a deliberate chip removal (tags: []) must
+  // not get the capture tag auto-repopulated when the compose screen mounts
+  // fresh over it. A naive `useRef(false)` would have let the auto-populate
+  // effect fire on this new mount and re-inject it.
+  it("a restored draft with the capture chip already removed does NOT get it re-populated on remount", async () => {
+    saveDraft("dev", "new", {
+      content: "removed capture before leaving",
+      path: "Notes/2026/07-17/09-00-00",
+      tags: [],
+    });
+    const fetchImpl = installFetch({
+      "POST /api/notes": {
+        status: 201,
+        body: { id: "n", path: "Notes/2026/07-17/09-00-00", createdAt: "2026-07-17T00:00:00Z" },
+      },
+    });
+    renderAt("/new");
+
+    expect(await screen.findByTestId("draft-restored")).toBeInTheDocument();
+    expect((screen.getByTestId("cm-editor") as HTMLTextAreaElement).value).toBe(
+      "removed capture before leaving",
+    );
+    expect(screen.queryByText("capture")).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      const post = fetchImpl.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse((post![1] as RequestInit).body as string);
+      expect(body.tags ?? []).not.toContain("capture");
+    });
+  });
+
   // NAVIGATION.md: "NoteNew save → /n/<id>" — (b) consumes the compose form,
   // replace (Back to a cleared, ghost draft would lie). This was pushing by
   // default before the fix — a named "verify" item in the W2-2 brief.

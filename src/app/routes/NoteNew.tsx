@@ -189,7 +189,15 @@ export function NoteNew() {
   // the settings note loads). `autoTagRef` remembers which value we last
   // auto-added so a role-name change swaps it instead of leaving both names
   // in the chip row.
-  const tagsTouchedRef = useRef(false);
+  //
+  // Review fold (#49): the freeze must survive a REMOUNT, not just live out
+  // one mount's lifetime — VaultSurface remounts this screen during ordinary
+  // browsing, and a stored draft already reflects whatever the operator left
+  // in the chip row (including a deliberate removal). Seed the guard from
+  // `restoredAtRef` (set above, in the SAME initial render, whenever a stored
+  // draft was found) so a restored draft's tags are authoritative from the
+  // very first effect pass — never auto-repopulated on return.
+  const tagsTouchedRef = useRef(restoredAtRef.current !== null);
   const autoTagRef = useRef<string | null>(null);
   useEffect(() => {
     if (tagsTouchedRef.current) return;

@@ -1,4 +1,4 @@
-import { CopyField } from "@/components/CopyField";
+import { CopyField, useCopyToClipboard } from "@/components/CopyField";
 import { DeleteNoteButton } from "@/components/DeleteNoteButton";
 import { buildWikilinkResolver } from "@/components/MarkdownView";
 import { NeighborhoodGraph } from "@/components/NeighborhoodGraph";
@@ -13,7 +13,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { leadingH1, pathDisplayTitle, stripLeadingH1 } from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
-import { useToastStore } from "@/lib/toast/store";
 import { useActiveVaultClient, useNote, useVaultStore } from "@/lib/vault";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { useTagRoles } from "@/lib/vault/settings";
@@ -218,26 +217,15 @@ function MetadataPanel({ note }: { note: Note }) {
 // button — "reference this note to an AI agent" is the explicit use case
 // (ratified 2026-07-17), so it earns its own labeled affordance rather than
 // relying on the operator to notice the small copy icon in the metadata
-// list. Same clipboard-API + toast + transient-label pattern as CopyField.
+// list. Shares CopyField's clipboard-API + toast + transient-label logic via
+// `useCopyToClipboard` (review fold #49) rather than re-deriving it inline.
 function CopyReferenceButton({ path }: { path: string }) {
-  const pushToast = useToastStore((s) => s.push);
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(path);
-      setCopied(true);
-      pushToast("Copied to clipboard.", "success");
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      pushToast("Couldn't copy — select and copy manually.", "error");
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
 
   return (
     <button
       type="button"
-      onClick={copy}
+      onClick={() => copy(path)}
       className="btn btn-secondary btn-touch mt-3 w-full"
       aria-label="Copy reference to this note"
     >

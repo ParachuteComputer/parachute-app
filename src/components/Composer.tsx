@@ -73,12 +73,16 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
   // Restore the shared draft at mount — a compose started on /new (or a
   // previous visit here) shows through. The `path || default` guard covers a
   // malformed stored path; tags set on /new ride along untouched so a save
-  // from here commits them too.
-  const [body, setBody] = useState<DraftBody>(() => {
-    const stored = loadDraft(vault.id, NEW_NOTE_SCOPE);
-    if (stored) return { ...stored.body, path: stored.body.path || defaultPathRef.current };
-    return { content: "", path: defaultPathRef.current, tags: [] };
-  });
+  // from here commits them too. Captured once via `useState`'s lazy
+  // initializer (not re-read per render) so `tagsTouchedRef` below can reuse
+  // the SAME "was there a stored draft" fact without a second localStorage
+  // read.
+  const [initialStored] = useState(() => loadDraft(vault.id, NEW_NOTE_SCOPE));
+  const [body, setBody] = useState<DraftBody>(() =>
+    initialStored
+      ? { ...initialStored.body, path: initialStored.body.path || defaultPathRef.current }
+      : { content: "", path: defaultPathRef.current, tags: [] },
+  );
   const [focusWithin, setFocusWithin] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
@@ -88,7 +92,14 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
   // so the two composers stay in lockstep: the capture role tag rides into
   // `body.tags` as a visible chip until the operator explicitly adds or
   // removes one THIS compose, then their chip set is authoritative.
-  const tagsTouchedRef = useRef(false);
+  //
+  // Review fold (#49): the freeze must survive a REMOUNT — VaultSurface
+  // remounts Composer during ordinary browsing, and a stored draft already
+  // reflects whatever the operator left in the chip row (including a
+  // deliberate removal). Seed the guard from `initialStored` so a restored
+  // draft's tags are authoritative from the very first effect pass — never
+  // auto-repopulated on return.
+  const tagsTouchedRef = useRef(initialStored !== null);
   const autoTagRef = useRef<string | null>(null);
   useEffect(() => {
     if (tagsTouchedRef.current) return;
