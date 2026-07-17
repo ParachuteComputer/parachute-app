@@ -1160,7 +1160,10 @@ body {
      gate as long as it consumes the tokens. Color/border/shadow settles
      (--dur-quick outside a transform) are left alone: prefers-reduced-motion
      is a vestibular-safety signal about MOTION (WCAG 2.3.3), not a ban on
-     all change. */
+     all change. .dialog-overlay/.dialog-panel bake their animation directly
+     (not via the .enter-* class), so token-zeroing alone doesn't reach
+     .dialog-overlay's --dur-quick-timed fade — both are listed explicitly
+     here too. */
   @media (prefers-reduced-motion: reduce) {
     :root {
       --dur-move: 0ms;
@@ -1169,7 +1172,9 @@ body {
     .drop-in,
     .fade-up,
     .enter-rise,
-    .enter-fade {
+    .enter-fade,
+    .dialog-overlay,
+    .dialog-panel {
       animation: none;
     }
   }

@@ -146,8 +146,8 @@ export function QuickSwitch({ onClose }: Props) {
           Desktop: a transparent bottom-centre column; col-reverse keeps the
           input first in the DOM while the pill sits visually at the bottom,
           the panel blooming upward above it. */}
-      <div className="enter-rise flex h-full w-full flex-col bg-bg/95 backdrop-blur-md lg:mx-auto lg:h-auto lg:w-full lg:max-w-xl lg:flex-col-reverse lg:self-end lg:bg-transparent lg:backdrop-blur-none">
-        <div className="flex items-center gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 lg:p-0">
+      <div className="flex h-full w-full flex-col bg-bg/95 backdrop-blur-md lg:mx-auto lg:h-auto lg:w-full lg:max-w-xl lg:flex-col-reverse lg:self-end lg:bg-transparent lg:backdrop-blur-none">
+        <div className="enter-rise flex items-center gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 lg:p-0">
           <div className="glass-panel flex min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border px-4 py-2.5 shadow-soft transition-shadow duration-(--dur-quick) ease-out focus-within:shadow-lift lg:px-5 lg:py-3">
             <span aria-hidden="true" className="shrink-0 text-fg-dim">
               <IconSearch width={18} height={18} />
