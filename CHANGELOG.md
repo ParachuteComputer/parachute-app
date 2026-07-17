@@ -1,5 +1,51 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.12] - 2026-07-17
+
+**Auth Wave 2 — the app half (AUTH-W2-BRIEF §2, moves 2 + the app's app portion of W1's code
+endpoint).** Version note: the sibling chain (views-wave-2a, editor-w2-pr5, error-boundary) claims
+0.20.9/.10/.11; this one takes 0.20.12, flagged for merge sequencing only — files are disjoint
+(`src/lib/account/*`, `src/components/VaultSwitcher.tsx`, `src/app/routes/{Account,CheckEmail}.tsx`),
+verified against each sibling branch's diff before starting.
+
+- **The cached account bearer can't outlive the cookie's identity (move 2).** `store.ts`'s account-
+  token cache now holds `{ token, identity }` instead of a bare token — `identity` is `email ??
+  username` at mint time. `client.ts`'s `getSession()` (the boot oracle, fired on every session
+  read — polling, page boots, mints) is the reconciliation chokepoint: it compares the door's answer
+  against whichever identity the cached bearer was minted for, and on a mismatch (another tab
+  signed out/in as someone else, or signed out entirely) drops the bearer AND bumps a new
+  `useAccountSessionStore().identityEpoch` counter. Ambient consumers key off that epoch so a stale
+  identity's cached rows can't linger past the switch: `use-summary.ts`'s shared `useAccountSummary`
+  query, `VaultSwitcher.tsx`'s `["account","vaults"]` query, and `Account.tsx`'s own "Signed in as"
+  boot fetch + vault-list effect all fold `identityEpoch` into their re-fetch trigger. A pre-
+  migration bare-token sessionStorage entry fails the JSON parse and reads as absent — a silent
+  one-time re-mint, no user-visible effect (pinned directly by a migration test).
+- **The `/check-email` 6-digit code field.** Probed the REAL deployed reality first (parachute-cloud
+  `workers/identity/src/auth-handlers.ts` `handleCodeVerifyPost`): the JSON variant of `POST
+  /auth/code` was deferred out of W1 — the endpoint unconditionally reads `req.formData()` and
+  answers either a same-origin redirect (success) or a 200 HTML re-render (every failure, folded
+  into one neutral message by design). `client.ts`'s new `verifySignInCode` posts form-encoded with
+  `redirect: "manual"` and reads the RESPONSE SHAPE, not the body: a same-origin redirect becomes an
+  opaque `res.type === "opaqueredirect"` response (the browser applies the Set-Cookie before
+  filtering it into that shape, so the session is live); anything else is a failure. `CheckEmail.tsx`
+  gains an "Or type the code from the email" disclosure: a single numeric input (not a 6-box grid —
+  paste-robust against the full email line, e.g. "Your Parachute code: 123 456") that auto-submits
+  at 6 digits, filters non-digits so paste-with-surrounding-text works, and shows the endpoint's own
+  neutral error on a wrong code. KNOWN GAP, documented in `verifySignInCode`'s doc comment and not
+  silently swallowed: a TOTP-enrolled account diverts through the same redirect shape without
+  minting a session — the flow safely degrades (Welcome.tsx already bounces `!signed_in` to the
+  front door) rather than hanging; TOTP is explicitly out of scope for this wave and the app has no
+  2FA UI on any sign-in path yet.
+
+Tests: `client.test.ts` — identity-reconciliation suite (matching identity no-ops, a different
+identity drops bearer + bumps epoch, signed-out also drops, first-load isn't a false mismatch, a
+subsequent Bearer call re-mints against the new identity, username-fallback parity) + the bare-token
+migration-reads-as-absent pin + `verifySignInCode`'s form-encoding/opaqueredirect/failure-shape
+tests — 35 tests total (was 24). `CheckEmail.test.tsx` — the code field's reveal toggle, auto-submit
+at 6 digits with navigation, paste-with-context digit extraction, no-submit-before-6-digits, and the
+wrong-code error state (field cleared, no navigation) — 11 tests total (was 6). Full suite: 158 test
+files / 1778 tests, ×2 clean; `typecheck` clean; `lint` clean (2 pre-existing warnings remain in
+`src/lib/vault/live-query.ts`, untouched by this PR).
 ## [0.20.9] - 2026-07-17
 
 **Views Wave 2a — the first default-pages cutover (Pinned + Archive).** VIEWS-RENDER-SPEC §7's

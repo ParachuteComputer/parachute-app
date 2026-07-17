@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type AccountSummaryState, getAccountSummaryState } from "./client";
+import { useAccountSessionStore } from "./store";
 import type { AccountSummary } from "./types";
 
 /**
@@ -36,8 +37,13 @@ export function summaryOrNull(state: AccountSummaryState | undefined): AccountSu
 }
 
 export function useAccountSummary(opts: { enabled?: boolean } = {}) {
+  // AUTH-W2 move 2: `identityEpoch` folds into the query key so an account
+  // switch (client.ts `reconcileIdentity`) hands every consumer a FRESH query
+  // — no stale summary cached under the old identity, no manual invalidation
+  // to remember at each call site.
+  const identityEpoch = useAccountSessionStore((s) => s.identityEpoch);
   return useQuery<AccountSummaryState>({
-    queryKey: ACCOUNT_SUMMARY_QUERY_KEY,
+    queryKey: [...ACCOUNT_SUMMARY_QUERY_KEY, identityEpoch],
     queryFn: () => getAccountSummaryState(),
     staleTime: (query) => (query.state.data === "error" ? 0 : 5 * 60_000),
     enabled: opts.enabled ?? true,
