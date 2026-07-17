@@ -1,5 +1,31 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.4] - 2026-07-16
+
+**Atmosphere set (uni-surface adoption, display-only — awaits Aaron's morning review, not
+merged on landing).** Four finishing touches adopted from Aaron's uni-surface "feels really
+good to write in" reference, working entirely within the app's existing coral/warm-forest
+token system (no palette import, no re-skin):
+
+- **A second ambient ground wash.** `.app-canvas` already carried one grass-tinted radial wash
+  top-center; it now carries a second, coral-tinted wash from the opposite corner
+  (`--canvas-wash-accent`, tuned separately per theme: 5% light / 4% dark), so the page ground
+  has two soft light sources instead of one. No `background-attachment: fixed` — it's painted on
+  the normal-flow shell, so it scrolls with content (no mobile jank).
+- **Dark-theme shadows re-tinted off pure black.** Light-theme shadows were already
+  forest/sage-tinted; dark-theme `--_d-shadow-*` used flat `#000`. A new `--_d-shadow-ink` mixes
+  a whisper of the dark accent into black, so dark-mode elevation now reads as warm-near-black
+  rather than neutral black, without losing the contrast a dark shadow needs against the night
+  ground.
+- **`::selection` carries a soft accent wash** instead of the browser default, in both themes for
+  free (one `color-mix(in srgb, var(--color-accent) 24%, transparent)` rule — no dark override
+  needed since the accent token already flips per theme). AA-checked in both directions.
+- **`.note-row` hover-lift.** THE note row (Recent, day drill-in, `/notes` — one shared anatomy)
+  now lifts `translateY(-1px)` with a soft shadow on hover, riding the existing
+  `--dur-move`/`--ease-out` tokens. Gated to `(hover: hover)` (no stuck-lift on touch taps) and to
+  `prefers-reduced-motion: no-preference` (double-guarded with the token-zeroing gate, same
+  pattern as `.btn-primary`'s hover lift).
+
 ## [0.20.3] - 2026-07-16
 
 **UI-audit display train.** Display-only fixes from the overnight UI look-and-feel audit

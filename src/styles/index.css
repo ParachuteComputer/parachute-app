@@ -214,6 +214,13 @@
      the "blush wash → misty sage morning" shift: grass-tinted at 7% in light;
      the dark gates repoint it to a 5% whisper over the night ground. */
   --canvas-wash: color-mix(in srgb, var(--color-grass) 7%, transparent);
+  /* Second wash (atmosphere set, uni-surface adoption): a coral kiss at the
+     opposite corner from the grass wash above, so the ground carries two
+     soft light sources — accent + complementary — instead of one. Lower
+     intensity than the grass wash since coral is the more saturated hue;
+     the effect target is "content floats in warm light," never a visible
+     gradient poster. */
+  --canvas-wash-accent: color-mix(in srgb, var(--color-accent) 5%, transparent);
 
   /* --- Container widths (consolidated; Header/footer/content now agree) ---
      --w-surface is the ONE-SURFACE width (LENS-SPEC §3, LZ-3): the
@@ -311,9 +318,14 @@
   --_d-sun-soft: #38300f;
   --_d-sun-ink: #f0d68a;
   --_d-sage: #8fb096;
-  /* Sage tint is invisible in the dark; black-based shadows stay. */
-  --_d-shadow-soft: 0 10px 30px color-mix(in srgb, #000 42%, transparent);
-  --_d-shadow-lift: 0 18px 44px color-mix(in srgb, #000 52%, transparent);
+  /* Sage tint alone is invisible in the dark, so shadows here stay
+     near-black for depth — but "near", not pure: --_d-shadow-ink mixes a
+     whisper of the dark accent into black (atmosphere set, uni-surface
+     adoption: "never pure black"), warming the ink without sacrificing the
+     contrast a flat #000 shadow needs against the night ground. */
+  --_d-shadow-ink: color-mix(in srgb, #000 90%, var(--_d-accent) 10%);
+  --_d-shadow-soft: 0 10px 30px color-mix(in srgb, var(--_d-shadow-ink) 42%, transparent);
+  --_d-shadow-lift: 0 18px 44px color-mix(in srgb, var(--_d-shadow-ink) 52%, transparent);
   --_d-border: #303b31;
   --_d-border-light: #283229;
   --_d-card: #1e271f;
@@ -321,6 +333,9 @@
   /* The dark canvas wash: the same grass-tinted radial, dialed to a 5%
      whisper of green over the night ground. */
   --_d-canvas-wash: color-mix(in srgb, var(--_d-grass) 5%, transparent);
+  /* The dark counterpart of the accent wash above — coral at a 4% whisper,
+     one notch below the light value since the dark accent hue is brighter. */
+  --_d-canvas-wash-accent: color-mix(in srgb, var(--_d-accent) 4%, transparent);
   /* The WCAG-AA fix lives here: dark accent is light, so on-accent is a dark ink. */
   --_d-on-accent: #2a1710;
   /* Dark coral "featured" badge family — ink-on-soft 7.79:1. */
@@ -329,11 +344,11 @@
   --_d-danger: #e8836b;
   --_d-danger-hover: #ef9982;
   --_d-warning: #fcd34d;
-  --_d-shadow-sm: 0 1px 2px color-mix(in srgb, #000 30%, transparent);
-  --_d-shadow-md: 0 2px 8px color-mix(in srgb, #000 40%, transparent), 0 1px 2px
-    color-mix(in srgb, #000 25%, transparent);
-  --_d-shadow-lg: 0 8px 24px color-mix(in srgb, #000 50%, transparent), 0 2px 6px
-    color-mix(in srgb, #000 30%, transparent);
+  --_d-shadow-sm: 0 1px 2px color-mix(in srgb, var(--_d-shadow-ink) 30%, transparent);
+  --_d-shadow-md: 0 2px 8px color-mix(in srgb, var(--_d-shadow-ink) 40%, transparent), 0 1px 2px
+    color-mix(in srgb, var(--_d-shadow-ink) 25%, transparent);
+  --_d-shadow-lg: 0 8px 24px color-mix(in srgb, var(--_d-shadow-ink) 50%, transparent), 0 2px 6px
+    color-mix(in srgb, var(--_d-shadow-ink) 30%, transparent);
 }
 
 /* The shared assignment list — referenced (not duplicated) by both gates.
@@ -377,6 +392,7 @@
     --shadow-soft: var(--_d-shadow-soft);
     --shadow-lift: var(--_d-shadow-lift);
     --canvas-wash: var(--_d-canvas-wash);
+    --canvas-wash-accent: var(--_d-canvas-wash-accent);
   }
 }
 
@@ -415,6 +431,7 @@
   --shadow-soft: var(--_d-shadow-soft);
   --shadow-lift: var(--_d-shadow-lift);
   --canvas-wash: var(--_d-canvas-wash);
+  --canvas-wash-accent: var(--_d-canvas-wash-accent);
 }
 
 html,
@@ -423,6 +440,19 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.65;
+}
+
+/* Selected text carries a soft accent wash instead of the browser default
+   (atmosphere set, uni-surface adoption), so even selection reads
+   on-palette. color-mix against `transparent` (not a fixed bg token) means
+   it composites correctly over whatever's underneath — page, card, or
+   dialog — and stays theme-reactive for free since --color-accent already
+   flips per theme; no separate dark override needed. Text color is left
+   at its inherited value, which keeps AA: light theme's 24% coral-in-cream
+   wash stays light enough for forest-ink text, dark theme's 24%
+   coral-in-night wash stays dark enough for near-white text. */
+::selection {
+  background-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
 }
 
 /* Respect iOS safe-area insets for installed PWAs so content doesn't sit
@@ -921,10 +951,19 @@ body {
      page (--canvas-wash — grass at 7% light / 5% dark) — enough to lift the
      cream off a flat fill without reading as a colour. Sits on the shell so
      it spans the header + content; text still resolves against the solid
-     --color-bg beneath it, so contrast is unchanged. */
+     --color-bg beneath it, so contrast is unchanged.
+
+     Second wash (atmosphere set, uni-surface adoption): a coral whisper from
+     the opposite corner (--canvas-wash-accent — accent at 5% light / 4%
+     dark), so the ground carries two soft light sources instead of one —
+     "content floats in warm light" rather than a single flat tint. No
+     `background-attachment: fixed` (mobile jank risk); the gradients are
+     painted on this normal-flow shell element, so they scroll with content
+     like everything else on the page. */
   .app-canvas {
     background-color: var(--color-bg);
-    background-image: radial-gradient(1100px 520px at 50% -6%, var(--canvas-wash), transparent 70%);
+    background-image: radial-gradient(1100px 520px at 50% -6%, var(--canvas-wash), transparent 70%),
+      radial-gradient(900px 480px at 4% 104%, var(--canvas-wash-accent), transparent 70%);
     background-repeat: no-repeat;
   }
 
@@ -1065,11 +1104,27 @@ body {
     border-radius: var(--radius-xl);
     border: 1px solid transparent;
     transition: background-color var(--dur-quick) var(--ease-out), border-color var(--dur-quick)
+      var(--ease-out), transform var(--dur-move) var(--ease-out), box-shadow var(--dur-move)
       var(--ease-out);
   }
   .note-row:hover {
     background-color: var(--color-card);
     border-color: var(--color-border-light);
+  }
+  /* Hover-lift (atmosphere set, uni-surface adoption): the row lifts a
+     hair and picks up a soft shadow, like paper settling an inch off the
+     page. Gated to hover-capable pointers (`hover: hover`) so a touch tap —
+     which many mobile browsers latch as a sticky :hover — doesn't leave a
+     row stuck mid-lift, and to `prefers-reduced-motion: no-preference` so
+     the transform is never even assigned under the vestibular-safety
+     signal (belt-and-suspenders with --dur-move zeroing to 0ms at the
+     token layer — same double-guard pattern as .btn-primary's hover lift
+     above). */
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .note-row:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
   }
   .note-row:active {
     background-color: var(--color-grass-soft);
