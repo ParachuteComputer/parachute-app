@@ -62,10 +62,18 @@ function stubPointerMedia(coarse: boolean) {
   })) as unknown as typeof window.matchMedia;
 }
 
-let host: HTMLDivElement;
+const instances: { view: EditorView; host: HTMLDivElement }[] = [];
 
 afterEach(() => {
-  host?.remove();
+  // Destroy every view so the docked toolbar's ViewPlugin runs destroy() and
+  // removes its document.body-appended bar — otherwise a coarse-pointer test's
+  // bar would leak into the next test's document. Belt-and-suspenders: sweep
+  // any stray bar too.
+  for (const { view, host } of instances.splice(0)) {
+    view.destroy();
+    host.remove();
+  }
+  for (const bar of document.querySelectorAll(".cm-format-toolbar-docked")) bar.remove();
   // Undo the per-test stub so it never leaks into a test that doesn't call
   // stubPointerMedia itself.
   // @ts-expect-error — reverting to jsdom's own "no matchMedia" baseline.
@@ -73,7 +81,7 @@ afterEach(() => {
 });
 
 function makeEditor(doc: string, selection: { anchor: number; head?: number }, livePreview = true) {
-  host = document.createElement("div");
+  const host = document.createElement("div");
   document.body.appendChild(host);
   const state = EditorState.create({
     doc,
@@ -89,52 +97,71 @@ function makeEditor(doc: string, selection: { anchor: number; head?: number }, l
       { livePreview },
     ),
   });
-  return new EditorView({ state, parent: host });
+  const view = new EditorView({ state, parent: host });
+  instances.push({ view, host });
+  return view;
 }
 
-describe("selection toolbar — coarse-pointer only (PR 5b)", () => {
-  it("appears on a non-empty selection when the pointer is coarse", () => {
+// The docked bar lives in document.body (not inside the editor), so query the
+// whole document rather than `view.dom`.
+function dockedBar(): HTMLElement | null {
+  return document.querySelector(".cm-format-toolbar-docked");
+}
+
+describe("selection formatting bar — mobile-docked, coarse-pointer only (0.20.14)", () => {
+  it("docks a fixed bar in document.body on a non-empty selection, hiding it when the selection collapses", () => {
     stubPointerMedia(true);
     const view = makeEditor("hello world", { anchor: 0, head: 5 });
-    const toolbar = view.dom.querySelector(".cm-format-toolbar");
-    expect(toolbar).not.toBeNull();
+    const bar = dockedBar();
+    expect(bar).not.toBeNull();
+    // Docked at the bottom of the viewport (above the keyboard), not floated
+    // inside the editor where the OS callout eclipses it.
+    expect(bar?.parentElement).toBe(document.body);
+    expect(bar?.style.position).toBe("fixed");
+    expect(bar?.style.display).toBe("");
     expect(
-      Array.from(toolbar?.querySelectorAll("button") ?? []).map((b) =>
-        b.getAttribute("aria-label"),
-      ),
+      Array.from(bar?.querySelectorAll("button") ?? []).map((b) => b.getAttribute("aria-label")),
     ).toEqual(["Bold", "Italic", "Strikethrough", "Code", "Link"]);
+    // Collapsing the selection to a caret hides it; a fresh selection brings
+    // it back — appears when a non-empty selection exists, gone the moment it
+    // collapses.
+    view.dispatch({ selection: { anchor: 3 } });
+    expect(dockedBar()?.style.display).toBe("none");
+    view.dispatch({ selection: { anchor: 0, head: 5 } });
+    expect(dockedBar()?.style.display).toBe("");
   });
 
-  it("does NOT appear when the pointer is fine (desktop mouse) — stays clean, keybindings instead", () => {
+  it("does NOT dock a bar when the pointer is fine (desktop mouse) — stays clean, keybindings instead", () => {
     stubPointerMedia(false);
-    const view = makeEditor("hello world", { anchor: 0, head: 5 });
-    expect(view.dom.querySelector(".cm-format-toolbar")).toBeNull();
+    makeEditor("hello world", { anchor: 0, head: 5 });
+    expect(dockedBar()).toBeNull();
   });
 
-  it("does NOT appear on a caret-only (empty) selection, even on a coarse pointer", () => {
+  it("never docks a bar on a caret-only (empty) selection, even on a coarse pointer", () => {
     stubPointerMedia(true);
-    const view = makeEditor("hello world", { anchor: 3 });
-    expect(view.dom.querySelector(".cm-format-toolbar")).toBeNull();
+    makeEditor("hello world", { anchor: 3 });
+    // The bar is built lazily on first show, so an editor whose selection was
+    // never non-empty has no bar node at all.
+    expect(dockedBar()).toBeNull();
   });
 
-  it("every button's ≥40px touch target and clicking Bold writes through the shared command", () => {
+  it("every button has a ≥40px touch target and clicking Bold writes through the shared command", () => {
     stubPointerMedia(true);
     const view = makeEditor("hello world", { anchor: 0, head: 5 });
-    const boldButton = Array.from(view.dom.querySelectorAll(".cm-format-toolbar button")).find(
+    const boldButton = Array.from(dockedBar()?.querySelectorAll("button") ?? []).find(
       (b) => b.getAttribute("aria-label") === "Bold",
     ) as HTMLButtonElement;
     expect(boldButton).toBeTruthy();
-    const cs = getComputedStyle(boldButton);
-    expect(cs.minWidth).toBe("2.5rem");
-    expect(cs.minHeight).toBe("2.5rem");
+    expect(boldButton.style.minWidth).toBe("2.5rem");
+    expect(boldButton.style.minHeight).toBe("2.5rem");
     boldButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     expect(view.state.doc.toString()).toBe("**hello** world");
   });
 
-  it("a button tap never collapses/moves the selection it's about to act on (mirrors the checkbox's pointerdown containment)", () => {
+  it("a button tap never collapses/moves the selection it's about to act on (pointerdown containment)", () => {
     stubPointerMedia(true);
     const view = makeEditor("hello world", { anchor: 0, head: 5 });
-    const boldButton = view.dom.querySelector(".cm-format-toolbar button") as HTMLButtonElement;
+    const boldButton = dockedBar()?.querySelector("button") as HTMLButtonElement;
     boldButton.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
     boldButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     // Selection is untouched by the pointerdown/mousedown alone (only the

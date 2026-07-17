@@ -193,7 +193,7 @@ function filenameFromUrl(url: string): string {
 // Setext-heading underline for the last frontmatter line — exactly the
 // "fences render as HR widgets, title: lines get decorated" trap the spec
 // calls out.
-function frontmatterEnd(doc: Text): number {
+export function frontmatterEnd(doc: Text): number {
   if (doc.lines < 2) return 0;
   if (doc.line(1).text.trim() !== "---") return 0;
   for (let n = 2; n <= doc.lines; n++) {

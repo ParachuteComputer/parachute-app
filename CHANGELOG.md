@@ -1,5 +1,96 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.14] - 2026-07-17
+
+**Polish — mobile formatting bar docks above the keyboard; note header's path/tags recede; the
+first line renders as a title; single-newline lines read as one thought.** Four feel-fixes from a
+live tablet test of 0.20.13. Display-only: no data-model changes and no new capabilities — only
+where things sit and how they read (FIX 3 writes NO markdown into the note; FIX 4 is CSS only).
+
+- **`src/lib/editor/selection-toolbar.ts`** — on touch the selection formatting bar no longer
+  floats at the selection (where Android paints its Copy / Select all callout directly over ours
+  and iOS the loupe/handles, leaving ours untappable). It now DOCKS as a fixed bar at the bottom of
+  the visual viewport, riding above the virtual keyboard — the Google Docs / Notion / Bear pattern.
+  Rebuilt from a CM6 `showTooltip` StateField into a `ViewPlugin` that owns a plain fixed-position
+  node in `document.body` (the only reliable containing block for `position: fixed` — a lingering
+  `.enter-rise`/`.fade-up` transform on an ancestor would otherwise capture it). `bottom` tracks
+  `window.visualViewport` (`innerHeight − height − offsetTop`) on its resize/scroll events, so the
+  bar stays glued to the keyboard's top edge as it opens and closes and rests at the screen bottom
+  when it's shut. Still coarse-pointer only (`matchMedia("(pointer: coarse)")`, read dynamically):
+  desktop is unchanged — no bar, the `Mod-b`/`Mod-i`/… keymap drives formatting there. Same five
+  buttons (B/I/S/`<>`/🔗) calling straight into the shared `format-commands` — the bar
+  re-implements no transform of its own. Shown on a non-empty selection, hidden the instant it
+  collapses; built lazily on first show so desktop never mounts a node. `pointerdown`/`mousedown`
+  are still preventDefaulted (it matters more now the bar lives outside the editor — a tap must not
+  blur it or drop the selection); ≥40px touch targets are set inline so the invariant holds in
+  production and stays assertable in jsdom (styles/index.css isn't loaded there, and an
+  `EditorView.theme` sheet no longer reaches a body-level node).
+- **`src/styles/index.css`** — new `.cm-format-toolbar-docked` (layout + top hairline +
+  `env(safe-area-inset-bottom)` so the buttons clear the home indicator + the `enter-rise`
+  entrance, registered in the one reduced-motion gate); the translucent surface reuses
+  `.glass-panel`.
+- **`src/app/routes/NoteView.tsx`** — the note header's path and tags recede (Aaron: "we're really
+  not orienting toward people updating the path"). The path leaves the primary header flow — it was
+  a prominent mono `break-all` line right under the title — and becomes a single small, muted,
+  TRUNCATING meta line at the FOOT of the header. Capability is preserved, not removed: the whole
+  line is a one-tap copy button (path → clipboard, the "hand it to an AI agent" use case ratified
+  2026-07-17), with a small clipboard glyph and a distinct **"Copy path"** label so it never
+  collides with the metadata card's "Copy note path". Tags reweight to normal-weight, tighter-
+  spaced compact chips (were `font-medium`) — a quiet label strip under the title rather than a
+  second headline. The reclaimed vertical space goes to content.
+- **`src/lib/editor/first-line-title.ts`** (new) + **`CodeMirrorEditor.tsx`** — the Bear / Apple
+  Notes move: the note's first non-empty content line IS its title (the vault's `display_title` —
+  first line, leading `#` stripped, frontmatter skipped, vault 0.7.3-rc), so the editor RENDERS
+  that line at title scale (serif, `--text-3xl`, weight 650 — the same H1 top-of-ramp as the live-
+  preview `.cm-lp-h1`). A CodeMirror **line decoration**, mode-agnostic (raw + live) — **not one
+  byte of `# ` or any structure is written into the note**. Frontmatter is skipped via the shared
+  `frontmatterEnd` helper (now exported from `live-preview.ts`, single source with the reveal
+  guard, so the two never drift); it defers to an explicit ATX heading (`/^ {0,3}#{1,6}(?: |$)/`) so
+  the styling never stacks on the editor's own heading treatment; and it tracks live — deleting the
+  first line promotes the next non-empty one (recomputed on `docChanged`).
+- **`src/styles/index.css`** — line spacing for single-newline lines. A single newline renders as a
+  `<br>` INSIDE one paragraph (surface-render's `breaks: true` / `remark-breaks` — verified: `line
+  A\nline B` → `<p>line A<br>line B</p>`), so consecutive single-newline lines were inheriting the
+  1.78 long-form reading leading and reading as far apart as separate paragraphs. New
+  `--lh-prose-tight: 1.5` token, applied surgically via `.prose-note p:has(br)` — **only** paragraphs
+  that actually contain a line break tighten; normal wrapping paragraphs keep 1.78, and blank-line-
+  separated blocks are separate `<p>`s that keep their real `0.75em` margins. Baseline-to-baseline
+  step for single-newline lines (rendered view): **18px → 32.04px ⇒ 27.00px** (−15.7%), 22px →
+  39.16 ⇒ 33.00, 26px → 46.28 ⇒ 39.00; a paragraph step stays 45.54px @18px, so same-thought lines
+  (27px) now read clearly distinct from paragraph breaks (45.5px). Theme-invariant (line-height
+  carries no colour — one value, both light and dark). The **editor** needs no change: its lines
+  are `.cm-line`s at line-height (`--lh-live` 1.7 live / 1.6 raw) with NO inter-line margin, so
+  single-newline lines are already line-spacing-apart there and a blank line is a genuine empty line
+  — it never had the paragraph-spacing problem the rendered `<br>` did.
+
+Judgment calls (reviewer-facing):
+
+- **Desktop is unchanged.** The 0.20.13 floating bar was already coarse-pointer-only — desktop
+  showed no bar and drove formatting from the keymap — so "desktop keeps its current behavior"
+  means it still shows nothing. Adding a floating bar to desktop would be a new feature, outside the
+  display-only charter, so it was NOT added.
+- **Command set held.** The brief listed "bold/italic/code/link/todo"; the shipped bar keeps the
+  existing `FORMAT_COMMANDS` set (bold/italic/strikethrough/code/link) rather than swapping
+  strikethrough out for a todo button, so this stays a pure re-dock of the existing toolbar. A todo
+  button is a one-line follow-up if wanted.
+- **Touch detection.** `matchMedia("(pointer: coarse)")`, read dynamically per update (a hybrid
+  device can gain/lose a pointer mid-session), the same approach the 0.20.13 toolbar used;
+  `window.visualViewport` drives positioning and degrades to `bottom: 0` where it's absent.
+
+Gates (literal): `bun run test` (vitest) — **1869 passed / 1869 across 167 files, deterministically
+green, when the one PRE-EXISTING-flaky file is excluded** (`--exclude "**/nav-history.test.tsx"`);
+the full 168-file suite is **1872 / 1872** on a clean run. `bun run typecheck` — clean; `bun run
+lint` — clean (2 pre-existing `src/lib/vault/live-query.ts` `useExhaustiveDependencies` warnings,
+present on `main`); `bun run build` — ✓. The editor toolbar suite is rewritten for the docked
+mechanism (bar in `document.body`, coarse-only, show/hide-on-collapse, ≥40px targets, command
+dispatch, pointerdown containment); the NoteView metadata test folds in the header's one-tap "Copy
+path"; `first-line-title.test.ts` is new (plain-line title, no-stack-on-heading, live mode,
+frontmatter skip, leading-blank skip, live tracking across an edit). FIX 4 adds no tests (CSS only,
+verified via compiled-CSS grep + a real `remark-breaks` render probe). Note: `nav-history.test.tsx`
+carries a PRE-EXISTING, intrinsic flake (real 3s `setInterval` + real `window.history` + `waitFor`
+timing) — it fails ~2/5 runs **running entirely on its own**, machine-load-dependent, and is
+byte-identical to `main` (untouched by this diff). Flagged as a follow-up (fake-timers or `retry`).
+
 ## [0.20.13] - 2026-07-17
 
 **Editor Wave 2, PR 5 — the shared format commands, selection toolbar, and swipe-indent.**

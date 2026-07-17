@@ -186,6 +186,13 @@
      CodeMirrorEditor.tsx — mode-exclusive per the M1 fix, not the shared
      `lensTheme` — the mono power surface keeps its own rhythm, A4-SPEC §5).*/
   --lh-live: 1.7;
+  /* Tighter leading for consecutive lines joined by a SINGLE newline (a
+     soft/`<br>` break — Obsidian/GitHub-comment behaviour, surface-render's
+     `breaks: true`). At the reading leading (1.78) such lines read as far
+     apart as separate paragraphs; at 1.5 they read as lines of one thought,
+     while blank-line-separated paragraphs keep their real `0.75em` spacing.
+     Theme-invariant (no colour), so one value serves light and dark. */
+  --lh-prose-tight: 1.5;
 
   /* --- Radii — the pill move (DESIGN-SPEC §1.2) ---
      xs/sm/md stay for code, tables, tiny chrome; lg/xl step up for nav rows
@@ -532,6 +539,17 @@ body {
 .prose-note p {
   margin: 0.75em 0;
   text-wrap: pretty;
+}
+/* FIX 4 (0.20.14) — a single newline renders as a `<br>` INSIDE one paragraph
+   (surface-render's `breaks: true`), so consecutive single-newline lines were
+   inheriting the 1.78 reading leading and reading as far apart as paragraphs.
+   Tighten just those paragraphs (the ones that actually contain a line break)
+   to `--lh-prose-tight` so they read as lines of the same thought. Normal
+   wrapping paragraphs keep 1.78; blank-line-separated blocks are separate
+   `<p>`s and keep their `0.75em` margins untouched. `:has()` is supported in
+   every browser this PWA targets (Safari 15.4+ / Chrome 105+). */
+.prose-note p:has(br) {
+  line-height: var(--lh-prose-tight);
 }
 /* Wave 1 §4.3 — the read-view half of the wikilink/external distinction
    (MarkdownView.tsx's NotesLink owns the dashed underline itself; this is
@@ -931,6 +949,29 @@ body {
     background-color: color-mix(in srgb, var(--color-bg-soft) 82%, transparent);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
+  }
+
+  /* --- Mobile formatting bar (0.20.14) --- the editor's selection toolbar
+     DOCKS to the bottom of the visual viewport on touch devices instead of
+     floating at the selection, where the OS paints its own copy/select-all
+     callout on top of it (Google Docs / Notion / Bear all dock for the same
+     reason). Position, dynamic `bottom` (tracks window.visualViewport as the
+     keyboard opens) and z-index are set inline by selection-toolbar.ts; the
+     translucent surface is `.glass-panel`. This class carries only the layout,
+     the top hairline, the safe-area inset and the entrance. */
+  .cm-format-toolbar-docked {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.375rem 0.5rem;
+    /* Lift the buttons clear of the home indicator when the bar rests at the
+       screen bottom (keyboard closed); resolves to 0 — harmless — when it
+       floats above an open keyboard. */
+    padding-bottom: calc(0.375rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--color-border);
+    box-shadow: var(--shadow-lift);
+    animation: enter-rise var(--dur-enter) var(--ease-out) both;
   }
 
   /* --- Chips --- */
@@ -1361,7 +1402,8 @@ body {
     .enter-fade,
     .qs-scrim-fade,
     .dialog-overlay,
-    .dialog-panel {
+    .dialog-panel,
+    .cm-format-toolbar-docked {
       animation: none;
     }
   }

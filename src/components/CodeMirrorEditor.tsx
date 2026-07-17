@@ -1,3 +1,4 @@
+import { firstLineTitle } from "@/lib/editor/first-line-title";
 import {
   toggleBold,
   toggleCode,
@@ -250,6 +251,10 @@ export function buildExtensions(
     // selector resolves by observed stylesheet order, not array position
     // here, so the only reliable fix is to make the tie impossible.
     ...(livePreviewOn ? livePreview() : [rawModeTypographyTheme]),
+    // FIX 3 (0.20.14) — the first non-empty content line renders at title
+    // scale (the note's `display_title`), pure decoration, no `# ` written.
+    // Mode-agnostic: both raw and live, and it defers to an explicit heading.
+    firstLineTitle(),
     slashMenuTheme,
     autocompletion({
       // The ONLY completion source in this editor — see
@@ -257,10 +262,12 @@ export function buildExtensions(
       // rely on (it's a no-op outside its own trigger).
       override: [createSlashCompletionSource(() => onRequestAttachmentRef.current?.())],
     }),
-    // POLISH-WAVE PR 5b — the coarse-pointer-only selection toolbar. Both
-    // modes (mode-agnostic UI: raw mode's markdown is just as toggle-able as
-    // live mode's), gated internally on `matchMedia("(pointer: coarse)")` so
-    // it never shows on desktop, which gets the keybindings below instead.
+    // The coarse-pointer-only selection formatting bar (0.20.14: docked to the
+    // bottom of the visual viewport above the keyboard, not floated at the
+    // selection). Both modes (mode-agnostic UI: raw mode's markdown is just as
+    // toggle-able as live mode's), gated internally on
+    // `matchMedia("(pointer: coarse)")` so it never shows on desktop, which
+    // gets the keybindings below instead.
     selectionToolbar(),
     // PR 5a — swipe-to-indent on list items, live-preview mode only (raw
     // mode already has Tab; a swipe over visible raw markdown has no

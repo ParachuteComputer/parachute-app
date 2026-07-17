@@ -20,7 +20,7 @@ import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
 import { isViewNote } from "@/lib/views/schema";
-import { useEffect, useMemo, useState } from "react";
+import { type SVGProps, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
 
 export function NoteView() {
@@ -132,7 +132,6 @@ function NoteBody({ note }: { note: Note }) {
             {title.text}
           </h1>
           {note.tags && note.tags.length > 0 ? <HeaderTags tags={note.tags} /> : null}
-          <p className="note-id mt-2">{label}</p>
           {summary ? <p className="mt-3 text-fg-muted">{summary}</p> : null}
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Link
@@ -164,6 +163,7 @@ function NoteBody({ note }: { note: Note }) {
               </Link>
             ) : null}
           </div>
+          <HeaderPath value={label} isPath={!!note.path} />
         </header>
 
         <TranscriptionStatus content={note.content ?? ""} />
@@ -272,18 +272,68 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function HeaderTags({ tags }: { tags: string[] }) {
+  // Compact, quieter chips (0.20.14): normal weight and tighter spacing so the
+  // tag row reads as a light label strip under the title rather than a second
+  // headline — reweight only, every chip still links to its filtered list.
   return (
-    <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Tags">
+    <div className="mt-2 flex flex-wrap gap-1" aria-label="Tags">
       {tags.map((t) => (
         <Link
           key={t}
           to={`/notes?tag=${encodeURIComponent(t)}`}
-          className="chip chip-tag focus-ring max-w-full break-all font-medium"
+          className="chip chip-tag focus-ring max-w-full break-all"
         >
           #{t}
         </Link>
       ))}
     </div>
+  );
+}
+
+// A clipboard glyph in the shared 24-grid / 1.75-stroke line style (NavIcons),
+// rendered small — the visual cue that the muted path line is tap-to-copy.
+function CopyGlyph(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      width={12}
+      height={12}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5" />
+    </svg>
+  );
+}
+
+// The path used to be a prominent mono line high in the header; it's now a
+// quiet, truncating meta line at the foot of it — we're deliberately not
+// orienting people toward editing paths (ratified 2026-07-17), so it fades
+// into the background and the vertical space goes to content. One tap still
+// copies it, though: handing a note's path to an AI agent is the explicit use
+// case, so the whole line is a copy button (toast + transient label via the
+// same useCopyToClipboard the metadata card's copy affordances use). Distinct
+// aria-label from the metadata card's "Copy note path" so both remain
+// unambiguous to a screen reader.
+function HeaderPath({ value, isPath }: { value: string; isPath: boolean }) {
+  const { copied, copy } = useCopyToClipboard();
+  return (
+    <button
+      type="button"
+      onClick={() => copy(value)}
+      aria-label={isPath ? "Copy path" : "Copy note id"}
+      className="focus-ring group mt-4 flex max-w-full items-center gap-1.5 rounded text-fg-dim transition-colors hover:text-fg-muted"
+    >
+      <CopyGlyph className="shrink-0 opacity-70 transition-opacity group-hover:opacity-100" />
+      <span className="min-w-0 truncate font-mono text-xs">{value}</span>
+      {copied ? <span className="shrink-0 text-xs text-fg-muted">Copied</span> : null}
+    </button>
   );
 }
 
