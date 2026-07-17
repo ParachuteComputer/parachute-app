@@ -75,11 +75,11 @@ export function SpeedDial() {
         aria-expanded={open}
         aria-controls={menuId}
         title={open ? undefined : "Create"}
-        className="focus-ring grid h-12 w-12 place-items-center rounded-full bg-accent text-[--color-on-accent] shadow-lift transition-transform duration-200 hover:scale-105 hover:bg-accent-hover motion-reduce:transition-none motion-reduce:hover:scale-100"
+        className="focus-ring grid h-12 w-12 place-items-center rounded-full bg-accent text-[--color-on-accent] shadow-lift transition-transform duration-(--dur-move) ease-out hover:scale-105 hover:bg-accent-hover motion-reduce:hover:scale-100"
       >
         <span
           aria-hidden="true"
-          className={`transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-45" : ""}`}
+          className={`transition-transform duration-(--dur-move) ease-out ${open ? "rotate-45" : ""}`}
         >
           <IconPlus width={24} height={24} strokeWidth={2} />
         </span>
@@ -106,12 +106,12 @@ function Verb({ to, label, icon }: { to: string; label: string; icon: React.Reac
       data-speed-dial-verb={label}
       className="focus-ring group flex items-center gap-3 rounded-full"
     >
-      <span className="rounded-full border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-fg shadow-soft transition-colors group-hover:border-accent/50">
+      <span className="rounded-full border border-border bg-card px-3.5 py-1.5 text-sm font-medium text-fg shadow-soft transition-colors duration-(--dur-quick) ease-out group-hover:border-accent/50">
         {label}
       </span>
       <span
         aria-hidden="true"
-        className="grid h-11 w-11 place-items-center rounded-full bg-fg text-bg shadow-soft transition-transform duration-200 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+        className="grid h-11 w-11 place-items-center rounded-full bg-fg text-bg shadow-soft transition-transform duration-(--dur-move) ease-out group-hover:scale-105 motion-reduce:group-hover:scale-100"
       >
         {icon}
       </span>

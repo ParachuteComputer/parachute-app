@@ -60,6 +60,8 @@ below).
 | `--shadow-sm` / `-md` / `-lg` | forest-tinted utility elevation ramp |
 | `--shadow-soft` / `-lift` | the sage-tinted negative-spread pair — `-soft` = resting card lift, `-lift` = floating sheet/FAB/popover/palette. Nothing may use a plain gray drop shadow |
 | `--w-prose` / `-surface` / `-page` / `-narrow` | container widths (42 / 52 / 72 / 32 rem). **`--w-surface` (52rem, LZ-3)** is the ONE width the unified `VaultSurface` uses — the reading+managing surface, sat between `--w-prose` (42rem, a reading column) and `--w-page` (72rem, the old wide manager). DayView + the other rooms keep their own widths |
+| `--dur-quick` / `-move` / `-enter` | ONE motion vocabulary (120 / 200 / 280ms) — `-quick` for state changes (color, border, shadow), `-move` for things that transform/resize, `-enter` for surfaces arriving (sheets, popovers, palette, toasts). Every transition/animation in the app consumes one of these — no raw ms literals |
+| `--ease-out` / `-spring` | the two motion curves — `-out` is the calm default settle (also the Tailwind `ease-out` utility, redefined), `-spring` is the promoted `.btn` hover bounce. `--dur-move`/`--dur-enter` zero to 0ms under `prefers-reduced-motion: reduce` (one gate, not per-component `motion-reduce:` sprinkles) — `--dur-quick` stays live, since reduced-motion is a vestibular-safety signal about MOTION (WCAG 2.3.3), not a ban on color/shadow settles |
 
 The Tailwind v4 `@theme` block means every `--color-*`, `--text-*`, `--radius-*`
 token is also a utility (`bg-accent`, `text-fg-muted`, `text-2xs`,
@@ -88,8 +90,13 @@ Build surfaces from these instead of re-hand-rolling strings:
 - **Chips** — `.chip` + `.chip-tag` / `.chip-tag-active` (the #tag pill) /
   `.chip-featured` (the coral-soft "highlight" badge — distinct from the
   interactive accent, e.g. a plan's featured tier).
-- **Dialogs** — `.dialog-overlay` + `.dialog-panel` (`--radius-2xl` +
-  `--shadow-lift`).
+- **Dialogs** — `.dialog-overlay` (`.enter-fade`) + `.dialog-panel` (`--radius-2xl` +
+  `--shadow-lift`, `.enter-rise`) — the entrance is baked into the shared classes, so any
+  consumer inherits it for free.
+- **Motion** — `.enter-rise` (opacity + `translateY(10px)→0`, `--dur-enter`) and `.enter-fade`
+  (opacity only, `--dur-quick`), both on `--ease-out`. Apply to any floating surface that mounts
+  fresh on open (dialog, popover, sheet, toast) — never to a row/element that re-renders on every
+  keystroke. Exits stay instant by design; only entrances animate.
 - **Type helpers** — `.page-title` (the serif page headline — a fluid `clamp`
   that scales with the text-size knob at its rem lower bound; use it for every
   route's `<h1>`), `.eyebrow` (uppercase micro-label, **sage** — the
@@ -131,8 +138,9 @@ working notes rooms — reproducing the synthesized prototype:
 - `.nudge-sun` — the single quiet "finish setting up" nudge, sun-tinted, never
   a wall.
 - `.note-row` / `.note-dot` — a note row on Home: dot · title · preview · time.
-- `.drop-in` / `.fade-up` — the settling-note-onto-paper entrance animations
-  (both honor `prefers-reduced-motion`).
+- `.drop-in` / `.fade-up` — the settling-note-onto-paper entrance animations, a bespoke one-off
+  flourish distinct from the `.enter-rise`/`.enter-fade` system above (both honor
+  `prefers-reduced-motion`, in the same consolidated gate).
 
 ## Theming
 

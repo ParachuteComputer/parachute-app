@@ -85,7 +85,7 @@ export function SyncStatusIndicator() {
         <div
           role="dialog"
           aria-label="Sync status details"
-          className="absolute right-0 z-30 mt-2 w-80 rounded-md border border-border bg-card p-4 text-sm shadow-lg"
+          className="enter-rise absolute right-0 z-30 mt-2 w-80 rounded-md border border-border bg-card p-4 text-sm shadow-lg"
         >
           <SyncStatusPanel onDismiss={() => setOpen(false)} />
         </div>
