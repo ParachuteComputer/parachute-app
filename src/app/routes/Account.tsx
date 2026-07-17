@@ -62,7 +62,13 @@ type VaultsState = "loading" | "error" | AccountVault[];
 
 export function Account() {
   const [view, setView] = useState<BootView>({ kind: "loading" });
+  // AUTH-W2 move 2: re-resolve "Signed in as" if ANOTHER tab flips the
+  // identity while this page is open — without this dependency the boot
+  // fetch only ever runs once, and client.ts's cache drop (identityEpoch
+  // bump) would go unnoticed here until a manual reload.
+  const identityEpoch = useAccountSessionStore((s) => s.identityEpoch);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identityEpoch is the trigger, not a value read in the body — see the comment above.
   useEffect(() => {
     let live = true;
     (async () => {
@@ -89,7 +95,7 @@ export function Account() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [identityEpoch]);
 
   return (
     <div className="page-prose">
@@ -127,6 +133,9 @@ function ManagerView({
 }) {
   const navigate = useNavigate();
   const activeVault = useVaultStore((s) => s.getActiveVault());
+  // AUTH-W2 move 2: forces the vault-list effect below to re-run on an
+  // identity switch — see the identical rationale on `Account()`'s own effect.
+  const identityEpoch = useAccountSessionStore((s) => s.identityEpoch);
 
   // Plan/trial context — the SHARED summary query (§2.4): same cache as the
   // switcher, the nav badge, and Home's ambience. Tri-state: summary | null
@@ -141,6 +150,7 @@ function ManagerView({
   const [vaults, setVaults] = useState<VaultsState>("loading");
   const [descriptor, setDescriptor] = useState<DoorDescriptor | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identityEpoch is the trigger, not a value read in the body — see the comment on its declaration above.
   useEffect(() => {
     let live = true;
     listVaults()
@@ -160,7 +170,7 @@ function ManagerView({
     return () => {
       live = false;
     };
-  }, []);
+  }, [identityEpoch]);
 
   const reloadVaults = useCallback(async () => {
     try {

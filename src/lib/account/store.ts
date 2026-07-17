@@ -29,18 +29,58 @@ export function saveLastSigninEmail(email: string): void {
  * drive account management (plan/usage/settings — PR-2). Session-scoped
  * (sessionStorage): it's re-minted from the session cookie on demand, so it
  * never needs to outlive the tab, and it isn't a long-lived secret at rest.
+ *
+ * AUTH-W2 move 2: cached WITH the identity (`email ?? username`) it was
+ * minted for, as `{ token, identity }` — a bare-token cache can't outlive the
+ * cookie's, because nothing in it says WHICH account the token belongs to.
+ * `client.ts`'s `getSession()` compares this identity against every fresh
+ * session read and drops the cache on a mismatch (another tab switched
+ * accounts). An old bare-token entry (pre-this-shape) fails the JSON parse
+ * and reads as absent — a silent one-time re-mint, no user-visible effect.
  */
-export function loadAccountToken(): string | null {
+interface StoredAccountToken {
+  token: string;
+  /** `null` when the door named neither `email` nor `username` (shouldn't
+   *  happen server-side, but tolerated rather than refusing to cache). */
+  identity: string | null;
+}
+
+function loadStoredAccountToken(): StoredAccountToken | null {
   try {
-    return sessionStorage.getItem(ACCOUNT_TOKEN_KEY);
+    const raw = sessionStorage.getItem(ACCOUNT_TOKEN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof (parsed as { token?: unknown }).token === "string"
+    ) {
+      const identity = (parsed as { identity?: unknown }).identity;
+      return {
+        token: (parsed as { token: string }).token,
+        identity: typeof identity === "string" ? identity : null,
+      };
+    }
+    return null; // a shape we don't recognize — treat as absent, re-mint
   } catch {
-    return null;
+    return null; // pre-migration bare-token string (not JSON) — absent
   }
 }
 
-export function saveAccountToken(token: string): void {
+export function loadAccountToken(): string | null {
+  return loadStoredAccountToken()?.token ?? null;
+}
+
+/** The identity the cached token was minted for, or `null` if nothing (or a
+ *  pre-migration bare token) is cached. `client.ts` reconciles this against
+ *  every fresh `GET /account/session` read. */
+export function loadAccountIdentity(): string | null {
+  return loadStoredAccountToken()?.identity ?? null;
+}
+
+export function saveAccountToken(token: string, identity: string | null = null): void {
   try {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, token);
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, JSON.stringify({ token, identity }));
   } catch {
     // best-effort
   }
@@ -76,6 +116,17 @@ interface AccountSessionState {
   gate: HubGate | null;
   markGate: (gate: HubGate) => void;
   clearGate: () => void;
+  /**
+   * AUTH-W2 move 2: bumped whenever `client.ts`'s `getSession()` finds the
+   * session cookie now naming a DIFFERENT identity than the cached account
+   * bearer (another tab signed out/in as someone else) — the moment the
+   * bearer + its cache get dropped. Ambient vault/summary reads
+   * (`use-summary.ts`, `VaultSwitcher.tsx`) fold this into their query key so
+   * a stale identity's cached rows can't linger past the switch; `Account.tsx`
+   * re-resolves its own "Signed in as" + vault list off it too.
+   */
+  identityEpoch: number;
+  bumpIdentityEpoch: () => void;
 }
 
 export const useAccountSessionStore = create<AccountSessionState>((set) => ({
@@ -85,4 +136,6 @@ export const useAccountSessionStore = create<AccountSessionState>((set) => ({
   gate: null,
   markGate: (gate) => set({ gate }),
   clearGate: () => set({ gate: null }),
+  identityEpoch: 0,
+  bumpIdentityEpoch: () => set((s) => ({ identityEpoch: s.identityEpoch + 1 })),
 }));

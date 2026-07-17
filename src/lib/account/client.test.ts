@@ -5,13 +5,15 @@ import {
   SessionExpiredError,
   createVault,
   getAccountSummaryState,
+  getSession,
   listVaults,
   logout,
   mintVaultToken,
   openBillingPortal,
   startCheckout,
+  verifySignInCode,
 } from "./client";
-import { loadAccountToken } from "./store";
+import { loadAccountIdentity, loadAccountToken, useAccountSessionStore } from "./store";
 import type { AccountSummary } from "./types";
 
 // Round-trips the REAL cloud wire (workers/identity/src/account-api.ts +
@@ -30,13 +32,29 @@ function res(body: unknown, status = 200): Response {
   return new Response(text, { status, headers: { "content-type": "application/json" } });
 }
 
+/** An opaque-redirect response — what `redirect: "manual"` fetch returns for
+ *  a same-origin 302 (the browser applies the cookie before filtering the
+ *  response; the Response constructor can't produce this shape, so tests fake
+ *  it directly — see `verifySignInCode`'s doc comment in client.ts). */
+function opaqueRedirect(): Response {
+  return { type: "opaqueredirect", status: 0, ok: false } as unknown as Response;
+}
+
 function headersOf(init?: RequestInit): Record<string, string> {
   return (init?.headers ?? {}) as Record<string, string>;
+}
+
+/** Seeds the store's CURRENT cache shape (`{ token, identity }`) — matches
+ *  SESSION_OK's identity by default so tests unrelated to the AUTH-W2
+ *  reconciliation behave exactly as before (no incidental cache drop). */
+function seedAccountToken(token: string, identity: string | null = SESSION_OK.email): void {
+  sessionStorage.setItem(ACCOUNT_TOKEN_KEY, JSON.stringify({ token, identity }));
 }
 
 beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
+  useAccountSessionStore.setState({ identityEpoch: 0 });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -71,7 +89,7 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
   });
 
   it("reuses a cached account token — no C2 mint", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "cached-tok");
+    seedAccountToken("cached-tok");
     const fetchImpl = vi.fn<typeof fetch>(async (input) => {
       if (String(input) === "/account/vaults") return res({ vaults: [] });
       return res("unexpected", 500);
@@ -101,7 +119,7 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
   });
 
   it("re-mints once on a 401 and retries with the fresh token", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "stale-tok");
+    seedAccountToken("stale-tok");
     let vaultsCalls = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       const path = String(input);
@@ -123,7 +141,7 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
   });
 
   it("createVault: Bearer + JSON { name }, NO __csrf on the C3 body", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input) === "/account/vaults" && init?.method === "POST")
         return res(
@@ -144,7 +162,7 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
   });
 
   it("mintVaultToken: Bearer, NO __csrf (empty JSON body)", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       if (/\/account\/vaults\/moss\/token$/.test(String(input)) && init?.method === "POST")
         return res({ vault_token: "vt", expires_at: "2026-07-11T00:00:00.000Z", services: {} });
@@ -174,7 +192,7 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
   // surfacing the bare code to the naming form. It must prefer `message`.
   describe("jsonOrThrow prefers the server's friendly `message` over the bare `error` code (F12)", () => {
     it("createVault: a 409 vault_taken surfaces the friendly message, not the code", async () => {
-      sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+      seedAccountToken("acct-tok");
       const fetchImpl = vi.fn<typeof fetch>(async () =>
         res({ error: "vault_taken", message: "That vault name is already taken." }, 409),
       );
@@ -185,7 +203,7 @@ describe("the Bearer layer — /account/vaults* (C3)", () => {
     });
 
     it("falls back to the bare `error` code when no `message` field is present", async () => {
-      sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+      seedAccountToken("acct-tok");
       const fetchImpl = vi.fn<typeof fetch>(async () => res({ error: "not_owner" }, 403));
 
       const err = await mintVaultToken("moss", fetchImpl).catch((e) => e);
@@ -209,7 +227,7 @@ describe("getAccountSummaryState — Bearer-gated + the failed/absent tri-state 
   };
 
   it("returns the summary on 200, riding the account Bearer (no cookie)", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async (input) => {
       if (String(input) === "/account/summary") return res(summary);
       return res("unexpected", 500);
@@ -222,19 +240,19 @@ describe("getAccountSummaryState — Bearer-gated + the failed/absent tri-state 
   });
 
   it("returns null (ABSENT) on 404 — a door with no summary endpoint must not spin a retry card forever", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => res("not found", 404));
     await expect(getAccountSummaryState(fetchImpl)).resolves.toBeNull();
   });
 
   it('returns "error" (FAILED) on a 500 — transient weather gets the retry card', async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => res("boom", 500));
     await expect(getAccountSummaryState(fetchImpl)).resolves.toBe("error");
   });
 
   it('returns "error" on a network failure (never throws)', async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => {
       throw new Error("offline");
     });
@@ -252,7 +270,7 @@ describe("getAccountSummaryState — Bearer-gated + the failed/absent tri-state 
 
 describe("openBillingPortal — POST /account/billing/portal (Bearer)", () => {
   it("200 → { url }, Bearer attached, no body", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input) === "/account/billing/portal" && init?.method === "POST")
         return res({ url: "https://billing.stripe.com/session/abc" });
@@ -268,7 +286,7 @@ describe("openBillingPortal — POST /account/billing/portal (Bearer)", () => {
   });
 
   it("409 no_billing_customer → typed BillingApiError", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => res({ error: "no_billing_customer" }, 409));
 
     const err = await openBillingPortal(fetchImpl).catch((e) => e);
@@ -278,7 +296,7 @@ describe("openBillingPortal — POST /account/billing/portal (Bearer)", () => {
   });
 
   it("503 (billing unconfigured) → typed BillingApiError, regardless of body", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => res("", 503));
 
     const err = await openBillingPortal(fetchImpl).catch((e) => e);
@@ -288,7 +306,7 @@ describe("openBillingPortal — POST /account/billing/portal (Bearer)", () => {
   });
 
   it("200 with no/blank url → typed BillingApiError (never assign(undefined))", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     // A contract-violating 200 body: no url, a blank url, a non-string url.
     for (const body of [{}, { url: "" }, { url: 123 }] as const) {
       const fetchImpl = vi.fn<typeof fetch>(async () => res(body));
@@ -299,7 +317,7 @@ describe("openBillingPortal — POST /account/billing/portal (Bearer)", () => {
   });
 
   it("re-mints once on a 401 and retries with the fresh token", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "stale-tok");
+    seedAccountToken("stale-tok");
     let calls = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       const path = String(input);
@@ -323,7 +341,7 @@ describe("openBillingPortal — POST /account/billing/portal (Bearer)", () => {
 
 describe("startCheckout — POST /account/billing/checkout (Bearer)", () => {
   it("200 → { url }, Bearer attached, { tier } body", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input) === "/account/billing/checkout" && init?.method === "POST")
         return res({ url: "https://checkout.stripe.com/session/abc" });
@@ -339,7 +357,7 @@ describe("startCheckout — POST /account/billing/checkout (Bearer)", () => {
   });
 
   it("includes interval in the body when given", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       res({ url: "https://checkout.stripe.com/x" }),
     );
@@ -350,7 +368,7 @@ describe("startCheckout — POST /account/billing/checkout (Bearer)", () => {
   });
 
   it("400 invalid_tier → typed BillingApiError", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => res({ error: "invalid_tier" }, 400));
 
     const err = await startCheckout("entry", undefined, fetchImpl).catch((e) => e);
@@ -360,7 +378,7 @@ describe("startCheckout — POST /account/billing/checkout (Bearer)", () => {
   });
 
   it("409 already_subscribed → typed BillingApiError", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "acct-tok");
+    seedAccountToken("acct-tok");
     const fetchImpl = vi.fn<typeof fetch>(async () => res({ error: "already_subscribed" }, 409));
 
     const err = await startCheckout("power", undefined, fetchImpl).catch((e) => e);
@@ -369,7 +387,7 @@ describe("startCheckout — POST /account/billing/checkout (Bearer)", () => {
   });
 
   it("re-mints once on a 401 and retries with the fresh token", async () => {
-    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "stale-tok");
+    seedAccountToken("stale-tok");
     let calls = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       const path = String(input);
@@ -408,5 +426,131 @@ describe("logout — form-encoded (cloud's logout is form-only)", () => {
       throw new Error("offline");
     });
     await expect(logout("csrf-123", fetchImpl)).resolves.toBeUndefined();
+  });
+});
+
+// AUTH-W2 move 2 — the cached account bearer can't outlive the cookie's
+// identity. `getSession()` is the reconciliation chokepoint: it fires on
+// every session read (boot, poll, mint), so an account switch is caught
+// wherever it's next observed, not just at the moment a Bearer call happens
+// to 401.
+describe("getSession — identity reconciliation (AUTH-W2 move 2)", () => {
+  it("a matching identity leaves the cached bearer + epoch untouched", async () => {
+    seedAccountToken("acct-tok", "a@b.c");
+    const fetchImpl = vi.fn<typeof fetch>(async () => res(SESSION_OK));
+
+    await getSession(fetchImpl);
+
+    expect(loadAccountToken()).toBe("acct-tok");
+    expect(loadAccountIdentity()).toBe("a@b.c");
+    expect(useAccountSessionStore.getState().identityEpoch).toBe(0);
+  });
+
+  it("a DIFFERENT identity on the session cookie drops the cached bearer and bumps identityEpoch", async () => {
+    seedAccountToken("acct-tok-for-a", "a@b.c");
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ signed_in: true, csrf: "csrf-999", email: "someone-else@b.c" }),
+    );
+
+    await getSession(fetchImpl);
+
+    expect(loadAccountToken()).toBeNull();
+    expect(loadAccountIdentity()).toBeNull();
+    expect(useAccountSessionStore.getState().identityEpoch).toBe(1);
+  });
+
+  it("flipping to SIGNED OUT also drops a cached bearer (no identity ⇒ a change)", async () => {
+    seedAccountToken("acct-tok-for-a", "a@b.c");
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ signed_in: false, csrf: "csrf-x" }));
+
+    await getSession(fetchImpl);
+
+    expect(loadAccountToken()).toBeNull();
+    expect(useAccountSessionStore.getState().identityEpoch).toBe(1);
+  });
+
+  it("nothing cached yet — first load is not a 'mismatch', no epoch bump", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => res(SESSION_OK));
+
+    await getSession(fetchImpl);
+
+    expect(useAccountSessionStore.getState().identityEpoch).toBe(0);
+  });
+
+  it("a subsequent Bearer call re-mints against the NEW identity after a drop", async () => {
+    seedAccountToken("stale-a-tok", "a@b.c");
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const path = String(input);
+      if (path === "/account/session")
+        return res({ signed_in: true, csrf: "csrf-b", email: "b@b.c" });
+      if (path === "/account/token") return res({ token: "fresh-b-tok" });
+      if (path === "/account/vaults") return res({ vaults: [] });
+      return res("unexpected", 500);
+    });
+
+    // The caller's own getSession() (e.g. CheckEmail's poll, Account's boot
+    // fetch) observes the switch first — THEN a Bearer call re-mints clean.
+    await getSession(fetchImpl);
+    const out = await listVaults(fetchImpl);
+
+    expect(out).toEqual({ vaults: [] });
+    expect(loadAccountToken()).toBe("fresh-b-tok");
+    expect(loadAccountIdentity()).toBe("b@b.c");
+  });
+
+  it("username falls back for a password door (HUB-PARITY P4) — same reconciliation", async () => {
+    seedAccountToken("acct-tok", "operator-a");
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ signed_in: true, csrf: "csrf-1", username: "operator-b" }),
+    );
+
+    await getSession(fetchImpl);
+
+    expect(loadAccountToken()).toBeNull();
+    expect(useAccountSessionStore.getState().identityEpoch).toBe(1);
+  });
+});
+
+// AUTH-W2 §3 risk register: "an old bare-token sessionStorage entry reads as
+// absent → silent re-mint." Pins that migration behavior directly.
+describe("a pre-migration bare-token cache reads as absent", () => {
+  it("re-mints instead of reusing a bare (non-JSON) sessionStorage entry", async () => {
+    sessionStorage.setItem(ACCOUNT_TOKEN_KEY, "old-bare-token");
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const path = String(input);
+      if (path === "/account/session") return res(SESSION_OK);
+      if (path === "/account/token") return res({ token: "fresh-tok" });
+      if (path === "/account/vaults") return res({ vaults: [] });
+      return res("unexpected", 500);
+    });
+
+    await listVaults(fetchImpl);
+
+    // A real mint happened (not a straight reuse of "old-bare-token").
+    expect(fetchImpl.mock.calls.some(([p]) => String(p) === "/account/token")).toBe(true);
+    expect(loadAccountToken()).toBe("fresh-tok");
+  });
+});
+
+describe("verifySignInCode — POST /auth/code (AUTH-W2 §2, form-encoded — no JSON variant is deployed)", () => {
+  it("posts form-encoded { email, code, __csrf } with redirect: manual", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => opaqueRedirect());
+
+    const ok = await verifySignInCode("a@b.c", "123456", "csrf-1", fetchImpl);
+
+    expect(ok).toBe(true);
+    const [path, init] = fetchImpl.mock.calls[0]!;
+    expect(String(path)).toBe("/auth/code");
+    expect(init?.method).toBe("POST");
+    expect(init?.redirect).toBe("manual");
+    expect(init?.credentials).toBe("include");
+    expect(headersOf(init)["content-type"]).toBe("application/x-www-form-urlencoded");
+    expect(init?.body).toBe("email=a%40b.c&code=123456&__csrf=csrf-1");
+  });
+
+  it("a wrong/expired code re-renders the ceremony page (200 HTML) — reads as false, not a throw", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => res("<html>the ceremony page</html>", 200));
+
+    await expect(verifySignInCode("a@b.c", "000000", "csrf-1", fetchImpl)).resolves.toBe(false);
   });
 });

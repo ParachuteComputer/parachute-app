@@ -75,7 +75,7 @@ export async function resolveBoot({
   // strand a signed-in person.
   try {
     const account = await mintAccountToken(session.csrf, fetchImpl);
-    saveAccountToken(account.token);
+    saveAccountToken(account.token, session.email ?? session.username ?? null);
   } catch (err) {
     if (markHubGateFromError(err)) {
       // A KNOWN hub gate (force_change_password / admin_locked): every C3 call

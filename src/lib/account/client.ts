@@ -1,4 +1,10 @@
-import { clearAccountToken, loadAccountToken, saveAccountToken } from "./store";
+import {
+  clearAccountToken,
+  loadAccountIdentity,
+  loadAccountToken,
+  saveAccountToken,
+  useAccountSessionStore,
+} from "./store";
 import type {
   AccountSession,
   AccountSummary,
@@ -124,6 +130,36 @@ function post(fetchImpl: Fetch, path: string, body: Record<string, unknown>): Pr
   });
 }
 
+/** `email ?? username` — the identity string cached alongside the account
+ *  bearer (see `store.ts`'s `StoredAccountToken`), and the value ambient
+ *  "Signed in as X" surfaces render. `null` when the door session names
+ *  neither (signed out, or a shape we don't recognize). */
+function identityOf(session: Pick<AccountSession, "email" | "username">): string | null {
+  return session.email ?? session.username ?? null;
+}
+
+/**
+ * AUTH-W2 move 2: the cached account bearer can't outlive the cookie's
+ * identity. Every `getSession()` read compares the door's answer against
+ * whichever identity the cached bearer was minted for — if the cookie now
+ * names someone else (another tab signed out/in as a different account, or
+ * signed out entirely) the cache is a lie for THIS tab, so it's dropped: the
+ * bearer clears (next Bearer call re-mints from the now-current cookie) and
+ * `identityEpoch` bumps so ambient vault/summary reads (keyed off it) drop
+ * their stale rows too, instead of quietly serving the old account's data
+ * until the ~10-minute bearer TTL happened to lapse on its own.
+ *
+ * No-ops when nothing is cached yet (first load, or already reconciled) —
+ * only a REAL mismatch against a live cache triggers the drop.
+ */
+function reconcileIdentity(session: AccountSession): void {
+  const cachedIdentity = loadAccountIdentity();
+  if (cachedIdentity === null) return;
+  if (identityOf(session) === cachedIdentity) return;
+  clearAccountToken();
+  useAccountSessionStore.getState().bumpIdentityEpoch();
+}
+
 /** `GET /account/session` — the boot oracle. Never throws on signed-out; the
  *  `signed_in` flag carries that. Only network failure rejects. */
 export async function getSession(
@@ -134,7 +170,58 @@ export async function getSession(
     headers: { "X-Requested-With": "fetch" },
   });
   if (!res.ok) throw new AccountApiError(res.status, `session ${res.status}`);
-  return (await res.json()) as AccountSession;
+  const session = (await res.json()) as AccountSession;
+  reconcileIdentity(session);
+  return session;
+}
+
+/**
+ * `POST /auth/code` — verify the 6-digit short-form spelling of the magic
+ * link (`CheckEmail.tsx`'s "type the code instead" field).
+ *
+ * FORM-ENCODED, NOT JSON — verified live against cloud's merged source
+ * (`workers/identity/src/auth-handlers.ts` `handleCodeVerifyPost`): unlike
+ * `/auth/magic`, this handler has no `wantsJson`/`prefersJson` branch at all —
+ * it unconditionally reads `req.formData()` and answers either a same-origin
+ * REDIRECT (success — the session cookie lands on the response before we ever
+ * see it) or a 200 HTML re-render of the ceremony page (every failure: wrong
+ * code, expired, unknown email, attempt-cap — all folded into one neutral
+ * message by design, no oracle). The JSON variant was deferred out of Wave 1;
+ * this is what's actually deployed today (AUTH-W2-BRIEF §2).
+ *
+ * So: post form-encoded with `redirect: "manual"` and read the RESPONSE
+ * SHAPE, never the body. A same-origin redirect becomes an opaque
+ * `res.type === "opaqueredirect"` response (status 0, headers unreadable —
+ * but the browser already applied the Set-Cookie from the real network
+ * response before filtering it into this shape, so the session is live);
+ * anything else is a failure. We don't parse the HTML — there's nothing in it
+ * we need that the endpoint's own single neutral failure message doesn't
+ * already say.
+ *
+ * KNOWN GAP (documented, not silently swallowed): an account with TOTP
+ * enrolled diverts server-side to `/login/2fa` via the SAME redirect shape a
+ * success does — `finishPrimaryAuth` on cloud stashes a pending login rather
+ * than minting a session. This function would report `true` (a redirect DID
+ * happen) even though no session landed; the caller's next `getSession()`
+ * read will show `signed_in: false` and the flow safely degrades (Welcome.tsx
+ * already bounces `!signed_in` to the front door) rather than hanging. TOTP
+ * is explicitly out of scope for this wave (AUTH-W2-BRIEF §2) — the app has
+ * no 2FA UI yet, on ANY sign-in path, not just this one.
+ */
+export async function verifySignInCode(
+  email: string,
+  code: string,
+  csrf: string,
+  fetchImpl: Fetch = fetch.bind(globalThis),
+): Promise<boolean> {
+  const res = await fetchImpl("/auth/code", {
+    method: "POST",
+    credentials: "include",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ email, code, __csrf: csrf }).toString(),
+  });
+  return res.type === "opaqueredirect";
 }
 
 /** `POST /auth/magic` (JSON variant) — sends the sign-in link. `next` is the
@@ -180,7 +267,7 @@ function mintAccountBearer(fetchImpl: Fetch): Promise<string> {
     const session = await getSession(fetchImpl);
     if (!session.signed_in) throw new SessionExpiredError();
     const { token } = await mintAccountToken(session.csrf, fetchImpl);
-    saveAccountToken(token);
+    saveAccountToken(token, identityOf(session));
     return token;
   })().finally(() => {
     inflightMint = null;

@@ -2,6 +2,7 @@ import { InsecureContextBanner } from "@/components/InsecureContextBanner";
 import { listVaults } from "@/lib/account/client";
 import { describeAccountError } from "@/lib/account/error-copy";
 import { isHostedVaultRecord, openHostedVault } from "@/lib/account/hosted-vault";
+import { useAccountSessionStore } from "@/lib/account/store";
 import type { AccountVault } from "@/lib/account/types";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import {
@@ -267,8 +268,13 @@ function SwitcherPanel({
   // `null` = nothing to show (signed out / self-host / fetch failed) — the
   // switcher degrades to on-device + hub rows, exactly today's behavior
   // (the chooser's Open card at /add-vault remains the fallback door).
+  //
+  // AUTH-W2 move 2: `identityEpoch` in the key — an account switch elsewhere
+  // (client.ts `reconcileIdentity`) must not leave the switcher showing the
+  // PREVIOUS account's vaults until this 60s staleTime happens to lapse.
+  const identityEpoch = useAccountSessionStore((s) => s.identityEpoch);
   const accountVaultsQuery = useQuery<AccountVault[] | null>({
-    queryKey: ["account", "vaults"],
+    queryKey: ["account", "vaults", identityEpoch],
     queryFn: async () => {
       try {
         return (await listVaults()).vaults;
