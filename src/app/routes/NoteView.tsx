@@ -1,6 +1,7 @@
 import { CopyField, useCopyToClipboard } from "@/components/CopyField";
 import { DeleteNoteButton } from "@/components/DeleteNoteButton";
 import { buildWikilinkResolver } from "@/components/MarkdownView";
+import { IconExpand } from "@/components/NavIcons";
 import { NeighborhoodGraph } from "@/components/NeighborhoodGraph";
 import { NoteRenderer } from "@/components/NoteRenderer";
 import { PinArchiveButtons } from "@/components/PinArchiveButtons";
@@ -10,6 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { OfflineRibbon } from "@/components/ui/OfflineRibbon";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useFocusMode } from "@/lib/focus-mode";
 import { leadingH1, pathDisplayTitle, stripLeadingH1 } from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
@@ -65,6 +67,23 @@ function NoteBody({ note }: { note: Note }) {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(vault?.id ?? null);
   const resolver = useMemo(() => buildWikilinkResolver(note), [note]);
+  const focusOn = useFocusMode((s) => s.on);
+  const setFocusOn = useFocusMode((s) => s.setOn);
+
+  // Escape is a safe door out HERE — unlike the editor, nothing on this
+  // route consumes it first (CodeMirror binds Escape to cancel-edit; the
+  // read view has no such claim on the key). POLISH-WAVE PR 4: "Doors out:
+  // ⌘., Escape (when the editor doesn't consume it) […]; in the editor,
+  // focus-mode exit is ⌘. only" — so this listener lives here, not in the
+  // shared FocusModeMount, and NoteEditor deliberately has no equivalent.
+  useEffect(() => {
+    if (!focusOn) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFocusOn(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusOn, setFocusOn]);
   const label = note.path ?? note.id;
   // Human title: the content's leading H1 when it has one, else the path
   // leaf — an untouched quickPath() default becomes a timestamp variant
@@ -124,6 +143,15 @@ function NoteBody({ note }: { note: Note }) {
             </Link>
             <PinArchiveButtons note={note} keyboard />
             <DeleteNoteButton note={note} />
+            <button
+              type="button"
+              onClick={() => setFocusOn(true)}
+              className="btn btn-ghost btn-touch"
+              title="Focus (⌘.)"
+            >
+              <IconExpand width={16} height={16} />
+              Focus
+            </button>
             {isViewNote(note, roles.view) ? (
               // The note-editor's half of the §2 bridge — a `#view`-tagged
               // note opens as a view; ViewSurface's "Edit view note" is the

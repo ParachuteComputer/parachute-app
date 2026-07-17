@@ -233,3 +233,29 @@ export function IconMap(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// Four corners reaching outward — "enter focus" (POLISH-WAVE PR 4). Paired
+// with IconShrink for the reverse gesture.
+export function IconExpand(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <path d="M8 3.5H5.5A2 2 0 0 0 3.5 5.5V8" />
+      <path d="M16 3.5h2.5a2 2 0 0 1 2 2V8" />
+      <path d="M20.5 16v2.5a2 2 0 0 1-2 2H16" />
+      <path d="M3.5 16v2.5a2 2 0 0 0 2 2H8" />
+    </svg>
+  );
+}
+
+// Four corners drawing inward — "exit focus." Same stroke family as
+// IconExpand so the two read as one reversible gesture.
+export function IconShrink(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <path d="M8 3.5V6a2 2 0 0 1-2 2H3.5" />
+      <path d="M20.5 8H18a2 2 0 0 1-2-2V3.5" />
+      <path d="M3.5 16H6a2 2 0 0 1 2 2v2.5" />
+      <path d="M16 20.5V18a2 2 0 0 1 2-2h2.5" />
+    </svg>
+  );
+}

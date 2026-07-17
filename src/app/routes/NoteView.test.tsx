@@ -1,4 +1,5 @@
 import { NoteView } from "@/app/routes/NoteView";
+import { useFocusMode } from "@/lib/focus-mode";
 import { type LensDB, openLensDB } from "@/lib/sync/db";
 import { newLocalId, recordIdMap } from "@/lib/sync/id-map";
 import { useVaultStore } from "@/lib/vault/store";
@@ -558,5 +559,93 @@ describe("NoteView — offline voice capture (local id → id-map resolution) [F
       await qc.refetchQueries({ queryKey: ["note", "dev", localId] });
     });
     expect(await screen.findByText("The transcribed text.")).toBeInTheDocument();
+  });
+});
+
+// POLISH-WAVE PR 4 — focus mode's read-route half.
+describe("NoteView — focus mode", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    seedStore();
+    useFocusMode.setState({ on: false });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useFocusMode.setState({ on: false });
+  });
+
+  it("the Focus ghost button in the action row arms the store", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T00:00:00Z",
+          content: "Teacher and builder.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    renderAt("/n/abc-123");
+    const focusButton = await screen.findByRole("button", { name: /focus/i });
+    act(() => {
+      fireEvent.click(focusButton);
+    });
+    expect(useFocusMode.getState().on).toBe(true);
+  });
+
+  it("Escape exits focus mode on the read route (nothing here consumes it first)", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T00:00:00Z",
+          content: "Teacher and builder.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    renderAt("/n/abc-123");
+    await screen.findByText("Teacher and builder.");
+
+    act(() => {
+      useFocusMode.getState().setOn(true);
+    });
+    expect(useFocusMode.getState().on).toBe(true);
+
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    expect(useFocusMode.getState().on).toBe(false);
+  });
+
+  it("Escape is a no-op while focus mode is already off (no stray listener firing)", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T00:00:00Z",
+          content: "Teacher and builder.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    renderAt("/n/abc-123");
+    await screen.findByText("Teacher and builder.");
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    expect(useFocusMode.getState().on).toBe(false);
   });
 });

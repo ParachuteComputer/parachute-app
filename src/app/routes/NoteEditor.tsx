@@ -5,6 +5,7 @@ import type { CodeMirrorEditorHandle } from "@/components/CodeMirrorEditor";
 import { CodeMirrorEditor } from "@/components/CodeMirrorEditor";
 import { DeleteNoteButton } from "@/components/DeleteNoteButton";
 import { buildWikilinkResolver } from "@/components/MarkdownView";
+import { IconExpand } from "@/components/NavIcons";
 import { NoteRenderer } from "@/components/NoteRenderer";
 import { PinArchiveButtons } from "@/components/PinArchiveButtons";
 import { RemoveAttachmentButton } from "@/components/RemoveAttachmentButton";
@@ -15,6 +16,7 @@ import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { type StoredDraft, bodyEquals, clearDraft, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
 import { readStoredLivePreview } from "@/lib/editor-mode";
+import { useFocusMode } from "@/lib/focus-mode";
 import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
 import { useNote, useUpdateNote, useVaultStore } from "@/lib/vault";
@@ -75,6 +77,8 @@ type EditorPane = "edit" | "preview";
 function EditorSurface({ note }: { note: Note }) {
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
+  const focusOn = useFocusMode((s) => s.on);
+  const setFocusOn = useFocusMode((s) => s.setOn);
   // Pin the note's vault at MOUNT. The header vault switcher can change the
   // active vault mid-edit; keying the draft to the live active vault would move
   // this note's draft under a different vault's key. The draft belongs to the
@@ -277,76 +281,93 @@ function EditorSurface({ note }: { note: Note }) {
 
   return (
     <article>
-      <header className="card mb-6 p-5 shadow-soft md:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="eyebrow">Editing</span>
-            {isDirty ? (
-              <span
-                className="inline-flex items-center gap-1 text-xs text-accent"
-                aria-label="unsaved changes"
+      {focusOn ? (
+        // EDITOR-STUDY §3.3's addition on top of POLISH-WAVE PR 4: in the
+        // edit route, focus collapses the WHOLE header card (path, tags,
+        // buttons) down to this one floating save-state whisper — "just me
+        // and the words" literally. It's the SAME indicator as the header's
+        // (SaveStateWhisper), relocated, not reinvented. Positioned
+        // top-LEFT so it never collides with FocusModeMount's app-wide exit
+        // chip at top-right (App.tsx). ⌘S / Escape keep working from the
+        // keyboard either way — CodeMirror binds them directly, independent
+        // of whether this chrome is on screen.
+        <div
+          className="glass-panel enter-fade fixed top-4 left-4 z-30 rounded-full border border-border px-3 py-1.5 text-xs shadow-lift"
+          style={{ marginTop: "env(safe-area-inset-top)" }}
+        >
+          <SaveStateWhisper isDirty={isDirty} justSaved={justSaved} updatedAt={note.updatedAt} />
+        </div>
+      ) : (
+        <header className="card mb-6 p-5 shadow-soft md:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="eyebrow">Editing</span>
+              <SaveStateWhisper
+                isDirty={isDirty}
+                justSaved={justSaved}
+                updatedAt={note.updatedAt}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <PinArchiveButtons note={note} />
+              <DeleteNoteButton note={note} />
+              <button
+                type="button"
+                onClick={() => setFocusOn(true)}
+                className="btn btn-ghost btn-touch"
+                title="Focus (⌘.)"
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                unsaved
-              </span>
-            ) : justSaved ? (
-              <span className="text-xs text-accent" aria-label="saved">
-                Saved ✓
-              </span>
-            ) : (
-              <span className="text-xs text-fg-dim">saved {relativeTime(note.updatedAt)}</span>
-            )}
+                <IconExpand width={16} height={16} />
+                Focus
+              </button>
+              <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={handleRevert}
+                disabled={!isDirty || mutation.isPending}
+                className="btn btn-secondary btn-touch"
+              >
+                Revert
+              </button>
+              <button type="button" onClick={handleCancel} className="btn btn-secondary btn-touch">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAndView}
+                disabled={!isDirty || mutation.isPending || uploadsActive}
+                className="btn btn-primary btn-touch"
+                title={uploadsActive ? "Waiting for upload…" : "Save (⌘S)"}
+                aria-label={uploadsActive ? "Save — waiting for upload…" : "Save"}
+              >
+                {mutation.isPending ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PinArchiveButtons note={note} />
-            <DeleteNoteButton note={note} />
-            <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-            <button
-              type="button"
-              onClick={handleRevert}
-              disabled={!isDirty || mutation.isPending}
-              className="btn btn-secondary btn-touch"
-            >
-              Revert
-            </button>
-            <button type="button" onClick={handleCancel} className="btn btn-secondary btn-touch">
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveAndView}
-              disabled={!isDirty || mutation.isPending || uploadsActive}
-              className="btn btn-primary btn-touch"
-              title={uploadsActive ? "Waiting for upload…" : "Save (⌘S)"}
-              aria-label={uploadsActive ? "Save — waiting for upload…" : "Save"}
-            >
-              {mutation.isPending ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </div>
 
-        <input
-          type="text"
-          value={draft.path}
-          onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
-          className="mt-4 w-full border-0 bg-transparent font-serif text-xl text-fg outline-none placeholder:text-fg-dim md:text-2xl"
-          aria-label="Note path"
-          placeholder="(no path)"
-        />
-        {pathChanged ? (
-          <p className="mt-1 text-xs text-accent">Renaming moves the note — its id may change.</p>
-        ) : null}
-
-        <div className="mt-4">
-          <TagEditor
-            tags={draft.tags}
-            input={tagInput}
-            onInputChange={setTagInput}
-            onAdd={addTag}
-            onRemove={removeTag}
+          <input
+            type="text"
+            value={draft.path}
+            onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
+            className="mt-4 w-full border-0 bg-transparent font-serif text-xl text-fg outline-none placeholder:text-fg-dim md:text-2xl"
+            aria-label="Note path"
+            placeholder="(no path)"
           />
-        </div>
-      </header>
+          {pathChanged ? (
+            <p className="mt-1 text-xs text-accent">Renaming moves the note — its id may change.</p>
+          ) : null}
+
+          <div className="mt-4">
+            <TagEditor
+              tags={draft.tags}
+              input={tagInput}
+              onInputChange={setTagInput}
+              onAdd={addTag}
+              onRemove={removeTag}
+            />
+          </div>
+        </header>
+      )}
 
       {offeredDraft ? (
         // biome-ignore lint/a11y/useSemanticElements: role=status on a div — the banner holds a flex row of buttons (flow content) that <output>'s phrasing-only model disallows.
@@ -584,6 +605,40 @@ function NotFoundBlock({ id }: { id: string }) {
       }
     />
   );
+}
+
+// The checkpoint-save whisper (PR #40): "unsaved" (accent dot) while dirty →
+// "Saved ✓" for a beat after ⌘S → settles to "saved 2h ago". Extracted so
+// focus mode (EDITOR-STUDY §3.3) can float the SAME indicator outside the
+// header card instead of building a second one.
+function SaveStateWhisper({
+  isDirty,
+  justSaved,
+  updatedAt,
+}: {
+  isDirty: boolean;
+  justSaved: boolean;
+  updatedAt?: string;
+}) {
+  if (isDirty) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-xs text-accent"
+        aria-label="unsaved changes"
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        unsaved
+      </span>
+    );
+  }
+  if (justSaved) {
+    return (
+      <span className="text-xs text-accent" aria-label="saved">
+        Saved ✓
+      </span>
+    );
+  }
+  return <span className="text-xs text-fg-dim">saved {relativeTime(updatedAt)}</span>;
 }
 
 function ErrorBlock({ error }: { error: Error }) {

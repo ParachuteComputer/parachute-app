@@ -1,5 +1,42 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.8] - 2026-07-17
+
+**Editor Wave 2 — focus mode.** POLISH-WAVE PR 4, plus EDITOR-STUDY §3.3's addition: one gesture
+and the room goes quiet. Scoped to the reading/writing rooms only (`/n/:id`, `/n/:id/edit`) — not
+a global mode. Version note: this PR was built in parallel with a sibling capture-chip PR that
+claims `0.20.7`; this one takes `0.20.8` on the assumption the sibling lands first (or adjacent) —
+flagged for the merge sequencing, not a collision either PR needs to resolve itself.
+
+- **`src/lib/focus-mode.ts`** — a tiny, non-persisted zustand store (`on`/`setOn`/`toggle`, the
+  `useQuickSwitchOpen` shape) plus `isFocusablePath()`, matching only `/n/:id` and `/n/:id/edit`.
+- **`FocusModeMount`** (`src/components/FocusModeMount.tsx`), mounted once inside the router:
+  owns the `⌘.` door in (a no-op off a focusable route) and the route-change reset that keeps
+  focus mode ephemeral — any navigation, including the read↔edit hop on the same note, leaves it
+  behind.
+- **`AppShell`** (`App.tsx`, pulled out of `App()` so it can read the route): gates
+  Rail/Header/BottomTabBar/AppFooter/SpeedDial/AmbientMapFab off the store AND `isFocusablePath`
+  (belt-and-suspenders — the guard can't matter if the reset already fired, but it's the literal
+  spec ask). Chrome disappears instantly rather than animating out, matching PR1's already-shipped
+  "entrances only, exits stay instant" rule instead of relitigating it for this case. The Header/
+  Rail's `env(safe-area-inset-top)` relocates onto the content wrapper while they're gone.
+- **Doors out:** `⌘.`, a floating top-right exit chip (`FocusModeExitChip`, `.glass-panel` +
+  `.enter-fade` — PR1's floating-surface family), and — read route only — Escape. The editor route
+  deliberately has no Escape handler: CodeMirror already binds Escape to cancel-edit
+  (`CodeMirrorEditor.tsx`), so stacking a second meaning on the same key there would be unsafe;
+  `⌘.` is the edit route's only keyboard door out, per spec.
+  A quiet ghost "Focus" button (new `IconExpand`/`IconShrink` glyphs) lives in NoteView's action
+  row and NoteEditor's header.
+- **EDITOR-STUDY §3.3's addition:** in the edit route, focus also collapses the editor's whole
+  header card (path input, tag editor, Pin/Delete/Revert/Cancel/Save) down to a single floating
+  save-state whisper — the SAME indicator from PR2 (`SaveStateWhisper`, extracted, not
+  reinvented), relocated rather than rebuilt. `⌘S` and Escape-to-cancel keep working from the
+  keyboard regardless — CodeMirror owns those bindings independent of what chrome is on screen.
+
+Tests: `focus-mode.test.ts` (store + route matcher), `FocusModeMount.test.tsx` (⌘./Ctrl+.
+toggling, route-change reset), `NoteView.test.tsx` + `NoteEditor.test.tsx` (ghost buttons, header
+collapse/restore, Escape semantics per route), `AppFocusMode.test.tsx` (full-shell integration:
+chrome hide/restore, the safe-area-inset relocation, the `isFocusablePath` guard in isolation).
 ## [0.20.7] - 2026-07-17
 
 **Capture chip: visible-default-removable + note-path copy affordance.** Two Aaron-ratified
