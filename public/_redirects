@@ -1,4 +1,0 @@
-# Cloudflare Pages SPA fallback: client-side routes (React Router) resolve to the
-# app shell. Real asset requests are served directly; everything else renders
-# index.html so a hard-load of a deep route (e.g. /settings, /oauth/callback) boots.
-/*  /index.html  200

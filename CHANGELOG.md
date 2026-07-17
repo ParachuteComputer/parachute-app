@@ -1,5 +1,30 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.19.1] - 2026-07-16
+
+**Live-preview polish: reveal/containment/quote nits (A5), drop Pages-era public artifacts.**
+Three cosmetic fixes from PR #36's review, plus the app-side half of cloud#156's belt-and-
+suspenders cleanup. Patch bump — decoration-correctness fixes only, no new room.
+
+- **N1 — wikilink reveal keeps its color mark.** Revealing a wikilink's line used to drop the
+  `wikilink` style mark along with the hide-marks (the whole match was skipped on reveal); inline
+  links never had this bug since their `style()` call was already unconditional (invariant 2). The
+  wikilink loop in `buildDecorations` now uses the same `hide()`/`style()` split as the Link case:
+  markers hide on reveal, the display-text color mark never does.
+- **N2 — wikilink containment symmetry.** The `Link` containment case used `break` (still descends
+  into children) while `Image` used `return false` — so a wikilink like `[[target with **stars**]]`
+  got its nested `**` hidden by the incidental StrongEmphasis parse of the fake inner Link node,
+  splitting the display text out of its own color span. `Link` now matches `Image`'s `return false`.
+- **N3 — blockquote lazy-continuation border.** The quote-border line class was applied per-
+  `QuoteMark`, so a lazy-continuation line (quote content with no leading `>`, per CommonMark) —
+  still part of the same `Blockquote` node — missed its border. The line class now applies across
+  the node's whole line range, same pattern as the FencedCode/CodeBlock loop just above it.
+- **Drop `public/_redirects`** (Cloudflare-Pages-era SPA-fallback rule) — this app deploys as a
+  Cloudflare Worker (Static Assets + `run_worker_first`), and the identity worker does its own SPA
+  fallback; Pages is dead for this app. `public/CNAME` didn't exist in this repo (nothing to drop
+  there). cloud's `build-spa.sh` keeps its defensive strip of both files — belt (there) and
+  suspenders (here), cloud#156.
+
 ## [0.19.0] - 2026-07-16
 
 **Live-preview editor — markup fades, todos become checkboxes, one calm pane (A4, the editor
