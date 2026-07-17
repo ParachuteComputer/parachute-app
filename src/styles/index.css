@@ -1174,6 +1174,15 @@ body {
   .enter-fade {
     animation: enter-fade var(--dur-quick) var(--ease-out) both;
   }
+  /* The command-palette scrim's own fade — same `enter-fade` keyframe as
+     above, tuned to a more deliberate ~180ms (vs. the base 120ms) so the
+     tinted/blurred backdrop settles in rather than snapping on. Bakes its
+     duration directly instead of consuming --dur-quick, so it's listed
+     explicitly in the reduced-motion gate below (same pattern as
+     .dialog-overlay/.dialog-panel). */
+  .qs-scrim-fade {
+    animation: enter-fade 180ms var(--ease-out) both;
+  }
 
   /* --- ONE reduced-motion gate --- previously honored ad hoc: 8 individual
      `motion-reduce:` sprinkles per callsite plus 2 hand-rolled CSS blocks.
@@ -1196,6 +1205,7 @@ body {
     .fade-up,
     .enter-rise,
     .enter-fade,
+    .qs-scrim-fade,
     .dialog-overlay,
     .dialog-panel {
       animation: none;

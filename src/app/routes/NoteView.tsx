@@ -396,10 +396,16 @@ function NoteSkeleton() {
 // content silently didn't arrive." A quiet placeholder + an Edit invitation
 // closes that gap.
 function EmptyNoteBody({ noteId }: { noteId: string }) {
+  // Serif + italic + fg-muted — the same quiet-aside voice `.prose-note
+  // blockquote` already carries, at the prose reading size. A quiet moment
+  // should still feel warm, not read as small gray system chrome.
   return (
-    <p className="my-8 text-sm text-fg-dim">
+    <p className="my-8 font-serif text-lg italic text-fg-muted">
       Nothing here yet.{" "}
-      <Link to={`/n/${encodeURIComponent(noteId)}/edit`} className="text-accent hover:underline">
+      <Link
+        to={`/n/${encodeURIComponent(noteId)}/edit`}
+        className="not-italic text-accent hover:underline"
+      >
         Start writing →
       </Link>
     </p>

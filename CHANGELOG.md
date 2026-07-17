@@ -20,14 +20,16 @@ no new features.
   "Page not found" page with a "Back to notes" action, at the address you actually landed on.
 - **New-note surface, three fixes:** the auto-generated date-path title renders small/muted while
   untouched (a suggestion, not a headline) and switches to the normal display treatment once you
-  type your own; the empty editor canvas shows a "Start writing…" placeholder; the compose
-  screen's implicit `capture` tag stays as-is (investigated — see PR body).
-- **Search palette scrim.** ⌘K's command palette gets a proper backdrop dim (the same
-  `.dialog-overlay` darkening value + `enter-fade` timing every other overlay uses, so it inherits
-  the reduced-motion gate for free) — the floating pill/panel no longer reads as a transparent
-  inline layer.
+  type your own; the empty editor canvas shows a "Start writing…" placeholder (serif, italic,
+  warm-muted ink — same quiet voice as the empty-note placeholder below); the compose screen's
+  implicit `capture` tag stays as-is (investigated — see PR body).
+- **Search palette scrim.** ⌘K's command palette gets a proper backdrop — tinted with the app's
+  own ink (not flat black) plus a soft blur, fading in over ~180ms, so the world behind recedes
+  warmly instead of going dark; reduced-motion-gated like every other overlay. The floating
+  pill/panel no longer reads as a transparent inline layer.
 - **Empty-note body placeholder.** An empty note's body used to be blank whitespace,
-  indistinguishable from a failed load. Now: quiet "Nothing here yet." copy + a "Start writing"
+  indistinguishable from a failed load. Now: quiet "Nothing here yet." copy (serif, italic,
+  warm-muted ink — the same voice `.prose-note blockquote` already carries) + a "Start writing"
   link into the editor.
 - **Tag-row touch targets.** The Tags page's Pin/Schema/Rename actions pad to a ≥44px effective
   hit area (padding + a negative-margin claw-back, so the visible row height is unchanged).
@@ -42,6 +44,9 @@ no new features.
 - **Tag schema dialog teaches, not just asks.** An intro paragraph explains what a meta tag is;
   a live example (`status — string`, `meeting_date — date`) sits under the Fields legend. Copy
   only — the `date` field type was already wired end-to-end.
+- **`@openparachute/surface-render` bumped `^0.2.0` → `^0.3.0`.** Single newlines in a note's
+  markdown now render as line breaks (Shift+Enter shows what you typed), matching the shared
+  package's new `breaks: true` default — the app never overrides it.
 
 ## [0.20.2] - 2026-07-16
 

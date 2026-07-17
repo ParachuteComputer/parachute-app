@@ -67,6 +67,19 @@ const lensTheme = EditorView.theme({
     // accent-light fill.
     backgroundColor: "color-mix(in srgb, var(--color-accent-light) 30%, transparent) !important",
   },
+  // CM6's own empty-doc placeholder widget (opt-in via the `placeholder`
+  // prop — see NoteNew's "Start writing…"). A narrow, isolated exception to
+  // the "no font-family/font-size here" rule above: it targets ONLY
+  // `.cm-placeholder`, a selector neither mode-specific theme below touches,
+  // so there's no tie to resolve. Same warm quiet-aside voice as NoteView's
+  // empty-body placeholder (serif italic, fg-muted, prose reading size) —
+  // a quiet moment should still feel warm, not read as default gray CM chrome.
+  ".cm-placeholder": {
+    fontFamily: "var(--font-serif)",
+    fontStyle: "italic",
+    fontSize: "var(--text-lg)",
+    color: "var(--color-fg-muted)",
+  },
 });
 
 // Raw mode's ONLY font/padding authority (mirrors live-preview.ts's
