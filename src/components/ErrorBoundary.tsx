@@ -72,16 +72,21 @@ function RouteErrorCard({ error }: { error: Error }) {
  * surface only; the chrome mounted outside it in `AppShell` (Rail, Header,
  * BottomTabBar, footer) stays alive, and "Back to notes" gives a way out.
  *
- * Keyed by `location.pathname`: React Router doesn't remount a Route's
- * element when only its params change (e.g. `/n/1` → `/n/2` both match
- * `/n/:id`, so NoteView stays mounted) — without the key, a caught error
- * from note A would keep showing while note B tries to render. The key
- * forces a fresh boundary (and fresh error state) on every path change.
+ * Keyed by `location.key` — react-router's own per-navigation-entry id, not
+ * `location.pathname`. React Router doesn't remount a Route's element when
+ * only params or the search string change (`/n/1` → `/n/2` both match
+ * `/n/:id`; ViewSurface's refinements, Calendar's `?month=`, and DayView's
+ * `?date=` all update the SAME mounted element too), so a pathname-only key
+ * missed those — a caught error under `/notes?view=pinned` would keep
+ * showing over `/notes?view=archived`, same pathname, different content.
+ * `location.key` changes on every push/replace (pathname, search, hash, or
+ * even a repeat push to an identical URL), so it resets on strictly more
+ * cases than any hand-assembled `pathname + search` string would.
  */
 export function RouteErrorBoundary({ children }: { children: ReactNode }) {
   const location = useLocation();
   return (
-    <ErrorBoundary key={location.pathname} fallback={(error) => <RouteErrorCard error={error} />}>
+    <ErrorBoundary key={location.key} fallback={(error) => <RouteErrorCard error={error} />}>
       {children}
     </ErrorBoundary>
   );

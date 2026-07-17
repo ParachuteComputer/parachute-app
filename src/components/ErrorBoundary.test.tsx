@@ -1,6 +1,6 @@
 import { AppErrorBoundary, RouteErrorBoundary } from "@/components/ErrorBoundary";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { Link, MemoryRouter, Route, Routes, useParams } from "react-router";
+import { Link, MemoryRouter, Route, Routes, useParams, useSearchParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 function Bomb({ message = "kaboom" }: { message?: string }): never {
@@ -66,7 +66,7 @@ describe("RouteErrorBoundary", () => {
     // Same Route pattern (`/n/:id`) for both notes — React Router keeps
     // Harness mounted across the param change (it never remounts on its
     // own), so this only recovers because RouteErrorBoundary keys its inner
-    // boundary on `location.pathname`. A real in-router navigation (clicking
+    // boundary on `location.key`. A real in-router navigation (clicking
     // a Link, not swapping MemoryRouter's `initialEntries` via rerender —
     // that prop is read only on first mount) is required to prove it.
     function Harness() {
@@ -92,6 +92,42 @@ describe("RouteErrorBoundary", () => {
 
     expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument();
     expect(screen.getByText("note rendered fine")).toBeInTheDocument();
+  });
+
+  it("resets on a search-only navigation under the SAME pathname — review-caught regression (?view=pinned → ?view=archived)", () => {
+    // Same pathname (`/notes`) both times, only the `?view=` search param
+    // changes — React Router keeps the matched Route's element mounted for
+    // a search-only change exactly as it does for a params-only one, so a
+    // pathname-only key (the bug an earlier version of this file shipped)
+    // would miss this: the pinned page's caught error would keep showing
+    // over the archived page's otherwise-fine content. This is the same
+    // shape as ViewSurface's refinements, Calendar's `?month=`, and
+    // DayView's `?date=` — all wrapped routes whose content moves under a
+    // fixed pathname.
+    function Harness() {
+      const [searchParams] = useSearchParams();
+      const view = searchParams.get("view");
+      return (
+        <RouteErrorBoundary>
+          {view === "pinned" ? <Bomb /> : <p>{`view: ${view}`}</p>}
+        </RouteErrorBoundary>
+      );
+    }
+
+    render(
+      <MemoryRouter initialEntries={["/notes?view=pinned"]}>
+        <Link to="/notes?view=archived">switch to archived</Link>
+        <Routes>
+          <Route path="/notes" element={<Harness />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: /switch to archived/i }));
+
+    expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument();
+    expect(screen.getByText("view: archived")).toBeInTheDocument();
   });
 });
 
