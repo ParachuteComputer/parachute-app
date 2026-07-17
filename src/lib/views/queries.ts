@@ -3,9 +3,11 @@ import { useLiveNotesQuery } from "@/lib/vault/live-query";
 import { useActiveVaultClient, useNote } from "@/lib/vault/queries";
 import { loadToken } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
+import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { type DefaultPageId, defaultPagePath, resolveDefaultViewDef } from "./defaults";
 import {
   type MappedViewQuery,
   type ViewRefinements,
@@ -44,6 +46,38 @@ export function useViewList(viewTag: string) {
     refetchInterval: isLive ? false : 30_000,
     refetchOnWindowFocus: !isLive,
   });
+}
+
+/**
+ * Resolve a default page's effective ViewDef (VIEWS-RENDER-SPEC §7, wave
+ * 2a) — the pack note at the page's canonical path when present and
+ * parseable, else the app's built-in def, INSTANTLY (the pure resolution
+ * in `defaults.ts` never needs the note to have loaded). `pageId === null`
+ * skips the lookup entirely (other presets don't have a default page).
+ */
+export function useDefaultViewDef(
+  pageId: DefaultPageId | null,
+  roles: TagRoles,
+): { def: ViewDef | null; isPackNote: boolean } {
+  const client = useActiveVaultClient();
+  const activeId = useVaultStore((s) => s.activeVaultId);
+  const path = pageId ? defaultPagePath(pageId) : null;
+
+  const packNote = useQuery({
+    queryKey: ["defaultViewNote", activeId, path],
+    queryFn: async () => {
+      const results = await client!.queryNotes({ path: path! });
+      return results[0] ?? null;
+    },
+    enabled: !!client && !!path,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
+  return useMemo(() => {
+    if (!pageId) return { def: null, isPackNote: false };
+    return resolveDefaultViewDef(pageId, packNote.data ?? null, roles);
+  }, [pageId, packNote.data, roles]);
 }
 
 export interface UseViewResultsResult {
