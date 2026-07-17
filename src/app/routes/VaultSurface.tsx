@@ -52,6 +52,9 @@ import {
 } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
 import type { Note, TagSummary } from "@/lib/vault/types";
+import type { DefaultPageId } from "@/lib/views/defaults";
+import { useDefaultViewDef } from "@/lib/views/queries";
+import { queryTags } from "@/lib/views/query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 
@@ -175,17 +178,30 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
     }
   }, [preset, debouncedSearch, debouncedPrefix, selectedTags, tagMatch, sort, showArchived]);
 
-  // Merge the preset role tag into the query so vault-side filter does the
-  // narrowing. User can add more tags on top via the panel's TagBrowser.
-  // Untagged and orphaned use vault-native filters (has_tags / has_links).
-  const effectiveTags = useMemo(() => {
-    if (preset === "pinned") return Array.from(new Set([roles.pinned, ...selectedTags]));
-    if (preset === "archived") return Array.from(new Set([roles.archived, ...selectedTags]));
-    return selectedTags;
-  }, [preset, roles.pinned, roles.archived, selectedTags]);
+  // Views cutover (VIEWS-RENDER-SPEC §7, wave 2a): Pinned/Archive no longer
+  // hardcode their tag — they resolve it from a ViewDef. A Views/Pinned or
+  // Views/Archive note (the opt-in starter-ontology pack, or a
+  // hand-authored override) wins when present and its query parses; the
+  // app's own built-in def — the same `roles.pinned`/`roles.archived` this
+  // used to inline directly — wins otherwise, resolved instantly (never
+  // blocks or blanks this page). Everything else about this surface is
+  // unchanged: same search/filters/pagination chrome, same NoteRowList
+  // rendering. Untagged/orphaned/all/recent aren't default pages and stay
+  // on the literal-tags path (recent is its own lens body below; all notes
+  // is wave 2b).
+  const defaultPageId: DefaultPageId | null =
+    preset === "pinned" || preset === "archived" ? preset : null;
+  const { def: resolvedViewDef } = useDefaultViewDef(defaultPageId, roles);
 
-  const effectiveTagMatch: "any" | "all" =
-    preset === "pinned" || preset === "archived" ? "all" : tagMatch;
+  // User can add more tags on top via the panel's TagBrowser. Untagged and
+  // orphaned use vault-native filters (has_tags / has_links).
+  const effectiveTags = useMemo(() => {
+    if (!defaultPageId) return selectedTags;
+    const baseTags = resolvedViewDef ? queryTags(resolvedViewDef.query) : [];
+    return Array.from(new Set([...baseTags, ...selectedTags]));
+  }, [defaultPageId, resolvedViewDef, selectedTags]);
+
+  const effectiveTagMatch: "any" | "all" = defaultPageId ? "all" : tagMatch;
 
   // Any filter change resets pagination.
   // biome-ignore lint/correctness/useExhaustiveDependencies: offset is the target, not a trigger

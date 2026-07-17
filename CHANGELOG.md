@@ -1,5 +1,39 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.9] - 2026-07-17
+
+**Views Wave 2a — the first default-pages cutover (Pinned + Archive).** VIEWS-RENDER-SPEC §7's
+ratified direction ("the pack is an override, never a dependency") lands for the two smallest
+lenses: `/notes?view=pinned` and `/notes?view=archived` now resolve their tag filter from a
+`ViewDef` instead of a hardcoded literal, while everything else about those pages — search,
+Filters panel, pagination, `NoteRowList` rendering — is unchanged.
+
+- **`src/lib/views/defaults.ts`** — `builtInDefaultViewDef(pageId, roles)`: the app's own
+  fallback `ViewDef` for Pinned/Archive, mirroring the `starter-ontology` pack's own queries
+  (`{tag: "pinned"}` / `{tag: "archived"}`, `core/src/seed-packs.ts`) byte-for-intent but through
+  `roles.pinned`/`roles.archived` — a vault that renamed those tags still gets a correct default.
+  `resolveDefaultViewDef(pageId, packNote, roles)`: the pure resolver — a `Views/Pinned` or
+  `Views/Archive` note wins when it's present, tagged `#view`, and its query parses
+  (authoring-time-explicit); anything else (no note, wrong tag, unparseable query) falls back to
+  the built-in instantly. A default page is load-bearing navigation, not a place to show "this
+  view is broken" over someone else's corrupted note — that honesty stays scoped to `/views/:id`.
+  Also lifted the pack's four view paths to named constants (`PINNED_VIEW_PATH`, etc.) so
+  `DEFAULT_VIEW_PATHS` and the new page-path lookup can't drift from each other.
+- **`src/lib/views/queries.ts`** — `useDefaultViewDef(pageId, roles)`: looks up the pack note at
+  its canonical path (exact `path=` match, not `path_prefix`) via TanStack Query, then resolves
+  through the pure function above. `pageId === null` skips the lookup (every other preset).
+- **`VaultSurface.tsx`** — `SearchableLenses`'s `effectiveTags` for the pinned/archived presets
+  now reads `queryTags(resolvedDef.query)` (unioned with whatever the Filters panel's TagBrowser
+  adds) instead of inlining `roles.pinned`/`roles.archived` directly. Resolution never blocks or
+  blanks the page: the built-in def is available synchronously on first render, and the query
+  quietly upgrades if/when a pack note resolves.
+
+Tests: `defaults.test.ts` (10, pure — built-in query shape, role indirection, pack-wins,
+malformed-note fallback, non-`#view`-tagged decoy ignored), `VaultSurface.defaultViews.test.tsx`
+(5, integration — no-pack-note is byte-equivalent to today's hardcoded `tag=pinned`/`tag=archived`
+query, a well-formed pack note's tag wins, a malformed pack note falls back without blanking the
+page). All-notes + Recent are unaffected (wave 2b).
+
 ## [0.20.8] - 2026-07-17
 
 **Editor Wave 2 — focus mode.** POLISH-WAVE PR 4, plus EDITOR-STUDY §3.3's addition: one gesture
