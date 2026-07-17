@@ -1,6 +1,7 @@
 import { AccountSessionBanner, HubGateBanner } from "@/components/AccountSessionBanner";
 import { AmbientMapFab } from "@/components/AmbientMapFab";
 import { BottomTabBar } from "@/components/BottomTabBar";
+import { AppErrorBoundary, RouteErrorBoundary } from "@/components/ErrorBoundary";
 import { FocusModeExitChip, FocusModeMount } from "@/components/FocusModeMount";
 import { Header } from "@/components/Header";
 import { QuickSwitchMount } from "@/components/QuickSwitchMount";
@@ -354,7 +355,14 @@ function AppShell() {
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                 <Route path="/" element={<BootGate />} />
-                <Route path="/check-email" element={<CheckEmail />} />
+                <Route
+                  path="/check-email"
+                  element={
+                    <RouteErrorBoundary>
+                      <CheckEmail />
+                    </RouteErrorBoundary>
+                  }
+                />
                 {/*
                     /notes is the ONE SURFACE over the vault (LZ-3): the
                     VaultSurface, wearing the lens `?view=` names (All by
@@ -385,8 +393,22 @@ function AppShell() {
                 <Route path="/archived" element={<Navigate to="/notes?view=archived" replace />} />
                 <Route path="/untagged" element={<Navigate to="/notes?view=untagged" replace />} />
                 <Route path="/orphaned" element={<Navigate to="/notes?view=orphaned" replace />} />
-                <Route path="/tags" element={<Tags />} />
-                <Route path="/new" element={<NoteNew />} />
+                <Route
+                  path="/tags"
+                  element={
+                    <RouteErrorBoundary>
+                      <Tags />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/new"
+                  element={
+                    <RouteErrorBoundary>
+                      <NoteNew />
+                    </RouteErrorBoundary>
+                  }
+                />
                 {/*
                     Capture and New were split surfaces pre-2026-05-27. Unified
                     into NoteNew per Aaron's "serious pass": one creation
@@ -395,20 +417,69 @@ function AppShell() {
                     NAVIGATION.md: (a) redirect shim — replace.
                   */}
                 <Route path="/capture" element={<Navigate to="/new" replace />} />
-                <Route path="/import" element={<Import />} />
-                <Route path="/export" element={<Export />} />
-                <Route path="/connect" element={<ConnectAI />} />
+                <Route
+                  path="/import"
+                  element={
+                    <RouteErrorBoundary>
+                      <Import />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/export"
+                  element={
+                    <RouteErrorBoundary>
+                      <Export />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/connect"
+                  element={
+                    <RouteErrorBoundary>
+                      <ConnectAI />
+                    </RouteErrorBoundary>
+                  }
+                />
                 {/*
                     W2-7: /map is the canonical Map room (label "Map" matches
                     address; earned-gated on both projections, §2.2). /graph
                     is the pre-W2-7 address — a shim to /map, preserving any
                     query string. NAVIGATION.md: (a) redirect shim — replace.
                   */}
-                <Route path="/map" element={<VaultGraph />} />
+                <Route
+                  path="/map"
+                  element={
+                    <RouteErrorBoundary>
+                      <VaultGraph />
+                    </RouteErrorBoundary>
+                  }
+                />
                 <Route path="/graph" element={<ShimPreservingQuery to="/map" />} />
-                <Route path="/today" element={<DayView />} />
-                <Route path="/calendar" element={<Calendar />} />
-                <Route path="/activity" element={<Activity />} />
+                <Route
+                  path="/today"
+                  element={
+                    <RouteErrorBoundary>
+                      <DayView />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/calendar"
+                  element={
+                    <RouteErrorBoundary>
+                      <Calendar />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/activity"
+                  element={
+                    <RouteErrorBoundary>
+                      <Activity />
+                    </RouteErrorBoundary>
+                  }
+                />
                 {/*
                     views-wave-1 (VIEWS-RENDER-SPEC §2/§6): the view organ.
                     `/views/new` is registered before the `:id` route so the
@@ -417,14 +488,56 @@ function AppShell() {
                     but the order stays literal/readable here too — same
                     convention as `/notes` above the `/:id` bare-path shim).
                   */}
-                <Route path="/views/new" element={<ViewNew />} />
-                <Route path="/views/:id" element={<ViewSurface />} />
-                <Route path="/n/:id" element={<NoteView />} />
-                <Route path="/n/:id/edit" element={<NoteEditor />} />
+                <Route
+                  path="/views/new"
+                  element={
+                    <RouteErrorBoundary>
+                      <ViewNew />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/views/:id"
+                  element={
+                    <RouteErrorBoundary>
+                      <ViewSurface />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/n/:id"
+                  element={
+                    <RouteErrorBoundary>
+                      <NoteView />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/n/:id/edit"
+                  element={
+                    <RouteErrorBoundary>
+                      <NoteEditor />
+                    </RouteErrorBoundary>
+                  }
+                />
                 <Route path="/:id" element={<NoteIdRedirect />} />
                 <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
-                <Route path="/add" element={<AddVault />} />
-                <Route path="/add-vault" element={<AddVaultChooser />} />
+                <Route
+                  path="/add"
+                  element={
+                    <RouteErrorBoundary>
+                      <AddVault />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/add-vault"
+                  element={
+                    <RouteErrorBoundary>
+                      <AddVaultChooser />
+                    </RouteErrorBoundary>
+                  }
+                />
                 {/*
                     The creation ceremony's stepped URLs (W2-6, DESIGN-SPEC
                     §4.2): naming (+ the in-shell creating beat) at
@@ -432,13 +545,62 @@ function AppShell() {
                     The old /welcome?new=1 entry shims to /create inside the
                     Welcome dispatcher.
                   */}
-                <Route path="/add-vault/create" element={<AddVaultCreate />} />
-                <Route path="/add-vault/ready" element={<AddVaultReady />} />
-                <Route path="/welcome" element={<Welcome />} />
-                <Route path="/oauth/callback" element={<OAuthCallback />} />
-                <Route path="/vaults" element={<Vaults />} />
-                <Route path="/account" element={<Account />} />
-                <Route path="/settings" element={<Settings />} />
+                <Route
+                  path="/add-vault/create"
+                  element={
+                    <RouteErrorBoundary>
+                      <AddVaultCreate />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/add-vault/ready"
+                  element={
+                    <RouteErrorBoundary>
+                      <AddVaultReady />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/welcome"
+                  element={
+                    <RouteErrorBoundary>
+                      <Welcome />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/oauth/callback"
+                  element={
+                    <RouteErrorBoundary>
+                      <OAuthCallback />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/vaults"
+                  element={
+                    <RouteErrorBoundary>
+                      <Vaults />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/account"
+                  element={
+                    <RouteErrorBoundary>
+                      <Account />
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <RouteErrorBoundary>
+                      <Settings />
+                    </RouteErrorBoundary>
+                  }
+                />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </Suspense>
@@ -476,21 +638,27 @@ export function App() {
     document.title = activeVaultName ? `Parachute — ${activeVaultName}` : "Parachute";
   }, [activeVaultName]);
   return (
-    <QueryProvider>
-      <SyncProvider>
-        <ReachabilityProbeMount />
-        <TextSizeShortcutsMount />
-        {/*
-          Mount-agnostic basename: detected at runtime from window.location
-          so the same built bundle works at `/notes/` (legacy daemon),
-          `/surface/parachute/` (parachute-surface default), or `/surface/<custom-slug>/`
-          (parachute-surface with a renamed install). See `src/lib/base-url.ts`
-          for the detector + the design rationale.
-        */}
-        <BrowserRouter basename={detectMountBase()}>
-          <AppShell />
-        </BrowserRouter>
-      </SyncProvider>
-    </QueryProvider>
+    // The last net (#48): mounted above every provider and the router itself
+    // so a chrome-level throw (a provider, Rail, Header — anything the route-
+    // level boundaries below don't cover) still lands on the honest full-page
+    // card instead of a white screen.
+    <AppErrorBoundary>
+      <QueryProvider>
+        <SyncProvider>
+          <ReachabilityProbeMount />
+          <TextSizeShortcutsMount />
+          {/*
+            Mount-agnostic basename: detected at runtime from window.location
+            so the same built bundle works at `/notes/` (legacy daemon),
+            `/surface/parachute/` (parachute-surface default), or `/surface/<custom-slug>/`
+            (parachute-surface with a renamed install). See `src/lib/base-url.ts`
+            for the detector + the design rationale.
+          */}
+          <BrowserRouter basename={detectMountBase()}>
+            <AppShell />
+          </BrowserRouter>
+        </SyncProvider>
+      </QueryProvider>
+    </AppErrorBoundary>
   );
 }

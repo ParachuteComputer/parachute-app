@@ -34,6 +34,48 @@ malformed-note fallback, non-`#view`-tagged decoy ignored), `VaultSurface.defaul
 query, a well-formed pack note's tag wins, a malformed pack note falls back without blanking the
 page). All-notes + Recent are unaffected (wave 2b).
 
+## [0.20.10] - 2026-07-17
+
+**The ErrorBoundary net (issue #48).** Surfaced by the #47 review: the app had zero React
+ErrorBoundaries — any render-time throw during render took down the entire shell, not just the
+failing surface. Matters more now that views make agent-authored input reach render paths
+routinely (the #47 metadata-operator throw was the concrete instance; fixed at the source, but
+the class of bug remained). Display-only, small.
+
+- **`src/components/ErrorBoundary.tsx`** (new) — the standard React class-component idiom (no
+  `react-error-boundary` dependency in this repo). One generic `ErrorBoundary` class plus two
+  calibrated fallbacks:
+  - **`RouteErrorBoundary`** — wraps a single routed surface. On a throw, shows the same honest
+    `ErrorState` card pattern NoteView's `NoteErrorBlock` already uses (title, human copy, the
+    wire-level message tucked behind a collapsed "Technical detail" `<details>`, "Back to notes").
+    Keyed by `location.key` — React Router doesn't remount a Route's element when only its params
+    or search string change (e.g. `/n/1` → `/n/2` both match `/n/:id`; `/views/:id`'s refinements,
+    Calendar's `?month=`, and DayView's `?date=` all update in place too), so without a key a
+    caught error would keep showing over content that would otherwise render fine. Review caught a
+    real gap here pre-merge: an earlier version keyed on `location.pathname` alone, which missed
+    any search-only navigation (`?view=pinned` → `?view=archived`, same pathname) — `location.key`
+    is react-router's own per-navigation-entry identity, so it changes on every push/replace
+    (pathname, search, hash, or even a repeat push to the identical URL) without having to
+    hand-assemble a composite string.
+  - **`AppErrorBoundary`** — the last net. Full-page card + a plain reload button (no "Back to
+    notes" — if this fired, the router subtree itself is gone).
+- **`src/app/App.tsx`** — every lazy-loaded route in the route table (Account, Activity, AddVault
+  and its ceremony steps, Calendar, ConnectAI, DayView, Export, Import, NoteEditor, NoteNew,
+  NoteView, OAuthCallback, Settings, Tags, VaultGraph, Vaults, Welcome, CheckEmail, ViewNew,
+  ViewSurface) now renders behind its own `RouteErrorBoundary`. `App()`'s return is wrapped in one
+  `AppErrorBoundary`, mounted above `QueryProvider`/`SyncProvider`/`BrowserRouter` so it also
+  catches a throw from the chrome itself (Rail, Header, a provider), not just a routed surface.
+  The eager routes (`BootGate`, `VaultSurface`) and the catch-all `NotFoundPage` are unwrapped —
+  the top-level net is still their backstop. (VaultSurface's own containment is filed as a
+  fast-follow, out of scope here.)
+- Tests: `src/components/ErrorBoundary.test.tsx` (the boundary in isolation — card shown, sibling
+  chrome outside it survives, resets on an in-router navigation to a different note, resets on a
+  search-only navigation under the same pathname — the review-caught regression) plus two
+  integration files exercising the real `<App/>` tree — `App.error-boundary.route.test.tsx`
+  (a mocked lazy route throws → card + chrome-stays-alive + Back to notes recovers) and
+  `App.error-boundary.chrome.test.tsx` (a mocked `Header` throws → the top-level net's full-page
+  card, no route chrome survives).
+
 ## [0.20.8] - 2026-07-17
 
 **Editor Wave 2 — focus mode.** POLISH-WAVE PR 4, plus EDITOR-STUDY §3.3's addition: one gesture
