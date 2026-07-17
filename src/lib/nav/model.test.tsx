@@ -357,9 +357,10 @@ describe("useNavBands (hook)", () => {
   });
 
   // The Views band (views-wave-1, VIEWS-RENDER-SPEC §6): fed by a `tag=view`
-  // query, the four shipped default-page paths excluded, legacy
-  // `UI/Views/` saved-view notes admitted through the decoder's adapter.
-  it("Views band lists tag=view notes, excludes the four default-page paths, includes a legacy saved-view", async () => {
+  // query, the four shipped default-page paths excluded. §8's legacy
+  // `{kind:"saved-view"}` adapter is void (scope cut, 2026-07-17) — a
+  // legacy-shaped note is excluded from the band outright, not admitted.
+  it("Views band lists tag=view notes, excludes default-page paths and legacy saved-view notes", async () => {
     useVaultStore.setState({
       vaults: { a: makeVault({ id: "a", url: "http://localhost:1940" }) },
       activeVaultId: "a",
@@ -379,7 +380,7 @@ describe("useNavBands (hook)", () => {
             // A shipped default page — excluded from the band (it already
             // has a Rail row under "Your notes").
             { id: "v2", path: "Views/Pinned", tags: ["view"], metadata: {} },
-            // A legacy saved-view — admitted through the §8 adapter.
+            // A legacy saved-view — §8 is void; excluded from the band.
             {
               id: "v3",
               path: "UI/Views/Daily",
@@ -400,8 +401,8 @@ describe("useNavBands (hook)", () => {
     const views = result.current.find((b) => b.id === "views");
     const ids = views?.items.map((i) => i.id) ?? [];
     expect(ids).toContain("view-v1");
-    expect(ids).toContain("view-v3");
     expect(ids).not.toContain("view-v2"); // Views/Pinned is a default page
+    expect(ids).not.toContain("view-v3"); // legacy saved-view — §8 void
     expect(ids.at(-1)).toBe("new-view"); // the permanent trailing affordance
   });
 });

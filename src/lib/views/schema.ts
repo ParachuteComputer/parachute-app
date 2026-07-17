@@ -1,15 +1,15 @@
 import { pathLeaf } from "@/lib/note-title";
-import {
-  SAVED_VIEW_KIND,
-  type SavedViewFilters,
-  decodeView as decodeLegacySavedView,
-} from "@/lib/saved-views/spec";
 import type { Note } from "@/lib/vault/types";
 
 // The canonical view module (VIEWS-RENDER-SPEC §1) — the ONE decoder every
-// renderer, the Rail band, and the legacy saved-views bridge consume. A view
-// is a note tagged `#view` whose metadata IS the definition; the note body
-// is prose for people. Ground truth: vault `core/src/seed-packs.ts` (#605).
+// renderer and the Rail band consume. A view is a note tagged `#view` whose
+// metadata IS the definition; the note body is prose for people. Ground
+// truth: vault `core/src/seed-packs.ts` (#605).
+//
+// The spec's §8 (a legacy `{kind:"saved-view",filters}` adapter for old
+// `UI/Views/` notes) is VOID — that feature is unused in practice (Aaron,
+// 2026-07-17); this module never decodes that shape. `src/lib/saved-views/`
+// stays untouched as dead code for now (a follow-up deletes it outright).
 
 export const VIEW_KINDS = ["list", "board", "calendar", "gallery"] as const;
 export type ViewKind = (typeof VIEW_KINDS)[number];
@@ -27,7 +27,7 @@ export interface ViewProblem {
 export interface ViewDef {
   noteId: string;
   path?: string;
-  /** From the note's path basename — same resolution as legacy `decodeView`. */
+  /** From the note's path basename. */
   title: string;
   kind: ViewKind;
   /**
@@ -40,8 +40,6 @@ export interface ViewDef {
   laneBy?: string;
   dateField?: string;
   problems: ViewProblem[];
-  /** True for a note decoded through the legacy `{kind:"saved-view"}` adapter (§8). */
-  legacy?: boolean;
 }
 
 const UNPARSEABLE_QUERY_PROBLEM: ViewProblem = {
@@ -50,69 +48,17 @@ const UNPARSEABLE_QUERY_PROBLEM: ViewProblem = {
     "This view's query didn't parse — nothing is being filtered out or shown. Open the note to fix it.",
 };
 
-function titleFor(note: Note, fallback?: string): string {
-  if (fallback) return fallback;
+function titleFor(note: Note): string {
   return note.path ? pathLeaf(note.path) : note.id;
 }
 
 /**
- * Convert a decoded legacy `SavedViewFilters` into the same MCP-grammar
- * query-object shape `decodeViewDef` produces for a canonical `#view` note,
- * so both vintages render through one pipeline (§8's adapter).
- *
- * `archivedTag` threads the vault's role-tag indirection (§0: "the pack
- * writes literal tag names; the app queries through roles") into the ONE
- * place a legacy note's stored `showArchived: false` preference needs a
- * concrete tag name to become `exclude_tags`. Defaults to the bare
- * `"archived"` role default when the caller doesn't have the resolved role
- * on hand (e.g. a decode call with no vault-settings context).
+ * Decode a `#view`-tagged note into a `ViewDef`. Never throws, never
+ * returns null — a view is never wrong to render as a list (§1:
+ * unknown/absent `kind` degrades silently, no problem recorded).
  */
-function legacyFiltersToQuery(
-  filters: SavedViewFilters,
-  archivedTag: string,
-): Record<string, unknown> {
-  const query: Record<string, unknown> = {};
-  if (filters.search?.trim()) query.search = filters.search.trim();
-  if (filters.tags && filters.tags.length > 0) query.tag = [...filters.tags];
-  if (filters.tags && filters.tags.length > 1 && filters.tagMatch) {
-    query.tag_match = filters.tagMatch;
-  }
-  if (filters.pathPrefix?.trim()) query.path_prefix = filters.pathPrefix.trim();
-  if (filters.sort) query.sort = filters.sort;
-  // An explicit, already-saved user preference being translated — not a
-  // surface-invented default (VIEWS-RENDER-SPEC §5's "never a surface-side
-  // default" rule governs NEW writes; this is honoring an existing one).
-  if (!filters.showArchived) query.exclude_tags = [archivedTag];
-  return query;
-}
-
-export interface DecodeViewDefOptions {
-  /** The vault's resolved `archived` role tag — see `legacyFiltersToQuery`. */
-  archivedTag?: string;
-}
-
-/**
- * Decode a `#view`-tagged (or legacy saved-view) note into a `ViewDef`.
- * Never throws, never returns null — a view is never wrong to render as a
- * list (§1: unknown/absent `kind` degrades silently, no problem recorded).
- */
-export function decodeViewDef(note: Note, opts: DecodeViewDefOptions = {}): ViewDef {
+export function decodeViewDef(note: Note): ViewDef {
   const meta = (note.metadata ?? {}) as Record<string, unknown>;
-
-  // Legacy adapter (§8): `{kind:"saved-view", filters}` at `UI/Views/<name>`.
-  if (meta.kind === SAVED_VIEW_KIND) {
-    const legacy = decodeLegacySavedView(note);
-    const archivedTag = opts.archivedTag ?? "archived";
-    return {
-      noteId: note.id,
-      path: note.path,
-      title: titleFor(note, legacy?.name),
-      kind: "list",
-      query: legacy ? legacyFiltersToQuery(legacy.filters, archivedTag) : {},
-      problems: [],
-      legacy: true,
-    };
-  }
 
   const kind: ViewKind = isViewKind(meta.kind) ? meta.kind : "list";
   const problems: ViewProblem[] = [];
@@ -152,9 +98,18 @@ export function decodeViewDef(note: Note, opts: DecodeViewDefOptions = {}): View
   };
 }
 
-/** True when the note is decodable as a view at all (canonical or legacy). */
+/** True when the note carries the vault's `view` role tag. */
 export function isViewNote(note: Note, viewTag: string): boolean {
-  if ((note.tags ?? []).includes(viewTag)) return true;
+  return (note.tags ?? []).includes(viewTag);
+}
+
+/**
+ * True for the legacy `{kind:"saved-view", filters}` shape (§8, void) —
+ * used only to keep such notes OUT of the Rail band (VIEWS-RENDER-SPEC
+ * scope cut, 2026-07-17: "no legacy notes in the Rail band"), not to
+ * decode or reconcile them.
+ */
+export function isLegacySavedView(note: Note): boolean {
   const meta = note.metadata as { kind?: unknown } | undefined;
-  return meta?.kind === SAVED_VIEW_KIND;
+  return meta?.kind === "saved-view";
 }

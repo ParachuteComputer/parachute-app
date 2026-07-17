@@ -1,6 +1,6 @@
 import type { Note } from "@/lib/vault/types";
 import { describe, expect, it } from "vitest";
-import { decodeViewDef, isViewNote } from "./schema";
+import { decodeViewDef, isLegacySavedView, isViewNote } from "./schema";
 
 function note(overrides: Partial<Note>): Note {
   return {
@@ -23,7 +23,6 @@ describe("decodeViewDef", () => {
     expect(def.query).toEqual({ tag: "project" });
     expect(def.title).toBe("Active projects");
     expect(def.problems).toEqual([]);
-    expect(def.legacy).toBeUndefined();
   });
 
   it("decodes board/calendar kinds without recording a problem", () => {
@@ -90,43 +89,22 @@ describe("decodeViewDef", () => {
     expect(decodeViewDef(note({ id: "abc123", metadata: {} })).title).toBe("abc123");
   });
 
-  it("legacy saved-view adapter: converts filters into the equivalent query object", () => {
+  // §8 (the legacy {kind:"saved-view",filters} adapter) is void — that
+  // feature is unused in practice (Aaron, 2026-07-17). A legacy-shaped note
+  // decodes through the ORDINARY path: `kind` isn't a recognized ViewKind
+  // ("saved-view" isn't in VIEW_KINDS) so it degrades to list, and there's
+  // no `query` string so it's the empty "everything" query — never a crash,
+  // never a legacy-specific branch.
+  it("a legacy saved-view note decodes as an ordinary (unadapted) list view", () => {
     const legacyNote = note({
       path: "UI/Views/Daily",
-      metadata: {
-        kind: "saved-view",
-        filters: { tags: ["journal"], search: "coffee", sort: "asc" },
-      },
+      metadata: { kind: "saved-view", filters: { tags: ["journal"] } },
     });
     const def = decodeViewDef(legacyNote);
-    expect(def.legacy).toBe(true);
     expect(def.kind).toBe("list");
     expect(def.title).toBe("Daily");
-    expect(def.query).toEqual({
-      search: "coffee",
-      tag: ["journal"],
-      sort: "asc",
-      exclude_tags: ["archived"],
-    });
+    expect(def.query).toEqual({});
     expect(def.problems).toEqual([]);
-  });
-
-  it("legacy adapter honors showArchived:true by omitting exclude_tags", () => {
-    const def = decodeViewDef(
-      note({
-        path: "UI/Views/All",
-        metadata: { kind: "saved-view", filters: { showArchived: true } },
-      }),
-    );
-    expect(def.query?.exclude_tags).toBeUndefined();
-  });
-
-  it("legacy adapter uses the resolved archived role tag when provided", () => {
-    const def = decodeViewDef(
-      note({ path: "UI/Views/X", metadata: { kind: "saved-view", filters: {} } }),
-      { archivedTag: "shelved" },
-    );
-    expect(def.query?.exclude_tags).toEqual(["shelved"]);
   });
 
   it("never throws on a note with no metadata at all", () => {
@@ -139,11 +117,23 @@ describe("isViewNote", () => {
     expect(isViewNote(note({ tags: ["view"] }), "view")).toBe(true);
   });
 
-  it("true for a legacy saved-view note even without the role tag (defensive)", () => {
-    expect(isViewNote(note({ tags: [], metadata: { kind: "saved-view" } }), "view")).toBe(true);
-  });
-
   it("false for an ordinary note", () => {
     expect(isViewNote(note({ tags: ["project"] }), "view")).toBe(false);
+  });
+
+  it("false for a legacy saved-view note that happens to lack the role tag", () => {
+    expect(isViewNote(note({ tags: [], metadata: { kind: "saved-view" } }), "view")).toBe(false);
+  });
+});
+
+describe("isLegacySavedView", () => {
+  it("true for the legacy {kind:'saved-view'} shape", () => {
+    expect(isLegacySavedView(note({ metadata: { kind: "saved-view", filters: {} } }))).toBe(true);
+  });
+
+  it("false for a canonical view note or an ordinary note", () => {
+    expect(isLegacySavedView(note({ metadata: { kind: "list", query: "{}" } }))).toBe(false);
+    expect(isLegacySavedView(note({ metadata: {} }))).toBe(false);
+    expect(isLegacySavedView(note({ metadata: undefined }))).toBe(false);
   });
 });

@@ -24,7 +24,7 @@ import { useTagRoles } from "@/lib/vault/settings";
 import { DEFAULT_VIEW_PATHS } from "@/lib/views/defaults";
 import { useViewList } from "@/lib/views/queries";
 import { primaryQueryTag } from "@/lib/views/query";
-import { decodeViewDef } from "@/lib/views/schema";
+import { decodeViewDef, isLegacySavedView } from "@/lib/views/schema";
 import { type ReactNode, useMemo } from "react";
 
 // The shared nav model (DESIGN-SPEC §2.1; reshaped by LENS-SPEC §4 in LZ-2) —
@@ -422,16 +422,16 @@ export function useNavBands(): NavBand[] {
   const plan = (isHosted ? summaryOrNull(summaryQuery.data) : null)?.plan ?? null;
   const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
 
-  // The Views band (VIEWS-RENDER-SPEC §6): every `#view`-tagged note (and
-  // legacy saved-view — the decoder's adapter handles both, §8), minus the
-  // four shipped default pages (they already have Rail entries under
-  // "Your notes"), alpha-sorted like the legacy saved-views list was.
+  // The Views band (VIEWS-RENDER-SPEC §6): every `#view`-tagged note, minus
+  // the four shipped default pages (they already have Rail entries under
+  // "Your notes") and any legacy saved-view note (§8 is void — that shape
+  // never renders here, 2026-07-17 scope cut), alpha-sorted.
   const viewItems = useMemo(() => {
     if (!Array.isArray(viewList.data)) return [];
     return viewList.data
-      .filter((n) => !DEFAULT_VIEW_PATHS.includes(n.path ?? ""))
+      .filter((n) => !DEFAULT_VIEW_PATHS.includes(n.path ?? "") && !isLegacySavedView(n))
       .map((n) => {
-        const def = decodeViewDef(n, { archivedTag: roles.archived });
+        const def = decodeViewDef(n);
         const to = `/views/${encodeURIComponent(n.id)}`;
         const item: NavItem = {
           id: `view-${n.id}`,
@@ -443,7 +443,7 @@ export function useNavBands(): NavBand[] {
         return item;
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [viewList.data, roles.archived]);
+  }, [viewList.data]);
 
   if (!vault) return [];
 

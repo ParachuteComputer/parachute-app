@@ -242,21 +242,4 @@ describe("ViewSurface", () => {
     await screen.findByRole("dialog", { name: /save this view/i });
     expect(screen.getByLabelText(/save as new view/i)).toBeChecked();
   });
-
-  it("legacy saved-view note renders through the same pipeline", async () => {
-    installFetch({
-      note: {
-        id: "v1",
-        path: "UI/Views/Daily",
-        tags: ["view"],
-        metadata: { kind: "saved-view", filters: { tags: ["journal"] } },
-      },
-      results: [{ id: "n1", path: "Morning pages", createdAt: "2026-07-01T00:00:00Z" }],
-    });
-
-    renderViewSurface();
-
-    await screen.findByRole("heading", { name: "Daily" });
-    await screen.findByText("Morning pages");
-  });
 });

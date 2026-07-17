@@ -125,8 +125,8 @@ function NoteBody({ note }: { note: Note }) {
             <DeleteNoteButton note={note} />
             {isViewNote(note, roles.view) ? (
               // The note-editor's half of the §2 bridge — a `#view`-tagged
-              // (or legacy saved-view) note opens as a view; ViewSurface's
-              // "Edit view note" is the trip back. Two faces, one note.
+              // note opens as a view; ViewSurface's "Edit view note" is the
+              // trip back. Two faces, one note.
               <Link
                 to={`/views/${encodeURIComponent(note.id)}`}
                 className="btn btn-secondary btn-touch"

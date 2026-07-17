@@ -89,10 +89,7 @@ function ViewSurfaceSkeleton() {
 function ViewSurfaceBody({ note }: { note: Note }) {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(vault?.id ?? null);
-  const def = useMemo(
-    () => decodeViewDef(note, { archivedTag: roles.archived }),
-    [note, roles.archived],
-  );
+  const def = useMemo(() => decodeViewDef(note), [note]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const refinements = useMemo(() => searchParamsToRefinements(searchParams), [searchParams]);
