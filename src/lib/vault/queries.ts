@@ -1,6 +1,7 @@
 import type { LensDB } from "@/lib/sync/db";
 import { isLocalId, newLocalId, resolveNoteId } from "@/lib/sync/id-map";
 import { enqueue } from "@/lib/sync/queue";
+import { isTranscriptionPending } from "@/lib/transcription-status";
 import { useSync } from "@/providers/SyncProvider";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -337,6 +338,35 @@ export function useUpdateTag() {
   });
 }
 
+/**
+ * The `useNote` poll cadence — the fallback that guarantees the open-note view
+ * converges even when the live socket (`useLiveNote`) is down or absent. Two
+ * polls, one predicate (pure so it's unit-testable without timers):
+ *
+ *   1. Local-id bridge (2s): while `id` is still a local id that hasn't
+ *      resolved to a server note, poll so the view flips to the real note once
+ *      the `create-note` row drains and the id-map fills. Preserved exactly
+ *      from the original predicate.
+ *   2. Pending-transcription (4s): once resolved (or when opened directly on a
+ *      server note), keep polling while the note's own transcription is in a
+ *      non-terminal state (`_Transcript pending._` / the attachment's
+ *      `transcribe_status: "pending"`), so the transcript — or the
+ *      failure/limit marker — lands without a manual refresh. Stops on any
+ *      terminal state (done / failed / voice-limit).
+ *
+ * Returns the interval in ms, or `false` to stop polling.
+ */
+export function noteRefetchInterval(
+  id: string | undefined,
+  data: Note | undefined,
+): number | false {
+  // Local-id bridge: poll until the local id resolves to a server note, then
+  // fall through to the pending check on the resolved note.
+  if (id && isLocalId(id) && !(data && !isLocalId(data.id))) return 2_000;
+  if (data && isTranscriptionPending(data)) return 4_000;
+  return false;
+}
+
 export function useNote(id: string | undefined) {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
@@ -364,15 +394,10 @@ export function useNote(id: string | undefined) {
       }
       return client!.getNote(id!, { includeLinks: true, includeAttachments: true });
     },
-    // While we're still sitting on a local id that hasn't resolved to a server
-    // note, poll so the view flips to the real note once the `create-note` row
-    // drains and the id-map fills. Stops as soon as the data is a server note.
-    refetchInterval: (query) => {
-      if (!id || !isLocalId(id)) return false;
-      const data = query.state.data as Note | undefined;
-      if (data && !isLocalId(data.id)) return false;
-      return 2_000;
-    },
+    // See `noteRefetchInterval` — the two-poll fallback (local-id bridge +
+    // pending-transcription) that converges the note view even when the live
+    // socket (`useLiveNote`) is down or absent.
+    refetchInterval: (query) => noteRefetchInterval(id, query.state.data as Note | undefined),
     staleTime: 10_000,
   });
 }

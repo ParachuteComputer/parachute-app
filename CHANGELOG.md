@@ -1,5 +1,36 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.15] - 2026-07-17
+
+**Voice Wave 1 — a voice note's transcript (and its failures) now appear in the open note view
+LIVE, no manual refresh.** The open-note cache had no real-time bridge: transcription completes
+server-side by rewriting the note body through the standard update layer (which broadcasts an
+`upsert` to matching subscribers on both doors), but nothing on the note-view side subscribed, so
+the transcript only showed on a reload. Three parts, no server change and no new dependencies:
+
+- **`src/lib/vault/live-note.ts`** (new) — `useLiveNote(cacheId, note)` opens ONE live-query
+  WebSocket subscription per open note, scoped to that note by its server `path` (exact-match,
+  subscribable), over the same SDK `VaultClient.subscribe` the list hooks use. On any
+  `upsert`/`remove` it INVALIDATES the `["note", vaultId, cacheId]` cache rather than writing the
+  event's note through — the view fetches `includeAttachments`, the live event's note is
+  list-shaped (no attachments), so an invalidate + refetch pulls the fresh body AND the fresh
+  attachment `transcribe_status` the chip reads. Deltas-only (not the initial snapshot) to avoid a
+  mount double-fetch; reconnect/backoff/token-refresh are the SDK's job. Wired in
+  `src/app/routes/NoteView.tsx`; torn down on unmount / note-switch.
+- **`src/lib/vault/queries.ts`** — `useNote`'s `refetchInterval` is now `noteRefetchInterval` (new,
+  exported, pure): the local-id bridge (2s) is preserved AND extended with a pending-transcription
+  poll (4s) that keeps refetching while the note's own transcription is non-terminal, stopping on
+  any terminal state (done / failed / voice-limit). The socket handles the live case; this poll is
+  the safety net for drops/reconnects — belt and suspenders.
+- **`src/lib/transcription-status.ts`** (new) + **`src/components/TranscriptionStatus.tsx`** — the
+  status chip now reads the AUDIO ATTACHMENT's `transcribe_status` (pending/done/failed) as the
+  primary source, with the body markers kept as the fallback (they're the portable-markdown
+  cross-door contract — never removed). `deriveTranscriptionState` is the one shared read (chip +
+  poll can't disagree). Adds the cloud monthly voice-cap state as its own calm resting chip
+  (distinguished from a genuine failure only by the `_Monthly voice limit reached…_` body marker,
+  since the attachment stores `"failed"` for the cap too). The pending→failed/limit flip now
+  surfaces live via the subscription + poll above.
+
 ## [0.20.14] - 2026-07-17
 
 **Polish — mobile formatting bar docks above the keyboard; note header's path/tags recede; the
