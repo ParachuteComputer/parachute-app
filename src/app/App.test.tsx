@@ -92,6 +92,27 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it.each(["/notes/vault/aaron", "/notes/vault/aaron/mcp", "/notes/u/aaron/vault/aaron"])(
+    "reserved path-space (my. Phase A2): %s hits the `*` catch-all, never NoteView (#49)",
+    async (path) => {
+      // Pins the router-root comment's claim: `/vault/<name>` and
+      // `/u/<handle>/...` are two-segment-or-longer, so they can't match the
+      // single-segment `/:id` bare-path shim — they fall through to `*` →
+      // NotFoundRedirect, same as any other genuinely-unmatched multi-segment
+      // path, and land home with the same toast. If a future route ever
+      // claimed one of these prefixes (e.g. NoteView rendering), this test
+      // would catch the collision before the my. zone-route cutover does.
+      window.history.replaceState({}, "", path);
+      render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toMatch(/^\/notes\/?$/);
+      });
+      expect(
+        await screen.findByText(/that page doesn't exist — brought you home/i),
+      ).toBeInTheDocument();
+    },
+  );
+
   it("forwards a root-path ?add= deep link to /add, preserving companions (cloud console link)", async () => {
     // The cloud console links the origin root — `/?add=<encoded vault URL>`.
     // NotesIndex must forward to /add with the full search string; AddVault

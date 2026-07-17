@@ -46,6 +46,21 @@ export const navigationDenylist: readonly RegExp[] = [
   /^\/billing/, // Stripe checkout / portal / webhook + /billing/*
   /^\/unsubscribe/, // onboarding-drip one-click unsubscribe (GET/POST)
   /^\/health/, // liveness JSON
+
+  // my. Phase A2 (one-origin door, URL-TOPOLOGY.md §2.3 cost #1): once this
+  // app is served on my.parachute.computer, `/vault/*` is a Cloudflare zone
+  // route that dispatches straight to the vault worker — ABOVE this worker's
+  // Static Assets, before the SW's fetch handler ever runs. The route should
+  // always win, but this entry is the belt to that platform-layer suspenders:
+  // if the route is ever misconfigured, an installed PWA must still refuse to
+  // paint the cached SPA shell over a `/vault/<name>/...` navigation. `/u/*`
+  // is Phase B's per-account vault namespace (`/u/<handle>/vault/<name>`),
+  // reserved now so it never becomes an app route in the meantime. Neither
+  // prefix requires a bare form (`/vault`, `/u` alone) — there's no
+  // server-owned page at exactly that path, so a note literally named
+  // "vault" or "u" keeps resolving as it does today.
+  /^\/vault\//,
+  /^\/u\//,
 ];
 
 // True when `pathname` matches some server-owned ceremony prefix above. This is

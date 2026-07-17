@@ -37,6 +37,12 @@ describe("PWA navigation denylist", () => {
     "/billing/checkout",
     "/unsubscribe?token=abc",
     "/health",
+    // my. Phase A2: the vault worker's data-plane address (zone-routed,
+    // URL-TOPOLOGY.md §2.3) and Phase B's per-account namespace prefix.
+    "/vault/aaron",
+    "/vault/aaron/mcp",
+    "/u/aaron",
+    "/u/aaron/vault/aaron",
   ];
   it.each(ceremonies)("denies the server ceremony %s", (path) => {
     expect(isDenied(path)).toBe(true);
@@ -74,6 +80,12 @@ describe("PWA navigation denylist", () => {
     "/n/login",
     "/n/admin",
     "/n/billing",
+    // my. Phase A2: the bare forms have no server-owned page at exactly that
+    // path (only `/vault/<name>` and `/u/<handle>` are real addresses), so a
+    // note literally named "vault" or "u" keeps resolving as it does today —
+    // unlike /admin, /billing, etc. above, which ARE ceremonies bare.
+    "/vault",
+    "/u",
   ];
   it.each(spaRoutes)("serves the SPA shell for %s", (path) => {
     expect(isDenied(path)).toBe(false);

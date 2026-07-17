@@ -80,6 +80,18 @@ describe("detectMountBase", () => {
       // returns null and we fall through to the root default.
       expect(detectMountBase(undefined as unknown as string | undefined)).toBe("");
     });
+    it("never reads /vault/<name> as a mount prefix (my. Phase A2 reserved path-space)", () => {
+      // MOUNT_PATTERNS only recognizes /surface/<slug> and /notes/ — `/vault/`
+      // isn't one of them, so this can't be misread as a sub-mount and the SPA
+      // wouldn't strip it off as a basename. Same reasoning as App.tsx's
+      // router-root reservation comment and pwa-navigation-denylist.ts.
+      expect(detectMountBase("/vault/aaron")).toBe("");
+      expect(detectMountBase("/vault/aaron/mcp")).toBe("");
+    });
+    it("never reads /u/<handle> as a mount prefix (Phase B reserved path-space)", () => {
+      expect(detectMountBase("/u/aaron")).toBe("");
+      expect(detectMountBase("/u/aaron/vault/aaron")).toBe("");
+    });
   });
 
   describe("meta-tag canonical contract", () => {
