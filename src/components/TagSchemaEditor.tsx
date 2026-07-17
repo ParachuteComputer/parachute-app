@@ -199,7 +199,7 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
         }
       }}
     >
-      <div className="mx-auto max-w-xl rounded-lg border border-border bg-card p-5 text-fg md:p-6">
+      <div className="mx-auto max-w-xl rounded-2xl border border-border bg-card p-5 text-fg shadow-lift md:p-6">
         <header className="mb-4 flex items-baseline justify-between gap-3">
           <h2 className="font-serif text-lg">
             Schema for <span className="font-mono">#{tagName}</span>
