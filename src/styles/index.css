@@ -173,8 +173,9 @@
      (`.cm-lp-hr`, `.cm-lp-embed-chip` in lib/editor/live-preview.ts) — they
      move together, or a widget's fixed height stops matching a text line's
      height and the reveal-never-reflows invariant breaks. Raw mode is
-     untouched (still lensTheme's 1.6 — the mono power surface keeps its own
-     rhythm, A4-SPEC §5).*/
+     untouched (its own 1.6 lives in `rawModeTypographyTheme`,
+     CodeMirrorEditor.tsx — mode-exclusive per the M1 fix, not the shared
+     `lensTheme` — the mono power surface keeps its own rhythm, A4-SPEC §5).*/
   --lh-live: 1.7;
 
   /* --- Radii — the pill move (DESIGN-SPEC §1.2) ---
@@ -516,11 +517,18 @@ body {
    (MarkdownView.tsx's NotesLink owns the dashed underline itself; this is
    just the departing-arrow, CSS-only so no extra DOM per link). */
 .external-link::after {
-  content: "↗";
+  /* The `/ ""` alt-text form (CSS Generated Content, all evergreen
+     browsers) marks this glyph decorative to assistive tech — without it,
+     some screen readers announce ::after content, and "up-right arrow"
+     read aloud after every external link would be noise, not signal. */
+  content: "↗" / "";
   display: inline-block;
   margin-left: 0.15em;
   font-size: 0.75em;
   vertical-align: text-top;
+  /* Keeps the arrow glued to the link's last word rather than risking an
+     orphaned glyph alone on the next line when the link text wraps. */
+  white-space: nowrap;
 }
 .prose-note ul,
 .prose-note ol {

@@ -688,13 +688,16 @@ const livePreviewChromeTheme = EditorView.theme({
   ".cm-scroller": {
     fontFamily: "var(--font-sans)",
     // Wave 1 §2.3: `--lh-live` (1.7) — meets `.prose-note`'s 1.78 and the
-    // old code-editor 1.6 in the middle. Overrides lensTheme's shared 1.6
-    // for LIVE mode only (this rule sits later in buildExtensions' theme
-    // order than lensTheme, so it wins the same-selector tie per the M1
-    // fix's own resolution rule); raw mode keeps lensTheme's 1.6 untouched
-    // — the mono power surface's own rhythm, A4-SPEC §5. Every
-    // height-locked live-preview widget (`.cm-lp-hr`, `.cm-lp-embed-chip`)
-    // consumes the same token so they move together.
+    // old code-editor 1.6 in the middle. This is LIVE mode's ONLY
+    // line-height authority (CodeMirrorEditor.tsx's shared `lensTheme` sets
+    // none — a delta-review fix: line-height used to live in lensTheme
+    // too, and lost the same-selector tie to a real browser's stylesheet
+    // order regardless of which theme was declared later, exactly the M1
+    // finding this file's own font-family/size rules already account for).
+    // Raw mode's own 1.6 lives in `rawModeTypographyTheme` — the mono power
+    // surface's rhythm, A4-SPEC §5, unchanged. Every height-locked
+    // live-preview widget (`.cm-lp-hr`, `.cm-lp-embed-chip`) consumes the
+    // same `--lh-live` token so they move together.
     lineHeight: "var(--lh-live)",
   },
   ".cm-content": {

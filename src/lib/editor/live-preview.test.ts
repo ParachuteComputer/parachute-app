@@ -326,6 +326,41 @@ describe("live-preview — one font/padding authority per mode (M1 fix)", () => 
     const scroller = getComputedStyle(view.dom.querySelector(".cm-scroller") as HTMLElement);
     expect(scroller.fontFamily).toContain("var(--font-mono)");
   });
+
+  // Regression (editor-wave-1 delta review): `.cm-scroller` line-height hit
+  // the EXACT tie this describe block exists to prevent — it briefly lived
+  // in the shared `lensTheme` (CodeMirrorEditor.tsx) AND in
+  // `livePreviewChromeTheme` here, and a real-browser puppeteer measurement
+  // showed the shared rule's hardcoded 1.6 won regardless of which theme
+  // was declared later in buildExtensions (the same false "later wins"
+  // assumption the M1 fix above already disproved for font-family/size).
+  // jsdom's getComputedStyle doesn't reproduce that stylesheet-order tie
+  // (see the M1 tests' own comment), so these two checks pin the INTENDED
+  // per-mode value; the source-text check below pins the actual guarantee —
+  // that the shared theme has no line-height rule left to tie against.
+  it("live mode: --lh-live is the .cm-scroller line-height authority", () => {
+    const view = makeEditor("hello\n", 0);
+    const scroller = getComputedStyle(view.dom.querySelector(".cm-scroller") as HTMLElement);
+    expect(scroller.lineHeight).toBe("var(--lh-live)");
+  });
+
+  it("raw mode: 1.6 is the .cm-scroller line-height authority", () => {
+    const view = makeRawEditor("hello\n");
+    const scroller = getComputedStyle(view.dom.querySelector(".cm-scroller") as HTMLElement);
+    expect(scroller.lineHeight).toBe("1.6");
+  });
+
+  it("the shared mode-agnostic theme declares no .cm-scroller line-height (the tie is structurally impossible)", () => {
+    const source = readFileSync("src/components/CodeMirrorEditor.tsx", "utf8");
+    const lensThemeBlock = source.match(
+      /const lensTheme = EditorView\.theme\(\{[\s\S]*?\n\}\);/,
+    )?.[0];
+    expect(lensThemeBlock).toBeTruthy();
+    // Property-declaration form only (`lineHeight:`) — this file's own
+    // explanatory comments legitimately mention the word "lineHeight" in
+    // prose, which isn't what this check is guarding against.
+    expect(lensThemeBlock).not.toMatch(/lineHeight\s*:/);
+  });
 });
 
 describe("live-preview — fence / indented-code / table sanctity (A4-SPEC §10.4)", () => {
