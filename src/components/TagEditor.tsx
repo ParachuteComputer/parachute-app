@@ -42,7 +42,7 @@ export function TagEditor({ tags, input, onInputChange, onAdd, onRemove }: Props
           if (input.trim()) onAdd(input);
         }}
         placeholder="add tag…"
-        className="min-w-24 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-xs text-fg focus:border-border focus:outline-none"
+        className="min-w-24 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-xs text-fg focus:border-border focus:outline-none"
         aria-label="Add tag"
       />
     </div>

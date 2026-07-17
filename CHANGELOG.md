@@ -1,5 +1,34 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.2] - 2026-07-16
+
+**Type & spacing sweep (Polish PR 3/6).** Third of the polish-wave train (display-only — no
+data-structure, note-format, or wire-contract changes). Closes the gaps in rows, digits, and
+corners so the app reads as one set of decisions rather than five.
+
+- **Tabular digits.** `tabular-nums` on every place a count or timestamp sits where digits should
+  hold a column: `NoteRow`'s relative-time stamp, `QuickSwitch`'s tag counts + results-footer
+  count, `Tags`'s per-tag count badge + the "N / M tags" footer, the Calendar day-grid numerals,
+  and `NoteView`'s Outbound/Inbound link-count heading.
+- **Title balance.** `text-wrap: balance` on `.page-title` and `.hero-title`; `text-wrap: pretty`
+  on `.prose-note p` — free elegance on every heading and paragraph that wraps. CodeMirror owns
+  its own wrapping in the editor pane, untouched.
+- **Row title step.** `NoteRow`'s title moves from `text-sm` to `text-base` — it was sitting at
+  the same size as its own preview line, flattening the hierarchy a list needs. Preview stays
+  `text-sm`, the timestamp stays `text-xs`; the `items-baseline` row alignment and truncation are
+  unaffected.
+- **Radius coherence.** STYLE.md's ramp puts interactive chrome at `lg`+; a `rounded-md` grep
+  across `src/components` and `src/app/routes` turned up ~45 stray call sites still at the
+  code/table radius. Buttons, inputs, and clickable rows move to `rounded-lg`; the mobile editor's
+  pane-toggle tabs drop to `rounded-sm` to nest inside their already-`rounded-lg` tablist wrapper;
+  floating popovers/dropdown menus (`TextSizeControl`, the saved-views + tag-suggestion menus in
+  `VaultSurface`) move to `rounded-xl` + `shadow-lift`, matching the sync popover's PR-2 precedent;
+  standalone confirm-dialog panels (`TagRenameDialog`, `DeleteNoteButton`, `RemoveAttachmentButton`,
+  the iOS install hint) move to `rounded-2xl` + `shadow-lift`, matching `.dialog-panel`. Left
+  alone by design: code/kbd/table chrome, non-interactive status/warning/error boxes (several
+  carry pre-existing raw-color literals — a separate token-contract cleanup, not this PR's job),
+  skeletons, and inline text chips.
+
 ## [0.20.1] - 2026-07-16
 
 **Calm micro-states (Polish PR 2/6).** Second of the polish-wave train (display/interaction only

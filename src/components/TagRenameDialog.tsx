@@ -129,7 +129,7 @@ export function TagRenameDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-md border border-border bg-card p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-lift">
         <h2 id="tag-op-title" className="mb-2 font-serif text-xl text-fg">
           {title}
         </h2>
@@ -173,7 +173,7 @@ export function TagRenameDialog({
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
-            className="w-full rounded-md border border-border bg-bg/40 px-2.5 py-1.5 font-mono text-sm text-fg focus:border-accent focus:outline-none"
+            className="w-full rounded-lg border border-border bg-bg/40 px-2.5 py-1.5 font-mono text-sm text-fg focus:border-accent focus:outline-none"
             autoComplete="off"
           />
           <datalist id={datalistId}>
@@ -203,7 +203,7 @@ export function TagRenameDialog({
               type="button"
               onClick={() => void handleMergeInstead()}
               disabled={mergingCollision}
-              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
+              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
             >
               {mergingCollision ? "Merging…" : `Merge into #${collidingTarget}`}
             </button>
@@ -218,7 +218,7 @@ export function TagRenameDialog({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
+            className="min-h-11 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
           >
             Cancel
           </button>
@@ -226,7 +226,7 @@ export function TagRenameDialog({
             type="button"
             onClick={() => void handleConfirm()}
             disabled={!canConfirm}
-            className="min-h-11 rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
+            className="min-h-11 rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
           >
             {pending
               ? mode === "rename"

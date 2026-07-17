@@ -86,7 +86,7 @@ function TreeNode({
   return (
     <li>
       <div
-        className={`flex items-center gap-1 rounded-md px-1 py-0.5 text-sm ${
+        className={`flex items-center gap-1 rounded-lg px-1 py-0.5 text-sm ${
           isSelected ? "bg-accent/10 text-accent" : "text-fg-muted hover:text-accent"
         }`}
         style={{ paddingLeft: `${depth * 0.75 + 0.25}rem` }}

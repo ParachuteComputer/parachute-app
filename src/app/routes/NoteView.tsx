@@ -209,7 +209,7 @@ function LinksPanel({
 }) {
   return (
     <section className="card shadow-soft p-4">
-      <h2 className="eyebrow mb-2">
+      <h2 className="eyebrow mb-2 tabular-nums">
         {title} ({links.length})
       </h2>
       <ul className="space-y-1.5">

@@ -63,7 +63,7 @@ export function Calendar() {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Link
             to={`/calendar?month=${prevKey}`}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
             aria-label="Previous month"
           >
             ← {prevKey}
@@ -71,21 +71,21 @@ export function Calendar() {
           {!isCurrent ? (
             <Link
               to="/calendar"
-              className="rounded-md border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
             >
               This month
             </Link>
           ) : null}
           <Link
             to={`/calendar?month=${nextKey}`}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
             aria-label="Next month"
           >
             {nextKey} →
           </Link>
           <Link
             to={`/today?date=${today}`}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-fg-muted hover:text-accent"
           >
             Today
           </Link>
@@ -119,7 +119,7 @@ export function Calendar() {
                   aria-label={`${key} — ${count} notes`}
                 >
                   <span
-                    className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full ${
+                    className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full tabular-nums ${
                       isToday ? "bg-accent text-[--color-on-accent]" : "text-fg"
                     }`}
                   >
@@ -173,7 +173,7 @@ function ErrorBlock({ error }: { error: Error }) {
       {isAuth ? (
         <Link
           to="/add"
-          className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
+          className="inline-block rounded-lg bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
         >
           Reconnect vault
         </Link>

@@ -199,7 +199,7 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
         }
       }}
     >
-      <div className="mx-auto max-w-xl rounded-lg border border-border bg-card p-5 text-fg md:p-6">
+      <div className="mx-auto max-w-xl rounded-2xl border border-border bg-card p-5 text-fg shadow-lift md:p-6">
         <header className="mb-4 flex items-baseline justify-between gap-3">
           <h2 className="font-serif text-lg">
             Schema for <span className="font-mono">#{tagName}</span>
@@ -234,7 +234,7 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="What does this tag mean? Who uses it?"
                 aria-label="Tag description"
-                className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
+                className="w-full rounded-lg border border-border bg-bg px-2.5 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
               />
             </label>
 
@@ -255,13 +255,13 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
                         onChange={(e) => updateField(row.rowId, { name: e.target.value })}
                         placeholder="field_name"
                         aria-label="Field name"
-                        className="flex-1 rounded-md border border-border bg-bg px-2 py-1 font-mono text-xs text-fg focus:border-accent focus:outline-none"
+                        className="flex-1 rounded-lg border border-border bg-bg px-2 py-1 font-mono text-xs text-fg focus:border-accent focus:outline-none"
                       />
                       <select
                         value={row.type}
                         onChange={(e) => updateField(row.rowId, { type: e.target.value })}
                         aria-label={`Type for ${row.name || "new field"}`}
-                        className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-fg focus:border-accent focus:outline-none"
+                        className="rounded-lg border border-border bg-bg px-2 py-1 text-xs text-fg focus:border-accent focus:outline-none"
                       >
                         {FIELD_TYPES.map((t) => (
                           <option key={t} value={t}>
@@ -300,7 +300,7 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
                 onChange={(e) => setParentNames(e.target.value)}
                 placeholder="comma-separated (e.g. project, area)"
                 aria-label="Parent tags"
-                className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 font-mono text-xs text-fg focus:border-accent focus:outline-none"
+                className="w-full rounded-lg border border-border bg-bg px-2.5 py-1.5 font-mono text-xs text-fg focus:border-accent focus:outline-none"
               />
               <p className="mt-1 text-xs text-fg-dim">
                 Vault treats parents as a hierarchical relationship — children inherit semantics.
@@ -331,7 +331,7 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent"
+                className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent"
               >
                 Cancel
               </button>
@@ -339,7 +339,7 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
                 type="button"
                 onClick={onSave}
                 disabled={mutation.isPending}
-                className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
+                className="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover disabled:opacity-40"
               >
                 {mutation.isPending ? "Saving…" : "Save schema"}
               </button>

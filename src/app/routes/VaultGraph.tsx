@@ -43,7 +43,7 @@ export function VaultGraph() {
             onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))}
             placeholder="Search nodes…"
             aria-label="Search graph nodes"
-            className="min-w-48 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
+            className="min-w-48 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
           />
           <TagFilter
             allTags={allTags}
@@ -88,7 +88,7 @@ function Body({
           </p>
           <Link
             to="/new"
-            className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
+            className="inline-block rounded-lg bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
           >
             Create a note
           </Link>
@@ -287,7 +287,7 @@ function GraphCanvas({
       <button
         type="button"
         onClick={fitToScreen}
-        className="absolute right-3 bottom-3 rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs text-fg-muted shadow-sm backdrop-blur hover:text-accent"
+        className="absolute right-3 bottom-3 rounded-lg border border-border bg-card/90 px-3 py-1.5 text-xs text-fg-muted shadow-sm backdrop-blur hover:text-accent"
       >
         Fit to screen
       </button>
@@ -327,7 +327,7 @@ function ErrorBlock({ error }: { error: Error }) {
         {isAuth ? (
           <Link
             to="/add"
-            className="inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
+            className="inline-block rounded-lg bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
           >
             Reconnect vault
           </Link>

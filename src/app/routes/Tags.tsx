@@ -132,7 +132,7 @@ export function Tags() {
       )}
 
       {tags.data && tags.data.length > 0 ? (
-        <p className="mt-6 text-xs text-fg-dim">
+        <p className="mt-6 text-xs tabular-nums text-fg-dim">
           {visible.length} / {tags.data.length} tag{tags.data.length === 1 ? "" : "s"}
         </p>
       ) : null}
@@ -214,7 +214,7 @@ function TagRow({
           className="chip chip-tag focus-ring shrink-0 max-w-full break-all"
         >
           <span className="font-mono">#{tag.name}</span>
-          <span className="opacity-70">{tag.count ?? 0}</span>
+          <span className="tabular-nums opacity-70">{tag.count ?? 0}</span>
         </Link>
         <div className="ml-auto flex shrink-0 items-center gap-4">
           <button

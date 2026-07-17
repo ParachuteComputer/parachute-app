@@ -678,7 +678,7 @@ export function VaultSwitcher({
       // `max-w-[12rem]` caps the trigger at a rem-based width so a
       // long vault name truncates instead of pushing header siblings
       // out (notes#136). rem so the cap scales with text-size.
-      className="flex min-w-0 max-w-[12rem] items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm text-fg hover:border-accent/50"
+      className="flex min-w-0 max-w-[12rem] items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-fg hover:border-accent/50"
     >
       <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent" />
       <span className="min-w-0 truncate">{triggerLabel}</span>

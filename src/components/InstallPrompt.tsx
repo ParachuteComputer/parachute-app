@@ -26,7 +26,7 @@ export function InstallPrompt() {
       <button
         type="button"
         onClick={handleInstall}
-        className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+        className="min-h-11 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
       >
         Install app
       </button>
@@ -37,7 +37,7 @@ export function InstallPrompt() {
           // `open` (non-modal) never renders ::backdrop — that needs
           // showModal(), which jsdom doesn't implement. Keep it declarative and
           // drop the dead backdrop utility rather than ship a class that no-ops.
-          className="fixed inset-0 z-50 m-auto max-w-sm rounded-md border border-border bg-card p-6 text-fg shadow-lg"
+          className="fixed inset-0 z-50 m-auto max-w-sm rounded-2xl border border-border bg-card p-6 text-fg shadow-lift"
         >
           <h2 id="ios-install-title" className="mb-3 font-serif text-xl">
             Add Parachute to your home screen
@@ -61,7 +61,7 @@ export function InstallPrompt() {
             <button
               type="button"
               onClick={() => setIosHintOpen(false)}
-              className="min-h-11 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
+              className="min-h-11 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
             >
               Got it
             </button>
