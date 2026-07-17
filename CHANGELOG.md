@@ -1,5 +1,71 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.13] - 2026-07-17
+
+**Editor Wave 2, PR 5 — the shared format commands, selection toolbar, and swipe-indent.**
+POLISH-WAVE PR 5 (5a swipe-indent, 5b selection toolbar) + EDITOR-STUDY §5-6's adopt list (real
+⌘B/⌘I via a shared format-command module, ⌘⏎ create/toggle to-do, coarse-pointer-only selection
+toolbar, swipe right/left on list items to indent/outdent). Version note: rebased onto `main`
+after `0.20.9`–`0.20.12` landed from sibling branches; this one takes `0.20.13`.
+
+- **`src/lib/editor/format-commands.ts`** — the ONE place bold/italic/strikethrough/code
+  wrap-unwrap and link-wrap write bytes, used by both the toolbar and the keybindings below.
+  Toggle detection is syntax-tree-based (`StrongEmphasis`/`Emphasis`/`Strikethrough`/`InlineCode`
+  nodes), not character counting — a naive `**`-vs-`*` prefix check would confuse bold and italic;
+  the tree already disambiguates them. A narrow string fallback handles the one case the tree
+  can't see: an empty `**|**` pair (CommonMark requires content between emphasis delimiters, so it
+  never parses as a mark node) collapses on a second press instead of nesting further markers.
+  `toggleTodo` (⌘⏎) creates/toggles a to-do per touched line, deduped by ListItem node identity —
+  a lazy-continuation line (no marker, no blank line, CommonMark keeps it part of the SAME list
+  item) would otherwise resolve to the same TaskMarker as its neighbor and emit two colliding
+  writes to one position.
+- **`src/lib/editor/list-indent.ts`** — "one grammar, three doors": `isListItemLine` (tree-based,
+  shared), `listAwareIndent`/`listAwareOutdent` (Tab/Shift-Tab, live mode only, `return false` off
+  a list line so native Tab is untouched elsewhere), and `swipeIndent()` (the pointer-gesture
+  extension) all funnel through `@codemirror/commands`' own `indentMore`/`indentLess` — the same
+  bytes Tab always produced. The swipe claims `pointerdown` on a list line (mirroring the checkbox
+  widget's containment pattern) so a would-be swipe never flash-reveals the line, then either
+  commits an indent/outdent, replays a plain tap (cursor placement) if the drag never crossed the
+  threshold, or hands control back to native scroll — vertical scroll wins ties by never calling
+  `preventDefault` on a `pointermove` until horizontal intent (≥48px, `|dx| > 2·|dy|`) is
+  confirmed. IME-safe: composing state suppresses the commit.
+- **`src/lib/editor/selection-toolbar.ts`** — a CM6 `showTooltip`-facet floating toolbar (never a
+  decoration), coarse-pointer-only (`matchMedia("(pointer: coarse)")`, checked dynamically, not
+  cached at mount), non-empty-selection-only, `above: true` (CM auto-flips at screen edges). Five
+  buttons (B/I/S/`<>`/🔗) call straight into the shared format-commands — the toolbar never
+  re-implements a wrap of its own. `.glass-panel` + `--radius-lg` + `--shadow-lift` (the slash-menu
+  family); button touch-target sizing lives in the tooltip's own `EditorView.theme()` (≥2.5rem)
+  rather than a utility class, for the same reason the checkbox widget's hit-area does.
+- **`CodeMirrorEditor.tsx`** — wires `Mod-b`/`Mod-i`/`Mod-Shift-x`/`Mod-e`/`Mod-Enter` ahead of
+  `defaultKeymap` in BOTH editor modes (raw mode's markdown is just as toggle-able as live mode's);
+  `Tab`/`Shift-Tab` list-aware indent and the swipe gesture are live-preview-mode only; the
+  selection toolbar is mode-agnostic.
+- **Review delta (ragged-selection byte corruption).** `findMarkNode`'s node-aligned check only
+  recognized selections that matched a mark's boundary exactly — a ragged drag crossing a mark's
+  edge (e.g. selecting `two** thr` inside `one **two** three`) fell through to the plain "wrap the
+  selection" path and produced unbalanced markers (`one ****two** thr**ee`, an orphaned pair). Fixed
+  with `findOverlappingMarks` + `wrapWithNormalization`: any selection that partially overlaps one
+  or more marks of the toggled type expands to the union of the selection and every overlapping
+  mark's full range, strips those marks' own delimiters, and wraps the resulting plain text fresh —
+  "touch a mark, extend to cover it," the common editor convention for ragged selections, and
+  self-consistent (re-selecting the result and toggling again hits the clean node-aligned unwrap
+  path). Covers the single-mark-crossing case, the mirror (selection starts before/ends inside),
+  and the double-mark-crossing case (selection spans two separate marks with plain text between).
+- **Review delta (IME safety gap).** None of the five keybindings checked composition state — CM's
+  keymap dispatcher doesn't gate on it, so `Mod-Enter`/`Mod-b`/etc. could fire and mutate the
+  document mid-IME-composition. Every exported command now bails (`return false`) when the calling
+  `EditorView`'s `.composing` is true, mirroring the guard already in `swipeIndent()` and
+  `live-preview.ts`'s checkbox widget.
+
+Tests: `format-commands.test.ts` (wrap/unwrap on selection/caret-only/multi-line, the bold-vs-
+italic tree-disambiguation regression, the lazy-continuation todo-dedup regression, the three
+ragged-selection repro shapes plus an offset sweep asserting marker balance, IME-composing guards
+on the toggle and todo commands), `list-indent.test.ts` (tree-based list detection, Tab/Shift-Tab
+fall-through off a list line), `CodeMirrorEditor.format-commands.test.ts` (keybindings through the
+real wired keymap, both modes, plus the IME guard through a real dispatch), `CodeMirrorEditor
+.touch-grammar.test.ts` (toolbar coarse/fine-pointer gating, swipe indent/outdent,
+vertical-scroll-wins-ties, plain-tap replay, mouse-ignored, IME-composing guard, raw-mode-unwired).
+
 ## [0.20.12] - 2026-07-17
 
 **Auth Wave 2 — the app half (AUTH-W2-BRIEF §2, moves 2 + the app's app portion of W1's code

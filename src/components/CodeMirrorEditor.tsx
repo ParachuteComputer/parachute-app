@@ -1,5 +1,14 @@
+import {
+  toggleBold,
+  toggleCode,
+  toggleItalic,
+  toggleStrikethrough,
+  toggleTodo,
+} from "@/lib/editor/format-commands";
+import { listAwareIndent, listAwareOutdent, swipeIndent } from "@/lib/editor/list-indent";
 import { livePreview } from "@/lib/editor/live-preview";
 import { insertHardOrPlainBreak, insertParagraphBreak } from "@/lib/editor/paragraph-break";
+import { selectionToolbar } from "@/lib/editor/selection-toolbar";
 import { createSlashCompletionSource } from "@/lib/editor/slash-completion";
 import { autocompletion } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -248,6 +257,15 @@ export function buildExtensions(
       // rely on (it's a no-op outside its own trigger).
       override: [createSlashCompletionSource(() => onRequestAttachmentRef.current?.())],
     }),
+    // POLISH-WAVE PR 5b — the coarse-pointer-only selection toolbar. Both
+    // modes (mode-agnostic UI: raw mode's markdown is just as toggle-able as
+    // live mode's), gated internally on `matchMedia("(pointer: coarse)")` so
+    // it never shows on desktop, which gets the keybindings below instead.
+    selectionToolbar(),
+    // PR 5a — swipe-to-indent on list items, live-preview mode only (raw
+    // mode already has Tab; a swipe over visible raw markdown has no
+    // obvious visual target).
+    ...(livePreviewOn ? [swipeIndent()] : []),
     EditorView.lineWrapping,
     // Wave 1 §3.1: scroll-past-end (not typewriter mode — full centering
     // fights virtual-keyboard scroll-into-view on mobile, A4-SPEC's own
@@ -288,6 +306,26 @@ export function buildExtensions(
       // this keymap entirely, so it's never in the race.
       { key: "Enter", run: insertParagraphBreak },
       { key: "Shift-Enter", run: insertHardOrPlainBreak },
+      // The shared format-commands module (POLISH-WAVE PR 5 / EDITOR-STUDY
+      // §5-6) — both editor modes, same as the selection toolbar's buttons
+      // (which call these exact same commands). Today ⌘B does nothing; these
+      // are the shortcuts the study calls out as missing, not rebound.
+      { key: "Mod-b", preventDefault: true, run: toggleBold },
+      { key: "Mod-i", preventDefault: true, run: toggleItalic },
+      { key: "Mod-Shift-x", preventDefault: true, run: toggleStrikethrough },
+      { key: "Mod-e", preventDefault: true, run: toggleCode },
+      { key: "Mod-Enter", preventDefault: true, run: toggleTodo },
+      // Tab/Shift-Tab, list-aware, live mode only — `preventDefault` is
+      // deliberately omitted: it applies even when `run` returns false (see
+      // KeyBinding.preventDefault), and off a list line these must fall
+      // through to native Tab behavior untouched, not swallow every Tab
+      // press in the editor.
+      ...(livePreviewOn
+        ? [
+            { key: "Tab", run: listAwareIndent },
+            { key: "Shift-Tab", run: listAwareOutdent },
+          ]
+        : []),
       ...defaultKeymap,
       ...historyKeymap,
       {
