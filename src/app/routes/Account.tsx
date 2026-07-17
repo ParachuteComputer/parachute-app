@@ -220,7 +220,10 @@ function IdentityCard({
         <div className="min-w-0">
           <p className="eyebrow mb-1">Signed in as</p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="truncate font-serif text-xl text-fg">
+            {/* UI-audit finding #10: `truncate` ellipsized this mid-domain on
+                phone — exactly the string (an account-identifying email) a
+                person most wants to read in full. Wrap instead. */}
+            <p className="break-words font-serif text-xl text-fg">
               {email ?? username ?? "your account"}
             </p>
             <PlanChip summary={summary} />

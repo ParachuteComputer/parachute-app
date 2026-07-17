@@ -481,7 +481,19 @@ export function NoteNew() {
             type="text"
             value={draft.path}
             onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
-            className="mt-4 w-full border-0 bg-transparent font-serif text-2xl text-fg outline-none placeholder:text-fg-dim md:text-3xl"
+            // UI-audit finding #4a: this field's VALUE is the auto-generated
+            // date path ("Notes/2026/07-16/22-10-48"), not a placeholder —
+            // so it was rendering at full display-heading scale, reading as
+            // a headline rather than a suggestion. While it's still the
+            // untouched default, style it small/muted (a hint the operator
+            // can accept or overwrite); once they've typed their own title
+            // it earns the normal serif/display treatment. The generated
+            // value itself, and where it's stored, are unchanged.
+            className={
+              draft.path === defaultPathRef.current
+                ? "mt-4 w-full border-0 bg-transparent font-sans text-sm text-fg-dim outline-none placeholder:text-fg-dim"
+                : "mt-4 w-full border-0 bg-transparent font-serif text-2xl text-fg outline-none placeholder:text-fg-dim md:text-3xl"
+            }
             aria-label="Note path"
             placeholder="e.g. Projects/README"
           />
@@ -557,6 +569,9 @@ export function NoteNew() {
               onChange={(content) => setDraft((d) => ({ ...d, content }))}
               onSave={handleSave}
               onCancel={handleCancel}
+              // UI-audit finding #4b: a blank canvas with no cue read as
+              // unstyled/broken rather than "empty, ready to type."
+              placeholder="Start writing…"
               onPasteFile={(files) => {
                 uploader.start(files);
                 return true;

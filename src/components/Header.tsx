@@ -29,6 +29,14 @@ export function Header() {
     setSheet(null);
   }, [location.pathname]);
 
+  // UI-audit finding #10: the signed-out arrival screen (`/`, no vault
+  // connected — front door / already-signed-in / net-error) renders its own
+  // wordmark lockup (Landing.tsx's <Shell>). This bar's plain "Parachute"
+  // link would stack a second wordmark directly above it, and its hamburger
+  // has nothing meaningful to open with no session yet. Suppress the bar
+  // there; every other no-vault route (e.g. /add, /welcome) keeps it.
+  if (!hasVaults && location.pathname === "/") return null;
+
   return (
     <>
       <header

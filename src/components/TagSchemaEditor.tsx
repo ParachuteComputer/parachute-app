@@ -224,6 +224,14 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
           </p>
         ) : (
           <>
+            {/* UI-audit finding #11 (Jon's feedback): three bare inputs gave
+                no sense of what a schema IS or why you'd bother. One intro
+                line explains the concept before the form asks anything. */}
+            <p className="mb-4 text-sm text-fg-muted">
+              A meta tag gives every note carrying it a shared shape — fields it can carry, and
+              where it sits in your tag hierarchy.
+            </p>
+
             <label className="mb-4 block">
               <span className="mb-1 block text-xs uppercase tracking-wider text-fg-dim">
                 Description
@@ -240,6 +248,11 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
 
             <fieldset className="mb-4">
               <legend className="mb-2 text-xs uppercase tracking-wider text-fg-dim">Fields</legend>
+              <p className="mb-2 text-xs text-fg-dim">
+                Each field is a key and a type — e.g.{" "}
+                <span className="font-mono">status — string</span>,{" "}
+                <span className="font-mono">meeting_date — date</span>.
+              </p>
               {fieldRows.length === 0 ? (
                 <p className="mb-2 text-xs text-fg-dim">
                   No fields declared yet. Add one to give notes carrying this tag a structured

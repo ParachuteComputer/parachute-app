@@ -136,9 +136,27 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
   });
 
   it("shows the Parachute wordmark with no vault — the 'No vault connected' noise is gone (F21)", () => {
-    renderHeader();
+    // `/` is the signed-out arrival route, where the bar suppresses itself
+    // entirely (see the test below) — Landing's own Shell renders the
+    // wordmark there instead (UI-audit #8, avoiding a duplicate lockup
+    // stacked at the top of the screen). Render at a representative
+    // NON-arrival no-vault route to keep exercising this bar's own
+    // wordmark fallback.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/add"]}>
+          <Header />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
     expect(screen.getByRole("link", { name: /^parachute$/i })).toBeInTheDocument();
     expect(screen.queryByText(/no vault connected/i)).not.toBeInTheDocument();
+  });
+
+  it("suppresses its own bar on the signed-out arrival route (`/`, no vault) — Landing's Shell owns the wordmark there (UI-audit #8)", () => {
+    const { container } = renderHeader();
+    expect(container.querySelector("header")).toBeNull();
   });
 
   it("☰ opens the NavSheet carrying BOTH zones — Tags and Vaults reachable on mobile (F14)", async () => {

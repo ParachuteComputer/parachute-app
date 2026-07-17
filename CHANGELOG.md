@@ -1,5 +1,48 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.3] - 2026-07-16
+
+**UI-audit display train.** Display-only fixes from the overnight UI look-and-feel audit
+(walker capture across 6 viewport/theme configs) — no data-model changes, no IA restructuring,
+no new features.
+
+- **Wide tables reachable on phone.** `.prose-note table` gets its own horizontal scroller
+  (the GitHub-markdown-body `display: block; width: max-content; max-width: 100%; overflow-x:
+  auto` pattern) instead of being silently clipped by `.app-canvas`'s `overflow-x: hidden` — an
+  8-column table's rightmost ~330px was permanently unreachable on a 390px viewport, with no
+  scrollbar and no affordance.
+- **Human copy on note-load errors.** A missing/failed note used to show the literal internal
+  request line (`GET /api/notes?id=…→404`), unwrapped and clipped on phone. Now: friendly copy
+  ("Couldn't find this note…"), a "Back to notes" action beside "Try again", and the raw detail
+  tucked into a collapsed, word-broken `<details>` so it can never clip again.
+- **A real not-found page.** An unrecognized multi-segment route (or the reserved `/vault/*` /
+  `/u/*` path-space) used to silently teleport home with only a toast. It now renders a proper
+  "Page not found" page with a "Back to notes" action, at the address you actually landed on.
+- **New-note surface, three fixes:** the auto-generated date-path title renders small/muted while
+  untouched (a suggestion, not a headline) and switches to the normal display treatment once you
+  type your own; the empty editor canvas shows a "Start writing…" placeholder; the compose
+  screen's implicit `capture` tag stays as-is (investigated — see PR body).
+- **Search palette scrim.** ⌘K's command palette gets a proper backdrop dim (the same
+  `.dialog-overlay` darkening value + `enter-fade` timing every other overlay uses, so it inherits
+  the reduced-motion gate for free) — the floating pill/panel no longer reads as a transparent
+  inline layer.
+- **Empty-note body placeholder.** An empty note's body used to be blank whitespace,
+  indistinguishable from a failed load. Now: quiet "Nothing here yet." copy + a "Start writing"
+  link into the editor.
+- **Tag-row touch targets.** The Tags page's Pin/Schema/Rename actions pad to a ≥44px effective
+  hit area (padding + a negative-margin claw-back, so the visible row height is unchanged).
+- **No duplicate wordmark on phone arrival.** The mobile top-bar chrome (with its hamburger,
+  which had nothing to open on a signed-out screen) no longer renders on the arrival route —
+  Landing's own wordmark lockup is the only one on screen there.
+- **Task-list view/edit consistency.** View mode no longer shows both a bullet dot and a checkbox
+  on the same task item — the bullet is redundant once the checkbox exists, and edit mode never
+  showed it.
+- **Account email wraps instead of ellipsizing** on phone — exactly the string you'd want to read
+  in full.
+- **Tag schema dialog teaches, not just asks.** An intro paragraph explains what a meta tag is;
+  a live example (`status — string`, `meeting_date — date`) sits under the Fields legend. Copy
+  only — the `date` field type was already wired end-to-end.
+
 ## [0.20.2] - 2026-07-16
 
 **Type & spacing sweep (Polish PR 3/6).** Third of the polish-wave train (display-only — no

@@ -31,24 +31,32 @@ describe("App", () => {
 
   it("boots to the front door (one email field) when signed out and no local vault", async () => {
     render(<App />);
-    expect(screen.getByRole("link", { name: /^parachute$/i })).toBeInTheDocument();
     // The boot dispatcher resolves the (signed-out) session, then paints the
     // front door: one email field that signs in OR creates + the self-hosted
     // side door. No vault-naming, no verb-soup.
     await waitFor(() => {
       expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
     });
+    // The wordmark link now lives on Landing's own Shell — Header suppresses
+    // its OWN "Parachute" bar on this route (UI-audit #8: it used to stack a
+    // second lockup directly above this one). It isn't on screen until the
+    // boot decision resolves, hence asserting it after the wait above.
+    expect(screen.getByRole("link", { name: /^parachute$/i })).toBeInTheDocument();
     expect(screen.getByText(/sign in or create your account/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /connect your own vault/i })).toBeInTheDocument();
   });
 
-  it("resolves the root list view at external /notes/ without double-prefixing", () => {
+  it("resolves the root list view at external /notes/ without double-prefixing", async () => {
     render(<App />);
     // Regression guard against the /notes/notes bug: with basename="/notes"
     // stripping the external prefix, the internal path is "/" and the index
     // dispatcher (Home for no vault) renders. The URL must stay /notes/, not
-    // become /notes/notes.
-    expect(screen.getByRole("link", { name: /^parachute$/i })).toBeInTheDocument();
+    // become /notes/notes. The wordmark (Landing's Shell, once the boot
+    // decision resolves — see UI-audit #8 above) doubles as the "painted"
+    // signal.
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /^parachute$/i })).toBeInTheDocument();
+    });
     expect(window.location.pathname).toBe("/notes/");
   });
 
@@ -76,20 +84,21 @@ describe("App", () => {
     });
   });
 
-  it("a genuinely unmatched (multi-segment) URL hits the `*` catch-all and toasts (F7-adjacent)", async () => {
+  it("a genuinely unmatched (multi-segment) URL hits the `*` catch-all and shows a real not-found page (UI-audit #3)", async () => {
     // A single bare segment (the case above) matches the legacy `/:id`
     // bookmark shim, not `*`. A multi-segment path matches nothing else in
     // the route table, so it's the one that actually exercises `*` →
-    // NotFoundRedirect. Per NAVIGATION.md: still a replace shim, but now with
-    // a quiet toast naming what happened instead of a silent teleport.
+    // NotFoundPage. UI-audit finding #3: this used to silently teleport home
+    // with only a toast — indistinguishable from the app ignoring what you
+    // typed. Now it's a real page, at the URL you actually landed on, with
+    // one clear way back.
     window.history.replaceState({}, "", "/notes/some/deeply/unknown/path");
     render(<App />);
-    await waitFor(() => {
-      expect(window.location.pathname).toMatch(/^\/notes\/?$/);
-    });
-    expect(
-      await screen.findByText(/that page doesn't exist — brought you home/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to notes/i })).toBeInTheDocument();
+    // No silent teleport — the address bar stays exactly where the operator
+    // landed.
+    expect(window.location.pathname).toBe("/notes/some/deeply/unknown/path");
   });
 
   it.each(["/notes/vault/aaron", "/notes/vault/aaron/mcp", "/notes/u/aaron/vault/aaron"])(
@@ -98,18 +107,16 @@ describe("App", () => {
       // Pins the router-root comment's claim: `/vault/<name>` and
       // `/u/<handle>/...` are two-segment-or-longer, so they can't match the
       // single-segment `/:id` bare-path shim — they fall through to `*` →
-      // NotFoundRedirect, same as any other genuinely-unmatched multi-segment
-      // path, and land home with the same toast. If a future route ever
-      // claimed one of these prefixes (e.g. NoteView rendering), this test
-      // would catch the collision before the my. zone-route cutover does.
+      // NotFoundPage, same as any other genuinely-unmatched multi-segment
+      // path (UI-audit #3). If a future route ever claimed one of these
+      // prefixes (e.g. NoteView rendering), this test would catch the
+      // collision before the my. zone-route cutover does.
       window.history.replaceState({}, "", path);
       render(<App />);
-      await waitFor(() => {
-        expect(window.location.pathname).toMatch(/^\/notes\/?$/);
-      });
-      expect(
-        await screen.findByText(/that page doesn't exist — brought you home/i),
-      ).toBeInTheDocument();
+      expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
+      // Still sitting at the reserved path — never NoteView's content, and
+      // no silent teleport away from it either.
+      expect(window.location.pathname).toBe(path);
     },
   );
 
@@ -188,7 +195,7 @@ describe("App", () => {
     });
   });
 
-  it("clamps horizontal overflow at the shell so a stray wide descendant can't scroll the viewport", () => {
+  it("clamps horizontal overflow at the shell so a stray wide descendant can't scroll the viewport", async () => {
     render(<App />);
     // Belt-and-suspenders against mobile overflow regressions. If any
     // descendant (a long unbreakable path, a rogue min-width, a missing
@@ -196,8 +203,12 @@ describe("App", () => {
     // shell clips it to the viewport instead of turning the whole page into
     // a horizontal scroller. jsdom doesn't compute layout, so this is a
     // class-presence check, not a measured scrollWidth assertion — the
-    // manual-testing steps live in the PR body.
-    const shell = screen.getByRole("link", { name: /^parachute$/i }).closest("div.min-h-dvh");
+    // manual-testing steps live in the PR body. The wordmark link (Landing's
+    // Shell, once the boot decision resolves — UI-audit #8) is used purely
+    // as a handle to climb to the shell root; awaited since it isn't on
+    // screen at first paint.
+    const link = await screen.findByRole("link", { name: /^parachute$/i });
+    const shell = link.closest("div.min-h-dvh");
     expect(shell).not.toBeNull();
     expect(shell?.className).toMatch(/\boverflow-x-hidden\b/);
   });

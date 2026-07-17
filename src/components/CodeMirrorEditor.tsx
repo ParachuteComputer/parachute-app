@@ -6,7 +6,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorView, placeholder as cmPlaceholder, keymap, lineNumbers } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import type { MutableRefObject } from "react";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
@@ -160,6 +160,11 @@ interface Props {
   // editor builds its extension set once per mount; a mode change arrives
   // as a remount (the caller keys the element), not a live prop flip.
   livePreview?: boolean;
+  // Optional placeholder text shown when the doc is empty (CM6's own
+  // `placeholder()` extension — disappears on first keystroke). Opt-in and
+  // read once at mount, same contract as `livePreview`; omitted call sites
+  // (NoteEditor, on an existing note) are byte-unchanged.
+  placeholder?: string;
 }
 
 interface ExtensionRefs {
@@ -175,6 +180,9 @@ interface BuildExtensionsOpts {
   // existing call site are untouched — raw mode stays byte-for-byte
   // today's editor. Live-preview mode is opt-in per A4-SPEC §1.
   livePreview?: boolean;
+  // Undefined by default — no placeholder extension added, existing editors
+  // unchanged.
+  placeholder?: string;
 }
 
 // Pulled out of the mount effect so it's independently testable against a
@@ -188,6 +196,7 @@ export function buildExtensions(
   const livePreviewOn = opts.livePreview ?? false;
   return [
     history(),
+    ...(opts.placeholder ? [cmPlaceholder(opts.placeholder)] : []),
     // Live preview drops the gutter entirely (A4-SPEC §5) — raw mode keeps
     // it, unchanged.
     ...(livePreviewOn ? [] : [lineNumbers()]),
@@ -274,6 +283,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, Props>(functi
     onPasteFile,
     onRequestAttachment,
     livePreview: livePreviewOn,
+    placeholder: placeholderText,
   },
   ref,
 ) {
@@ -323,7 +333,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, Props>(functi
           onPasteFileRef,
           onRequestAttachmentRef,
         },
-        { livePreview: livePreviewOn },
+        { livePreview: livePreviewOn, placeholder: placeholderText },
       ),
     });
     const v = new EditorView({ state, parent: host.current });

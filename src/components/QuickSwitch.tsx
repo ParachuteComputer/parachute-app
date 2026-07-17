@@ -134,7 +134,13 @@ export function QuickSwitch({ onClose }: Props) {
     <dialog
       open
       aria-labelledby={inputId}
-      className="enter-fade fixed inset-0 z-50 m-0 h-full max-h-full w-full max-w-full bg-transparent p-0 lg:flex lg:px-6 lg:pb-8"
+      // The scrim: same darkening value + timing as `.dialog-overlay`
+      // (reduced-motion is already gated there via `.enter-fade`, which this
+      // root carries). On mobile the sheet below is its own opaque
+      // bg-bg/95 + blur, fully covering this — the dim only becomes visible
+      // on desktop, where the pill+panel float over open space (UI audit:
+      // "no backdrop scrim — background content fully legible").
+      className="enter-fade fixed inset-0 z-50 m-0 h-full max-h-full w-full max-w-full bg-[color-mix(in_srgb,#000_60%,transparent)] p-0 lg:flex lg:px-6 lg:pb-8"
       onMouseDown={(e) => {
         // Desktop click-outside: the transparent dialog root spans the
         // viewport around the bottom-centre column. (On mobile the sheet

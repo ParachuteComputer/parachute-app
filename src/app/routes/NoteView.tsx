@@ -13,7 +13,7 @@ import { leadingH1, pathLeaf, stripLeadingH1 } from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
 import { useActiveVaultClient, useNote, useVaultStore } from "@/lib/vault";
-import { VaultAuthError } from "@/lib/vault/client";
+import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
@@ -113,7 +113,11 @@ function NoteBody({ note }: { note: Note }) {
 
         <TranscriptionStatus content={note.content ?? ""} />
 
-        <NoteRenderer note={bodyNote} resolve={resolver} />
+        {bodyNote.content?.trim() ? (
+          <NoteRenderer note={bodyNote} resolve={resolver} />
+        ) : (
+          <EmptyNoteBody noteId={note.id} />
+        )}
 
         {note.attachments && note.attachments.length > 0 ? (
           <section className="mt-10 border-t border-border pt-6">
@@ -387,6 +391,21 @@ function NoteSkeleton() {
   );
 }
 
+// Blank whitespace where the body should be reads identically to a failed
+// load — nothing distinguishes "this note is genuinely empty" from "the
+// content silently didn't arrive." A quiet placeholder + an Edit invitation
+// closes that gap.
+function EmptyNoteBody({ noteId }: { noteId: string }) {
+  return (
+    <p className="my-8 text-sm text-fg-dim">
+      Nothing here yet.{" "}
+      <Link to={`/n/${encodeURIComponent(noteId)}/edit`} className="text-accent hover:underline">
+        Start writing →
+      </Link>
+    </p>
+  );
+}
+
 function NotFoundBlock({ id }: { id: string }) {
   return (
     <EmptyState
@@ -405,19 +424,50 @@ function NotFoundBlock({ id }: { id: string }) {
   );
 }
 
+// The vault client's thrown errors carry the raw request line as their
+// `.message` (e.g. "GET /api/notes?id=…&include_content=true → 404") —
+// useful for debugging, not for a reader. Human copy up front; the wire
+// detail moves into a collapsed <details> (word-broken so a long query
+// string can never clip un-scrollable on a narrow phone, UI audit HIGH).
 function NoteErrorBlock({ error, retry }: { error: Error; retry: () => void }) {
   const isAuth = error instanceof VaultAuthError;
+  const isNotFound = error instanceof VaultNotFoundError;
+  const title = isAuth ? "Session expired" : isNotFound ? "Note not found" : "Could not load note";
+  const message = isAuth
+    ? error.message
+    : isNotFound
+      ? "Couldn't find this note. It may have been deleted, or the link may be wrong."
+      : "Something went wrong loading this note. You can try again, or head back to your notes.";
+
   return (
     <ErrorState
-      title={isAuth ? "Session expired" : "Could not load note"}
-      message={error.message}
+      title={title}
+      message={
+        <>
+          {message}
+          {!isAuth ? (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-xs text-fg-dim hover:text-fg-muted">
+                Technical detail
+              </summary>
+              <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-fg-dim">
+                {error.message}
+              </p>
+            </details>
+          ) : null}
+        </>
+      }
       retry={isAuth ? undefined : retry}
       action={
         isAuth ? (
           <Link to="/add" className="btn btn-primary">
             Reconnect vault
           </Link>
-        ) : undefined
+        ) : (
+          <Link to="/notes" className="btn btn-secondary btn-touch">
+            Back to notes
+          </Link>
+        )
       }
     />
   );
