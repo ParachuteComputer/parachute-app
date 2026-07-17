@@ -15,7 +15,7 @@ import { useFocusMode } from "@/lib/focus-mode";
 import { leadingH1, pathDisplayTitle, stripLeadingH1 } from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
-import { useActiveVaultClient, useNote, useVaultStore } from "@/lib/vault";
+import { useActiveVaultClient, useLiveNote, useNote, useVaultStore } from "@/lib/vault";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
@@ -28,6 +28,10 @@ export function NoteView() {
   const decodedId = id ? decodeURIComponent(id) : undefined;
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const note = useNote(decodedId);
+  // Voice Wave 1: hold ONE live subscription for the open note so a transcript
+  // (or its failure/limit marker) lands without a manual refresh — the socket
+  // handles the live case, `useNote`'s pending poll is the drop/reconnect net.
+  useLiveNote(decodedId, note.data);
 
   useEffect(() => {
     if (activeVault && decodedId) pushRecent(activeVault.id, decodedId);
@@ -166,7 +170,7 @@ function NoteBody({ note }: { note: Note }) {
           <HeaderPath value={label} isPath={!!note.path} />
         </header>
 
-        <TranscriptionStatus content={note.content ?? ""} />
+        <TranscriptionStatus content={note.content ?? ""} attachments={note.attachments} />
 
         {bodyNote.content?.trim() ? (
           <NoteRenderer note={bodyNote} resolve={resolver} />
