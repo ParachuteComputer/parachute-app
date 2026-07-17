@@ -1,4 +1,4 @@
-import { noteTitle } from "@/lib/note-title";
+import { displayTitle, noteTitle } from "@/lib/note-title";
 import type { Note, TagSummary } from "@/lib/vault/types";
 import { fuzzyScore } from "./fuzzy";
 import type { RecentEntry } from "./recents";
@@ -12,7 +12,18 @@ import type { RecentEntry } from "./recents";
 // ↑/↓/Enter trivial — the selected index always points at a real entry.
 
 export type QuickSwitchEntry =
-  | { kind: "note"; id: string; title: string; path?: string; score: number }
+  | {
+      kind: "note";
+      id: string;
+      title: string;
+      // `displayTitle()`'s variant, carried alongside the plain `title`
+      // string (still `noteTitle()`-derived below, for fuzzy-match scoring —
+      // unchanged) so the row can render an untouched quickPath() default in
+      // metadata voice instead of as a headline.
+      titleKind: "title" | "timestamp";
+      path?: string;
+      score: number;
+    }
   | { kind: "tag"; name: string; count: number; score: number }
   | {
       kind: "command";
@@ -151,10 +162,12 @@ export function computeResults(inputs: Inputs): QuickSwitchEntry[] {
     for (const r of inputs.recents) {
       const n = byId.get(r.id);
       if (!n) continue;
+      const display = displayTitle(n);
       recentEntries.push({
         kind: "note",
         id: n.id,
-        title: noteTitle(n),
+        title: display.text,
+        titleKind: display.kind,
         path: n.path,
         score: 0,
       });
@@ -193,11 +206,13 @@ export function computeResults(inputs: Inputs): QuickSwitchEntry[] {
   const noteMatches: QuickSwitchEntry[] = inputs.notes.flatMap((n) => {
     const s = scoreNote(n, q);
     if (s === null) return [];
+    const display = displayTitle(n);
     return [
       {
         kind: "note" as const,
         id: n.id,
-        title: noteTitle(n),
+        title: display.text,
+        titleKind: display.kind,
         path: n.path,
         score: s,
       },

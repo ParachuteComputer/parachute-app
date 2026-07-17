@@ -120,7 +120,7 @@ export function Calendar() {
                 >
                   <span
                     className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full tabular-nums ${
-                      isToday ? "bg-accent text-[--color-on-accent]" : "text-fg"
+                      isToday ? "bg-accent text-(--color-on-accent)" : "text-fg"
                     }`}
                   >
                     {d.getDate()}
@@ -173,7 +173,7 @@ function ErrorBlock({ error }: { error: Error }) {
       {isAuth ? (
         <Link
           to="/add"
-          className="inline-block rounded-lg bg-accent px-4 py-2 text-sm font-medium text-[--color-on-accent] hover:bg-accent-hover"
+          className="inline-block rounded-lg bg-accent px-4 py-2 text-sm font-medium text-(--color-on-accent) hover:bg-accent-hover"
         >
           Reconnect vault
         </Link>

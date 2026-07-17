@@ -40,7 +40,7 @@ export function BottomTabBar() {
       className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-bg/95 backdrop-blur lg:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <ul className="mx-auto flex max-w-[--w-page] items-stretch justify-around px-2">
+      <ul className="mx-auto flex max-w-(--w-page) items-stretch justify-around px-2">
         <Tab to={RECENT_TO} label="Notes" active={isSurface} icon={<IconNotes />} />
         <CenterCapture />
         <TabButton label="Search" icon={<IconSearch />} onClick={() => setSwitcherOpen(true)} />
@@ -111,7 +111,7 @@ function CenterCapture() {
       <Link
         to="/new"
         aria-label="New note"
-        className="focus-ring -mt-4 grid h-[3.25rem] w-[3.25rem] place-items-center rounded-full bg-accent text-[--color-on-accent] shadow-lg transition-colors hover:bg-accent-hover"
+        className="focus-ring -mt-4 grid h-[3.25rem] w-[3.25rem] place-items-center rounded-full bg-accent text-(--color-on-accent) shadow-lg transition-colors hover:bg-accent-hover"
       >
         <IconPlus width={26} height={26} strokeWidth={2} />
       </Link>

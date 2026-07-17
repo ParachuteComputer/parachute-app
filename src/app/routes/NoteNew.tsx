@@ -495,7 +495,7 @@ export function NoteNew() {
                 : "mt-4 w-full border-0 bg-transparent font-serif text-2xl text-fg outline-none placeholder:text-fg-dim md:text-3xl"
             }
             aria-label="Note path"
-            placeholder="e.g. Projects/README"
+            placeholder="Name your note — or just start writing"
           />
 
           <div className="mt-4">

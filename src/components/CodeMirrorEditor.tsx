@@ -6,7 +6,13 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { EditorView, placeholder as cmPlaceholder, keymap, lineNumbers } from "@codemirror/view";
+import {
+  EditorView,
+  placeholder as cmPlaceholder,
+  keymap,
+  lineNumbers,
+  scrollPastEnd,
+} from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import type { MutableRefObject } from "react";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
@@ -22,18 +28,20 @@ const lensHighlight = HighlightStyle.define([
   { tag: t.quote, color: "var(--color-fg-muted)", fontStyle: "italic" },
 ]);
 
-// Mode-agnostic chrome only — NO font-family/font-size/inline-padding here.
-// Those are a raw-vs-live TIE, not a shared value (M1 review finding): CM6's
-// theme system scopes every rule under a per-theme generated class on
-// `.cm-editor`, so two themes setting the SAME selector at EQUAL specificity
-// resolve by observed stylesheet order — not by array position in
-// buildExtensions, which is what the original single lensTheme + a live-only
-// override assumed ("ordered after lensTheme so it wins"; verified false
-// in a real browser via the review's font-probe.mjs). The fix is to make the
-// tie impossible: `rawModeTypographyTheme` below and `livePreviewChromeTheme`
-// (live-preview.ts) are MUTUALLY EXCLUSIVE per buildExtensions' opts fork —
-// one font/padding authority per mode, never two themes competing for the
-// same property.
+// Mode-agnostic chrome only — NO font-family/font-size/inline-padding/
+// line-height here. Those are a raw-vs-live TIE, not a shared value (M1
+// review finding, extended by the editor-wave-1 delta review to cover
+// line-height too): CM6's theme system scopes every rule under a per-theme
+// generated class on `.cm-editor`, so two themes setting the SAME selector
+// at EQUAL specificity resolve by observed stylesheet order — not by array
+// position in buildExtensions, which is what the original single lensTheme
+// + a live-only override assumed ("ordered after lensTheme so it wins";
+// verified false in a real browser via the review's font-probe.mjs, and
+// again for `.cm-scroller` line-height via the delta review's puppeteer
+// measurement). The fix is to make the tie impossible: `rawModeTypographyTheme`
+// below and `livePreviewChromeTheme` (live-preview.ts) are MUTUALLY
+// EXCLUSIVE per buildExtensions' opts fork — one font/padding/line-height
+// authority per mode, never two themes competing for the same property.
 const lensTheme = EditorView.theme({
   "&": {
     backgroundColor: "var(--color-card)",
@@ -48,9 +56,12 @@ const lensTheme = EditorView.theme({
     paddingBlock: "1rem",
     caretColor: "var(--color-accent)",
   },
-  ".cm-scroller": {
-    lineHeight: "1.6",
-  },
+  // NO `.cm-scroller` lineHeight here — it's mode-specific (1.6 raw / --lh-live
+  // live), same M1 tie as font-family/size/padding below. A prior version of
+  // this rule DID live here and lost the tie in a real browser (delta review,
+  // editor-wave-1 #46): `livePreviewChromeTheme`'s own `--lh-live` override
+  // never actually applied, because this shared selector's hardcoded 1.6 won
+  // the stylesheet-order race regardless of which theme was declared later.
   ".cm-gutters": {
     backgroundColor: "transparent",
     border: "none",
@@ -101,6 +112,10 @@ const rawModeTypographyTheme = EditorView.theme({
   },
   ".cm-scroller": {
     fontFamily: "var(--font-mono)",
+    // Raw mode's own line-height authority (mirrors live mode's `--lh-live`
+    // in `livePreviewChromeTheme`) — the mono power surface's rhythm,
+    // unchanged from before editor-wave-1 (A4-SPEC §5).
+    lineHeight: "1.6",
   },
 });
 
@@ -234,6 +249,16 @@ export function buildExtensions(
       override: [createSlashCompletionSource(() => onRequestAttachmentRef.current?.())],
     }),
     EditorView.lineWrapping,
+    // Wave 1 §3.1: scroll-past-end (not typewriter mode — full centering
+    // fights virtual-keyboard scroll-into-view on mobile, A4-SPEC's own
+    // typing-canvas study). `scrollPastEnd()` is CM6's stock extension so
+    // any line can reach the viewport top; `scrollMargins` keeps ~30% of
+    // the viewport below the active line whenever CM auto-scrolls to keep
+    // the cursor in view, so typing at the bottom of a long note never
+    // pins the caret to the floor. Mode-agnostic — both raw and live mode
+    // benefit, this is a scroll behavior, not a typography concern.
+    scrollPastEnd(),
+    EditorView.scrollMargins.of((view) => ({ bottom: view.dom.clientHeight * 0.3 })),
     EditorView.domEventHandlers({
       paste(event) {
         const items = event.clipboardData?.items;

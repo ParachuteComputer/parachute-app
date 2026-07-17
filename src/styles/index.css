@@ -167,6 +167,17 @@
   --text-2xl: 1.625rem; /* 26px — h2 / page title (mobile) */
   --text-3xl: 1.9375rem; /* 31px — h1 / page title (desktop) */
 
+  /* Live-editor leading (editor-wave-1 §2.3): meets reading (1.78) and the
+     old code-editor habit (1.6) in the middle. Consumed by the live
+     editor's `.cm-scroller` AND every height-locked live-preview widget
+     (`.cm-lp-hr`, `.cm-lp-embed-chip` in lib/editor/live-preview.ts) — they
+     move together, or a widget's fixed height stops matching a text line's
+     height and the reveal-never-reflows invariant breaks. Raw mode is
+     untouched (its own 1.6 lives in `rawModeTypographyTheme`,
+     CodeMirrorEditor.tsx — mode-exclusive per the M1 fix, not the shared
+     `lensTheme` — the mono power surface keeps its own rhythm, A4-SPEC §5).*/
+  --lh-live: 1.7;
+
   /* --- Radii — the pill move (DESIGN-SPEC §1.2) ---
      xs/sm/md stay for code, tables, tiny chrome; lg/xl step up for nav rows
      and soft cards; 2xl is the new generous card/modal/sheet radius
@@ -501,6 +512,23 @@ body {
 .prose-note p {
   margin: 0.75em 0;
   text-wrap: pretty;
+}
+/* Wave 1 §4.3 — the read-view half of the wikilink/external distinction
+   (MarkdownView.tsx's NotesLink owns the dashed underline itself; this is
+   just the departing-arrow, CSS-only so no extra DOM per link). */
+.external-link::after {
+  /* The `/ ""` alt-text form (CSS Generated Content, all evergreen
+     browsers) marks this glyph decorative to assistive tech — without it,
+     some screen readers announce ::after content, and "up-right arrow"
+     read aloud after every external link would be noise, not signal. */
+  content: "↗" / "";
+  display: inline-block;
+  margin-left: 0.15em;
+  font-size: 0.75em;
+  vertical-align: text-top;
+  /* Keeps the arrow glued to the link's last word rather than risking an
+     orphaned glyph alone on the next line when the link text wraps. */
+  white-space: nowrap;
 }
 .prose-note ul,
 .prose-note ol {
@@ -973,11 +1001,28 @@ body {
      by every route's <h1> so page titles share one voice. */
   .page-title {
     font-family: var(--font-serif);
-    font-size: clamp(var(--text-2xl), calc(var(--text-xl) + 2vw), 2.5rem);
+    /* Retuned (editor-wave-1 §2.1): ~27px phone / ~31px tablet portrait /
+       36px desktop cap — equal to prose H1 on tablet, one gentle step above
+       it on desktop, a document heading rather than a poster. */
+    font-size: clamp(var(--text-2xl), calc(var(--text-xl) + 1.2vw), 2.25rem);
     line-height: 1.12;
     letter-spacing: -0.01em;
     color: var(--color-fg);
     text-wrap: balance;
+  }
+
+  /* --- Timestamp-as-title voice (editor-wave-1 §1) ---
+     Where a title would normally go, an untouched quickPath() default
+     renders as a formatted timestamp instead of the raw date-path leaf —
+     humbler voice in the same slot, never a headline: un-serif, muted,
+     tabular numerals so the clock reads at a glance. Combines with
+     `.page-title` on NoteView's h1 (later in the cascade so it wins the
+     font-family/color tie) and stands alone on NoteRow/QuickSwitch rows. */
+  .title-timestamp {
+    font-family: var(--font-sans);
+    font-weight: 400;
+    color: var(--color-fg-dim);
+    font-variant-numeric: tabular-nums;
   }
 
   /* --- Micro typography helpers --- */

@@ -27,9 +27,9 @@ export function ErrorState({
 }) {
   return (
     <div
-      className={`rounded-lg border border-[--color-danger-border] bg-[--color-danger-soft] p-6 ${className}`.trim()}
+      className={`rounded-lg border border-(--color-danger-border) bg-(--color-danger-soft) p-6 ${className}`.trim()}
     >
-      <p className="mb-2 font-medium text-[--color-danger]">{title}</p>
+      <p className="mb-2 font-medium text-(--color-danger)">{title}</p>
       {message ? <p className="mb-4 text-sm text-fg-muted">{message}</p> : null}
       {retry || action ? (
         <div className="flex flex-wrap items-center gap-2">

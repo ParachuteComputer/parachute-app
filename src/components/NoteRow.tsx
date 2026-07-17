@@ -1,5 +1,5 @@
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
-import { noteTitle } from "@/lib/note-title";
+import { displayTitle } from "@/lib/note-title";
 import { relativeTime } from "@/lib/time";
 import type { Note } from "@/lib/vault/types";
 import type { ReactNode } from "react";
@@ -35,12 +35,12 @@ export function NoteRow({
   archivedTag: string;
   trailing?: ReactNode;
 }) {
-  const title = noteTitle(note);
+  const title = displayTitle(note);
   // The mono path is metadata under the human title — but only when it says
   // something the title doesn't (a folder the leaf drops). Compare against the
   // extension-stripped path so a bare root file ("Aaron.md" vs title "Aaron")
   // doesn't render a redundant line that differs only by ".md".
-  const showPath = !!note.path && note.path.replace(/\.md$/i, "") !== title;
+  const showPath = !!note.path && note.path.replace(/\.md$/i, "") !== title.text;
   const stamp = note.updatedAt ?? note.createdAt;
   const isPinned = (note.tags ?? []).includes(pinnedTag);
   const isArchived = (note.tags ?? []).includes(archivedTag);
@@ -59,7 +59,15 @@ export function NoteRow({
                   ★
                 </span>
               ) : null}
-              <span className="min-w-0 truncate text-base font-medium text-fg">{title}</span>
+              <span
+                className={
+                  title.kind === "timestamp"
+                    ? "min-w-0 truncate text-base title-timestamp"
+                    : "min-w-0 truncate text-base font-medium text-fg"
+                }
+              >
+                {title.text}
+              </span>
             </span>
             <span className="flex shrink-0 items-center gap-1.5">
               <span className="text-xs tabular-nums text-fg-dim">{relativeTime(stamp)}</span>

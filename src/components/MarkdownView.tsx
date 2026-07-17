@@ -45,6 +45,14 @@ export function buildWikilinkResolver(note: Note): WikilinkResolver {
 // external links open in a new tab. The wikilink resolved/unresolved styling
 // rides on the `className` the shared plugin emits
 // (`wikilink wikilink-resolved` / `wikilink wikilink-unresolved`).
+//
+// Wave 1 §4.3 — wikilink/external distinction: a resolved wikilink keeps its
+// existing solid-on-hover underline ("stays home"); an external link gets a
+// persistent dashed underline plus a small departing-arrow ("leaves"),
+// mirroring the editor's live-preview split (`.wikilink` vs `.cm-lp-link` in
+// lib/editor/live-preview.ts). The arrow is a CSS `::after` on `.external-link`
+// (index.css) — no extra DOM, since this component owns the `<a>` markup
+// directly rather than going through surface-render's own rendering.
 function NotesLink({ href, className, children }: LinkComponentProps) {
   const classes = className ?? "";
   if (classes.includes("wikilink")) {
@@ -67,7 +75,7 @@ function NotesLink({ href, className, children }: LinkComponentProps) {
   return (
     <a
       href={href}
-      className="text-accent hover:underline"
+      className="external-link text-accent underline decoration-dashed underline-offset-4 hover:text-accent-hover"
       target="_blank"
       rel="noopener noreferrer"
     >
