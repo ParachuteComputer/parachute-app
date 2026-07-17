@@ -3,9 +3,9 @@
 ## [0.20.14] - 2026-07-17
 
 **Polish — mobile formatting bar docks above the keyboard; note header's path/tags recede; the
-first line renders as a title.** Three feel-fixes from a live tablet test of 0.20.13. Display-only:
-no data-model changes and no new capabilities — only where things sit and how they read (FIX 3
-writes NO markdown into the note).
+first line renders as a title; single-newline lines read as one thought.** Four feel-fixes from a
+live tablet test of 0.20.13. Display-only: no data-model changes and no new capabilities — only
+where things sit and how they read (FIX 3 writes NO markdown into the note; FIX 4 is CSS only).
 
 - **`src/lib/editor/selection-toolbar.ts`** — on touch the selection formatting bar no longer
   floats at the selection (where Android paints its Copy / Select all callout directly over ours
@@ -48,6 +48,20 @@ writes NO markdown into the note).
   guard, so the two never drift); it defers to an explicit ATX heading (`/^ {0,3}#{1,6}(?: |$)/`) so
   the styling never stacks on the editor's own heading treatment; and it tracks live — deleting the
   first line promotes the next non-empty one (recomputed on `docChanged`).
+- **`src/styles/index.css`** — line spacing for single-newline lines. A single newline renders as a
+  `<br>` INSIDE one paragraph (surface-render's `breaks: true` / `remark-breaks` — verified: `line
+  A\nline B` → `<p>line A<br>line B</p>`), so consecutive single-newline lines were inheriting the
+  1.78 long-form reading leading and reading as far apart as separate paragraphs. New
+  `--lh-prose-tight: 1.5` token, applied surgically via `.prose-note p:has(br)` — **only** paragraphs
+  that actually contain a line break tighten; normal wrapping paragraphs keep 1.78, and blank-line-
+  separated blocks are separate `<p>`s that keep their real `0.75em` margins. Baseline-to-baseline
+  step for single-newline lines (rendered view): **18px → 32.04px ⇒ 27.00px** (−15.7%), 22px →
+  39.16 ⇒ 33.00, 26px → 46.28 ⇒ 39.00; a paragraph step stays 45.54px @18px, so same-thought lines
+  (27px) now read clearly distinct from paragraph breaks (45.5px). Theme-invariant (line-height
+  carries no colour — one value, both light and dark). The **editor** needs no change: its lines
+  are `.cm-line`s at line-height (`--lh-live` 1.7 live / 1.6 raw) with NO inter-line margin, so
+  single-newline lines are already line-spacing-apart there and a blank line is a genuine empty line
+  — it never had the paragraph-spacing problem the rendered `<br>` did.
 
 Judgment calls (reviewer-facing):
 
@@ -63,16 +77,19 @@ Judgment calls (reviewer-facing):
   device can gain/lose a pointer mid-session), the same approach the 0.20.13 toolbar used;
   `window.visualViewport` drives positioning and degrades to `bottom: 0` where it's absent.
 
-Gates (literal): `bun run test` (vitest) — **1872 passed / 1872**, 168 files; `bun run typecheck` —
-clean; `bun run lint` — clean (2 pre-existing `src/lib/vault/live-query.ts`
-`useExhaustiveDependencies` warnings, present on `main`); `bun run build` — ✓. The editor toolbar
-suite is rewritten for the docked mechanism (bar in `document.body`, coarse-only, show/hide-on-
-collapse, ≥40px targets, command dispatch, pointerdown containment); the NoteView metadata test
-folds in the header's one-tap "Copy path" affordance; `first-line-title.test.ts` is new (plain-line
-title, no-stack-on-heading, live mode, frontmatter skip, leading-blank skip, live tracking across
-an edit). Note: `nav-history.test.tsx` carries a PRE-EXISTING parallel-load flake (real timers +
-real `window.history`) that fails ~1/6 runs on `main` as well; a sequential run
-(`--no-file-parallelism`) is 100% green (1872/1872).
+Gates (literal): `bun run test` (vitest) — **1869 passed / 1869 across 167 files, deterministically
+green, when the one PRE-EXISTING-flaky file is excluded** (`--exclude "**/nav-history.test.tsx"`);
+the full 168-file suite is **1872 / 1872** on a clean run. `bun run typecheck` — clean; `bun run
+lint` — clean (2 pre-existing `src/lib/vault/live-query.ts` `useExhaustiveDependencies` warnings,
+present on `main`); `bun run build` — ✓. The editor toolbar suite is rewritten for the docked
+mechanism (bar in `document.body`, coarse-only, show/hide-on-collapse, ≥40px targets, command
+dispatch, pointerdown containment); the NoteView metadata test folds in the header's one-tap "Copy
+path"; `first-line-title.test.ts` is new (plain-line title, no-stack-on-heading, live mode,
+frontmatter skip, leading-blank skip, live tracking across an edit). FIX 4 adds no tests (CSS only,
+verified via compiled-CSS grep + a real `remark-breaks` render probe). Note: `nav-history.test.tsx`
+carries a PRE-EXISTING, intrinsic flake (real 3s `setInterval` + real `window.history` + `waitFor`
+timing) — it fails ~2/5 runs **running entirely on its own**, machine-load-dependent, and is
+byte-identical to `main` (untouched by this diff). Flagged as a follow-up (fake-timers or `retry`).
 
 ## [0.20.13] - 2026-07-17
 
