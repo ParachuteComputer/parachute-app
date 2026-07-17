@@ -1,5 +1,36 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.1] - 2026-07-16
+
+**Calm micro-states (Polish PR 2/6).** Second of the polish-wave train (display/interaction only
+— no data-structure, note-format, or wire-contract changes). Every new transition consumes PR 1's
+motion tokens; nothing here escapes the reduced-motion gate.
+
+- **"Saved" whisper.** After a checkpoint save (⌘S) succeeds, the editor header shows `Saved ✓` in
+  accent for ~1.5s, then settles back to `saved just now` — a state + timeout in `EditorSurface`
+  (`NoteEditor.tsx`), cleaned up on unmount. No spinner, no toast; the Save button's "Saving…"
+  label is unchanged. The "unsaved" dot still wins the moment you resume typing.
+- **Sync dot token hygiene.** `SyncStatusIndicator`'s dot dropped its raw Tailwind color literals
+  (`emerald-400` / `amber-400` / `sky-400` / `red-400` / `red-500`) for the semantic tokens:
+  online → `--color-grass`, offline → `--color-warning`, syncing → `--color-sky` (pulse kept),
+  halted → `--color-danger`, unreachable → a `color-mix()` toward canvas (keeps the
+  lighter-red distinction from colour-blind-safe halted/unreachable). The popover's chrome moved
+  from `rounded-md`/`shadow-lg` to the `--radius-xl`/`shadow-lift` floating-surface pair.
+- **Toaster surface.** Same floating-surface pair (`--radius-lg` + `shadow-lift`); the dismiss `×`
+  button picks up `.focus-ring`. Entrance motion already landed in PR 1. Also fixes a live bug on
+  the error-tone toast: Tailwind's `[--foo]` bracket arbitrary-value syntax takes the value
+  literally (no `var()` wrap), so `border-[--color-danger-border]` etc. were compiling to the
+  invalid `border-color: --color-danger-border` — silently dropped by the browser. Switched to the
+  `(--foo)` parens form (the CSS-var shorthand that *does* wrap; the same form PR 1 already relies
+  on for `duration-(--dur-move)`), confirmed against the built CSS. The same bracket-syntax bug is
+  pre-existing in ~11 other files outside this PR's scope — flagged as a follow-up, not fixed here.
+- **Skeleton consolidation.** `VaultSurface`'s hand-rolled `RecentSkeleton` rows now render through
+  the shared `Skeleton` primitive instead of a bespoke `animate-pulse` div, so reduced-motion
+  coverage is inherited rather than re-implemented.
+- **Focus-visible sweep.** `.focus-ring` added to the note back-links (`NoteView`, `NoteEditor`),
+  the footer's ecosystem link (`App.tsx`), and the draft-offer Restore/Discard buttons
+  (`NoteEditor.tsx`) — every one of those stops was previously invisible on keyboard tab.
+
 ## [0.20.0] - 2026-07-16
 
 **Motion as a system (Polish PR 1/6).** Aaron's steer: "keep on cooking on the UI stuff — the

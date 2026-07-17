@@ -85,7 +85,7 @@ export function SyncStatusIndicator() {
         <div
           role="dialog"
           aria-label="Sync status details"
-          className="enter-rise absolute right-0 z-30 mt-2 w-80 rounded-md border border-border bg-card p-4 text-sm shadow-lg"
+          className="enter-rise absolute right-0 z-30 mt-2 w-80 rounded-[var(--radius-xl)] border border-border bg-card p-4 text-sm shadow-lift"
         >
           <SyncStatusPanel onDismiss={() => setOpen(false)} />
         </div>
@@ -111,18 +111,27 @@ function describeTone(tone: Tone): string {
 
 function Dot({ tone }: { tone: Tone }) {
   // `unreachable` and `halted` both signal failure but want to be
-  // distinguishable from each other in the popover headline — the dot uses a
-  // slightly lighter red for unreachable so colour-blind users still see the
-  // shared "red = bad" signal.
+  // distinguishable from each other in the popover headline — unreachable
+  // mixes toward the canvas for a lighter red so colour-blind users still see
+  // the shared "red = bad" signal. Semantic tokens only (STYLE.md token
+  // contract) — no raw Tailwind color literals. `color-mix()` doesn't survive
+  // a Tailwind arbitrary-value class cleanly (nested commas), so it's an
+  // inline style here — same pattern as CodeMirrorEditor's color-mix uses.
   const color =
     tone === "online"
-      ? "bg-emerald-400"
+      ? "var(--color-grass)"
       : tone === "offline"
-        ? "bg-amber-400"
+        ? "var(--color-warning)"
         : tone === "syncing"
-          ? "bg-sky-400 animate-pulse"
+          ? "var(--color-sky)"
           : tone === "unreachable"
-            ? "bg-red-400"
-            : "bg-red-500";
-  return <span aria-hidden className={`inline-block h-2 w-2 rounded-full ${color}`} />;
+            ? "color-mix(in srgb, var(--color-danger) 70%, var(--color-bg))"
+            : "var(--color-danger)";
+  return (
+    <span
+      aria-hidden
+      className={`inline-block h-2 w-2 rounded-full ${tone === "syncing" ? "animate-pulse" : ""}`}
+      style={{ backgroundColor: color }}
+    />
+  );
 }

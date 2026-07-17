@@ -246,7 +246,7 @@ function AppFooter() {
     <footer className="mx-auto max-w-5xl px-6 py-10 text-center text-sm text-fg-dim">
       <p>
         Part of the{" "}
-        <a href="https://parachute.computer" className="text-accent hover:underline">
+        <a href="https://parachute.computer" className="focus-ring text-accent hover:underline">
           Parachute Computer
         </a>{" "}
         ecosystem. AGPL-3.0.
