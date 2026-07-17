@@ -208,7 +208,7 @@ function TagRow({
       onClick={onToggle}
       aria-pressed={active}
       title={`#${name}`}
-      className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm ${
+      className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-sm ${
         active ? "bg-accent/15 text-accent" : "text-fg-muted hover:bg-bg/60 hover:text-accent"
       }`}
     >
@@ -245,7 +245,7 @@ function TagGroup({
 
   return (
     <div>
-      <div className="flex items-center gap-1 rounded-md px-1 py-0.5">
+      <div className="flex items-center gap-1 rounded-lg px-1 py-0.5">
         <button
           type="button"
           onClick={onToggleOpen}
@@ -270,7 +270,7 @@ function TagGroup({
           <button
             type="button"
             onClick={onToggleOpen}
-            className="flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-sm text-fg-muted hover:bg-bg/60 hover:text-accent"
+            className="flex flex-1 items-center gap-1.5 truncate rounded-lg px-2 py-1 text-left text-sm text-fg-muted hover:bg-bg/60 hover:text-accent"
           >
             {groupPinned ? (
               <span aria-hidden="true" className="shrink-0 text-accent">

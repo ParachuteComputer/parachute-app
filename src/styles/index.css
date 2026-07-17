@@ -470,6 +470,7 @@ body {
 }
 .prose-note p {
   margin: 0.75em 0;
+  text-wrap: pretty;
 }
 .prose-note ul,
 .prose-note ol {
@@ -917,6 +918,7 @@ body {
     line-height: 1.12;
     letter-spacing: -0.01em;
     color: var(--color-fg);
+    text-wrap: balance;
   }
 
   /* --- Micro typography helpers --- */
@@ -1084,6 +1086,7 @@ body {
     line-height: 1.05;
     letter-spacing: -0.02em;
     color: var(--color-fg);
+    text-wrap: balance;
   }
   /* The one coral italic accent word (prototype .acc). */
   .accent-word {

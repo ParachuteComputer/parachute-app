@@ -107,7 +107,7 @@ function AuthHaltBanner({
           type="button"
           onClick={onReconnect}
           disabled={reconnecting}
-          className="self-start rounded-md bg-red-500/30 px-3 py-1.5 text-xs font-medium text-red-50 hover:bg-red-500/50 disabled:cursor-not-allowed disabled:opacity-60 md:self-auto"
+          className="self-start rounded-lg bg-red-500/30 px-3 py-1.5 text-xs font-medium text-red-50 hover:bg-red-500/50 disabled:cursor-not-allowed disabled:opacity-60 md:self-auto"
         >
           {reconnecting ? "Starting OAuth…" : "Reconnect to vault"}
         </button>
@@ -171,14 +171,14 @@ function UnreachableBanner({ vaultUrl, vaultId }: { vaultUrl: string; vaultId: s
             type="button"
             onClick={onRetry}
             disabled={retrying || !client}
-            className="self-start rounded-md bg-red-500/20 px-3 py-1.5 text-xs font-medium text-red-50 hover:bg-red-500/40 disabled:cursor-not-allowed disabled:opacity-60 md:self-auto"
+            className="self-start rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-medium text-red-50 hover:bg-red-500/40 disabled:cursor-not-allowed disabled:opacity-60 md:self-auto"
           >
             {retrying ? "Retrying…" : "Retry now"}
           </button>
           <button
             type="button"
             onClick={() => resetToHealthy(vaultId)}
-            className="self-start rounded-md px-3 py-1.5 text-xs text-red-200/80 hover:text-red-100 md:self-auto"
+            className="self-start rounded-lg px-3 py-1.5 text-xs text-red-200/80 hover:text-red-100 md:self-auto"
             aria-label="Dismiss banner"
             title="Dismiss"
           >

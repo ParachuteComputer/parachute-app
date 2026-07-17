@@ -539,7 +539,7 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
                     open={foldersOpen}
                     onToggle={(e) => setFoldersOpen(e.currentTarget.open)}
                   >
-                    <summary className="eyebrow flex cursor-pointer list-none items-center justify-between rounded-md px-1 py-1 hover:text-accent">
+                    <summary className="eyebrow flex cursor-pointer list-none items-center justify-between rounded-lg px-1 py-1 hover:text-accent">
                       <span>Folders</span>
                       <span
                         aria-hidden="true"
@@ -1084,7 +1084,7 @@ function SavedViewsSidebar({
           {views.map((v) => (
             <li
               key={v.id}
-              className="group flex items-center rounded-md border border-transparent hover:border-border hover:bg-card"
+              className="group flex items-center rounded-lg border border-transparent hover:border-border hover:bg-card"
             >
               <Link
                 to={`/notes?${filtersToSearchParams(v.filters).toString()}`}
@@ -1108,7 +1108,7 @@ function SavedViewsSidebar({
                 {openMenuId === v.id ? (
                   <div
                     role="menu"
-                    className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-md border border-border bg-card shadow-lg"
+                    className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-xl border border-border bg-card shadow-lift"
                   >
                     <button
                       type="button"
@@ -1386,7 +1386,7 @@ function QuickTagControl({
       />
       {filtered.length > 0 ? (
         <ul
-          className="absolute right-0 z-20 mt-1 max-h-48 w-44 overflow-y-auto rounded-md border border-border bg-card text-xs shadow-lg"
+          className="absolute right-0 z-20 mt-1 max-h-48 w-44 overflow-y-auto rounded-xl border border-border bg-card text-xs shadow-lift"
           aria-label="Tag suggestions"
         >
           {filtered.map((t) => (

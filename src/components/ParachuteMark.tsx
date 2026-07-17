@@ -47,7 +47,7 @@ export function Wordmark({ size = 22 }: { size?: number }) {
   return (
     <Link
       to="/"
-      className="focus-ring inline-flex items-center gap-2 rounded-md font-round font-bold text-fg hover:text-accent"
+      className="focus-ring inline-flex items-center gap-2 rounded-lg font-round font-bold text-fg hover:text-accent"
     >
       <ParachuteMark size={size} />
       <span>Parachute</span>

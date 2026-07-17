@@ -59,7 +59,7 @@ export function Header() {
               aria-label="Open menu"
               aria-expanded={sheet !== null}
               aria-haspopup="dialog"
-              className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-card text-fg-muted hover:text-accent"
+              className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-fg-muted hover:text-accent"
             >
               <span aria-hidden="true" className="font-mono text-base leading-none">
                 ☰

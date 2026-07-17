@@ -59,10 +59,10 @@ export function NoteRow({
                   ★
                 </span>
               ) : null}
-              <span className="min-w-0 truncate text-sm font-medium text-fg">{title}</span>
+              <span className="min-w-0 truncate text-base font-medium text-fg">{title}</span>
             </span>
             <span className="flex shrink-0 items-center gap-1.5">
-              <span className="text-xs text-fg-dim">{relativeTime(stamp)}</span>
+              <span className="text-xs tabular-nums text-fg-dim">{relativeTime(stamp)}</span>
               <ProvenanceBadge note={note} />
             </span>
           </div>

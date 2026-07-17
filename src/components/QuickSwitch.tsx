@@ -228,7 +228,7 @@ export function QuickSwitch({ onClose }: Props) {
               <kbd className="rounded bg-bg/60 px-1">esc</kbd> close{" "}
               <kbd className="rounded bg-bg/60 px-1">&gt;</kbd> commands
             </span>
-            <span>
+            <span className="tabular-nums">
               {results.length > 0
                 ? `${results.length} result${results.length === 1 ? "" : "s"}`
                 : ""}
@@ -289,7 +289,7 @@ function ResultRow({
         <>
           <span className="text-xs uppercase tracking-wider text-fg-dim">tag</span>
           <span className="font-mono">#{entry.name}</span>
-          <span className="ml-auto text-xs text-fg-dim">{entry.count}</span>
+          <span className="ml-auto text-xs tabular-nums text-fg-dim">{entry.count}</span>
         </>
       ) : (
         <>

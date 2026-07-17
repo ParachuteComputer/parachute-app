@@ -112,7 +112,7 @@ function ConfirmRemoveDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-md border border-border bg-card p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-lift">
         <h2 id="confirm-remove-attachment-title" className="mb-2 font-serif text-lg text-red-400">
           Remove attachment?
         </h2>
@@ -131,7 +131,7 @@ function ConfirmRemoveDialog({
             ref={cancelRef}
             type="button"
             onClick={onClose}
-            className="min-h-11 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
+            className="min-h-11 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
           >
             Cancel
           </button>

@@ -194,7 +194,7 @@ export function TextSizeControl() {
         aria-expanded={open}
         title={`Text size: ${textSizeLabel(size)}`}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border bg-card px-2 py-1.5 text-sm text-fg-muted hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-fg-muted hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
       >
         <span aria-hidden="true" className="font-serif">
           A<span className="text-xs">a</span>
@@ -208,7 +208,7 @@ export function TextSizeControl() {
           ref={popoverRef}
           aria-label="Text size"
           data-placement={placement}
-          className={`enter-rise absolute right-0 z-30 w-40 rounded-md border border-border bg-card p-2 text-sm shadow-lg ${
+          className={`enter-rise absolute right-0 z-30 w-40 rounded-xl border border-border bg-card p-2 text-sm shadow-lift ${
             placement === "up" ? "bottom-full mb-2" : "mt-2"
           }`}
           style={

@@ -409,7 +409,7 @@ function EditorSurface({ note }: { note: Note }) {
               role="tab"
               aria-selected={mobilePane === p}
               onClick={() => setMobilePane(p)}
-              className={`rounded-md px-3 py-1.5 capitalize ${
+              className={`rounded-sm px-3 py-1.5 capitalize ${
                 mobilePane === p ? "bg-accent text-on-accent" : "text-fg-muted hover:text-accent"
               }`}
             >
