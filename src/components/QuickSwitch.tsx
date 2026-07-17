@@ -134,7 +134,7 @@ export function QuickSwitch({ onClose }: Props) {
     <dialog
       open
       aria-labelledby={inputId}
-      className="fixed inset-0 z-50 m-0 h-full max-h-full w-full max-w-full bg-transparent p-0 lg:flex lg:px-6 lg:pb-8"
+      className="enter-fade fixed inset-0 z-50 m-0 h-full max-h-full w-full max-w-full bg-transparent p-0 lg:flex lg:px-6 lg:pb-8"
       onMouseDown={(e) => {
         // Desktop click-outside: the transparent dialog root spans the
         // viewport around the bottom-centre column. (On mobile the sheet
@@ -146,9 +146,9 @@ export function QuickSwitch({ onClose }: Props) {
           Desktop: a transparent bottom-centre column; col-reverse keeps the
           input first in the DOM while the pill sits visually at the bottom,
           the panel blooming upward above it. */}
-      <div className="flex h-full w-full flex-col bg-bg/95 backdrop-blur-md lg:mx-auto lg:h-auto lg:w-full lg:max-w-xl lg:flex-col-reverse lg:self-end lg:bg-transparent lg:backdrop-blur-none">
+      <div className="enter-rise flex h-full w-full flex-col bg-bg/95 backdrop-blur-md lg:mx-auto lg:h-auto lg:w-full lg:max-w-xl lg:flex-col-reverse lg:self-end lg:bg-transparent lg:backdrop-blur-none">
         <div className="flex items-center gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 lg:p-0">
-          <div className="glass-panel flex min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border px-4 py-2.5 shadow-soft transition-shadow focus-within:shadow-lift motion-reduce:transition-none lg:px-5 lg:py-3">
+          <div className="glass-panel flex min-w-0 flex-1 items-center gap-2.5 rounded-full border border-border px-4 py-2.5 shadow-soft transition-shadow duration-(--dur-quick) ease-out focus-within:shadow-lift lg:px-5 lg:py-3">
             <span aria-hidden="true" className="shrink-0 text-fg-dim">
               <IconSearch width={18} height={18} />
             </span>
@@ -191,7 +191,7 @@ export function QuickSwitch({ onClose }: Props) {
 
         {/* The result panel — flat on the mobile sheet; a floating glass
             card on desktop (blooms upward from the pill per shot 13). */}
-        <div className="glass-panel flex min-h-0 flex-1 flex-col lg:mb-3 lg:max-h-[55vh] lg:flex-none lg:rounded-[var(--radius-2xl)] lg:border lg:border-border lg:shadow-lift">
+        <div className="enter-rise glass-panel flex min-h-0 flex-1 flex-col lg:mb-3 lg:max-h-[55vh] lg:flex-none lg:rounded-[var(--radius-2xl)] lg:border lg:border-border lg:shadow-lift">
           <div
             id={listboxId}
             ref={listRef}

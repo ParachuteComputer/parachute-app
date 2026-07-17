@@ -63,9 +63,10 @@ export function Rail() {
   return (
     <aside
       aria-label="Primary"
-      // Width animates 300ms (spec §1.2 micro-motion) — disabled under
-      // prefers-reduced-motion like every other transition in the app.
-      className={`glass-panel sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border transition-[width] duration-300 motion-reduce:transition-none lg:flex ${
+      // Width animates on --dur-move (the motion-token vocabulary, PR1) —
+      // zeroed under prefers-reduced-motion at the token layer, so no
+      // per-callsite `motion-reduce:` sprinkle is needed here anymore.
+      className={`glass-panel sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border transition-[width] duration-(--dur-move) ease-out lg:flex ${
         collapsed ? "w-16" : "w-60"
       }`}
       style={{ paddingTop: "env(safe-area-inset-top)" }}
@@ -87,7 +88,7 @@ export function Rail() {
           >
             <span
               aria-hidden
-              className={`transition-transform duration-300 motion-reduce:transition-none ${collapsed ? "rotate-180" : ""}`}
+              className={`transition-transform duration-(--dur-move) ease-out ${collapsed ? "rotate-180" : ""}`}
             >
               <IconChevronLeft width={16} height={16} />
             </span>
@@ -167,7 +168,7 @@ function RailLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
       aria-current={active ? "page" : undefined}
       aria-label={collapsed ? item.label : undefined}
       title={collapsed ? item.label : undefined}
-      className={`focus-ring flex items-center rounded-lg font-round text-sm transition-colors ${
+      className={`focus-ring flex items-center rounded-lg font-round text-sm transition-colors duration-(--dur-quick) ease-out ${
         collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2"
       } ${
         active
@@ -202,7 +203,7 @@ function RailSearch({ collapsed }: { collapsed: boolean }) {
         onClick={() => setOpen(true)}
         aria-label="Search"
         title="Search (⌘K)"
-        className="focus-ring mx-auto grid h-9 w-9 place-items-center rounded-lg border border-border bg-card text-fg-dim transition-colors hover:border-accent/50 hover:text-fg-muted"
+        className="focus-ring mx-auto grid h-9 w-9 place-items-center rounded-lg border border-border bg-card text-fg-dim transition-colors duration-(--dur-quick) ease-out hover:border-accent/50 hover:text-fg-muted"
       >
         <IconSearch width={16} height={16} />
       </button>
@@ -212,7 +213,7 @@ function RailSearch({ collapsed }: { collapsed: boolean }) {
     <button
       type="button"
       onClick={() => setOpen(true)}
-      className="focus-ring mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-left font-round text-sm text-fg-dim transition-colors hover:border-accent/50 hover:text-fg-muted"
+      className="focus-ring mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-left font-round text-sm text-fg-dim transition-colors duration-(--dur-quick) ease-out hover:border-accent/50 hover:text-fg-muted"
     >
       <span aria-hidden className="grid h-4 w-4 shrink-0 place-items-center">
         <IconSearch width={16} height={16} />

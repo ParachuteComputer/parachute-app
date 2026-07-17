@@ -208,7 +208,7 @@ export function TextSizeControl() {
           ref={popoverRef}
           aria-label="Text size"
           data-placement={placement}
-          className={`absolute right-0 z-30 w-40 rounded-md border border-border bg-card p-2 text-sm shadow-lg ${
+          className={`enter-rise absolute right-0 z-30 w-40 rounded-md border border-border bg-card p-2 text-sm shadow-lg ${
             placement === "up" ? "bottom-full mb-2" : "mt-2"
           }`}
           style={

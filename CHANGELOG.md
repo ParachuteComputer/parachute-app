@@ -1,5 +1,44 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.0] - 2026-07-16
+
+**Motion as a system (Polish PR 1/6).** Aaron's steer: "keep on cooking on the UI stuff — the
+focus is definitely polish, how it feels overall." First of the polish-wave train
+(display/interaction only — no data-structure, note-format, or wire-contract changes). The audit
+found five ad-hoc duration values, three easings, and every floating surface (NavSheet,
+QuickSwitch, the sync/vault/text-size popovers, the Toaster, `.dialog-panel`) appearing with zero
+entrance acknowledgment; reduced-motion was honored by hand in eight `motion-reduce:` sprinkles
+plus two CSS blocks rather than by system. This PR replaces all of it with one vocabulary.
+
+- **Five motion tokens**, `@theme` in `index.css`: `--dur-quick` (120ms, state changes) /
+  `--dur-move` (200ms, transforms/resizes) / `--dur-enter` (280ms, surfaces arriving) /
+  `--ease-out` (the new calm-settle curve, promoted to the theme's `ease-out`) / `--ease-spring`
+  (the existing `.btn` spring, promoted and reused).
+- **Every existing transition retimed to a token** — no visual redesign, nearest-token retiming
+  only: `.btn`, `.input`/`.textarea`/`.select`, `.composer`, `.note-row`, `.tile` (CSS); Rail's
+  width + chevron rotate, SpeedDial's three scale/rotate transitions, Composer's inline
+  min-height transition (Tailwind `duration-(--dur-move)` / arbitrary-property call sites).
+  `fade-up`'s duration moves to `--dur-enter`. Bare `transition-colors`/`transition-shadow` in
+  files this PR was already touching (Rail, Composer, NavSheet, SpeedDial, QuickSwitch) picked up
+  explicit `duration-(--dur-quick) ease-out` instead of Tailwind's implicit 150ms default; the
+  remaining ~11 untouched `transition-colors` call sites elsewhere are left alone (within a hair
+  of the token already, converting them is separate-PR churn).
+- **Entrances** — two new keyframe classes, `.enter-rise` (opacity + translateY(10px)→0,
+  `--dur-enter`) and `.enter-fade` (opacity only, `--dur-quick`), both on `--ease-out`. Applied to
+  every floating surface that used to pop: NavSheet's panel + scrim, QuickSwitch's dialog + pill
+  column + results panel, the SyncStatusIndicator popover, the VaultSwitcher rail popover, the
+  TextSizeControl popover, each Toaster entry, and — baked directly into the shared classes so
+  future consumers inherit it for free — `.dialog-overlay`/`.dialog-panel`. Exits stay instant by
+  design (calmer than deferred-unmount machinery for a one-frame dismissal).
+- **One reduced-motion gate.** `--dur-move`/`--dur-enter` zero to 0ms under
+  `prefers-reduced-motion: reduce`, so every transform/resize/entrance that consumes them goes
+  instant automatically — no per-component opt-in needed for new motion. `--dur-quick` is left
+  alone (color/border/shadow settles aren't the vestibular-safety concern WCAG 2.3.3 targets).
+  The eight per-callsite `motion-reduce:transition-none` sprinkles are retired in favor of this
+  one block; the two SpeedDial `motion-reduce:hover:scale-100`/`group-hover:scale-100` guards are
+  kept as-is (a distinct, stricter concern — suppressing the hover scale value itself, not just
+  its transition timing).
+
 ## [0.19.2] - 2026-07-16
 
 **Reserve `/vault` + `/u` path-space for the one-origin domain (my. Phase A2).** Prep work for

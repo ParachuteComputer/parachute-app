@@ -193,6 +193,22 @@
   --shadow-soft: 0 12px 40px -18px oklch(40% 0.05 152 / 0.22);
   --shadow-lift: 0 24px 60px -30px oklch(40% 0.05 152 / 0.28);
 
+  /* --- Motion — ONE vocabulary (PR1: consistency is a design-system axis,
+     not per-feature garnish). Every transition/animation in the app should
+     consume one of these five tokens rather than a raw ms/bezier literal.
+     --dur-move/-enter zero to 0ms under prefers-reduced-motion (the single
+     gate at the foot of @layer components), so every transform/resize/
+     entrance that consumes them goes instant everywhere — no per-callsite
+     `motion-reduce:` sprinkle required. --dur-quick is left alone there:
+     it drives color/border/shadow settles, and prefers-reduced-motion is a
+     vestibular-safety signal (WCAG 2.3.3) about MOTION, not a ban on all
+     change — a quick color fade is not what it's asking to suppress. */
+  --dur-quick: 120ms; /* state changes: color, border, shadow */
+  --dur-move: 200ms; /* things that move or resize: transforms, heights, widths */
+  --dur-enter: 280ms; /* surfaces arriving: sheets, popovers, palette, toasts */
+  --ease-out: cubic-bezier(0.25, 1, 0.5, 1); /* the default settle */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* the .btn spring — promoted */
+
   /* --- Canvas wash (consumed by .app-canvas) ---
      The pale-green dawn glow — the prototype's --gradient-dawn feel. This is
      the "blush wash → misty sage morning" shift: grass-tinted at 7% in light;
@@ -648,8 +664,9 @@ body {
     white-space: nowrap;
     cursor: pointer;
     transition:
-      background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow
-      0.12s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      background-color var(--dur-quick) var(--ease-out), border-color var(--dur-quick)
+      var(--ease-out), color var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick)
+      var(--ease-out), transform var(--dur-move) var(--ease-spring);
   }
   .btn:disabled,
   .btn[aria-disabled="true"] {
@@ -766,7 +783,8 @@ body {
     padding: 0.5rem 1rem;
     font-size: var(--text-sm);
     line-height: 1.5;
-    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    transition: border-color var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick)
+      var(--ease-out);
   }
   .textarea {
     resize: vertical;
@@ -853,7 +871,9 @@ body {
     color: var(--color-coral-ink);
   }
 
-  /* --- Dialogs --- */
+  /* --- Dialogs --- Every floating surface gets a calm entrance (PR1); baked
+     into the shared classes here rather than left to each call site, so any
+     future dialog-overlay/-panel consumer inherits it for free. */
   .dialog-overlay {
     position: fixed;
     inset: 0;
@@ -863,6 +883,7 @@ body {
     justify-content: center;
     padding: 1rem;
     background-color: color-mix(in srgb, #000 60%, transparent);
+    animation: enter-fade var(--dur-quick) var(--ease-out) both;
   }
   .dialog-panel {
     width: 100%;
@@ -871,6 +892,7 @@ body {
     border-radius: var(--radius-2xl);
     padding: 1.25rem;
     box-shadow: var(--shadow-lift);
+    animation: enter-rise var(--dur-enter) var(--ease-out) both;
   }
 
   /* --- App canvas ---
@@ -986,7 +1008,8 @@ body {
     border-radius: 20px;
     background-color: var(--color-card);
     box-shadow: var(--shadow-soft);
-    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+    transition: border-color var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick)
+      var(--ease-out);
   }
   .composer-focus,
   .composer:hover,
@@ -1019,7 +1042,8 @@ body {
     padding: 0.75rem;
     border-radius: var(--radius-xl);
     border: 1px solid transparent;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
+    transition: background-color var(--dur-quick) var(--ease-out), border-color var(--dur-quick)
+      var(--ease-out);
   }
   .note-row:hover {
     background-color: var(--color-card);
@@ -1044,7 +1068,8 @@ body {
     border: 1.5px solid var(--color-border);
     background-color: var(--color-card);
     box-shadow: var(--shadow-soft);
-    transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+    transition: border-color var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick)
+      var(--ease-out), transform var(--dur-quick) var(--ease-out);
   }
   .tile:hover {
     border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
@@ -1095,11 +1120,56 @@ body {
     }
   }
   .fade-up {
-    animation: fade-up 0.5s ease both;
+    animation: fade-up var(--dur-enter) ease both;
   }
+
+  /* --- Entrances (PR1) --- every floating surface (sheets, popovers,
+     palette, toasts, dialogs) arrives instead of popping. Entrance ONLY —
+     exits stay instant, which reads calmer and avoids deferred-unmount
+     machinery for what's usually a one-frame dismissal anyway. */
+  @keyframes enter-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .enter-rise {
+    animation: enter-rise var(--dur-enter) var(--ease-out) both;
+  }
+  @keyframes enter-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .enter-fade {
+    animation: enter-fade var(--dur-quick) var(--ease-out) both;
+  }
+
+  /* --- ONE reduced-motion gate --- previously honored ad hoc: 8 individual
+     `motion-reduce:` sprinkles per callsite plus 2 hand-rolled CSS blocks.
+     Zeroing --dur-move/--dur-enter at the token layer means every transform,
+     resize, and .enter-* entrance that consumes them goes instant here,
+     with no per-component opt-in — new motion automatically inherits the
+     gate as long as it consumes the tokens. Color/border/shadow settles
+     (--dur-quick outside a transform) are left alone: prefers-reduced-motion
+     is a vestibular-safety signal about MOTION (WCAG 2.3.3), not a ban on
+     all change. */
   @media (prefers-reduced-motion: reduce) {
+    :root {
+      --dur-move: 0ms;
+      --dur-enter: 0ms;
+    }
     .drop-in,
-    .fade-up {
+    .fade-up,
+    .enter-rise,
+    .enter-fade {
       animation: none;
     }
   }

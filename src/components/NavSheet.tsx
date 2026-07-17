@@ -131,7 +131,7 @@ function NavSheetPanel({ onClose, initialFocus }: Omit<NavSheetProps, "open">) {
         type="button"
         aria-label="Close menu"
         onClick={onClose}
-        className="absolute inset-0 h-full w-full cursor-default bg-black/40"
+        className="enter-fade absolute inset-0 h-full w-full cursor-default bg-black/40"
       />
       {
         // biome-ignore lint/a11y/useSemanticElements: a native <dialog> needs imperative showModal(); this sheet manages its own focus + scrim.
@@ -143,7 +143,7 @@ function NavSheetPanel({ onClose, initialFocus }: Omit<NavSheetProps, "open">) {
           tabIndex={-1}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
-          className="glass-panel absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-[var(--radius-2xl)] shadow-lift"
+          className="enter-rise glass-panel absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-[var(--radius-2xl)] shadow-lift"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
           {/* Drag handle. */}
@@ -218,7 +218,7 @@ function SheetRow({ item, loc }: { item: NavItem; loc: NavLocation }) {
       to={item.to}
       data-nav-item={item.id}
       aria-current={active ? "page" : undefined}
-      className={`focus-ring flex items-center gap-3 rounded-lg px-3 py-2.5 font-round text-base transition-colors ${
+      className={`focus-ring flex items-center gap-3 rounded-lg px-3 py-2.5 font-round text-base transition-colors duration-(--dur-quick) ease-out ${
         active
           ? "bg-grass-soft font-semibold text-grass-ink"
           : "font-medium text-fg-muted hover:bg-bg hover:text-fg"

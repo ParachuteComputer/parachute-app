@@ -99,7 +99,8 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
   }, [flushDraft]);
 
   // Auto-grow: the box hugs its content; the min-height floor (below) carries
-  // the focus-expansion feel with a 200ms ease. An effect (not an onChange
+  // the focus-expansion feel on --dur-move (the motion-token vocabulary,
+  // PR1). An effect (not an onChange
   // side-channel) so every content path re-measures — typed, restored at
   // mount, AND the programmatic clear after save (which must shrink the box
   // back down, not leave the last keystroke's height behind).
@@ -198,7 +199,7 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
         }}
         aria-label="What's on your mind?"
         placeholder="What's on your mind?"
-        className="block max-h-[45vh] w-full resize-none overflow-y-auto border-0 bg-transparent text-fg text-lg outline-none [transition:min-height_200ms_ease] placeholder:text-fg-dim motion-reduce:transition-none"
+        className="block max-h-[45vh] w-full resize-none overflow-y-auto border-0 bg-transparent text-fg text-lg outline-none [transition:min-height_var(--dur-move)_ease] placeholder:text-fg-dim"
         style={{ minHeight: expanded ? "6.5rem" : "1.75rem" }}
       />
       <div className="mt-3 flex items-center justify-between gap-3">
@@ -238,7 +239,7 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
               to="/new?voice=1"
               onClick={flushDraft}
               aria-label="Record a voice note"
-              className="focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-bg-soft text-base transition-colors hover:border-accent/50 hover:bg-accent/10 motion-reduce:transition-none"
+              className="focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-bg-soft text-base transition-colors duration-(--dur-quick) ease-out hover:border-accent/50 hover:bg-accent/10"
             >
               <span aria-hidden="true">🎙</span>
             </Link>

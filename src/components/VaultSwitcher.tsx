@@ -572,7 +572,7 @@ function SwitcherPanel({
       // (the old header popover's latent clip). The panel floats a step wider
       // than the rail so the richer rows (Open pills, the upsell line)
       // breathe instead of truncating.
-      className="absolute left-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-card text-sm shadow-lift"
+      className="enter-rise absolute left-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-card text-sm shadow-lift"
     >
       {body}
     </div>
