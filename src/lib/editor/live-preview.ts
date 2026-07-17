@@ -332,8 +332,17 @@ export function buildDecorations(view: EditorView): DecorationSet {
             break; // descend — nested emphasis/links inside the heading text
           }
           case "Blockquote": {
+            // The border is a LINE decoration across the node's whole line
+            // range, not just marked lines — a lazy-continuation line (quote
+            // content with no leading ">", CommonMark's lazy-continuation
+            // rule) is still part of this Blockquote node but has no
+            // QuoteMark child of its own, so per-mark application alone
+            // would miss its border (N3). Same pattern as FencedCode/
+            // CodeBlock's line-range loop above.
+            const startLine = doc.lineAt(nodeRef.from).number;
+            const endLine = doc.lineAt(Math.max(nodeRef.from, nodeRef.to - 1)).number;
+            for (let l = startLine; l <= endLine; l++) lineClass(doc.line(l).from, "cm-lp-quote");
             for (const mark of nodeRef.node.getChildren("QuoteMark")) {
-              lineClass(mark.from, "cm-lp-quote");
               let hideTo = mark.to;
               if (doc.sliceString(hideTo, hideTo + 1) === " ") hideTo += 1;
               hide(mark.from, hideTo);
@@ -405,7 +414,14 @@ export function buildDecorations(view: EditorView): DecorationSet {
             return false; // the chip fully replaces alt text + url, no need to descend
           }
           case "Link": {
-            if (insideWikilinkOrEmbed(nodeRef.from, nodeRef.to)) break; // it's really a wikilink
+            // it's really a wikilink — `return false` (not `break`) so lezer's
+            // opportunistic inner-bracket Link parse never descends either;
+            // otherwise a nested StrongEmphasis/Emphasis found inside
+            // `[[target with **stars**]]`'s fake Link node would still get
+            // its EmphasisMark hidden, breaking the wikilink's display text
+            // out of the ONE `Decoration.mark` span above (N2, matches
+            // Image's `return false` above for the same containment).
+            if (insideWikilinkOrEmbed(nodeRef.from, nodeRef.to)) return false;
             const marks = nodeRef.node.getChildren("LinkMark");
             const url = nodeRef.node.getChild("URL");
             // Reference-style `[text][ref]` / shortcut `[sic]` — no URL
@@ -441,15 +457,20 @@ export function buildDecorations(view: EditorView): DecorationSet {
       );
     }
     for (const m of wikiMatches) {
-      if (isExcluded(m.start) || isRevealed(m.start, m.end)) continue;
+      if (isExcluded(m.start)) continue;
       const openTo = m.start + 2; // past "[["
       const closeFrom = m.end - 2; // start of "]]"
       // One replace range covers "[[" alone (no alias) or "[[target|"
       // (aliased) — either way, everything up to where DISPLAY text begins.
       const displayFrom = m.alias ? openTo + m.targetLen + 1 : openTo;
-      ranges.push(Decoration.replace({}).range(m.start, displayFrom));
-      ranges.push(Decoration.mark({ class: WIKILINK_CLASS }).range(displayFrom, closeFrom));
-      ranges.push(Decoration.replace({}).range(closeFrom, m.end)); // "]]"
+      // Same split as the inline Link case below: `hide()` for the markers
+      // (reveal-gated), `style()` for the display text (never gated —
+      // invariant 2). Without this split, revealing a wikilink's line used
+      // to drop the wikilink color along with the brackets; inline links
+      // never had that bug since they already went through hide()/style().
+      hide(m.start, displayFrom); // "[[" (or "[[target|" if aliased)
+      style(displayFrom, closeFrom, WIKILINK_CLASS);
+      hide(closeFrom, m.end); // "]]"
     }
   }
 

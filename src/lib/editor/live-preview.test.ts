@@ -397,6 +397,29 @@ describe("live-preview — frontmatter guard (A4-SPEC §10.8)", () => {
   });
 });
 
+describe("live-preview — blockquote lazy continuation (N3)", () => {
+  it("a lazy-continuation line (no leading '>') still gets the quote border", () => {
+    // CommonMark lazy continuation: a line with no leading ">" that follows
+    // quoted content stays part of the SAME Blockquote node/paragraph.
+    // Border application was per-QuoteMark, so this line — real quote
+    // content, no marker of its own — used to miss the border entirely.
+    const doc = "> Quoted line\nlazy continuation\n";
+    const view = makeEditor(doc, 0);
+    const lines = Array.from(view.dom.querySelectorAll(".cm-line"));
+    expect(lines[0]?.classList.contains("cm-lp-quote")).toBe(true);
+    expect(lines[1]?.classList.contains("cm-lp-quote")).toBe(true);
+    expect(lines[1]?.textContent).toBe("lazy continuation");
+  });
+
+  it("a non-lazy multi-line quote still borders every marked line", () => {
+    const doc = "> line one\n> line two\n";
+    const view = makeEditor(doc, 0);
+    const lines = Array.from(view.dom.querySelectorAll(".cm-line"));
+    expect(lines[0]?.classList.contains("cm-lp-quote")).toBe(true);
+    expect(lines[1]?.classList.contains("cm-lp-quote")).toBe(true);
+  });
+});
+
 describe("live-preview — wikilinks and embeds", () => {
   it("a plain wikilink is decorated as ONE construct, not double-decorated by an incidental Link-node parse", () => {
     // Regression: `[[Wikilink]]`'s inner `[Wikilink]` looks like a valid
@@ -410,6 +433,44 @@ describe("live-preview — wikilinks and embeds", () => {
     expect(el?.className.trim()).toBe("wikilink");
     expect(view.dom.querySelector(".cm-lp-link")).toBeNull();
     expect(view.dom.querySelector(".cm-content")?.textContent).toBe("introSee Wikilink here.");
+  });
+
+  it("a revealed wikilink keeps its color mark — brackets show, styling doesn't drop (N1)", () => {
+    // Regression: reveal used to skip the WHOLE wikilink decoration
+    // (including the WIKILINK_CLASS style mark) along with the hide-marks,
+    // so a revealed wikilink went fully unstyled while an inline link never
+    // had that bug (its style() call was already unconditional).
+    const doc = "intro\n\nSee [[Wikilink]] here.\n";
+    const view = makeEditor(doc, doc.indexOf("[[Wikilink]]") + 2); // cursor inside → line revealed
+    const el = view.dom.querySelector(".wikilink");
+    expect(el).not.toBeNull();
+    expect(el?.className.trim()).toBe("wikilink");
+    expect(view.dom.querySelector(".cm-content")?.textContent).toBe("introSee [[Wikilink]] here.");
+  });
+
+  it("an unrevealed wikilink still hides its brackets and keeps the color mark", () => {
+    const doc = "intro\n\nSee [[Wikilink]] here.\n";
+    const view = makeEditor(doc, 0); // cursor away — NOT revealed
+    const el = view.dom.querySelector(".wikilink");
+    expect(el).not.toBeNull();
+    expect(el?.className.trim()).toBe("wikilink");
+    expect(view.dom.querySelector(".cm-content")?.textContent).toBe("introSee Wikilink here.");
+  });
+
+  it("a wikilink's display text renders verbatim — no emphasis processing inside (N2)", () => {
+    // Regression: the Link containment case used `break` (still descends
+    // into children) while Image used `return false` — so lezer's
+    // opportunistic inner Link parse of a wikilink's brackets let a nested
+    // StrongEmphasis node get its "**" hidden, splitting the display text
+    // out of the wikilink's single mark span.
+    const doc = "intro\n\nSee [[target with **stars**]] here.\n";
+    const view = makeEditor(doc, 0); // cursor away — NOT revealed
+    const el = view.dom.querySelector(".wikilink");
+    expect(el).not.toBeNull();
+    expect(el?.textContent).toBe("target with **stars**"); // verbatim, "**" not hidden
+    expect(view.dom.querySelector(".cm-content")?.textContent).toBe(
+      "introSee target with **stars** here.",
+    );
   });
 
   it("an aliased wikilink shows only the alias", () => {
