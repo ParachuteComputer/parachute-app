@@ -8,17 +8,24 @@ import {
   IconImport,
   IconMap,
   IconNotes,
+  IconPlus,
   IconSpark,
   IconStar,
   IconTag,
   IconUser,
   IconVault,
 } from "@/components/NavIcons";
+import { ViewNavIcon } from "@/components/ViewNavIcon";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import { type HomeStepId, deriveSteps, hasUserAuthoredNote } from "@/lib/home/checklist";
 import { useMapEarned, useNotesForDateViews, useVaultStore } from "@/lib/vault";
-import type { ReactNode } from "react";
+import { useTagRoles } from "@/lib/vault/settings";
+import { DEFAULT_VIEW_PATHS } from "@/lib/views/defaults";
+import { useViewList } from "@/lib/views/queries";
+import { primaryQueryTag } from "@/lib/views/query";
+import { decodeViewDef } from "@/lib/views/schema";
+import { type ReactNode, useMemo } from "react";
 
 // The shared nav model (DESIGN-SPEC §2.1; reshaped by LENS-SPEC §4 in LZ-2) —
 // ONE data model renders BOTH projections: the desktop Rail and the mobile
@@ -64,7 +71,7 @@ export interface NavItem {
 }
 
 export interface NavBand {
-  id: "notes" | "explore" | "parachute" | "setup" | "foot";
+  id: "notes" | "views" | "explore" | "parachute" | "setup" | "foot";
   /** Uppercase sage section label; the foot has none. */
   label?: string;
   /** Quiet parenthetical beside the label — the SET UP shelf's "n of m". */
@@ -194,6 +201,20 @@ const ARCHIVE_ITEM: NavItem = {
   match: matchArchive,
 };
 
+// The Views band's permanent trailing row (VIEWS-RENDER-SPEC §6: "the band
+// renders nothing when empty except a quiet 'New view' affordance") —
+// present whether or not the person has any views yet. `/views/new` creates
+// the note and redirects into it (`ViewNew.tsx`); a plain NavItem keeps the
+// Rail/NavSheet's Link-only architecture untouched.
+export const NEW_VIEW_TO = "/views/new";
+const NEW_VIEW_ITEM: NavItem = {
+  id: "new-view",
+  label: "New view",
+  to: NEW_VIEW_TO,
+  icon: <IconPlus />,
+  match: pathIs(NEW_VIEW_TO),
+};
+
 // The EXPLORE destinations — each a different visualization/object, not a
 // filter over the note list.
 const CALENDAR_ITEM: NavItem = {
@@ -317,6 +338,13 @@ export interface NavBandSignals {
   trialDaysLeft: number | null;
   /** The SET UP shelf: incomplete steps only; null hides the shelf entirely. */
   setup: { steps: HomeStepId[]; done: number; total: number } | null;
+  /**
+   * The Views band's decoded `#view` notes (VIEWS-RENDER-SPEC §6), already
+   * mapped to `NavItem`s and with the four shipped default-page paths
+   * excluded — `buildNavBands` appends the permanent "New view" row, so
+   * callers never include it here.
+   */
+  viewItems: NavItem[];
 }
 
 export function buildNavBands(signals: NavBandSignals): NavBand[] {
@@ -341,6 +369,7 @@ export function buildNavBands(signals: NavBandSignals): NavBand[] {
 
   const bands: NavBand[] = [
     { id: "notes", label: "Your notes", items: lensItems },
+    { id: "views", label: "Views", items: [...signals.viewItems, NEW_VIEW_ITEM] },
     { id: "explore", label: "Explore", items: exploreItems },
     {
       id: "parachute",
@@ -379,6 +408,8 @@ export function useNavBands(): NavBand[] {
   const vault = useVaultStore((s) => s.getActiveVault());
   const mapEarned = useMapEarned();
   const notes = useNotesForDateViews();
+  const { roles } = useTagRoles(vault?.id ?? null);
+  const viewList = useViewList(roles.view);
 
   // Trial ambience (§3.1 slot 3) — the shared summary hook, enabled only for
   // home-door (account-minted) vaults: a self-host door has no summary
@@ -390,6 +421,29 @@ export function useNavBands(): NavBand[] {
   // lives on /account's Plan & billing card, not in a badge).
   const plan = (isHosted ? summaryOrNull(summaryQuery.data) : null)?.plan ?? null;
   const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
+
+  // The Views band (VIEWS-RENDER-SPEC §6): every `#view`-tagged note (and
+  // legacy saved-view — the decoder's adapter handles both, §8), minus the
+  // four shipped default pages (they already have Rail entries under
+  // "Your notes"), alpha-sorted like the legacy saved-views list was.
+  const viewItems = useMemo(() => {
+    if (!Array.isArray(viewList.data)) return [];
+    return viewList.data
+      .filter((n) => !DEFAULT_VIEW_PATHS.includes(n.path ?? ""))
+      .map((n) => {
+        const def = decodeViewDef(n, { archivedTag: roles.archived });
+        const to = `/views/${encodeURIComponent(n.id)}`;
+        const item: NavItem = {
+          id: `view-${n.id}`,
+          label: def.title,
+          to,
+          icon: <ViewNavIcon kind={def.kind} hueTag={primaryQueryTag(def.query)} />,
+          match: pathIs(to),
+        };
+        return item;
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [viewList.data, roles.archived]);
 
   if (!vault) return [];
 
@@ -407,5 +461,5 @@ export function useNavBands(): NavBand[] {
           total: steps.length,
         };
 
-  return buildNavBands({ mapEarned, trialDaysLeft, setup });
+  return buildNavBands({ mapEarned, trialDaysLeft, setup, viewItems });
 }

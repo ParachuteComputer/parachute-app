@@ -143,6 +143,36 @@ describe("NoteView route", () => {
     expect(screen.getByRole("link", { name: /all notes/i })).toBeInTheDocument();
     // Edit placeholder routes to the edit route (PR #5)
     expect(screen.getByRole("link", { name: /edit/i })).toHaveAttribute("href", "/n/abc-123/edit");
+    // Not a #view-tagged note — no bridge into the ViewSurface.
+    expect(screen.queryByRole("link", { name: /open as view/i })).not.toBeInTheDocument();
+  });
+
+  // views-wave-1's half of the §2 bridge: a #view-tagged note (canonical or
+  // legacy saved-view) offers a trip into ViewSurface.
+  it("shows 'Open as view' on a #view-tagged note, linking to /views/:id", async () => {
+    installFetch({
+      // A more specific matcher checked before the generic "/api/notes" one
+      // (installFetch iterates map keys in insertion order) — the settings-
+      // note fetch (role-tag resolution) must not receive the view note.
+      settings: { body: {} },
+      "/api/notes": {
+        body: {
+          id: "view-1",
+          path: "Views/Active projects",
+          createdAt: "2026-04-16T04:30:54.177Z",
+          content: "",
+          tags: ["view"],
+          metadata: { kind: "list", query: "{}" },
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+
+    renderAt("/n/view-1");
+
+    const link = await screen.findByRole("link", { name: /open as view/i });
+    expect(link).toHaveAttribute("href", "/views/view-1");
   });
 
   it("titles by the leading H1 and strips it from the body (no double render)", async () => {

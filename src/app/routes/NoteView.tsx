@@ -14,7 +14,9 @@ import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
 import { useActiveVaultClient, useNote, useVaultStore } from "@/lib/vault";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
+import { useTagRoles } from "@/lib/vault/settings";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
+import { isViewNote } from "@/lib/views/schema";
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
 
@@ -59,6 +61,8 @@ export function NoteView() {
 }
 
 function NoteBody({ note }: { note: Note }) {
+  const vault = useVaultStore((s) => s.getActiveVault());
+  const { roles } = useTagRoles(vault?.id ?? null);
   const resolver = useMemo(() => buildWikilinkResolver(note), [note]);
   const label = note.path ?? note.id;
   // Human title: the content's leading H1 when it has one, else the path
@@ -119,6 +123,17 @@ function NoteBody({ note }: { note: Note }) {
             </Link>
             <PinArchiveButtons note={note} keyboard />
             <DeleteNoteButton note={note} />
+            {isViewNote(note, roles.view) ? (
+              // The note-editor's half of the §2 bridge — a `#view`-tagged
+              // (or legacy saved-view) note opens as a view; ViewSurface's
+              // "Edit view note" is the trip back. Two faces, one note.
+              <Link
+                to={`/views/${encodeURIComponent(note.id)}`}
+                className="btn btn-secondary btn-touch"
+              >
+                Open as view
+              </Link>
+            ) : null}
           </div>
         </header>
 
