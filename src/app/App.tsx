@@ -9,11 +9,11 @@ import { TextSizeShortcutsMount } from "@/components/TextSizeControl";
 import { Toaster } from "@/components/Toaster";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { VaultStatusBanner } from "@/components/VaultStatusBanner";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
 import { isCeremonyPath } from "@/lib/nav/model";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
-import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault";
 import { useCrossTabVaultSync } from "@/lib/vault/cross-tab-sync";
 import { useActiveVaultClient } from "@/lib/vault/queries";
@@ -24,6 +24,7 @@ import { matchesNavigationDenylist } from "@/pwa-navigation-denylist";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   BrowserRouter,
+  Link,
   Navigate,
   Route,
   Routes,
@@ -217,23 +218,28 @@ function ShimPreservingQuery({ to }: { to: string }) {
   return <Navigate to={`${to}${location.search}`} replace />;
 }
 
-// The catch-all (`*` route — DESIGN-SPEC §2.5's route table: "keep the shim,
-// plus a quiet toast", F7-adjacent): a typo'd or stale URL silently teleported
-// home with zero acknowledgment before this fix — no different, from the
-// user's seat, than the app just ignoring what they typed. One toast names
-// what happened instead of a silent bounce. Fires at most once per mount
-// (StrictMode double-invokes effects in dev; the ref guards a duplicate
-// toast, not the redirect itself, which is idempotent either way).
-function NotFoundRedirect() {
-  const pushToast = useToastStore((s) => s.push);
-  const firedRef = useRef(false);
-  useEffect(() => {
-    if (firedRef.current) return;
-    firedRef.current = true;
-    pushToast("That page doesn't exist — brought you home.", "info");
-  }, [pushToast]);
-  // NAVIGATION.md: (a) redirect shim — replace.
-  return <Navigate to="/" replace />;
+// The catch-all (`*` route — DESIGN-SPEC §2.5's route table). UI-audit
+// finding #2/#3: a typo'd or stale URL used to bounce silently to `/` with
+// only a toast — indistinguishable, from the user's seat, from the app just
+// ignoring what they typed, and giving no way to tell "genuinely gone" from
+// "hang on, still loading." A real page: friendly copy, one way back. Note
+// this only ever catches a MULTI-segment or otherwise-unmatched path — a
+// single bare segment (`/some-slug`) matches the `/:id` legacy-bookmark
+// shim above and resolves through NoteView's own not-found state instead.
+function NotFoundPage() {
+  return (
+    <div className="page">
+      <EmptyState
+        title={<span className="font-serif text-xl text-fg">Page not found</span>}
+        description="That address doesn't match anything in Parachute. It may be mistyped, or the page may have moved."
+        action={
+          <Link to="/notes" className="btn btn-primary btn-touch">
+            Back to notes
+          </Link>
+        }
+      />
+    </div>
+  );
 }
 
 // The ceremony-route gate (§4.1 rule 5 / F21 — no app-chrome noise under a
@@ -425,7 +431,7 @@ export function App() {
                       <Route path="/vaults" element={<Vaults />} />
                       <Route path="/account" element={<Account />} />
                       <Route path="/settings" element={<Settings />} />
-                      <Route path="*" element={<NotFoundRedirect />} />
+                      <Route path="*" element={<NotFoundPage />} />
                     </Routes>
                   </Suspense>
                 </main>

@@ -519,10 +519,21 @@ body {
   border-radius: 0;
   font-size: inherit;
 }
+/* Wide tables (more columns than the prose column can fit) get their own
+   horizontal scroller instead of being silently clipped by .app-canvas's
+   overflow-x: hidden — the whole ancestor chain otherwise leaves overflow
+   visible, so nothing else catches it (UI audit, phone: ~330px of an
+   8-column table was permanently unreachable, no scrollbar, no affordance).
+   `display: block` + `width: max-content` + `max-width: 100%` is the
+   well-tested GitHub-markdown-body pattern: the table sizes to its natural
+   content width up to the container, then scrolls past that. */
 .prose-note table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
   margin: 1em 0;
-  width: 100%;
   font-size: 0.9em;
 }
 .prose-note th,
@@ -547,6 +558,15 @@ body {
 }
 .prose-note input[type="checkbox"] {
   margin-right: 0.4em;
+}
+/* GFM task-list items (remark-gfm's `task-list-item` class contract) carry
+   both the list's own bullet AND the checkbox by default — the checkbox
+   already communicates list-item-ness, so the bullet is a redundant second
+   marker. The live editor doesn't have this problem (task items there are
+   plain checkbox lines, no `<li>` bullet to begin with); this brings VIEW
+   mode's rendering in line with what editing already looks like. */
+.prose-note li.task-list-item {
+  list-style: none;
 }
 
 /* --- @openparachute/surface-render class-contract reconciliation ---
@@ -1154,6 +1174,15 @@ body {
   .enter-fade {
     animation: enter-fade var(--dur-quick) var(--ease-out) both;
   }
+  /* The command-palette scrim's own fade — same `enter-fade` keyframe as
+     above, tuned to a more deliberate ~180ms (vs. the base 120ms) so the
+     tinted/blurred backdrop settles in rather than snapping on. Bakes its
+     duration directly instead of consuming --dur-quick, so it's listed
+     explicitly in the reduced-motion gate below (same pattern as
+     .dialog-overlay/.dialog-panel). */
+  .qs-scrim-fade {
+    animation: enter-fade 180ms var(--ease-out) both;
+  }
 
   /* --- ONE reduced-motion gate --- previously honored ad hoc: 8 individual
      `motion-reduce:` sprinkles per callsite plus 2 hand-rolled CSS blocks.
@@ -1176,6 +1205,7 @@ body {
     .fade-up,
     .enter-rise,
     .enter-fade,
+    .qs-scrim-fade,
     .dialog-overlay,
     .dialog-panel {
       animation: none;

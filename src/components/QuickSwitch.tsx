@@ -134,7 +134,17 @@ export function QuickSwitch({ onClose }: Props) {
     <dialog
       open
       aria-labelledby={inputId}
-      className="enter-fade fixed inset-0 z-50 m-0 h-full max-h-full w-full max-w-full bg-transparent p-0 lg:flex lg:px-6 lg:pb-8"
+      // The scrim: tinted with the app's own ink (--color-fg — forest in
+      // light, its warm counterpart in dark) rather than flat black, plus a
+      // soft blur, so the world behind recedes warmly instead of going dark
+      // (Aaron's uni-surface feel-study). `.qs-scrim-fade` reuses the shared
+      // `enter-fade` keyframe at its own ~180ms settle (reduced-motion gated
+      // there, same as `.dialog-overlay`). On mobile the sheet below is its
+      // own opaque bg-bg/95 + blur, fully covering this — the scrim only
+      // becomes visible on desktop, where the pill+panel float over open
+      // space (UI audit: "no backdrop scrim — background content fully
+      // legible").
+      className="qs-scrim-fade fixed inset-0 z-50 m-0 h-full max-h-full w-full max-w-full bg-[color-mix(in_srgb,var(--color-fg)_32%,transparent)] p-0 backdrop-blur-[3px] lg:flex lg:px-6 lg:pb-8"
       onMouseDown={(e) => {
         // Desktop click-outside: the transparent dialog root spans the
         // viewport around the bottom-centre column. (On mobile the sheet

@@ -216,14 +216,19 @@ function TagRow({
           <span className="font-mono">#{tag.name}</span>
           <span className="tabular-nums opacity-70">{tag.count ?? 0}</span>
         </Link>
-        <div className="ml-auto flex shrink-0 items-center gap-4">
+        {/* UI-audit finding #7: these text-link actions measured 44×16px on
+            touch viewports — well under the 44px height minimum. `-my-3`
+            claws back the row's own vertical padding so the enlarged hit
+            area doesn't inflate row height; the visible label stays the
+            same size. */}
+        <div className="-my-3 ml-auto flex shrink-0 items-center gap-4">
           <button
             type="button"
             onClick={onTogglePin}
             className={
               pinned
-                ? "focus-ring text-xs font-medium text-accent hover:text-accent-hover"
-                : "focus-ring text-xs text-fg-muted hover:text-accent"
+                ? "focus-ring flex min-h-11 items-center text-xs font-medium text-accent hover:text-accent-hover"
+                : "focus-ring flex min-h-11 items-center text-xs text-fg-muted hover:text-accent"
             }
             aria-label={pinned ? `Unpin tag ${tag.name}` : `Pin tag ${tag.name}`}
             aria-pressed={pinned}
@@ -235,7 +240,7 @@ function TagRow({
             type="button"
             onClick={onEditSchema}
             disabled={offline}
-            className="focus-ring text-xs text-fg-muted hover:text-accent disabled:opacity-40"
+            className="focus-ring flex min-h-11 items-center text-xs text-fg-muted hover:text-accent disabled:opacity-40"
             aria-label={`Edit schema for tag ${tag.name}`}
           >
             {hasSchemaSignal ? "Schema" : "+ Schema"}
@@ -244,7 +249,7 @@ function TagRow({
             type="button"
             onClick={onRename}
             disabled={offline}
-            className="focus-ring text-xs text-fg-muted hover:text-accent disabled:opacity-40"
+            className="focus-ring flex min-h-11 items-center text-xs text-fg-muted hover:text-accent disabled:opacity-40"
             aria-label={`Rename tag ${tag.name}`}
           >
             Rename
