@@ -252,6 +252,66 @@ describe("Composer — the honest write-in-place hero (W2-10; F10)", () => {
     expect(mic).toHaveAttribute("href", "/new?voice=1");
   });
 
+  // Capture-chip loosening (2026-07-17, ratified): the capture role tag
+  // pre-populates as a visible, removable chip once the card opens — no
+  // longer an invisible save-time injection.
+  it("pre-populates the capture tag as a visible, removable chip once expanded", async () => {
+    installRoutedFetch({ notes: SEED_ONLY });
+    renderComposer();
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    expect(screen.queryByText("capture")).not.toBeInTheDocument();
+
+    fireEvent.focus(input);
+
+    expect(await screen.findByText("capture")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove tag capture/i })).toBeInTheDocument();
+  });
+
+  it("removing the capture chip is respected on save — not re-added underneath", async () => {
+    const fetchImpl = installRoutedFetch({ notes: SEED_ONLY });
+    renderComposer();
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    fireEvent.focus(input);
+    await screen.findByText("capture");
+
+    fireEvent.click(screen.getByRole("button", { name: /remove tag capture/i }));
+    fireEvent.change(input, { target: { value: "no capture tag here" } });
+    fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
+
+    await waitFor(() => {
+      const post = fetchImpl.mock.calls.find(([, init]) => init?.method === "POST");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.[1]?.body));
+      expect(body.tags ?? []).not.toContain("capture");
+    });
+  });
+
+  it("untouched chips: save is byte-identical to today (capture tag applied automatically)", async () => {
+    const fetchImpl = installRoutedFetch({ notes: SEED_ONLY });
+    renderComposer();
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    // Never touches the tag row — types and saves directly.
+    fireEvent.change(input, { target: { value: "never touched tags" } });
+    fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
+
+    await waitFor(() => {
+      const post = fetchImpl.mock.calls.find(([, init]) => init?.method === "POST");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.[1]?.body));
+      expect(body.tags).toEqual(["capture"]);
+    });
+  });
+
+  it("an untouched composer never writes a draft — the pre-populated chip alone isn't 'dirty'", async () => {
+    installRoutedFetch({ notes: SEED_ONLY });
+    renderComposer();
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    fireEvent.focus(input);
+    await screen.findByText("capture");
+    fireEvent.focusOut(input);
+    expect(loadDraft("v1", NEW_NOTE_SCOPE)).toBeNull();
+  });
+
   it("the mic honors the transcription gate: disabled vault → no mic, the honest line", async () => {
     installRoutedFetch({
       notes: SEED_ONLY,

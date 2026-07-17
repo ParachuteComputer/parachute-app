@@ -1,3 +1,4 @@
+import { CopyField } from "@/components/CopyField";
 import { DeleteNoteButton } from "@/components/DeleteNoteButton";
 import { buildWikilinkResolver } from "@/components/MarkdownView";
 import { NeighborhoodGraph } from "@/components/NeighborhoodGraph";
@@ -12,6 +13,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { leadingH1, pathDisplayTitle, stripLeadingH1 } from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
+import { useToastStore } from "@/lib/toast/store";
 import { useActiveVaultClient, useNote, useVaultStore } from "@/lib/vault";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { useTagRoles } from "@/lib/vault/settings";
@@ -190,6 +192,14 @@ function MetadataPanel({ note }: { note: Note }) {
         {updated ? (
           <Row label="Updated" value={<time title={updated}>{relativeTime(updated)}</time>} />
         ) : null}
+        {note.path ? (
+          // Path is plumbing, but on a note it stays grabbable (ratified
+          // 2026-07-17) — it's how you reference a note to an AI agent.
+          <Row
+            label="Path"
+            value={<CopyField value={note.path} label="note path" className="mt-1" />}
+          />
+        ) : null}
         {metaEntries.map(([key, value]) => (
           <Row
             key={key}
@@ -198,8 +208,41 @@ function MetadataPanel({ note }: { note: Note }) {
           />
         ))}
       </dl>
+      {note.path ? <CopyReferenceButton path={note.path} /> : null}
       <ProvenanceBadge note={note} variant="detail" className="mt-3" />
     </section>
+  );
+}
+
+// A second, more prominent door onto the same value as the Path row's copy
+// button — "reference this note to an AI agent" is the explicit use case
+// (ratified 2026-07-17), so it earns its own labeled affordance rather than
+// relying on the operator to notice the small copy icon in the metadata
+// list. Same clipboard-API + toast + transient-label pattern as CopyField.
+function CopyReferenceButton({ path }: { path: string }) {
+  const pushToast = useToastStore((s) => s.push);
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(path);
+      setCopied(true);
+      pushToast("Copied to clipboard.", "success");
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      pushToast("Couldn't copy — select and copy manually.", "error");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      className="btn btn-secondary btn-touch mt-3 w-full"
+      aria-label="Copy reference to this note"
+    >
+      {copied ? "Copied ✓" : "Copy reference"}
+    </button>
   );
 }
 
