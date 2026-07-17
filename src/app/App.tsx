@@ -86,6 +86,12 @@ const Welcome = lazy(() => import("./routes/Welcome").then((m) => ({ default: m.
 const CheckEmail = lazy(() =>
   import("./routes/CheckEmail").then((m) => ({ default: m.CheckEmail })),
 );
+// views-wave-1 (VIEWS-RENDER-SPEC): the view organ. ViewNew is the "New
+// view" ceremony `/views/new` links to; ViewSurface renders `/views/:id`.
+const ViewNew = lazy(() => import("./routes/ViewNew").then((m) => ({ default: m.ViewNew })));
+const ViewSurface = lazy(() =>
+  import("./routes/ViewSurface").then((m) => ({ default: m.ViewSurface })),
+);
 
 // The boot dispatcher (`/`) — SYNTHESIS "boot dispatcher"; Aaron's confusion #2
 // (a signed-in person never gets sent to an auth screen). Precedence: a vault
@@ -411,6 +417,16 @@ export function App() {
                       <Route path="/today" element={<DayView />} />
                       <Route path="/calendar" element={<Calendar />} />
                       <Route path="/activity" element={<Activity />} />
+                      {/*
+                    views-wave-1 (VIEWS-RENDER-SPEC §2/§6): the view organ.
+                    `/views/new` is registered before the `:id` route so the
+                    literal "new" segment can never be swallowed as an id
+                    (React Router ranks static segments first regardless,
+                    but the order stays literal/readable here too — same
+                    convention as `/notes` above the `/:id` bare-path shim).
+                  */}
+                      <Route path="/views/new" element={<ViewNew />} />
+                      <Route path="/views/:id" element={<ViewSurface />} />
                       <Route path="/n/:id" element={<NoteView />} />
                       <Route path="/n/:id/edit" element={<NoteEditor />} />
                       <Route path="/:id" element={<NoteIdRedirect />} />

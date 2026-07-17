@@ -121,6 +121,15 @@
   --color-sun-ink: #6b5200;
   --color-sage: #527e5d;
 
+  /* --- The hue module's remaining three (light) — clay, ochre, plum round
+     out sage/sky/sun/coral/grass to the ~8-hue "garden" palette EDITOR-STUDY
+     §7/§9 spec (`src/lib/hue/hue.ts`). Dot-only chips (never body text), so
+     these are picked for distinctness at a glance rather than AA text
+     contrast. */
+  --color-clay: #a8653f;
+  --color-ochre: #a67c1e;
+  --color-plum: #7d5490;
+
   /* --- Hairlines + raised surfaces (light) ---
      Sage-cast hairlines (prototype --border) so lines read as part of the
      cream world, not a cool grey; the card lifts a breath off the canvas
@@ -329,6 +338,11 @@
   --_d-sun-soft: #38300f;
   --_d-sun-ink: #f0d68a;
   --_d-sage: #8fb096;
+  /* The hue module's remaining three, lightened for the night ground —
+     same distinctness-at-a-glance brief as the light values above. */
+  --_d-clay: #c98f6c;
+  --_d-ochre: #d9a53d;
+  --_d-plum: #b48fc4;
   /* Sage tint alone is invisible in the dark, so shadows here stay
      near-black for depth — but "near", not pure: --_d-shadow-ink mixes a
      whisper of the dark accent into black (atmosphere set, uni-surface
@@ -387,6 +401,9 @@
     --color-sun-soft: var(--_d-sun-soft);
     --color-sun-ink: var(--_d-sun-ink);
     --color-sage: var(--_d-sage);
+    --color-clay: var(--_d-clay);
+    --color-ochre: var(--_d-ochre);
+    --color-plum: var(--_d-plum);
     --color-border: var(--_d-border);
     --color-border-light: var(--_d-border-light);
     --color-card: var(--_d-card);
@@ -426,6 +443,9 @@
   --color-sun-soft: var(--_d-sun-soft);
   --color-sun-ink: var(--_d-sun-ink);
   --color-sage: var(--_d-sage);
+  --color-clay: var(--_d-clay);
+  --color-ochre: var(--_d-ochre);
+  --color-plum: var(--_d-plum);
   --color-border: var(--_d-border);
   --color-border-light: var(--_d-border-light);
   --color-card: var(--_d-card);
@@ -1182,6 +1202,40 @@ body {
     flex: none;
     border-radius: var(--radius-full);
     background-color: var(--color-grass);
+  }
+
+  /* The hue module's chip (`HueDot`, src/lib/hue/hue.ts) — a small leading
+     dot, never body text, so these skip the AA-contrast obligation `.chip`
+     text carries. `.hue-dot-*` variants map 1:1 onto `HUE_NAMES`. */
+  .hue-dot {
+    height: 0.5rem;
+    width: 0.5rem;
+    flex: none;
+    border-radius: var(--radius-full);
+  }
+  .hue-dot-sage {
+    background-color: var(--color-sage);
+  }
+  .hue-dot-sky {
+    background-color: var(--color-sky);
+  }
+  .hue-dot-sun {
+    background-color: var(--color-sun);
+  }
+  .hue-dot-coral {
+    background-color: var(--color-coral-ink);
+  }
+  .hue-dot-grass {
+    background-color: var(--color-grass);
+  }
+  .hue-dot-clay {
+    background-color: var(--color-clay);
+  }
+  .hue-dot-ochre {
+    background-color: var(--color-ochre);
+  }
+  .hue-dot-plum {
+    background-color: var(--color-plum);
   }
 
   /* A large soft quick-action tile for the arrival + home quick doors. */

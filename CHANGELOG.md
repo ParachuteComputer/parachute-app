@@ -1,5 +1,46 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.6] - 2026-07-17
+
+**Views Wave 1 — the view organ.** From VIEWS-RENDER-SPEC: a view is a note tagged `#view`
+whose metadata (`kind`, `query`, `lane_by`, `date_field`) is the definition — the note body
+stays prose for people. This wave lands the module, the list-kind renderer, and the Rail's
+new Views band. Purely additive: nothing about the four existing default pages changes
+behavior (their cutover to the same pipeline is Wave 2).
+
+- **`src/lib/views/`** — the canonical module: `decodeViewDef()` never throws and never
+  returns null for a `#view` note (unknown/absent `kind` degrades silently to `list`;
+  malformed `query` JSON degrades to `query: null` + a recorded problem, never an implicit
+  "everything" query); `viewQueryToNotesQuery()` maps the MCP-grammar query object to the
+  vault's typed `NotesQuery`, dropping unrecognized keys with a named problem rather than
+  silently passing them through to a server 400; `partitionPinned()` groups pinned results
+  above the rest within the view's own result set (replacing the sort-to-top VaultSurface
+  uses today). The spec's §8 legacy-saved-views adapter is **void** — that old
+  `{kind:"saved-view", filters}` shape at `UI/Views/<name>` was confirmed unused in practice
+  and is out of scope entirely: no adapter, no reconciliation, and such notes are explicitly
+  excluded from the Rail band. `src/lib/saved-views/` is untouched (dead code; a follow-up
+  deletes it outright).
+- **`ViewSurface`** (`/views/:id`, note id not path) — list kind this wave; a problems banner
+  degrades honestly instead of blanking the page on a malformed view; a refinement bar
+  (tag-include, tag-exclude-toggle on the base query's own chips, search, sort) reads/writes
+  the URL so refinements survive reload and are shareable; the Save sheet offers "Update this
+  view" or "Save as new view," defaulting on whether the signed-in principal's JWT `sub`
+  matches the note's `createdBy` (display-only — never a security boundary).
+- **The Rail's new "Views" band** (between "Your notes" and "Explore") — fed by a `tag=view`
+  query with no path prefix, the four shipped default-page paths excluded (they already have
+  Rail rows), each item wearing a combined hue-dot + kind-glyph mark; a permanent "New view"
+  row creates a `#view` note at `Views/<name>` (kind list, empty query) via the new
+  `/views/new` ceremony and opens it.
+- **`src/lib/hue/hue.ts`** — the surface-owned hue module EDITOR-STUDY §7/§9 called for: a
+  tag name resolves to one of 8 curated "garden" hues (sage/sky/sun/coral/grass/clay/ochre/
+  plum) — hand-assigned for a handful of known roles, deterministically hashed for everything
+  else. Zero data change; nothing is stored. A view's hue comes from its query's primary tag
+  (the subject); the kind carries the glyph. Landed here per VIEWS-RENDER-SPEC §9 ("whichever
+  PR train lands it first, the other imports") — no hue module existed on `main` yet.
+- **`NoteView`** gains the bridge's other half: a `#view`-tagged note shows "Open as view,"
+  linking to `/views/:id`; `ViewSurface`'s own "Edit view note" is the trip back — two faces
+  of one note, no separate view-editing UI.
+
 ## [0.20.5] - 2026-07-17
 
 **Editor Wave 1 — "one voice."** From the editor-experience design study: the editor and the

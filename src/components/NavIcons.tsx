@@ -195,6 +195,30 @@ export function IconChevronLeft(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// Three lanes — a board view's kind glyph (views-wave-1, VIEWS-RENDER-SPEC §9).
+export function IconColumns(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <rect x="3.5" y="4.5" width="5" height="15" rx="1.5" />
+      <rect x="9.5" y="4.5" width="5" height="10" rx="1.5" />
+      <rect x="15.5" y="4.5" width="5" height="13" rx="1.5" />
+    </svg>
+  );
+}
+
+// A 2x2 tile grid — a gallery view's kind glyph (deferred renderer, §4.4;
+// the glyph still distinguishes the kind on a note that declares it).
+export function IconGrid(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...BASE} aria-hidden="true" {...props}>
+      <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13" y="3.5" width="7.5" height="7.5" rx="1.5" />
+      <rect x="3.5" y="13" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13" y="13" width="7.5" height="7.5" rx="1.5" />
+    </svg>
+  );
+}
+
 // A one-hub / three-satellite relational glyph — the Map mark.
 export function IconMap(props: SVGProps<SVGSVGElement>) {
   return (

@@ -40,11 +40,11 @@ function makeVault(partial: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url
 }
 
 describe("buildNavBands (pure)", () => {
-  const base = { mapEarned: false, trialDaysLeft: null, setup: null };
+  const base = { mapEarned: false, trialDaysLeft: null, setup: null, viewItems: [] };
 
-  it("produces the lens set, the Explore band, and the manager zone — items, order, labels, routes (LENS-SPEC §4)", () => {
+  it("produces the lens set, the Views band, the Explore band, and the manager zone — items, order, labels, routes (LENS-SPEC §4)", () => {
     const bands = buildNavBands(base);
-    expect(bands.map((b) => b.id)).toEqual(["notes", "explore", "parachute", "foot"]);
+    expect(bands.map((b) => b.id)).toEqual(["notes", "views", "explore", "parachute", "foot"]);
 
     // YOUR NOTES is the lens set now — four dresses over the one collection,
     // every target an EXISTING route (§2's zero-migration URL scheme).
@@ -57,18 +57,26 @@ describe("buildNavBands (pure)", () => {
       ["archive", "Archive", "/notes?view=archived"],
     ]);
 
+    // VIEWS (views-wave-1, VIEWS-RENDER-SPEC §6) — no views yet, so just the
+    // permanent "New view" affordance.
+    const views = bands.find((b) => b.id === "views");
+    expect(views?.label).toBe("Views");
+    expect(views?.items.map((i) => [i.id, i.label, i.to])).toEqual([
+      ["new-view", "New view", "/views/new"],
+    ]);
+
     // EXPLORE — the destinations, moved out of YOUR NOTES unchanged (D3).
-    const explore = bands[1];
-    expect(explore.label).toBe("Explore");
-    expect(explore.items.map((i) => [i.id, i.label, i.to])).toEqual([
+    const explore = bands.find((b) => b.id === "explore");
+    expect(explore?.label).toBe("Explore");
+    expect(explore?.items.map((i) => [i.id, i.label, i.to])).toEqual([
       ["calendar", "Calendar", "/calendar"],
       ["tags", "Tags", "/tags"],
       ["activity", "Activity", "/activity"],
     ]);
 
-    const parachute = bands[2];
-    expect(parachute.label).toBe("Your parachute");
-    expect(parachute.items.map((i) => [i.id, i.label, i.to])).toEqual([
+    const parachute = bands.find((b) => b.id === "parachute");
+    expect(parachute?.label).toBe("Your parachute");
+    expect(parachute?.items.map((i) => [i.id, i.label, i.to])).toEqual([
       ["account", "Account & plan", "/account"],
       ["vaults", "Vaults", "/vaults"],
       ["connect", "Connect AI", "/connect"],
@@ -76,9 +84,22 @@ describe("buildNavBands (pure)", () => {
       ["export", "Export notes", "/export"],
     ]);
 
-    const foot = bands[3];
-    expect(foot.label).toBeUndefined();
-    expect(foot.items.map((i) => [i.id, i.to])).toEqual([["settings", "/settings"]]);
+    const foot = bands.find((b) => b.id === "foot");
+    expect(foot?.label).toBeUndefined();
+    expect(foot?.items.map((i) => [i.id, i.to])).toEqual([["settings", "/settings"]]);
+  });
+
+  it("Views band shows the decoded view items ahead of the permanent New-view row", () => {
+    const viewItem = {
+      id: "view-abc",
+      label: "Active projects",
+      to: "/views/abc",
+      icon: null,
+      match: () => false,
+    };
+    const bands = buildNavBands({ ...base, viewItems: [viewItem] });
+    const views = bands.find((b) => b.id === "views");
+    expect(views?.items.map((i) => i.id)).toEqual(["view-abc", "new-view"]);
   });
 
   it("shows no counts on any lens (LENS-SPEC §1 — no rail counts in v1)", () => {
@@ -131,7 +152,14 @@ describe("buildNavBands (pure)", () => {
     expect(shelf?.sublabel).toBe("0 of 1");
     expect(shelf?.items.map((i) => [i.label, i.to])).toEqual([["Write a note", "/new"]]);
     // The shelf sits between the parachute band and the foot (§2.2).
-    expect(withSetup.map((b) => b.id)).toEqual(["notes", "explore", "parachute", "setup", "foot"]);
+    expect(withSetup.map((b) => b.id)).toEqual([
+      "notes",
+      "views",
+      "explore",
+      "parachute",
+      "setup",
+      "foot",
+    ]);
 
     expect(buildNavBands(base).find((b) => b.id === "setup")).toBeUndefined();
   });
@@ -145,7 +173,7 @@ describe("buildNavBands (pure)", () => {
   /** Every item id whose match rule claims the given URL, across all bands. */
   function activeIds(url: string): string[] {
     const l = loc(url);
-    return buildNavBands({ mapEarned: true, trialDaysLeft: null, setup: null })
+    return buildNavBands({ mapEarned: true, trialDaysLeft: null, setup: null, viewItems: [] })
       .flatMap((b) => b.items)
       .filter((i) => i.match(l))
       .map((i) => i.id);
@@ -326,5 +354,55 @@ describe("useNavBands (hook)", () => {
     await waitFor(() => expect(result.current.length).toBeGreaterThan(0));
     const explore = result.current.find((b) => b.id === "explore");
     expect(explore?.items.some((i) => i.id === "map")).toBe(true);
+  });
+
+  // The Views band (views-wave-1, VIEWS-RENDER-SPEC §6): fed by a `tag=view`
+  // query, the four shipped default-page paths excluded. §8's legacy
+  // `{kind:"saved-view"}` adapter is void (scope cut, 2026-07-17) — a
+  // legacy-shaped note is excluded from the band outright, not admitted.
+  it("Views band lists tag=view notes, excludes default-page paths and legacy saved-view notes", async () => {
+    useVaultStore.setState({
+      vaults: { a: makeVault({ id: "a", url: "http://localhost:1940" }) },
+      activeVaultId: "a",
+    });
+    localStorage.setItem(
+      "lens:token:a",
+      JSON.stringify({ accessToken: "t", scope: "full", vault: "default" }),
+    );
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("tag=view")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            { id: "v1", path: "Views/Active projects", tags: ["view"], metadata: {} },
+            // A shipped default page — excluded from the band (it already
+            // has a Rail row under "Your notes").
+            { id: "v2", path: "Views/Pinned", tags: ["view"], metadata: {} },
+            // A legacy saved-view — §8 is void; excluded from the band.
+            {
+              id: "v3",
+              path: "UI/Views/Daily",
+              tags: ["view"],
+              metadata: { kind: "saved-view", filters: {} },
+            },
+          ],
+        } as Response;
+      }
+      return { ok: true, status: 200, json: async () => [] } as Response;
+    }) as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useNavBands(), { wrapper });
+    await waitFor(() => {
+      const views = result.current.find((b) => b.id === "views");
+      expect(views?.items.map((i) => i.id)).toContain("view-v1");
+    });
+    const views = result.current.find((b) => b.id === "views");
+    const ids = views?.items.map((i) => i.id) ?? [];
+    expect(ids).toContain("view-v1");
+    expect(ids).not.toContain("view-v2"); // Views/Pinned is a default page
+    expect(ids).not.toContain("view-v3"); // legacy saved-view — §8 void
+    expect(ids.at(-1)).toBe("new-view"); // the permanent trailing affordance
   });
 });
