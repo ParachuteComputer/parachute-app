@@ -257,10 +257,12 @@ export function buildExtensions(
       // rely on (it's a no-op outside its own trigger).
       override: [createSlashCompletionSource(() => onRequestAttachmentRef.current?.())],
     }),
-    // POLISH-WAVE PR 5b — the coarse-pointer-only selection toolbar. Both
-    // modes (mode-agnostic UI: raw mode's markdown is just as toggle-able as
-    // live mode's), gated internally on `matchMedia("(pointer: coarse)")` so
-    // it never shows on desktop, which gets the keybindings below instead.
+    // The coarse-pointer-only selection formatting bar (0.20.14: docked to the
+    // bottom of the visual viewport above the keyboard, not floated at the
+    // selection). Both modes (mode-agnostic UI: raw mode's markdown is just as
+    // toggle-able as live mode's), gated internally on
+    // `matchMedia("(pointer: coarse)")` so it never shows on desktop, which
+    // gets the keybindings below instead.
     selectionToolbar(),
     // PR 5a — swipe-to-indent on list items, live-preview mode only (raw
     // mode already has Tab; a swipe over visible raw markdown has no

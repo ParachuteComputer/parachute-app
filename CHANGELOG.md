@@ -1,5 +1,66 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.14] - 2026-07-17
+
+**Polish — the mobile formatting bar docks above the keyboard; the note header's path/tags recede.**
+Two feel-fixes from a live tablet test of 0.20.13. Display-only: no data-model changes and no new
+capabilities — only where things sit and how they read.
+
+- **`src/lib/editor/selection-toolbar.ts`** — on touch the selection formatting bar no longer
+  floats at the selection (where Android paints its Copy / Select all callout directly over ours
+  and iOS the loupe/handles, leaving ours untappable). It now DOCKS as a fixed bar at the bottom of
+  the visual viewport, riding above the virtual keyboard — the Google Docs / Notion / Bear pattern.
+  Rebuilt from a CM6 `showTooltip` StateField into a `ViewPlugin` that owns a plain fixed-position
+  node in `document.body` (the only reliable containing block for `position: fixed` — a lingering
+  `.enter-rise`/`.fade-up` transform on an ancestor would otherwise capture it). `bottom` tracks
+  `window.visualViewport` (`innerHeight − height − offsetTop`) on its resize/scroll events, so the
+  bar stays glued to the keyboard's top edge as it opens and closes and rests at the screen bottom
+  when it's shut. Still coarse-pointer only (`matchMedia("(pointer: coarse)")`, read dynamically):
+  desktop is unchanged — no bar, the `Mod-b`/`Mod-i`/… keymap drives formatting there. Same five
+  buttons (B/I/S/`<>`/🔗) calling straight into the shared `format-commands` — the bar
+  re-implements no transform of its own. Shown on a non-empty selection, hidden the instant it
+  collapses; built lazily on first show so desktop never mounts a node. `pointerdown`/`mousedown`
+  are still preventDefaulted (it matters more now the bar lives outside the editor — a tap must not
+  blur it or drop the selection); ≥40px touch targets are set inline so the invariant holds in
+  production and stays assertable in jsdom (styles/index.css isn't loaded there, and an
+  `EditorView.theme` sheet no longer reaches a body-level node).
+- **`src/styles/index.css`** — new `.cm-format-toolbar-docked` (layout + top hairline +
+  `env(safe-area-inset-bottom)` so the buttons clear the home indicator + the `enter-rise`
+  entrance, registered in the one reduced-motion gate); the translucent surface reuses
+  `.glass-panel`.
+- **`src/app/routes/NoteView.tsx`** — the note header's path and tags recede (Aaron: "we're really
+  not orienting toward people updating the path"). The path leaves the primary header flow — it was
+  a prominent mono `break-all` line right under the title — and becomes a single small, muted,
+  TRUNCATING meta line at the FOOT of the header. Capability is preserved, not removed: the whole
+  line is a one-tap copy button (path → clipboard, the "hand it to an AI agent" use case ratified
+  2026-07-17), with a small clipboard glyph and a distinct **"Copy path"** label so it never
+  collides with the metadata card's "Copy note path". Tags reweight to normal-weight, tighter-
+  spaced compact chips (were `font-medium`) — a quiet label strip under the title rather than a
+  second headline. The reclaimed vertical space goes to content.
+
+Judgment calls (reviewer-facing):
+
+- **Desktop is unchanged.** The 0.20.13 floating bar was already coarse-pointer-only — desktop
+  showed no bar and drove formatting from the keymap — so "desktop keeps its current behavior"
+  means it still shows nothing. Adding a floating bar to desktop would be a new feature, outside the
+  display-only charter, so it was NOT added.
+- **Command set held.** The brief listed "bold/italic/code/link/todo"; the shipped bar keeps the
+  existing `FORMAT_COMMANDS` set (bold/italic/strikethrough/code/link) rather than swapping
+  strikethrough out for a todo button, so this stays a pure re-dock of the existing toolbar. A todo
+  button is a one-line follow-up if wanted.
+- **Touch detection.** `matchMedia("(pointer: coarse)")`, read dynamically per update (a hybrid
+  device can gain/lose a pointer mid-session), the same approach the 0.20.13 toolbar used;
+  `window.visualViewport` drives positioning and degrades to `bottom: 0` where it's absent.
+
+Gates (literal): `bun run test` (vitest) — **1866 passed / 1866**, 167 files; `bun run typecheck` —
+clean; `bun run lint` — clean (2 pre-existing `src/lib/vault/live-query.ts`
+`useExhaustiveDependencies` warnings, present on `main`); `bun run build` — ✓. The editor toolbar
+suite is rewritten for the docked mechanism (bar in `document.body`, coarse-only, show/hide-on-
+collapse, ≥40px targets, command dispatch, pointerdown containment); the NoteView metadata test
+folds in the header's one-tap "Copy path" affordance. Note: `nav-history.test.tsx` carries a
+PRE-EXISTING parallel-load flake (real timers + real `window.history`) that fails ~1/6 runs on
+`main` as well; a sequential run (`--no-file-parallelism`) is 100% green (1866/1866).
+
 ## [0.20.13] - 2026-07-17
 
 **Editor Wave 2, PR 5 — the shared format commands, selection toolbar, and swipe-indent.**

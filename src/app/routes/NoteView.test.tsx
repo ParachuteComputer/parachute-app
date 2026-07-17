@@ -181,6 +181,15 @@ describe("NoteView route", () => {
     fireEvent.click(screen.getByRole("button", { name: /copy reference to this note/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Canon/Aaron"));
     expect(writeText).toHaveBeenCalledTimes(2);
+
+    // 0.20.14 — the path is de-emphasized to a quiet meta line at the FOOT of
+    // the header, but stays one-tap copyable (handing a note's path to an AI
+    // agent). Its own "Copy path" button has a distinct name from the card's
+    // "Copy note path", so both copy affordances stay unambiguous, and it
+    // copies the same value.
+    fireEvent.click(screen.getByRole("button", { name: "Copy path" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(3));
+    expect(writeText).toHaveBeenLastCalledWith("Canon/Aaron");
   });
 
   // views-wave-1's half of the §2 bridge: a #view-tagged note (canonical or
