@@ -25,7 +25,7 @@ export function Toaster() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`enter-rise pointer-events-auto flex max-w-md items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-2 text-sm shadow-lift backdrop-blur ${
+          className={`enter-rise pointer-events-auto flex max-w-md items-center gap-3 rounded-lg border px-4 py-2 text-sm shadow-lift backdrop-blur ${
             t.tone === "error"
               ? // Parens form, not brackets: Tailwind's `[--foo]` bracket syntax takes the
                 // value literally (no var() wrap) — it was silently compiling to the invalid
