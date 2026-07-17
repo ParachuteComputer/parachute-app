@@ -178,11 +178,53 @@ export function NoteNew() {
     onError: (msg) => pushToast(msg, "error"),
   });
 
+  // Capture-chip loosening (2026-07-17, ratified): the capture role tag now
+  // pre-populates as a VISIBLE, REMOVABLE chip in the tag row instead of an
+  // invisible save-time injection — buildTextNotePayload takes `tags` as
+  // given. Sync the role tag into `draft.tags` until the operator explicitly
+  // adds or removes a chip THIS compose session (`tagsTouchedRef`); once
+  // touched, their chip set is authoritative — we never re-inject, even if
+  // tag-role settings resolve to a different name underneath (the default
+  // resolves synchronously, but a custom mapping can arrive a beat later once
+  // the settings note loads). `autoTagRef` remembers which value we last
+  // auto-added so a role-name change swaps it instead of leaving both names
+  // in the chip row.
+  //
+  // Review fold (#49): the freeze must survive a REMOUNT, not just live out
+  // one mount's lifetime — VaultSurface remounts this screen during ordinary
+  // browsing, and a stored draft already reflects whatever the operator left
+  // in the chip row (including a deliberate removal). Seed the guard from
+  // `restoredAtRef` (set above, in the SAME initial render, whenever a stored
+  // draft was found) so a restored draft's tags are authoritative from the
+  // very first effect pass — never auto-repopulated on return.
+  const tagsTouchedRef = useRef(restoredAtRef.current !== null);
+  const autoTagRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (tagsTouchedRef.current) return;
+    setDraft((d) => {
+      const withoutPriorAuto = autoTagRef.current
+        ? d.tags.filter((t) => t !== autoTagRef.current)
+        : d.tags;
+      const next = withoutPriorAuto.includes(roles.captureText)
+        ? withoutPriorAuto
+        : [...withoutPriorAuto, roles.captureText];
+      return next === d.tags ? d : { ...d, tags: next };
+    });
+    autoTagRef.current = roles.captureText;
+  }, [roles.captureText]);
+
   // Persist the text draft (content/path/tags — not audio blobs) whenever
-  // there's something worth keeping. Cleared on save or explicit discard.
+  // there's something worth keeping. Cleared on save or explicit discard. The
+  // sole auto-populated capture chip doesn't count as "something worth
+  // keeping" on its own — an untouched compose (nothing typed, tags exactly
+  // the auto-default) must stay byte-identical to pre-chip behavior and not
+  // litter the draft store.
+  const tagsArePristineDefault =
+    !tagsTouchedRef.current &&
+    (draft.tags.length === 0 || (draft.tags.length === 1 && draft.tags[0] === roles.captureText));
   const persistableDirty =
     draft.content.trim().length > 0 ||
-    draft.tags.length > 0 ||
+    !tagsArePristineDefault ||
     (draft.path.trim().length > 0 && draft.path !== defaultPathRef.current);
   useDraftAutosave(composeVaultId, NEW_NOTE_SCOPE, draft, persistableDirty);
 
@@ -191,10 +233,13 @@ export function NoteNew() {
   const hasAudio = voice.phase.kind === "have-audio";
   const hasText = draft.content.trim().length > 0;
 
+  // Same pristine-tags carve-out as `persistableDirty` above: the sole
+  // auto-populated capture chip must not itself trip the leave-guard or the
+  // Cancel confirm on a compose the operator never touched.
   const isDirty =
     draft.content.length > 0 ||
     draft.path !== defaultPathRef.current ||
-    draft.tags.length > 0 ||
+    !tagsArePristineDefault ||
     hasAudio;
 
   // Text-only mode requires path + content. Audio satisfies the "body" half
@@ -204,18 +249,19 @@ export function NoteNew() {
   const pending = mutation.isPending || isSavingAudio;
 
   // ---- text-only save ------------------------------------------------------
-  // A typed note through this surface IS a capture: it carries the capture
-  // role tag (default `capture`) + `metadata.source: "text"` so the how-it-
-  // arrived axis lives in metadata, not tag identity (2026-07 one-tag
-  // simplification). The payload assembly is shared with Home's composer
-  // (W2-10) — `buildTextNotePayload` is the one place it happens.
+  // A typed note through this surface carries whatever's in the tag row
+  // (chips are the source of truth — the capture role tag pre-populates
+  // there, above, but a chip the operator removed does NOT come back here)
+  // + `metadata.source: "text"` so the how-it-arrived axis lives in metadata,
+  // not tag identity (2026-07 one-tag simplification). The payload assembly
+  // is shared with Home's composer (W2-10) — `buildTextNotePayload` is the
+  // one place it happens.
   const saveTextOnly = useCallback(() => {
     if (!isValid || pending) return;
     const payload = buildTextNotePayload({
       content: draft.content,
       path: draft.path,
       tags: draft.tags,
-      captureTextRole: roles.captureText,
     });
 
     // Fire-and-forget schema ensure — creates the `capture` tag row if the
@@ -271,7 +317,6 @@ export function NoteNew() {
     navigate,
     pending,
     pushToast,
-    roles.captureText,
     staged,
   ]);
 
@@ -412,13 +457,17 @@ export function NoteNew() {
   }, [composeVaultId, isDirty, navigate, voice]);
 
   // The "draft restored" banner's discard: wipe the saved draft AND reset the
-  // compose surface to a fresh, empty note.
+  // compose surface to a fresh, empty note — including a fresh capture chip
+  // (this instance stays mounted, so the auto-populate effect above won't
+  // re-fire on its own; reseed it explicitly and un-freeze the touched guard).
   const discardRestoredDraft = useCallback(() => {
     if (composeVaultId) clearDraft(composeVaultId, NEW_NOTE_SCOPE);
-    setDraft({ ...EMPTY_DRAFT, path: defaultPathRef.current });
+    tagsTouchedRef.current = false;
+    autoTagRef.current = roles.captureText;
+    setDraft({ ...EMPTY_DRAFT, path: defaultPathRef.current, tags: [roles.captureText] });
     voice.discardAudio();
     setRestoredAt(null);
-  }, [composeVaultId, voice]);
+  }, [composeVaultId, voice, roles.captureText]);
 
   // Page-leave guard. Don't pop on save-success (when we navigate
   // programmatically, isDirty drops because state was just cleared).
@@ -435,10 +484,14 @@ export function NoteNew() {
   const addTag = (raw: string) => {
     const t = normalizeTag(raw);
     if (!t || draft.tags.includes(t)) return;
+    tagsTouchedRef.current = true;
     setDraft((d) => ({ ...d, tags: [...d.tags, t] }));
     setTagInput("");
   };
   const removeTag = (name: string) => {
+    // Freezes the auto-populate effect above — a deliberate removal (of the
+    // capture chip or any other) is never re-added underneath the operator.
+    tagsTouchedRef.current = true;
     setDraft((d) => ({ ...d, tags: d.tags.filter((x) => x !== name) }));
   };
 

@@ -1,5 +1,27 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.7] - 2026-07-17
+
+**Capture chip: visible-default-removable + note-path copy affordance.** Two Aaron-ratified
+items.
+
+- **Capture chip loosening.** `buildTextNotePayload` (`src/lib/capture/text-note.ts`) no
+  longer force-injects the capture role tag at save time — it takes the tag row's chips as
+  given. Both typed-composer surfaces (`NoteNew`'s tag editor and Home's `Composer`, which
+  gains its own compact tag row once the card opens) now pre-populate the capture role tag as
+  a visible, removable chip at compose time, and sync it in until the operator explicitly
+  adds or removes a chip in that session — after which their chip set is authoritative and a
+  deliberately-removed capture tag is never re-added underneath them. Someone who never
+  touches the tag row still gets byte-identical behavior (the tag ends up in the payload,
+  same as before); the pre-populated chip alone also doesn't trip the draft-autosave dirty
+  check or NoteNew's leave-guard/Cancel confirm. Voice capture (`NoteNew`'s `saveWithAudio`)
+  is untouched — it builds its own payload directly and keeps unconditionally applying its
+  role tags, by design (out of scope for this loosening).
+- **Note-path copy affordance.** The note view's metadata card gets a **Path** row (reusing
+  `CopyField`, the app's existing copy-with-toast-and-transient-label pattern) plus a
+  standalone **Copy reference** button — path is plumbing, but on a note it stays grabbable
+  because it's how you reference a note to an AI agent.
+
 ## [0.20.6] - 2026-07-17
 
 **Views Wave 1 — the view organ.** From VIEWS-RENDER-SPEC: a view is a note tagged `#view`

@@ -147,6 +147,41 @@ describe("NoteView route", () => {
     expect(screen.queryByRole("link", { name: /open as view/i })).not.toBeInTheDocument();
   });
 
+  // Path is plumbing, but on a note it stays grabbable (ratified 2026-07-17)
+  // — it's how you reference a note to an AI agent. The metadata card gets
+  // its own Path row (with a copy button) plus a "Copy reference" button;
+  // both copy the same value.
+  it("metadata card shows a Path row and a Copy reference button, both copying the path", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T04:30:54.177Z",
+          content: "Teacher and builder.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+
+    renderAt("/n/abc-123");
+
+    await screen.findByText("Teacher and builder.");
+    expect(screen.getByText("Path")).toBeInTheDocument();
+    expect(screen.getAllByText("Canon/Aaron").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /copy note path/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Canon/Aaron"));
+
+    fireEvent.click(screen.getByRole("button", { name: /copy reference to this note/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Canon/Aaron"));
+    expect(writeText).toHaveBeenCalledTimes(2);
+  });
+
   // views-wave-1's half of the §2 bridge: a #view-tagged note (canonical or
   // legacy saved-view) offers a trip into ViewSurface.
   it("shows 'Open as view' on a #view-tagged note, linking to /views/:id", async () => {

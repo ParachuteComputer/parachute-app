@@ -1,3 +1,4 @@
+import { CopyField, useCopyToClipboard } from "@/components/CopyField";
 import { DeleteNoteButton } from "@/components/DeleteNoteButton";
 import { buildWikilinkResolver } from "@/components/MarkdownView";
 import { NeighborhoodGraph } from "@/components/NeighborhoodGraph";
@@ -190,6 +191,14 @@ function MetadataPanel({ note }: { note: Note }) {
         {updated ? (
           <Row label="Updated" value={<time title={updated}>{relativeTime(updated)}</time>} />
         ) : null}
+        {note.path ? (
+          // Path is plumbing, but on a note it stays grabbable (ratified
+          // 2026-07-17) — it's how you reference a note to an AI agent.
+          <Row
+            label="Path"
+            value={<CopyField value={note.path} label="note path" className="mt-1" />}
+          />
+        ) : null}
         {metaEntries.map(([key, value]) => (
           <Row
             key={key}
@@ -198,8 +207,30 @@ function MetadataPanel({ note }: { note: Note }) {
           />
         ))}
       </dl>
+      {note.path ? <CopyReferenceButton path={note.path} /> : null}
       <ProvenanceBadge note={note} variant="detail" className="mt-3" />
     </section>
+  );
+}
+
+// A second, more prominent door onto the same value as the Path row's copy
+// button — "reference this note to an AI agent" is the explicit use case
+// (ratified 2026-07-17), so it earns its own labeled affordance rather than
+// relying on the operator to notice the small copy icon in the metadata
+// list. Shares CopyField's clipboard-API + toast + transient-label logic via
+// `useCopyToClipboard` (review fold #49) rather than re-deriving it inline.
+function CopyReferenceButton({ path }: { path: string }) {
+  const { copied, copy } = useCopyToClipboard();
+
+  return (
+    <button
+      type="button"
+      onClick={() => copy(path)}
+      className="btn btn-secondary btn-touch mt-3 w-full"
+      aria-label="Copy reference to this note"
+    >
+      {copied ? "Copied ✓" : "Copy reference"}
+    </button>
   );
 }
 

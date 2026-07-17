@@ -370,6 +370,121 @@ describe("NoteNew route — unified create surface", () => {
     expect(useToastStore.getState().toasts[0]?.message).toContain("Created");
   });
 
+  // Capture-chip loosening (2026-07-17, ratified): the capture role tag
+  // pre-populates as a visible, removable chip in the tag row — no longer an
+  // invisible save-time injection.
+  it("pre-populates the capture tag as a visible, removable chip in the tag row", async () => {
+    installFetch({});
+    renderAt("/new");
+
+    expect(await screen.findByText("capture")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove tag capture/i })).toBeInTheDocument();
+  });
+
+  it("removing the capture chip is respected on save — not re-added underneath", async () => {
+    const fetchImpl = installFetch({
+      "POST /api/notes": {
+        status: 201,
+        body: { id: "n", path: "Notes/no-capture", createdAt: "2026-07-17T00:00:00Z" },
+      },
+    });
+    renderAt("/new");
+
+    await screen.findByText("capture");
+    fireEvent.click(screen.getByRole("button", { name: /remove tag capture/i }));
+    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "no capture tag" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      const post = fetchImpl.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse((post![1] as RequestInit).body as string);
+      expect(body.tags ?? []).not.toContain("capture");
+    });
+  });
+
+  it("untouched chips: save is byte-identical to today (capture tag applied automatically)", async () => {
+    const fetchImpl = installFetch({
+      "POST /api/notes": {
+        status: 201,
+        body: { id: "n", path: "Notes/untouched", createdAt: "2026-07-17T00:00:00Z" },
+      },
+    });
+    renderAt("/new");
+
+    // Types and saves — never touches the tag row.
+    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "never touched tags" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      const post = fetchImpl.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse((post![1] as RequestInit).body as string);
+      expect(body.tags).toEqual(["capture"]);
+    });
+  });
+
+  it("an untouched compose never trips the leave-guard confirm on Cancel", async () => {
+    installFetch({});
+    renderAt("/new");
+
+    await screen.findByText("capture");
+    const confirmSpy = vi.mocked(window.confirm);
+    confirmSpy.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+    // isDirty stayed false (the auto-populated chip alone isn't "dirty"), so
+    // handleCancel's `isDirty && !confirm(...)` short-circuits — confirm is
+    // never invoked.
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  // Review fold (#49): the touched-freeze must survive a REMOUNT — a stored
+  // draft that already reflects a deliberate chip removal (tags: []) must
+  // not get the capture tag auto-repopulated when the compose screen mounts
+  // fresh over it. A naive `useRef(false)` would have let the auto-populate
+  // effect fire on this new mount and re-inject it.
+  it("a restored draft with the capture chip already removed does NOT get it re-populated on remount", async () => {
+    saveDraft("dev", "new", {
+      content: "removed capture before leaving",
+      path: "Notes/2026/07-17/09-00-00",
+      tags: [],
+    });
+    const fetchImpl = installFetch({
+      "POST /api/notes": {
+        status: 201,
+        body: { id: "n", path: "Notes/2026/07-17/09-00-00", createdAt: "2026-07-17T00:00:00Z" },
+      },
+    });
+    renderAt("/new");
+
+    expect(await screen.findByTestId("draft-restored")).toBeInTheDocument();
+    expect((screen.getByTestId("cm-editor") as HTMLTextAreaElement).value).toBe(
+      "removed capture before leaving",
+    );
+    expect(screen.queryByText("capture")).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      const post = fetchImpl.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse((post![1] as RequestInit).body as string);
+      expect(body.tags ?? []).not.toContain("capture");
+    });
+  });
+
   // NAVIGATION.md: "NoteNew save → /n/<id>" — (b) consumes the compose form,
   // replace (Back to a cleared, ghost draft would lie). This was pushing by
   // default before the fix — a named "verify" item in the W2-2 brief.
