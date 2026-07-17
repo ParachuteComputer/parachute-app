@@ -190,6 +190,32 @@ describe("ViewSurface", () => {
     await screen.findByText("Alpha");
   });
 
+  // Regression (reviewer-caught, PR #47): a malformed `metadata` operator
+  // clause used to throw uncaught inside useViewResults' useMemo — with no
+  // app-wide ErrorBoundary, that white-screened the whole component instead
+  // of degrading. The view still mounts, the problems banner names it, and
+  // the rest of the query (a plain `tag`) still runs.
+  it("malformed metadata operator degrades to a problem instead of crashing the surface", async () => {
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Bad Metadata",
+        tags: ["view"],
+        metadata: {
+          kind: "list",
+          query: JSON.stringify({ tag: "project", metadata: { priority: { badOp: "x" } } }),
+        },
+      },
+      results: [{ id: "n1", path: "Alpha", createdAt: "2026-07-01T00:00:00Z" }],
+    });
+
+    renderViewSurface();
+
+    await screen.findByRole("heading", { name: "Bad Metadata" });
+    await screen.findByText(/badOp/i);
+    await screen.findByText("Alpha");
+  });
+
   it("Save sheet defaults to Update when the signed-in principal created the view", async () => {
     const sub = "user-1";
     seedStore(fakeJwt(sub));

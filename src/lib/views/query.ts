@@ -72,7 +72,28 @@ export function viewQueryToNotesQuery(query: Record<string, unknown>): MappedVie
     }
   }
 
-  const params = buildNotesQuery(typed);
+  // `buildNotesQuery` validates `metadata`'s operator names and `in`/`not_in`
+  // array-ness ITSELF, by throwing `TypeError` — everything else `typed`
+  // can carry is already constrained to a valid shape by the switch above,
+  // so a malformed `metadata` clause (an agent-written view is exactly the
+  // kind of note that can carry one) is the only realistic source of a
+  // throw here. Caught, not propagated: an unhandled throw inside
+  // `useViewResults`'s `useMemo` — with no app-wide ErrorBoundary — would
+  // white-screen the whole app instead of degrading per §3. Drop `metadata`
+  // and rebuild; `tag`/`exclude_tags`/`sort`/`search`/etc. still run.
+  let params: URLSearchParams;
+  try {
+    params = buildNotesQuery(typed);
+  } catch (err) {
+    const reason =
+      err instanceof Error ? err.message.replace(/^buildNotesQuery: /, "") : "a malformed value";
+    problems.push({
+      code: "unsupported_query_key",
+      message: `This view's metadata filter couldn't run (${reason}) — results run without it.`,
+    });
+    const { metadata: _droppedMetadata, ...rest } = typed;
+    params = buildNotesQuery(rest);
+  }
   if (search) params.set("search", search);
   return { params, problems };
 }

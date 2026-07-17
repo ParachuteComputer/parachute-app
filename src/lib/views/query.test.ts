@@ -55,6 +55,49 @@ describe("viewQueryToNotesQuery", () => {
     const { params } = viewQueryToNotesQuery({ sort: "sideways" });
     expect(params.has("sort")).toBe(false);
   });
+
+  // Regression (reviewer-caught white-screen, PR #47): surface-client's
+  // `buildNotesQuery` validates a `metadata` clause by THROWING TypeError,
+  // not by returning a problem — an agent-written view note is exactly the
+  // kind of note likely to carry one. With no app-wide ErrorBoundary, an
+  // uncaught throw here (inside `useViewResults`'s `useMemo`) white-screens
+  // the whole app instead of degrading per §3.
+  it("an unknown metadata operator never throws — drops metadata, records a problem, runs the rest", () => {
+    expect(() =>
+      viewQueryToNotesQuery({ tag: "project", metadata: { field: { badOp: "x" } } }),
+    ).not.toThrow();
+    const { params, problems } = viewQueryToNotesQuery({
+      tag: "project",
+      metadata: { field: { badOp: "x" } },
+    });
+    expect(params.get("tag")).toBe("project"); // the non-metadata part still ran
+    expect([...params.keys()].some((k) => k.startsWith("meta["))).toBe(false);
+    expect(problems).toHaveLength(1);
+    expect(problems[0].code).toBe("unsupported_query_key");
+    expect(problems[0].message).toMatch(/badOp/);
+    expect(problems[0].message).toMatch(/field/);
+  });
+
+  it("in/not_in with a non-array value never throws — drops metadata, records a problem, runs the rest", () => {
+    expect(() =>
+      viewQueryToNotesQuery({
+        tag: "project",
+        sort: "desc",
+        metadata: { field: { in: "not-an-array" } },
+      }),
+    ).not.toThrow();
+    const { params, problems } = viewQueryToNotesQuery({
+      tag: "project",
+      sort: "desc",
+      metadata: { field: { in: "not-an-array" } },
+    });
+    expect(params.get("tag")).toBe("project");
+    expect(params.get("sort")).toBe("desc"); // the rest of the query still runs
+    expect([...params.keys()].some((k) => k.startsWith("meta["))).toBe(false);
+    expect(problems).toHaveLength(1);
+    expect(problems[0].code).toBe("unsupported_query_key");
+    expect(problems[0].message).toMatch(/field/);
+  });
 });
 
 describe("composeViewQuery", () => {
