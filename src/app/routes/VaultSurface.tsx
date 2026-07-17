@@ -983,7 +983,7 @@ function RecentSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="h-14 animate-pulse rounded-xl bg-border/30" />
+        <Skeleton key={i} className="h-14 rounded-xl" />
       ))}
     </div>
   );

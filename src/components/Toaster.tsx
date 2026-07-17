@@ -25,9 +25,13 @@ export function Toaster() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`enter-rise pointer-events-auto flex max-w-md items-center gap-3 rounded-md border px-4 py-2 text-sm shadow-[--shadow-lg] backdrop-blur ${
+          className={`enter-rise pointer-events-auto flex max-w-md items-center gap-3 rounded-lg border px-4 py-2 text-sm shadow-lift backdrop-blur ${
             t.tone === "error"
-              ? "border-[--color-danger-border] bg-[--color-danger-soft] text-[--color-danger]"
+              ? // Parens form, not brackets: Tailwind's `[--foo]` bracket syntax takes the
+                // value literally (no var() wrap) — it was silently compiling to the invalid
+                // `color: --color-danger` on main. `(--foo)` is the CSS-var shorthand that
+                // does wrap (same form PR 1 already relies on for `duration-(--dur-move)`).
+                "border-(--color-danger-border) bg-(--color-danger-soft) text-(--color-danger)"
               : t.tone === "success"
                 ? "border-accent/40 bg-accent/10 text-accent"
                 : "border-border bg-card text-fg-muted"
@@ -38,7 +42,7 @@ export function Toaster() {
             type="button"
             onClick={() => dismiss(t.id)}
             aria-label="Dismiss"
-            className="text-fg-dim hover:text-fg"
+            className="focus-ring text-fg-dim hover:text-fg"
           >
             ×
           </button>

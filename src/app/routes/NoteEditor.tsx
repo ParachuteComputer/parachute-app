@@ -38,7 +38,7 @@ export function NoteEditor() {
       <nav className="mb-6 text-sm text-fg-dim">
         <Link
           to={decodedId ? `/n/${encodeURIComponent(decodedId)}` : "/"}
-          className="hover:text-accent"
+          className="focus-ring hover:text-accent"
         >
           ← Back to note
         </Link>
@@ -100,6 +100,16 @@ function EditorSurface({ note }: { note: Note }) {
   const [tagInput, setTagInput] = useState("");
   const [conflict, setConflict] = useState<VaultConflictError | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // The checkpoint-save whisper (⌘S): "Saved ✓" for a beat, then it settles
+  // back to the relative-time label. No spinner, no toast — a quiet
+  // acknowledgment that doesn't interrupt typing.
+  const [justSaved, setJustSaved] = useState(false);
+  const savedWhisperTimeout = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (savedWhisperTimeout.current !== null) window.clearTimeout(savedWhisperTimeout.current);
+    };
+  }, []);
   // Mobile-only pane toggle. Desktop renders both side-by-side and ignores it.
   const [mobilePane, setMobilePane] = useState<EditorPane>("edit");
   const mutation = useUpdateNote(note.id);
@@ -187,6 +197,13 @@ function EditorSurface({ note }: { note: Note }) {
             // note (new id), follow it so the editor URL stays valid.
             navigate(`/n/${encodeURIComponent(updated.id)}/edit`, { replace: true });
           }
+          if (!navigateToView) {
+            setJustSaved(true);
+            if (savedWhisperTimeout.current !== null) {
+              window.clearTimeout(savedWhisperTimeout.current);
+            }
+            savedWhisperTimeout.current = window.setTimeout(() => setJustSaved(false), 1500);
+          }
         },
         onError: (err) => {
           if (err instanceof VaultConflictError) setConflict(err);
@@ -272,6 +289,10 @@ function EditorSurface({ note }: { note: Note }) {
                 <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                 unsaved
               </span>
+            ) : justSaved ? (
+              <span className="text-xs text-accent" aria-label="saved">
+                Saved ✓
+              </span>
             ) : (
               <span className="text-xs text-fg-dim">saved {relativeTime(note.updatedAt)}</span>
             )}
@@ -341,14 +362,14 @@ function EditorSurface({ note }: { note: Note }) {
             <button
               type="button"
               onClick={restoreDraft}
-              className="font-medium text-accent hover:underline"
+              className="focus-ring font-medium text-accent hover:underline"
             >
               Restore
             </button>
             <button
               type="button"
               onClick={discardOfferedDraft}
-              className="text-fg-dim hover:text-danger"
+              className="focus-ring text-fg-dim hover:text-danger"
             >
               Discard
             </button>
