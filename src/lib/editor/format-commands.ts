@@ -3,6 +3,7 @@ import {
   type ChangeSpec,
   EditorSelection,
   type EditorState,
+  type SelectionRange,
   type StateCommand,
 } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
@@ -14,6 +15,23 @@ import type { SyntaxNode } from "@lezer/common";
 // bytes get written; the selection toolbar and the keybindings below both
 // call straight into it rather than each re-implementing the transform —
 // "one grammar, [several] doors" (POLISH-WAVE PR 5, EDITOR-STUDY §6).
+
+// ---------------------------------------------------------------------------
+// IME safety — review delta. `StateCommand`'s declared parameter type is
+// `{state, dispatch}`, but every real call site (the keymap, the selection
+// toolbar's `cmd.run(view)`) invokes these with the ACTUAL `EditorView`,
+// which satisfies that shape structurally and carries `.composing` too —
+// the same "read it off the wider runtime object" the swipe gesture and the
+// checkbox widget already rely on (list-indent.ts, live-preview.ts). A bare
+// `{state, dispatch}` mock (this file's own unit tests) has no `.composing`
+// at all and reads as "not composing" here, correctly: there's no IME
+// session to guard against in that case. CM's keymap dispatcher does NOT
+// check composition itself, so every exported command below bails before
+// touching the document if a real view reports one in progress.
+type CommandTarget = Parameters<StateCommand>[0];
+function isComposing(target: CommandTarget): boolean {
+  return (target as { composing?: boolean }).composing === true;
+}
 
 // ---------------------------------------------------------------------------
 // Toggle-aware wrap/unwrap (bold/italic/strikethrough/code)
@@ -36,6 +54,27 @@ function findMarkNode(
   return null;
 }
 
+// Every `nodeName` node whose range intersects [from, to) at all — including
+// a node only PARTIALLY covered by the selection. Used by the ragged-
+// selection path below; `findMarkNode` above only recognizes the clean,
+// node-aligned case.
+function findOverlappingMarks(
+  state: EditorState,
+  from: number,
+  to: number,
+  nodeName: string,
+): SyntaxNode[] {
+  const nodes: SyntaxNode[] = [];
+  syntaxTree(state).iterate({
+    from,
+    to,
+    enter(nodeRef) {
+      if (nodeRef.name === nodeName) nodes.push(nodeRef.node);
+    },
+  });
+  return nodes;
+}
+
 function markInnerRange(
   node: SyntaxNode,
   markChildName: string,
@@ -47,10 +86,66 @@ function markInnerRange(
   return { outerFrom: node.from, outerTo: node.to, innerFrom: open.to, innerTo: close.from };
 }
 
+// Review delta — the ragged-selection bug: a drag that crosses a mark's
+// boundary (e.g. selecting "two** thr" inside "one **two** three") isn't
+// recognized by `findMarkNode` (the selection doesn't align with the node),
+// so it used to fall into the plain "wrap the selection" path below and
+// produce UNBALANCED markers — the selection's own slice already contained
+// one of the mark's two delimiters, and wrapping it added a fresh pair on
+// top ("one ****two** thr**ee", an orphaned "**"). Fixed by the common
+// editor convention for a ragged selection touching formatted text: "touch
+// a mark, extend to cover it." Expand to the union of the selection and
+// every overlapping mark's FULL range, strip those marks' own delimiters
+// from that union, and wrap the resulting plain text fresh. Self-consistent
+// — re-selecting the result and toggling again hits the clean
+// `findMarkNode` unwrap path above, since the new selection now aligns
+// exactly with the new (single) mark node.
+function wrapWithNormalization(
+  state: EditorState,
+  from: number,
+  to: number,
+  overlapping: SyntaxNode[],
+  markChildName: string,
+  marker: string,
+): { changes: ChangeSpec; range: SelectionRange } {
+  let unionFrom = from;
+  let unionTo = to;
+  const removals: { from: number; to: number }[] = [];
+  for (const node of overlapping) {
+    unionFrom = Math.min(unionFrom, node.from);
+    unionTo = Math.max(unionTo, node.to);
+    const marks = node.getChildren(markChildName);
+    if (marks.length >= 2) {
+      const open = marks[0];
+      const close = marks[marks.length - 1];
+      removals.push({ from: open.from, to: open.to });
+      removals.push({ from: close.from, to: close.to });
+    }
+  }
+  removals.sort((a, b) => a.from - b.from);
+
+  const doc = state.doc;
+  let plain = "";
+  let cursor = unionFrom;
+  for (const r of removals) {
+    plain += doc.sliceString(cursor, r.from);
+    cursor = r.to;
+  }
+  plain += doc.sliceString(cursor, unionTo);
+
+  const newFrom = unionFrom + marker.length;
+  return {
+    changes: { from: unionFrom, to: unionTo, insert: marker + plain + marker },
+    range: EditorSelection.range(newFrom, newFrom + plain.length),
+  };
+}
+
 // One factory for bold/italic/strikethrough/code — each is "wrap the
 // selection in `marker` on both sides, or unwrap if it's already wrapped."
 function makeToggleWrap(nodeName: string, markChildName: string, marker: string): StateCommand {
-  return ({ state, dispatch }) => {
+  return (target) => {
+    if (isComposing(target)) return false;
+    const { state, dispatch } = target;
     const tr = state.changeByRange((range) => {
       const { from, to } = range;
       const node = findMarkNode(state, from, to, nodeName);
@@ -82,6 +177,13 @@ function makeToggleWrap(nodeName: string, markChildName: string, marker: string)
           };
         }
       }
+      // Ragged selection crossing a mark boundary — see
+      // wrapWithNormalization's own comment for why this can't be a plain
+      // wrap.
+      const overlapping = findOverlappingMarks(state, from, to, nodeName);
+      if (overlapping.length > 0) {
+        return wrapWithNormalization(state, from, to, overlapping, markChildName, marker);
+      }
       const selected = state.doc.sliceString(from, to);
       return {
         changes: { from, to, insert: marker + selected + marker },
@@ -104,7 +206,9 @@ export const toggleCode = makeToggleWrap("InlineCode", "CodeMark", "`");
 // Link is NOT toggle-aware (POLISH-WAVE PR 5b: "wraps [selection]() and
 // parks the cursor inside the parens") — always wraps, cursor lands ready
 // to type the URL.
-export const wrapLink: StateCommand = ({ state, dispatch }) => {
+export const wrapLink: StateCommand = (target) => {
+  if (isComposing(target)) return false;
+  const { state, dispatch } = target;
   const tr = state.changeByRange((range) => {
     const { from, to } = range;
     const selected = state.doc.sliceString(from, to);
@@ -170,7 +274,9 @@ function todoChangeForLine(
   return { from: at, to: at, insert: "- [ ] " };
 }
 
-export const toggleTodo: StateCommand = ({ state, dispatch }) => {
+export const toggleTodo: StateCommand = (target) => {
+  if (isComposing(target)) return false;
+  const { state, dispatch } = target;
   const changes: ChangeSpec[] = [];
   // CommonMark lazy continuation: a marker-less line right after list
   // content (no blank line between) stays part of the SAME ListItem as a

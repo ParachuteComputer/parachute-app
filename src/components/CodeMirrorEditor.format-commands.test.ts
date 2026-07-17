@@ -128,6 +128,50 @@ for (const mode of [
   });
 }
 
+// Review delta — IME safety gap. CM's keymap dispatcher does not itself
+// check composition state (verified against @codemirror/view's source: the
+// keydown handler runs bound commands regardless of `view.composing`), so
+// without an explicit guard in format-commands.ts these bindings could fire
+// and mutate the document mid-IME-composition. `.composing` is a read-only
+// getter on the real EditorView, backed by actual compositionstart/end
+// event tracking — overridden here via defineProperty to simulate an
+// in-progress IME session, the same technique
+// CodeMirrorEditor.touch-grammar.test.ts uses for the swipe gesture's own
+// composing guard.
+//
+// Mod-Enter's OWN guard is proven precisely at the unit level instead
+// (format-commands.test.ts's "IME safety" describe block, which invokes
+// `toggleTodo` directly against a `{state, dispatch, composing: true}`
+// target and asserts `dispatch` is never called) — a real keydown dispatch
+// with the override above doesn't work for Enter specifically: CM6 has its
+// own separate "Enter confirms an in-progress IME composition" handling
+// (see @codemirror/view's `ignoreDuringComposition` comment), which reacts
+// to `defineProperty`'s FAKE composing signal without the real
+// compositionstart/end event sequence backing it, and ends up inserting a
+// newline through that unrelated code path — confirmed via `defaultPrevented
+// === true` on the dispatched event (the keymap guard DID fire and prevent
+// default correctly; the stray newline is CM6's own IME-confirm fallback,
+// not a gap in this PR's guard). Bold doesn't have that special case, so
+// Mod-b's guard is provable both ways below.
+describe("IME guard — composing suppresses the keybindings (review delta)", () => {
+  it("Mod-b does nothing while composing", () => {
+    const view = makeEditor("hello world", { anchor: 0, head: 5 }, true);
+    Object.defineProperty(view, "composing", { value: true, configurable: true });
+    pressMod(view, "b");
+    expect(view.state.doc.toString()).toBe("hello world");
+  });
+
+  it("Mod-b works normally again once composing ends", () => {
+    const view = makeEditor("hello world", { anchor: 0, head: 5 }, true);
+    Object.defineProperty(view, "composing", { value: true, configurable: true });
+    pressMod(view, "b");
+    expect(view.state.doc.toString()).toBe("hello world"); // suppressed
+    Object.defineProperty(view, "composing", { value: false, configurable: true });
+    pressMod(view, "b");
+    expect(view.state.doc.toString()).toBe("**hello** world"); // now applies
+  });
+});
+
 describe("Tab/Shift-Tab — list-aware indent, live mode only", () => {
   it("Tab indents a list item in live-preview mode", () => {
     const view = makeEditor("- one\n- two", { anchor: 8 }, true); // cursor on "- two"

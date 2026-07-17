@@ -60,11 +60,19 @@ after `0.20.9`–`0.20.12` landed from sibling branches; this one takes `0.20.13
 Tests: `format-commands.test.ts` (wrap/unwrap on selection/caret-only/multi-line, the bold-vs-
 italic tree-disambiguation regression, the lazy-continuation todo-dedup regression, the three
 ragged-selection repro shapes plus an offset sweep asserting marker balance, IME-composing guards
-on the toggle and todo commands), `list-indent.test.ts` (tree-based list detection, Tab/Shift-Tab
-fall-through off a list line), `CodeMirrorEditor.format-commands.test.ts` (keybindings through the
-real wired keymap, both modes, plus the IME guard through a real dispatch), `CodeMirrorEditor
-.touch-grammar.test.ts` (toolbar coarse/fine-pointer gating, swipe indent/outdent,
-vertical-scroll-wins-ties, plain-tap replay, mouse-ignored, IME-composing guard, raw-mode-unwired).
+on every exported command including `toggleTodo`), `list-indent.test.ts` (tree-based list
+detection, Tab/Shift-Tab fall-through off a list line), `CodeMirrorEditor.format-commands.test.ts`
+(keybindings through the real wired keymap, both modes, plus Mod-b's IME guard through a real
+dispatch — Mod-Enter's own guard is proven at the unit level instead: CM6 has a separate "Enter
+confirms an in-progress IME composition" fallback that a `defineProperty`-faked `composing` signal
+[without the real event sequence backing it] triggers on its own, an unrelated code path the test
+file's own comment traces through in detail), `CodeMirrorEditor.touch-grammar.test.ts` (toolbar
+coarse/fine-pointer gating, swipe indent/outdent, vertical-scroll-wins-ties, plain-tap replay,
+mouse-ignored, IME-composing guard, raw-mode-unwired). Full suite: 167 test files / 1866 tests,
+clean (one unrelated pre-existing flake observed intermittently in `src/app/nav-history.test.tsx`,
+an `act()`-timing race untouched by this PR — passes cleanly in isolation); `typecheck` clean;
+`lint` clean (2 pre-existing warnings remain in `src/lib/vault/live-query.ts`, untouched by this
+PR); `build` clean.
 
 ## [0.20.12] - 2026-07-17
 

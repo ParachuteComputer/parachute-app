@@ -81,6 +81,54 @@ describe("toggleBold", () => {
   });
 });
 
+// Review delta — the ragged-selection byte-corruption bug. `findMarkNode`
+// only recognized a selection that aligned exactly with a mark's node
+// boundaries; a ragged drag crossing a mark's edge fell into the plain
+// "wrap the selection" path and produced UNBALANCED markers, since the
+// selected text already contained one of the mark's two delimiters. Fixed
+// by `findOverlappingMarks`/`wrapWithNormalization`: expand to the union of
+// the selection and every overlapping mark, strip those marks' own
+// delimiters, and wrap the resulting plain text fresh.
+describe("toggleBold — ragged selections crossing a mark boundary (review delta)", () => {
+  it("selection starts inside a mark and ends inside following prose — crosses the closing marker", () => {
+    // "one **two** three", selecting "two** thr" (positions 6-15). The
+    // pre-fix bug produced "one ****two** thr**ee" (an orphaned pair).
+    const doc = "one **two** three";
+    const { state } = apply(toggleBold, doc, { anchor: 6, head: 15 });
+    expect(state.doc.toString()).toBe("one **two thr**ee");
+  });
+
+  it("mirror: selection starts in prose before the mark and ends inside it — crosses the opening marker", () => {
+    // "one **two** three", selecting "e **tw" (positions 2-8).
+    const doc = "one **two** three";
+    const { state } = apply(toggleBold, doc, { anchor: 2, head: 8 });
+    expect(state.doc.toString()).toBe("on**e two** three");
+  });
+
+  it("double-mark crossing: selection spans from inside one mark, through plain text, into a second mark", () => {
+    // "one **two** and **three** four", selecting "wo** and **th" (7-20).
+    const doc = "one **two** and **three** four";
+    const { state } = apply(toggleBold, doc, { anchor: 7, head: 20 });
+    expect(state.doc.toString()).toBe("one **two and three** four");
+  });
+
+  it("offset sweep: every (from, to) pair over a marked string produces a balanced (even-count) marker result", () => {
+    // Covers the general class of the bug, not just the three named
+    // repros above — including selections that split a delimiter pair
+    // itself in half (e.g. landing between the two "*" of an opening
+    // "**"), which is what actually breaks parity: the pre-fix wrap path
+    // would carry a lone "*" into the newly-inserted pair.
+    const doc = "before **middle** after";
+    for (let from = 0; from < doc.length; from++) {
+      for (let to = from + 1; to <= doc.length; to++) {
+        const { state } = apply(toggleBold, doc, { anchor: from, head: to });
+        const asteriskCount = (state.doc.toString().match(/\*/g) ?? []).length;
+        expect(asteriskCount % 2, `from=${from} to=${to} -> "${state.doc.toString()}"`).toBe(0);
+      }
+    }
+  });
+});
+
 describe("toggleItalic / toggleStrikethrough / toggleCode", () => {
   it("italic wraps and unwraps with a single '*'", () => {
     const wrapped = apply(toggleItalic, "hello world", { anchor: 0, head: 5 });
@@ -163,6 +211,77 @@ describe("toggleTodo (Mod-Enter)", () => {
     const doc = "- [ ] milk\neggs";
     const { state } = apply(toggleTodo, doc, { anchor: 0, head: doc.length });
     expect(state.doc.toString()).toBe("- [x] milk\neggs");
+  });
+});
+
+// Review delta — IME safety gap. CM's keymap dispatcher does NOT check
+// composition state itself, so without an explicit guard these commands
+// could fire (and mutate the document) mid-IME-composition. Every exported
+// command bails via `isComposing`, which reads `.composing` off the actual
+// call-time target — a real `EditorView` in production, absent (and so
+// `false`) on the bare `{state, dispatch}` mocks the rest of this file
+// uses, which is why every other test above needed no changes.
+function applyComposing(
+  cmd: StateCommand,
+  doc: string,
+  selection: { anchor: number; head?: number },
+) {
+  const state = EditorState.create({
+    doc,
+    selection,
+    extensions: [markdown({ base: markdownLanguage })],
+  });
+  let dispatchCalled = false;
+  const target = {
+    state,
+    dispatch: () => {
+      dispatchCalled = true;
+    },
+    composing: true,
+  };
+  const handled = cmd(target as unknown as Parameters<StateCommand>[0]);
+  return { state, handled, dispatchCalled };
+}
+
+describe("IME safety — composing suppresses every command (review delta)", () => {
+  it("toggleBold does nothing while composing", () => {
+    const { state, handled, dispatchCalled } = applyComposing(toggleBold, "hello world", {
+      anchor: 0,
+      head: 5,
+    });
+    expect(handled).toBe(false);
+    expect(dispatchCalled).toBe(false);
+    expect(state.doc.toString()).toBe("hello world");
+  });
+
+  it("toggleItalic/toggleStrikethrough/toggleCode do nothing while composing", () => {
+    for (const cmd of [toggleItalic, toggleStrikethrough, toggleCode]) {
+      const { handled, dispatchCalled } = applyComposing(cmd, "hello world", {
+        anchor: 0,
+        head: 5,
+      });
+      expect(handled).toBe(false);
+      expect(dispatchCalled).toBe(false);
+    }
+  });
+
+  it("wrapLink does nothing while composing", () => {
+    const { state, handled, dispatchCalled } = applyComposing(wrapLink, "see docs here", {
+      anchor: 4,
+      head: 8,
+    });
+    expect(handled).toBe(false);
+    expect(dispatchCalled).toBe(false);
+    expect(state.doc.toString()).toBe("see docs here");
+  });
+
+  it("toggleTodo (Mod-Enter) does nothing while composing", () => {
+    const { state, handled, dispatchCalled } = applyComposing(toggleTodo, "buy milk", {
+      anchor: 0,
+    });
+    expect(handled).toBe(false);
+    expect(dispatchCalled).toBe(false);
+    expect(state.doc.toString()).toBe("buy milk");
   });
 });
 
