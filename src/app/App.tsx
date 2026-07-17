@@ -1,6 +1,7 @@
 import { AccountSessionBanner, HubGateBanner } from "@/components/AccountSessionBanner";
 import { AmbientMapFab } from "@/components/AmbientMapFab";
 import { BottomTabBar } from "@/components/BottomTabBar";
+import { FocusModeExitChip, FocusModeMount } from "@/components/FocusModeMount";
 import { Header } from "@/components/Header";
 import { QuickSwitchMount } from "@/components/QuickSwitchMount";
 import { Rail } from "@/components/Rail";
@@ -12,6 +13,7 @@ import { VaultStatusBanner } from "@/components/VaultStatusBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
+import { isFocusablePath, useFocusMode } from "@/lib/focus-mode";
 import { isCeremonyPath } from "@/lib/nav/model";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useVaultStore } from "@/lib/vault";
@@ -277,6 +279,184 @@ function ReachabilityProbeMount() {
   return null;
 }
 
+// Everything below the router basename — pulled out of `App()` into its own
+// component (POLISH-WAVE PR 4) purely so it can call `useLocation()`: `App()`
+// itself renders `<BrowserRouter>`, so it sits ABOVE the router context and
+// can't read the route. `focusActive` gates the app chrome off both the
+// store (ephemeral, reset on every navigation — FocusModeMount) AND
+// `isFocusablePath` (only /n/:id and /n/:id/edit may ever show it) — the
+// second check is belt-and-suspenders, not load-bearing, since the store
+// can't stay `true` on a route it didn't arm on.
+function AppShell() {
+  const location = useLocation();
+  const focusOn = useFocusMode((s) => s.on);
+  const focusActive = focusOn && isFocusablePath(location.pathname);
+
+  return (
+    <div className="app-canvas min-h-dvh overflow-x-hidden text-fg">
+      <Toaster />
+      <UpdateBanner />
+      <VaultStatusBanner />
+      <AccountSessionBanner />
+      <HubGateBanner />
+      <FocusModeMount />
+      {/*
+        The shell: a left Rail (desktop spine, hidden lg:flex) beside the
+        content column. Below lg the Rail collapses and the mobile Header
+        + BottomTabBar carry navigation. `pb-16 lg:pb-0` keeps content
+        clear of the fixed bottom bar on mobile only. Focus mode (PR 4)
+        drops Rail/Header/BottomTabBar/AppFooter/SpeedDial/AmbientMapFab
+        entirely — an instant unmount, not an exit animation: PR1 already
+        settled "entrances only, exits stay instant" for every floating
+        surface in this app, and re-litigating that here for the chrome
+        itself would mean keeping it mounted mid-animation (the deferred-
+        unmount machinery PR1 deliberately avoided).
+      */}
+      <div className="lg:flex">
+        {focusActive ? null : <Rail />}
+        <div className={`flex min-w-0 flex-1 flex-col ${focusActive ? "" : "pb-16 lg:pb-0"}`}>
+          {focusActive ? null : <Header />}
+          <QuickSwitchMount />
+          <main
+            className="flex-1"
+            // The Header/Rail normally carry `env(safe-area-inset-top)` —
+            // with both gone in focus mode, the inset moves here so a
+            // notched device's camera/pill never overlaps the first line.
+            // The data attribute exists because jsdom's CSSOM silently drops
+            // `env()` values (verified: `el.style.paddingTop = "env(...)"`
+            // round-trips to `""` in jsdom), so a real browser is the only
+            // way to see the style itself — the attribute lets tests still
+            // pin WHEN the relocation should apply.
+            data-focus-safe-area={focusActive ? "true" : undefined}
+            style={focusActive ? { paddingTop: "env(safe-area-inset-top)" } : undefined}
+          >
+            {/*
+                    RESERVED PATH-SPACE (my. Phase A2, URL-TOPOLOGY.md §2.3 —
+                    the one-origin door): once this app is served on
+                    my.parachute.computer, `/vault/<name>/*` is the vault
+                    worker's data plane (a Cloudflare zone route dispatches it
+                    ABOVE this worker, before any route below ever sees the
+                    request) and `/u/<handle>/*` is reserved for Phase B's
+                    per-account vault namespace. NEITHER PREFIX MAY EVER GAIN
+                    A ROUTE HERE — a client route matching `/vault/...` or
+                    `/u/...` would only ever be reached if the zone route were
+                    misconfigured, which must fail loudly (404), never fall
+                    back to some SPA page pretending to be the data plane.
+                    Nothing below collides today: the `/:id` bare-path shim
+                    two routes down is single-segment only (RR7's exact match,
+                    can't claim `/vault/x`), and no two-segment literal route
+                    is named `vault` or `u`. `pwa-navigation-denylist.ts`
+                    denies the same two prefixes at the service-worker layer;
+                    App.test.tsx's "reserved path-space" cases pin that a
+                    `/vault/<name>` or `/u/<handle>` navigation lands on the
+                    `*` catch-all, not on NoteView.
+                  */}
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                <Route path="/" element={<BootGate />} />
+                <Route path="/check-email" element={<CheckEmail />} />
+                {/*
+                    /notes is the ONE SURFACE over the vault (LZ-3): the
+                    VaultSurface, wearing the lens `?view=` names (All by
+                    default; pinned/archived; the untagged/orphaned
+                    maintenance views). Registered here — well before the
+                    dynamic /:id bare-path shim below — so a note literally
+                    named "notes" can never shadow this route; that note is
+                    reachable only at /n/notes (same accepted tradeoff as the
+                    ceremony denylist). React Router's ranked matching already
+                    prefers static segments over /:id regardless of
+                    declaration order (see App.test.tsx's "/settings wins"
+                    guard), but the order stays literal/readable here too.
+                  */}
+                <Route path="/notes" element={<VaultSurface />} />
+                {/*
+                    /all is the pre-W2-7 address — a shim to /notes,
+                    preserving any query string. NAVIGATION.md: (a) redirect
+                    shim — replace.
+                  */}
+                <Route path="/all" element={<ShimPreservingQuery to="/notes" />} />
+                {/*
+                    The four built-in views are filters inside /notes now (a
+                    ?view= chip), not their own routes. Old bookmarks redirect
+                    into the filtered list so links keep working.
+                    NAVIGATION.md: (a) redirect shims — replace throughout.
+                  */}
+                <Route path="/pinned" element={<Navigate to="/notes?view=pinned" replace />} />
+                <Route path="/archived" element={<Navigate to="/notes?view=archived" replace />} />
+                <Route path="/untagged" element={<Navigate to="/notes?view=untagged" replace />} />
+                <Route path="/orphaned" element={<Navigate to="/notes?view=orphaned" replace />} />
+                <Route path="/tags" element={<Tags />} />
+                <Route path="/new" element={<NoteNew />} />
+                {/*
+                    Capture and New were split surfaces pre-2026-05-27. Unified
+                    into NoteNew per Aaron's "serious pass": one creation
+                    screen with title up front, voice as an affordance.
+                    Legacy `/capture` bookmarks redirect into the new flow.
+                    NAVIGATION.md: (a) redirect shim — replace.
+                  */}
+                <Route path="/capture" element={<Navigate to="/new" replace />} />
+                <Route path="/import" element={<Import />} />
+                <Route path="/export" element={<Export />} />
+                <Route path="/connect" element={<ConnectAI />} />
+                {/*
+                    W2-7: /map is the canonical Map room (label "Map" matches
+                    address; earned-gated on both projections, §2.2). /graph
+                    is the pre-W2-7 address — a shim to /map, preserving any
+                    query string. NAVIGATION.md: (a) redirect shim — replace.
+                  */}
+                <Route path="/map" element={<VaultGraph />} />
+                <Route path="/graph" element={<ShimPreservingQuery to="/map" />} />
+                <Route path="/today" element={<DayView />} />
+                <Route path="/calendar" element={<Calendar />} />
+                <Route path="/activity" element={<Activity />} />
+                {/*
+                    views-wave-1 (VIEWS-RENDER-SPEC §2/§6): the view organ.
+                    `/views/new` is registered before the `:id` route so the
+                    literal "new" segment can never be swallowed as an id
+                    (React Router ranks static segments first regardless,
+                    but the order stays literal/readable here too — same
+                    convention as `/notes` above the `/:id` bare-path shim).
+                  */}
+                <Route path="/views/new" element={<ViewNew />} />
+                <Route path="/views/:id" element={<ViewSurface />} />
+                <Route path="/n/:id" element={<NoteView />} />
+                <Route path="/n/:id/edit" element={<NoteEditor />} />
+                <Route path="/:id" element={<NoteIdRedirect />} />
+                <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
+                <Route path="/add" element={<AddVault />} />
+                <Route path="/add-vault" element={<AddVaultChooser />} />
+                {/*
+                    The creation ceremony's stepped URLs (W2-6, DESIGN-SPEC
+                    §4.2): naming (+ the in-shell creating beat) at
+                    /add-vault/create, the ready beat at /add-vault/ready.
+                    The old /welcome?new=1 entry shims to /create inside the
+                    Welcome dispatcher.
+                  */}
+                <Route path="/add-vault/create" element={<AddVaultCreate />} />
+                <Route path="/add-vault/ready" element={<AddVaultReady />} />
+                <Route path="/welcome" element={<Welcome />} />
+                <Route path="/oauth/callback" element={<OAuthCallback />} />
+                <Route path="/vaults" element={<Vaults />} />
+                <Route path="/account" element={<Account />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Routes>
+            </Suspense>
+          </main>
+          {focusActive ? null : <AppFooter />}
+        </div>
+      </div>
+      {focusActive ? null : <BottomTabBar />}
+      {focusActive ? null : <AmbientMapFab />}
+      {/* Desktop-only capture speed-dial (W2-9) — top-right, clear of
+          the Map FAB's bottom-right corner. Mobile capture stays the
+          BottomTabBar's centre [+]. */}
+      {focusActive ? null : <SpeedDial />}
+      {focusActive ? <FocusModeExitChip /> : null}
+    </div>
+  );
+}
+
 export function App() {
   // Wired at the app root (not a provider) so the storage-event listener
   // outlives every route transition. Same vault state surfaces in every tab
@@ -308,159 +488,7 @@ export function App() {
           for the detector + the design rationale.
         */}
         <BrowserRouter basename={detectMountBase()}>
-          <div className="app-canvas min-h-dvh overflow-x-hidden text-fg">
-            <Toaster />
-            <UpdateBanner />
-            <VaultStatusBanner />
-            <AccountSessionBanner />
-            <HubGateBanner />
-            {/*
-              The shell: a left Rail (desktop spine, hidden lg:flex) beside the
-              content column. Below lg the Rail collapses and the mobile Header
-              + BottomTabBar carry navigation. `pb-16 lg:pb-0` keeps content
-              clear of the fixed bottom bar on mobile only.
-            */}
-            <div className="lg:flex">
-              <Rail />
-              <div className="flex min-w-0 flex-1 flex-col pb-16 lg:pb-0">
-                <Header />
-                <QuickSwitchMount />
-                <main className="flex-1">
-                  {/*
-                    RESERVED PATH-SPACE (my. Phase A2, URL-TOPOLOGY.md §2.3 —
-                    the one-origin door): once this app is served on
-                    my.parachute.computer, `/vault/<name>/*` is the vault
-                    worker's data plane (a Cloudflare zone route dispatches it
-                    ABOVE this worker, before any route below ever sees the
-                    request) and `/u/<handle>/*` is reserved for Phase B's
-                    per-account vault namespace. NEITHER PREFIX MAY EVER GAIN
-                    A ROUTE HERE — a client route matching `/vault/...` or
-                    `/u/...` would only ever be reached if the zone route were
-                    misconfigured, which must fail loudly (404), never fall
-                    back to some SPA page pretending to be the data plane.
-                    Nothing below collides today: the `/:id` bare-path shim
-                    two routes down is single-segment only (RR7's exact match,
-                    can't claim `/vault/x`), and no two-segment literal route
-                    is named `vault` or `u`. `pwa-navigation-denylist.ts`
-                    denies the same two prefixes at the service-worker layer;
-                    App.test.tsx's "reserved path-space" cases pin that a
-                    `/vault/<name>` or `/u/<handle>` navigation lands on the
-                    `*` catch-all, not on NoteView.
-                  */}
-                  <Suspense fallback={<RouteFallback />}>
-                    <Routes>
-                      <Route path="/" element={<BootGate />} />
-                      <Route path="/check-email" element={<CheckEmail />} />
-                      {/*
-                    /notes is the ONE SURFACE over the vault (LZ-3): the
-                    VaultSurface, wearing the lens `?view=` names (All by
-                    default; pinned/archived; the untagged/orphaned
-                    maintenance views). Registered here — well before the
-                    dynamic /:id bare-path shim below — so a note literally
-                    named "notes" can never shadow this route; that note is
-                    reachable only at /n/notes (same accepted tradeoff as the
-                    ceremony denylist). React Router's ranked matching already
-                    prefers static segments over /:id regardless of
-                    declaration order (see App.test.tsx's "/settings wins"
-                    guard), but the order stays literal/readable here too.
-                  */}
-                      <Route path="/notes" element={<VaultSurface />} />
-                      {/*
-                    /all is the pre-W2-7 address — a shim to /notes,
-                    preserving any query string. NAVIGATION.md: (a) redirect
-                    shim — replace.
-                  */}
-                      <Route path="/all" element={<ShimPreservingQuery to="/notes" />} />
-                      {/*
-                    The four built-in views are filters inside /notes now (a
-                    ?view= chip), not their own routes. Old bookmarks redirect
-                    into the filtered list so links keep working.
-                    NAVIGATION.md: (a) redirect shims — replace throughout.
-                  */}
-                      <Route
-                        path="/pinned"
-                        element={<Navigate to="/notes?view=pinned" replace />}
-                      />
-                      <Route
-                        path="/archived"
-                        element={<Navigate to="/notes?view=archived" replace />}
-                      />
-                      <Route
-                        path="/untagged"
-                        element={<Navigate to="/notes?view=untagged" replace />}
-                      />
-                      <Route
-                        path="/orphaned"
-                        element={<Navigate to="/notes?view=orphaned" replace />}
-                      />
-                      <Route path="/tags" element={<Tags />} />
-                      <Route path="/new" element={<NoteNew />} />
-                      {/*
-                    Capture and New were split surfaces pre-2026-05-27. Unified
-                    into NoteNew per Aaron's "serious pass": one creation
-                    screen with title up front, voice as an affordance.
-                    Legacy `/capture` bookmarks redirect into the new flow.
-                    NAVIGATION.md: (a) redirect shim — replace.
-                  */}
-                      <Route path="/capture" element={<Navigate to="/new" replace />} />
-                      <Route path="/import" element={<Import />} />
-                      <Route path="/export" element={<Export />} />
-                      <Route path="/connect" element={<ConnectAI />} />
-                      {/*
-                    W2-7: /map is the canonical Map room (label "Map" matches
-                    address; earned-gated on both projections, §2.2). /graph
-                    is the pre-W2-7 address — a shim to /map, preserving any
-                    query string. NAVIGATION.md: (a) redirect shim — replace.
-                  */}
-                      <Route path="/map" element={<VaultGraph />} />
-                      <Route path="/graph" element={<ShimPreservingQuery to="/map" />} />
-                      <Route path="/today" element={<DayView />} />
-                      <Route path="/calendar" element={<Calendar />} />
-                      <Route path="/activity" element={<Activity />} />
-                      {/*
-                    views-wave-1 (VIEWS-RENDER-SPEC §2/§6): the view organ.
-                    `/views/new` is registered before the `:id` route so the
-                    literal "new" segment can never be swallowed as an id
-                    (React Router ranks static segments first regardless,
-                    but the order stays literal/readable here too — same
-                    convention as `/notes` above the `/:id` bare-path shim).
-                  */}
-                      <Route path="/views/new" element={<ViewNew />} />
-                      <Route path="/views/:id" element={<ViewSurface />} />
-                      <Route path="/n/:id" element={<NoteView />} />
-                      <Route path="/n/:id/edit" element={<NoteEditor />} />
-                      <Route path="/:id" element={<NoteIdRedirect />} />
-                      <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
-                      <Route path="/add" element={<AddVault />} />
-                      <Route path="/add-vault" element={<AddVaultChooser />} />
-                      {/*
-                    The creation ceremony's stepped URLs (W2-6, DESIGN-SPEC
-                    §4.2): naming (+ the in-shell creating beat) at
-                    /add-vault/create, the ready beat at /add-vault/ready.
-                    The old /welcome?new=1 entry shims to /create inside the
-                    Welcome dispatcher.
-                  */}
-                      <Route path="/add-vault/create" element={<AddVaultCreate />} />
-                      <Route path="/add-vault/ready" element={<AddVaultReady />} />
-                      <Route path="/welcome" element={<Welcome />} />
-                      <Route path="/oauth/callback" element={<OAuthCallback />} />
-                      <Route path="/vaults" element={<Vaults />} />
-                      <Route path="/account" element={<Account />} />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route path="*" element={<NotFoundPage />} />
-                    </Routes>
-                  </Suspense>
-                </main>
-                <AppFooter />
-              </div>
-            </div>
-            <BottomTabBar />
-            <AmbientMapFab />
-            {/* Desktop-only capture speed-dial (W2-9) — top-right, clear of
-                the Map FAB's bottom-right corner. Mobile capture stays the
-                BottomTabBar's centre [+]. */}
-            <SpeedDial />
-          </div>
+          <AppShell />
         </BrowserRouter>
       </SyncProvider>
     </QueryProvider>

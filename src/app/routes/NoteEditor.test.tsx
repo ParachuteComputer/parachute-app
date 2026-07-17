@@ -1,5 +1,6 @@
 import { NoteEditor } from "@/app/routes/NoteEditor";
 import { loadDraft, saveDraft } from "@/lib/drafts/store";
+import { useFocusMode } from "@/lib/focus-mode";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -643,5 +644,99 @@ describe("NoteEditor — local draft persistence (notes#175)", () => {
     const reloadBtn = await screen.findByRole("button", { name: /reload latest/i });
     fireEvent.click(reloadBtn);
     expect(loadDraft("dev", "abc-123")).toBeNull();
+  });
+});
+
+// POLISH-WAVE PR 4 + EDITOR-STUDY §3.3 — the edit route's own addition: focus
+// collapses the whole header card (path, tags, buttons) to a floating
+// save-state whisper. ⌘. itself isn't exercised here — FocusModeMount isn't
+// mounted in this route-only harness (see FocusModeMount.test.tsx) — this
+// suite is about what the editor renders once the shared store says "on".
+describe("NoteEditor — focus mode (EDITOR-STUDY §3.3)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    seedStore();
+    useFocusMode.setState({ on: false });
+    vi.spyOn(window, "confirm").mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useFocusMode.setState({ on: false });
+  });
+
+  it("the header's Focus ghost button arms the shared store", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    await screen.findByTestId("cm-editor");
+
+    const focusButton = screen.getByRole("button", { name: /focus/i });
+    act(() => {
+      fireEvent.click(focusButton);
+    });
+    expect(useFocusMode.getState().on).toBe(true);
+  });
+
+  it("collapses the header card (path input, tag editor, Save/Cancel/Revert) to the save-state whisper while on", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    await screen.findByTestId("cm-editor");
+
+    // Off: the full header card is present.
+    expect(screen.getByLabelText(/note path/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/add tag/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+    expect(screen.getByText(/saved/i)).toBeInTheDocument();
+
+    act(() => {
+      useFocusMode.getState().setOn(true);
+    });
+
+    // On: the card's controls are gone — only the whisper remains.
+    expect(screen.queryByLabelText(/note path/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/add tag/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^save$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^cancel$/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/saved/i)).toBeInTheDocument();
+
+    // The CodeMirror pane itself is untouched by focus mode in the editor —
+    // only the header card collapses.
+    expect(screen.getByTestId("cm-editor")).toBeInTheDocument();
+  });
+
+  it("restores the full header card when focus mode turns back off", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    await screen.findByTestId("cm-editor");
+
+    act(() => {
+      useFocusMode.getState().setOn(true);
+    });
+    expect(screen.queryByLabelText(/note path/i)).not.toBeInTheDocument();
+
+    act(() => {
+      useFocusMode.getState().setOn(false);
+    });
+    expect(screen.getByLabelText(/note path/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+  });
+
+  it("the whisper reflects dirty/saved state the same way the header's did", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+
+    act(() => {
+      useFocusMode.getState().setOn(true);
+    });
+    // Clean: "saved …" label.
+    expect(screen.getByText(/saved/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/unsaved changes/i)).not.toBeInTheDocument();
+
+    fireEvent.change(cm, { target: { value: "edited" } });
+    expect(screen.getByLabelText(/unsaved changes/i)).toBeInTheDocument();
   });
 });
