@@ -314,6 +314,27 @@ export function App() {
                 <Header />
                 <QuickSwitchMount />
                 <main className="flex-1">
+                  {/*
+                    RESERVED PATH-SPACE (my. Phase A2, URL-TOPOLOGY.md §2.3 —
+                    the one-origin door): once this app is served on
+                    my.parachute.computer, `/vault/<name>/*` is the vault
+                    worker's data plane (a Cloudflare zone route dispatches it
+                    ABOVE this worker, before any route below ever sees the
+                    request) and `/u/<handle>/*` is reserved for Phase B's
+                    per-account vault namespace. NEITHER PREFIX MAY EVER GAIN
+                    A ROUTE HERE — a client route matching `/vault/...` or
+                    `/u/...` would only ever be reached if the zone route were
+                    misconfigured, which must fail loudly (404), never fall
+                    back to some SPA page pretending to be the data plane.
+                    Nothing below collides today: the `/:id` bare-path shim
+                    two routes down is single-segment only (RR7's exact match,
+                    can't claim `/vault/x`), and no two-segment literal route
+                    is named `vault` or `u`. `pwa-navigation-denylist.ts`
+                    denies the same two prefixes at the service-worker layer;
+                    App.test.tsx's "reserved path-space" cases pin that a
+                    `/vault/<name>` or `/u/<handle>` navigation lands on the
+                    `*` catch-all, not on NoteView.
+                  */}
                   <Suspense fallback={<RouteFallback />}>
                     <Routes>
                       <Route path="/" element={<BootGate />} />

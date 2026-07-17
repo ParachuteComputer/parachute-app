@@ -1,5 +1,27 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.19.2] - 2026-07-16
+
+**Reserve `/vault` + `/u` path-space for the one-origin domain (my. Phase A2).** Prep work for
+`my.parachute.computer`, the ratified one-origin door where `/vault/<name>/*` is a Cloudflare
+zone route to the vault worker (the data plane) dispatching ABOVE this app, and `/u/<handle>/*`
+is reserved for Phase B's per-account vault namespace. This app must never intercept either as
+its own — no wire/route change (nothing here already claims those prefixes), pure guardrails +
+pins so a future change can't accidentally collide. Patch bump — no user-visible behavior change.
+
+- **Service worker**: `pwa-navigation-denylist.ts` denies `/^\/vault\//` and `/^\/u\//` — an
+  installed PWA's `navigateFallback` must never swallow a `/vault/<name>/...` or
+  `/u/<handle>/...` navigation into the cached SPA shell, even if the zone route is ever
+  misconfigured. Bare `/vault` and `/u` (no further segment) stay undenied — there's no
+  server-owned page at exactly that path, so a note literally named "vault" or "u" keeps
+  resolving as it does today.
+- **Router-root reservation**: a comment block in `App.tsx` documents `/vault` and `/u` as
+  permanently foreign prefixes; confirmed (and pinned via `App.test.tsx`) that the single-segment
+  `/:id` bare-path shim can't collide with a two-segment `/vault/<name>` or `/u/<handle>/...`
+  path — both already fall through to the `*` catch-all today.
+- **`base-url.ts` sanity**: pinned that `detectMountBase()` never misreads `/vault/*` or `/u/*`
+  as a sub-mount — `MOUNT_PATTERNS` only recognizes `/surface/<slug>` and `/notes/`.
+
 ## [0.19.1] - 2026-07-16
 
 **Live-preview polish: reveal/containment/quote nits (A5), drop Pages-era public artifacts.**
