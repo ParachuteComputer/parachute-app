@@ -1,3 +1,4 @@
+import { firstLineTitle } from "@/lib/editor/first-line-title";
 import {
   toggleBold,
   toggleCode,
@@ -250,6 +251,10 @@ export function buildExtensions(
     // selector resolves by observed stylesheet order, not array position
     // here, so the only reliable fix is to make the tie impossible.
     ...(livePreviewOn ? livePreview() : [rawModeTypographyTheme]),
+    // FIX 3 (0.20.14) — the first non-empty content line renders at title
+    // scale (the note's `display_title`), pure decoration, no `# ` written.
+    // Mode-agnostic: both raw and live, and it defers to an explicit heading.
+    firstLineTitle(),
     slashMenuTheme,
     autocompletion({
       // The ONLY completion source in this editor — see

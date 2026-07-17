@@ -2,9 +2,10 @@
 
 ## [0.20.14] - 2026-07-17
 
-**Polish — the mobile formatting bar docks above the keyboard; the note header's path/tags recede.**
-Two feel-fixes from a live tablet test of 0.20.13. Display-only: no data-model changes and no new
-capabilities — only where things sit and how they read.
+**Polish — mobile formatting bar docks above the keyboard; note header's path/tags recede; the
+first line renders as a title.** Three feel-fixes from a live tablet test of 0.20.13. Display-only:
+no data-model changes and no new capabilities — only where things sit and how they read (FIX 3
+writes NO markdown into the note).
 
 - **`src/lib/editor/selection-toolbar.ts`** — on touch the selection formatting bar no longer
   floats at the selection (where Android paints its Copy / Select all callout directly over ours
@@ -37,6 +38,16 @@ capabilities — only where things sit and how they read.
   collides with the metadata card's "Copy note path". Tags reweight to normal-weight, tighter-
   spaced compact chips (were `font-medium`) — a quiet label strip under the title rather than a
   second headline. The reclaimed vertical space goes to content.
+- **`src/lib/editor/first-line-title.ts`** (new) + **`CodeMirrorEditor.tsx`** — the Bear / Apple
+  Notes move: the note's first non-empty content line IS its title (the vault's `display_title` —
+  first line, leading `#` stripped, frontmatter skipped, vault 0.7.3-rc), so the editor RENDERS
+  that line at title scale (serif, `--text-3xl`, weight 650 — the same H1 top-of-ramp as the live-
+  preview `.cm-lp-h1`). A CodeMirror **line decoration**, mode-agnostic (raw + live) — **not one
+  byte of `# ` or any structure is written into the note**. Frontmatter is skipped via the shared
+  `frontmatterEnd` helper (now exported from `live-preview.ts`, single source with the reveal
+  guard, so the two never drift); it defers to an explicit ATX heading (`/^ {0,3}#{1,6}(?: |$)/`) so
+  the styling never stacks on the editor's own heading treatment; and it tracks live — deleting the
+  first line promotes the next non-empty one (recomputed on `docChanged`).
 
 Judgment calls (reviewer-facing):
 
@@ -52,14 +63,16 @@ Judgment calls (reviewer-facing):
   device can gain/lose a pointer mid-session), the same approach the 0.20.13 toolbar used;
   `window.visualViewport` drives positioning and degrades to `bottom: 0` where it's absent.
 
-Gates (literal): `bun run test` (vitest) — **1866 passed / 1866**, 167 files; `bun run typecheck` —
+Gates (literal): `bun run test` (vitest) — **1872 passed / 1872**, 168 files; `bun run typecheck` —
 clean; `bun run lint` — clean (2 pre-existing `src/lib/vault/live-query.ts`
 `useExhaustiveDependencies` warnings, present on `main`); `bun run build` — ✓. The editor toolbar
 suite is rewritten for the docked mechanism (bar in `document.body`, coarse-only, show/hide-on-
 collapse, ≥40px targets, command dispatch, pointerdown containment); the NoteView metadata test
-folds in the header's one-tap "Copy path" affordance. Note: `nav-history.test.tsx` carries a
-PRE-EXISTING parallel-load flake (real timers + real `window.history`) that fails ~1/6 runs on
-`main` as well; a sequential run (`--no-file-parallelism`) is 100% green (1866/1866).
+folds in the header's one-tap "Copy path" affordance; `first-line-title.test.ts` is new (plain-line
+title, no-stack-on-heading, live mode, frontmatter skip, leading-blank skip, live tracking across
+an edit). Note: `nav-history.test.tsx` carries a PRE-EXISTING parallel-load flake (real timers +
+real `window.history`) that fails ~1/6 runs on `main` as well; a sequential run
+(`--no-file-parallelism`) is 100% green (1872/1872).
 
 ## [0.20.13] - 2026-07-17
 
