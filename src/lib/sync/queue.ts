@@ -234,6 +234,7 @@ async function runMutation(ctx: DrainContext, row: PendingRow): Promise<void> {
         path,
         mimeType: m.mimeType,
         ...(m.transcribe ? { transcribe: true } : {}),
+        ...(m.metadata ? { metadata: m.metadata } : {}),
       });
       return;
     }

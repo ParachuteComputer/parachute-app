@@ -9,9 +9,10 @@ import { TagEditor, normalizeTag } from "@/components/TagEditor";
 import { VoiceUnavailableNote } from "@/components/VoiceUnavailableNote";
 import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { extractHashtags } from "@/lib/capture/hashtags";
-import { memoFilename, quickPath } from "@/lib/capture/recorder";
+import { quickPath } from "@/lib/capture/recorder";
 import { buildTextNotePayload } from "@/lib/capture/text-note";
 import { useVoiceCapture } from "@/lib/capture/use-voice-capture";
+import { buildVoiceCapturePlan } from "@/lib/capture/voice-capture-plan";
 import { NEW_NOTE_SCOPE, clearDraft, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
 import { readStoredLivePreview } from "@/lib/editor-mode";
@@ -19,6 +20,7 @@ import { blobRef, enqueue, newBlobId, newLocalId } from "@/lib/sync";
 import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
 import { useCreateNote, useLinkAttachment, useTagRoles, useVaultStore } from "@/lib/vault";
+import { validateFile } from "@/lib/vault/attachment-upload";
 import {
   useAudioRetention,
   useRetentionChoiceMade,
@@ -139,6 +141,17 @@ export function NoteNew() {
     voice.phase.kind === "recording" ||
     voice.phase.kind === "have-audio";
   const voiceGated = transcription?.enabled === false && !captureInFlight;
+
+  // Minutes honesty (hosted door only — the capability carries
+  // `minutes_remaining`; self-host has no such field and shows nothing new).
+  // Near/at zero we tell the truth BEFORE recording: the mic stays available,
+  // but the recording saves as audio-only and the save sends `transcribe:
+  // false` so the server doesn't churn on a capture it can't transcribe.
+  const minutesRemaining =
+    typeof transcription?.minutes_remaining === "number"
+      ? transcription.minutes_remaining
+      : undefined;
+  const outOfMinutes = minutesRemaining !== undefined && minutesRemaining <= 0;
 
   // W2-9: the speed-dial's "Voice note" verb arrives as `/new?voice=1` —
   // land IN voice capture, no extra tap: auto-start the recorder once the
@@ -335,8 +348,9 @@ export function NoteNew() {
       return;
     }
     setSaveError(null);
-    setIsSavingAudio(true);
     const audio = voice.phase;
+    const segments = audio.segments;
+    const mimeType = audio.mimeType;
     const path = draft.path.trim();
     const explicit = draft.tags;
     const extracted = extractHashtags(draft.content);
@@ -352,13 +366,40 @@ export function NoteNew() {
     // de-dupe again after the conditional push so the role tag isn't duplicated.
     const tags = Array.from(new Set(finalTags));
 
+    // Segmentation: a long recording rolled into several standalone audio
+    // segments (see `segmented-recorder`). `buildVoiceCapturePlan` owns the
+    // body + per-segment upload/link shape — the COMMON single-segment case
+    // stays byte-identical, N>1 pre-seeds per-part markers + carries
+    // `segment_index`, and out-of-minutes drops both (audio-only). Out of
+    // monthly transcription minutes → `transcribe: false` so the server
+    // doesn't churn on a capture it can't transcribe.
     const recordedAt = new Date();
-    const filename = memoFilename(audio.mimeType, recordedAt);
-    const blobId = newBlobId();
     const localId = newLocalId();
-    const body = hasText
-      ? `${draft.content.trim()}\n\n_Transcript pending._\n\n![[${filename}]]\n`
-      : `_Transcript pending._\n\n![[${filename}]]\n`;
+    const willTranscribe = !outOfMinutes;
+    const plan = buildVoiceCapturePlan({
+      segments,
+      mimeType,
+      typedText: draft.content,
+      recordedAt,
+      willTranscribe,
+    });
+
+    // Size validation — the SAME guard every other upload uses, run per
+    // segment. Segments are small (~10 min of opus each), so this is a safety
+    // net, not a limit; a failure aborts the whole save rather than enqueuing a
+    // partial capture.
+    for (let k = 0; k < segments.length; k++) {
+      const reason = validateFile(
+        new File([segments[k]!.data], plan.segments[k]!.filename, { type: mimeType }),
+      );
+      if (reason) {
+        pushToast(reason, "error");
+        setSaveError(reason);
+        return;
+      }
+    }
+
+    setIsSavingAudio(true);
 
     // Fire-and-forget schema ensure — creates the `capture` tag row if the
     // vault doesn't have it yet. Vault accepts notes with unwritten
@@ -370,40 +411,43 @@ export function NoteNew() {
     // Built once so the enqueued create-note row and the optimistic cache
     // seed below stay in lockstep.
     const createPayload: CreateNotePayload = {
-      content: body,
+      content: plan.body,
       path,
       metadata: { source: "voice" },
       ...(tags.length ? { tags } : {}),
     };
 
     try {
-      await blobStore.put(blobId, audio.data, audio.mimeType, activeVault.id);
       await enqueue(
         db,
         { kind: "create-note", localId, payload: createPayload },
         { vaultId: activeVault.id },
       );
-      await enqueue(
-        db,
-        {
-          kind: "upload-attachment",
-          blobId,
-          filename,
-          mimeType: audio.mimeType,
-        },
-        { vaultId: activeVault.id },
-      );
-      await enqueue(
-        db,
-        {
-          kind: "link-attachment",
-          noteId: localId,
-          pathRef: blobRef(blobId),
-          mimeType: audio.mimeType,
-          transcribe: true,
-        },
-        { vaultId: activeVault.id },
-      );
+      // One upload + link pair per segment, in order. Each link references its
+      // own blob and (for N>1) carries the numeric `segment_index` the door
+      // contract keys per-part markers on.
+      for (let k = 0; k < plan.segments.length; k++) {
+        const seg = plan.segments[k]!;
+        const blobId = newBlobId();
+        await blobStore.put(blobId, segments[k]!.data, mimeType, activeVault.id);
+        await enqueue(
+          db,
+          { kind: "upload-attachment", blobId, filename: seg.filename, mimeType },
+          { vaultId: activeVault.id },
+        );
+        await enqueue(
+          db,
+          {
+            kind: "link-attachment",
+            noteId: localId,
+            pathRef: blobRef(blobId),
+            mimeType,
+            transcribe: seg.transcribe,
+            ...(seg.metadata ? { metadata: seg.metadata } : {}),
+          },
+          { vaultId: activeVault.id },
+        );
+      }
       void engine?.runOnce();
       // Seed the optimistic note so navigating to /n/<localId> lands on a
       // readable page instead of a 404 (getNote(localId) has no server row
@@ -436,6 +480,7 @@ export function NoteNew() {
     hasText,
     isValid,
     navigate,
+    outOfMinutes,
     pending,
     pushToast,
     qc,
@@ -605,7 +650,11 @@ export function NoteNew() {
           <VoiceUnavailableNote capability={transcription} />
         ) : (
           <>
-            <VoicePanel voice={voice} />
+            <VoicePanel
+              voice={voice}
+              minutesRemaining={minutesRemaining}
+              outOfMinutes={outOfMinutes}
+            />
             <RetentionChoice vaultId={activeVault.id} captureEngaged={captureInFlight} />
           </>
         )}
@@ -777,11 +826,29 @@ function RetentionChoice({
 // at a glance — Aaron's "voice-capture affordance at the top of the content
 // area." Idle: a single "Record" button. Recording: live elapsed + a "Stop"
 // button (tap-toggle — tap Record to start, tap Stop to finish).
+// Below this many transcription minutes, we surface the quiet remaining-minutes
+// line near the mic (hosted door only). At/under zero the copy flips to the
+// audio-only truth.
+const LOW_MINUTES_THRESHOLD = 30;
+
 // Have-audio: preview + discard. Denied: error message inline.
-function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
-  const { phase, elapsedMs, startRecording, stopRecording, discardAudio } = voice;
+function VoicePanel({
+  voice,
+  minutesRemaining,
+  outOfMinutes,
+}: {
+  voice: ReturnType<typeof useVoiceCapture>;
+  minutesRemaining?: number;
+  outOfMinutes: boolean;
+}) {
+  const { phase, elapsedMs, parts, startRecording, stopRecording, discardAudio } = voice;
   const isRecording = phase.kind === "recording";
   const isRequesting = phase.kind === "requesting";
+  // Only surface a minutes line on the hosted door (metered capability) and
+  // only once it's actually low — self-host (no `minutesRemaining`) shows
+  // nothing new.
+  const showMinutesLine =
+    typeof minutesRemaining === "number" && minutesRemaining <= LOW_MINUTES_THRESHOLD;
 
   if (phase.kind === "have-audio") {
     return (
@@ -789,6 +856,7 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm text-fg-muted">
             🎙 Recorded {formatElapsed(phase.durationMs)}
+            {phase.segments.length > 1 ? ` · ${phase.segments.length} parts` : ""}
           </span>
           <button
             type="button"
@@ -802,7 +870,9 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
           <track kind="captions" />
         </audio>
         <p className="text-xs text-fg-dim">
-          Transcript will be appended once your vault processes it. Save to commit.
+          {outOfMinutes
+            ? "Saved as audio-only — you're out of transcription minutes this month."
+            : "Transcript will be appended once your vault processes it. Save to commit."}
         </p>
       </div>
     );
@@ -812,10 +882,14 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/60 p-3">
       <div className="text-xs text-fg-dim">
         {isRecording
-          ? "Recording — tap Stop to finish."
+          ? parts > 1
+            ? `Recording — tap Stop to finish. (part ${parts})`
+            : "Recording — tap Stop to finish."
           : isRequesting
             ? "Requesting microphone…"
-            : "Add a voice memo to this note. Audio gets transcribed and appended."}
+            : outOfMinutes
+              ? "You're out of transcription minutes this month — this saves as audio-only."
+              : "Add a voice memo to this note. Audio gets transcribed and appended."}
       </div>
       {isRecording ? (
         <button
@@ -847,6 +921,11 @@ function VoicePanel({ voice }: { voice: ReturnType<typeof useVoiceCapture> }) {
           <span>{isRequesting ? "Requesting…" : "Record"}</span>
         </button>
       )}
+      {showMinutesLine && !outOfMinutes ? (
+        <p className="basis-full text-xs text-fg-dim" data-testid="voice-minutes-left">
+          About {Math.round(minutesRemaining as number)} min of transcription left this month.
+        </p>
+      ) : null}
       {phase.kind === "denied" ? (
         <p className="basis-full rounded-xl border border-danger-border bg-danger-soft px-3 py-2 text-xs text-danger">
           {phase.message}

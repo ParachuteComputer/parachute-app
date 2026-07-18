@@ -292,9 +292,32 @@ export class VaultClient extends BaseVaultClient {
    */
   async linkAttachment(
     noteIdOrPath: string,
-    body: { path: string; mimeType: string; transcribe?: boolean },
+    body: {
+      path: string;
+      mimeType: string;
+      transcribe?: boolean;
+      // Extra attachment metadata (Voice Wave 2: `{ segment_index }`). The base
+      // `addAttachment` JSON-stringifies the whole body, so this rides the wire
+      // even though the base's typed body predates it — the door contract
+      // accepts it and both doors ignore unknown keys.
+      metadata?: Record<string, unknown>;
+    },
   ): Promise<NoteAttachment> {
     return this.addAttachment(noteIdOrPath, body);
+  }
+
+  /**
+   * Re-run transcription for a note whose audio previously failed (or hit the
+   * monthly voice cap). `POST /api/notes/:id/retry-transcription` (write scope)
+   * exists on both doors; it flips the audio attachment(s) back to pending and
+   * the Wave 1 live subscription + pending poll track the result. Resolves on
+   * 2xx; the caller catches the honest 4xx ("nothing retriable") and reverts
+   * its optimistic flip.
+   */
+  async retryTranscription(noteIdOrPath: string): Promise<void> {
+    await this.request(`/api/notes/${encodeURIComponent(noteIdOrPath)}/retry-transcription`, {
+      method: "POST",
+    });
   }
 
   /**

@@ -1,7 +1,8 @@
 import type { LensDB } from "@/lib/sync/db";
 import { isLocalId, newLocalId, resolveNoteId } from "@/lib/sync/id-map";
 import { enqueue } from "@/lib/sync/queue";
-import { isTranscriptionPending } from "@/lib/transcription-status";
+import { useToastStore } from "@/lib/toast/store";
+import { isTranscriptionPending, retryOptimisticNote } from "@/lib/transcription-status";
 import { useSync } from "@/providers/SyncProvider";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -590,6 +591,50 @@ export function useLinkAttachment() {
     },
     onSuccess: (_att, args) => {
       qc.invalidateQueries({ queryKey: ["note", activeId, args.noteId] });
+    },
+  });
+}
+
+/**
+ * Retry a failed (or voice-capped) transcription. On click we OPTIMISTICALLY
+ * flip the note's failed audio attachment(s) + failure markers back to pending
+ * so the chip immediately reads "Transcribing…"; the Wave 1 live subscription +
+ * pending poll then track reality. `POST /api/notes/:id/retry-transcription`
+ * (write scope) lives on both doors. An honest 4xx ("nothing retriable") is
+ * caught by the caller's `onError`, which reverts the optimistic flip — the
+ * chip returns to failed rather than spinning forever.
+ *
+ * `cacheId` is what `useNote` keys on (the route id — may be a path); `serverId`
+ * is what the wire call targets (the note's server id). They're usually equal
+ * for a note that already has a server-side transcription result, but we keep
+ * them distinct so the optimistic cache write always hits the right key.
+ */
+export function useRetryTranscription() {
+  const client = useActiveVaultClient();
+  const activeId = useVaultStore((s) => s.activeVaultId);
+  const qc = useQueryClient();
+  const pushToast = useToastStore((s) => s.push);
+  return useMutation({
+    mutationFn: async (args: { cacheId: string; serverId: string }) => {
+      if (!client) throw new Error("No active vault");
+      await client.retryTranscription(args.serverId);
+    },
+    onMutate: async ({ cacheId }) => {
+      const key = ["note", activeId, cacheId];
+      await qc.cancelQueries({ queryKey: key });
+      const prev = qc.getQueryData<Note>(key);
+      if (prev) qc.setQueryData<Note>(key, retryOptimisticNote(prev));
+      return { prev, key };
+    },
+    onError: (_err, _args, ctx) => {
+      // Revert the optimistic flip so the failed chip comes back (never a stuck
+      // spinner) when the retry can't proceed — including the endpoint's honest
+      // 4xx ("nothing retriable"). One quiet line; the chip is the real signal.
+      if (ctx?.prev && ctx.key) qc.setQueryData(ctx.key, ctx.prev);
+      pushToast("Couldn't retry transcription right now.", "error");
+    },
+    onSettled: (_data, _err, { cacheId }) => {
+      qc.invalidateQueries({ queryKey: ["note", activeId, cacheId] });
     },
   });
 }

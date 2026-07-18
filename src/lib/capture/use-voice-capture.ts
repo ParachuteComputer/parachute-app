@@ -1,10 +1,9 @@
+import { type PermissionError, pickMimeType, requestMic } from "@/lib/capture/recorder";
 import {
-  type PermissionError,
-  type RecorderController,
-  createRecorder,
-  pickMimeType,
-  requestMic,
-} from "@/lib/capture/recorder";
+  type AudioSegment,
+  type SegmentedRecorderController,
+  createSegmentedRecorder,
+} from "@/lib/capture/segmented-recorder";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // Voice-capture state machine extracted from the (now removed) Capture route
@@ -13,10 +12,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // Stop button, where the preview lives, when to discard); this hook owns the
 // audio bytes, the elapsed timer, and the URL-object lifetime.
 //
-// Replaces parts of Capture.tsx's recording phase machine. The Phase shape
-// is preserved so existing tests that mocked `createRecorder`/`requestMic`/
-// `pickMimeType` from `@/lib/capture/recorder` keep working without touching
-// the recorder module itself.
+// Voice Wave 2: recording is INVISIBLY segmented (see `segmented-recorder.ts`)
+// so a recording of any length stays a set of standalone, transcribable audio
+// containers. The UX is unchanged — one timer, one Stop — with at most a quiet
+// "part k" hint (`parts`) once a long recording has rolled. `have-audio` now
+// carries the ORDERED segment list; a recording that never rolls yields exactly
+// one segment, and the caller's single-segment path stays byte-identical.
 
 export type VoicePhase =
   | { kind: "idle" }
@@ -25,15 +26,24 @@ export type VoicePhase =
   | { kind: "recording"; startedAt: number }
   | {
       kind: "have-audio";
-      data: ArrayBuffer;
+      // Every segment, in order. Length 1 in the common case.
+      segments: AudioSegment[];
       mimeType: string;
+      // Preview blob URL — the FIRST segment. Standalone containers can't be
+      // concatenated into one valid file, so the preview plays part 1; the
+      // saved note carries every segment.
       url: string;
+      // Total recorded time across all segments.
       durationMs: number;
     };
 
 export interface UseVoiceCaptureResult {
   phase: VoicePhase;
   elapsedMs: number;
+  // The segment currently recording, 1-based. > 1 means a long recording has
+  // rolled at least once — the caller shows a subtle "part k" hint. 0 when not
+  // recording.
+  parts: number;
   startRecording(): Promise<void>;
   stopRecording(): Promise<void>;
   discardAudio(): void;
@@ -43,20 +53,26 @@ export interface UseVoiceCaptureResult {
 export function useVoiceCapture(): UseVoiceCaptureResult {
   const [phase, setPhase] = useState<VoicePhase>({ kind: "idle" });
   const [elapsedMs, setElapsedMs] = useState(0);
-  const recorderRef = useRef<RecorderController | null>(null);
+  const [parts, setParts] = useState(0);
+  const recorderRef = useRef<SegmentedRecorderController | null>(null);
   const previewUrlRef = useRef<string | null>(null);
 
-  // Tick the elapsed display while recording.
+  // Tick the elapsed display while recording. One continuous timer across all
+  // segments — the rollover is invisible here too.
   useEffect(() => {
     if (phase.kind !== "recording") return;
     const id = setInterval(() => setElapsedMs(Date.now() - phase.startedAt), 250);
     return () => clearInterval(id);
   }, [phase]);
 
-  // Revoke any preview URL on unmount so we don't leak blob: handles.
+  // Revoke any preview URL on unmount so we don't leak blob: handles, and
+  // cancel a still-live recording so its rollover timer + mic stream don't leak.
   useEffect(() => {
     return () => {
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      if (recorderRef.current && recorderRef.current.state === "recording") {
+        recorderRef.current.cancel();
+      }
     };
   }, []);
 
@@ -73,10 +89,15 @@ export function useVoiceCapture(): UseVoiceCaptureResult {
         return;
       }
       const stream = await requestMic();
-      const rec = createRecorder({ stream, mimeType });
+      const rec = createSegmentedRecorder({
+        stream,
+        mimeType,
+        onRoll: (activePart) => setParts(activePart),
+      });
       recorderRef.current = rec;
       rec.start();
       setElapsedMs(0);
+      setParts(rec.activePart);
       setPhase({ kind: "recording", startedAt: Date.now() });
     } catch (e) {
       const perm = e as PermissionError;
@@ -96,22 +117,22 @@ export function useVoiceCapture(): UseVoiceCaptureResult {
     const rec = recorderRef.current;
     if (!rec || phase.kind !== "recording") return;
     try {
-      const result = await rec.stop();
+      const segments = await rec.stop();
       recorderRef.current = null;
-      const blob = new Blob([result.data], { type: result.mimeType });
-      const url = URL.createObjectURL(blob);
+      setParts(0);
+      const mimeType = segments[0]?.mimeType ?? "";
+      const durationMs = segments.reduce((sum, s) => sum + s.durationMs, 0);
+      const first = segments[0];
+      const url = first
+        ? URL.createObjectURL(new Blob([first.data], { type: first.mimeType }))
+        : "";
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-      previewUrlRef.current = url;
-      setPhase({
-        kind: "have-audio",
-        data: result.data,
-        mimeType: result.mimeType,
-        url,
-        durationMs: result.durationMs,
-      });
+      previewUrlRef.current = url || null;
+      setPhase({ kind: "have-audio", segments, mimeType, url, durationMs });
     } catch (e) {
       // Caller surfaces the toast — this hook is presentation-agnostic.
       console.warn(e instanceof Error ? `Recording failed: ${e.message}` : "Recording failed.");
+      setParts(0);
       setPhase({ kind: "idle" });
     }
   }, [phase]);
@@ -123,6 +144,7 @@ export function useVoiceCapture(): UseVoiceCaptureResult {
     }
     setPhase({ kind: "idle" });
     setElapsedMs(0);
+    setParts(0);
   }, []);
 
   // Same as discardAudio but exported under a distinct name to match the
@@ -139,5 +161,5 @@ export function useVoiceCapture(): UseVoiceCaptureResult {
   // user explicitly taps Stop. (A proper press-and-hold mode, gated on a hold
   // threshold, can be re-added later if wanted.)
 
-  return { phase, elapsedMs, startRecording, stopRecording, discardAudio, reset };
+  return { phase, elapsedMs, parts, startRecording, stopRecording, discardAudio, reset };
 }

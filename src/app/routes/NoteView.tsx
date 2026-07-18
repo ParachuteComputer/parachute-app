@@ -15,7 +15,13 @@ import { useFocusMode } from "@/lib/focus-mode";
 import { leadingH1, pathDisplayTitle, stripLeadingH1 } from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
-import { useActiveVaultClient, useLiveNote, useNote, useVaultStore } from "@/lib/vault";
+import {
+  useActiveVaultClient,
+  useLiveNote,
+  useNote,
+  useRetryTranscription,
+  useVaultStore,
+} from "@/lib/vault";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
@@ -56,7 +62,7 @@ export function NoteView() {
         // keep the saved copy on screen under a small offline ribbon.
         <>
           {note.isError ? <OfflineRibbon /> : null}
-          <NoteBody note={note.data} />
+          <NoteBody note={note.data} cacheId={decodedId} />
         </>
       ) : note.isError ? (
         <NoteErrorBlock error={note.error} retry={() => note.refetch()} />
@@ -67,9 +73,10 @@ export function NoteView() {
   );
 }
 
-function NoteBody({ note }: { note: Note }) {
+function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(vault?.id ?? null);
+  const retryTranscription = useRetryTranscription();
   const resolver = useMemo(() => buildWikilinkResolver(note), [note]);
   const focusOn = useFocusMode((s) => s.on);
   const setFocusOn = useFocusMode((s) => s.setOn);
@@ -170,7 +177,14 @@ function NoteBody({ note }: { note: Note }) {
           <HeaderPath value={label} isPath={!!note.path} />
         </header>
 
-        <TranscriptionStatus content={note.content ?? ""} attachments={note.attachments} />
+        <TranscriptionStatus
+          content={note.content ?? ""}
+          attachments={note.attachments}
+          onRetry={() =>
+            retryTranscription.mutate({ cacheId: cacheId ?? note.id, serverId: note.id })
+          }
+          retrying={retryTranscription.isPending}
+        />
 
         {bodyNote.content?.trim() ? (
           <NoteRenderer note={bodyNote} resolve={resolver} />
