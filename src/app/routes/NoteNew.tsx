@@ -11,6 +11,7 @@ import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { extractHashtags } from "@/lib/capture/hashtags";
 import { quickPath } from "@/lib/capture/recorder";
 import { buildTextNotePayload } from "@/lib/capture/text-note";
+import { loadTranscribeDefault } from "@/lib/capture/transcribe-default";
 import { useVoiceCapture } from "@/lib/capture/use-voice-capture";
 import { buildVoiceCapturePlan } from "@/lib/capture/voice-capture-plan";
 import { NEW_NOTE_SCOPE, clearDraft, loadDraft } from "@/lib/drafts/store";
@@ -152,6 +153,36 @@ export function NoteNew() {
       ? transcription.minutes_remaining
       : undefined;
   const outOfMinutes = minutesRemaining !== undefined && minutesRemaining <= 0;
+
+  // Per-capture "Transcribe" toggle (voice W3). ONE policy, spoken once: a
+  // capture either asks the vault to transcribe (the default, seeded from this
+  // vault's Settings preference) or saves audio-only. The state is PER-CAPTURE
+  // — it starts at the vault default and resets to it at the top of every fresh
+  // capture (see the phase effect below), so a one-off "just the audio" never
+  // leaks into the next recording. Persisted default lives client-local in
+  // Settings (`transcribe-default.ts`) — the client owns capture-behavior policy
+  // at attach time. Capability honesty: the control only renders when the vault
+  // hasn't declared transcription disabled (`showTranscribeToggle`); when it IS
+  // disabled the recorder is gated away entirely (voiceGated), so there's
+  // nothing to toggle. When out of monthly minutes the toggle shows OFF+disabled
+  // (Wave 2's audio-only truth already speaks — no double-messaging).
+  const [transcribeThisCapture, setTranscribeThisCapture] = useState<boolean>(() =>
+    composeVaultId ? loadTranscribeDefault(composeVaultId) : true,
+  );
+  const showTranscribeToggle = transcription?.enabled !== false;
+  // Reset the per-capture toggle to the vault default whenever the recorder
+  // returns to idle from an active/staged state (Discard, Cancel, restored-draft
+  // discard). A successful save navigates away and remounts fresh, which resets
+  // it the same way. A user's flip sticks for the current capture only.
+  const prevVoicePhaseRef = useRef(voice.phase.kind);
+  useEffect(() => {
+    const prev = prevVoicePhaseRef.current;
+    const now = voice.phase.kind;
+    prevVoicePhaseRef.current = now;
+    if (now === "idle" && prev !== "idle" && composeVaultId) {
+      setTranscribeThisCapture(loadTranscribeDefault(composeVaultId));
+    }
+  }, [voice.phase.kind, composeVaultId]);
 
   // W2-9: the speed-dial's "Voice note" verb arrives as `/new?voice=1` —
   // land IN voice capture, no extra tap: auto-start the recorder once the
@@ -375,7 +406,11 @@ export function NoteNew() {
     // doesn't churn on a capture it can't transcribe.
     const recordedAt = new Date();
     const localId = newLocalId();
-    const willTranscribe = !outOfMinutes;
+    // The per-capture toggle is the policy: transcribe unless the user turned it
+    // off for this capture, or there are no minutes to transcribe with. Either
+    // OFF path drops the pending markers + segment_index and sends
+    // `transcribe:false` (audio-only) via `buildVoiceCapturePlan`.
+    const willTranscribe = !outOfMinutes && transcribeThisCapture;
     const plan = buildVoiceCapturePlan({
       segments,
       mimeType,
@@ -486,6 +521,7 @@ export function NoteNew() {
     qc,
     roles.captureText,
     roles.captureVoice,
+    transcribeThisCapture,
     voice,
   ]);
 
@@ -654,6 +690,9 @@ export function NoteNew() {
               voice={voice}
               minutesRemaining={minutesRemaining}
               outOfMinutes={outOfMinutes}
+              transcribe={transcribeThisCapture}
+              onTranscribeChange={setTranscribeThisCapture}
+              showTranscribeToggle={showTranscribeToggle}
             />
             <RetentionChoice vaultId={activeVault.id} captureEngaged={captureInFlight} />
           </>
@@ -831,19 +870,67 @@ function RetentionChoice({
 // audio-only truth.
 const LOW_MINUTES_THRESHOLD = 30;
 
+// Per-capture "Transcribe" switch (voice W3). Sits with the record controls;
+// ON asks the vault to transcribe (default), OFF saves audio-only. Forced
+// OFF+disabled when out of minutes (Wave 2 already speaks the audio-only truth,
+// so the switch stays quiet — no double-messaging). Mirrors Settings' "Live
+// preview" switch chrome for a consistent affordance.
+function TranscribeToggle({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex basis-full items-center justify-between gap-3">
+      <span className="text-xs text-fg-dim">Transcribe this recording</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label="Transcribe this recording"
+        data-testid="transcribe-toggle"
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
+          checked ? "bg-accent" : "bg-border"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-card shadow-sm transition-transform ${
+            checked ? "translate-x-5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 // Have-audio: preview + discard. Denied: error message inline.
 function VoicePanel({
   voice,
   minutesRemaining,
   outOfMinutes,
+  transcribe,
+  onTranscribeChange,
+  showTranscribeToggle,
 }: {
   voice: ReturnType<typeof useVoiceCapture>;
   minutesRemaining?: number;
   outOfMinutes: boolean;
+  transcribe: boolean;
+  onTranscribeChange: (next: boolean) => void;
+  showTranscribeToggle: boolean;
 }) {
   const { phase, elapsedMs, parts, startRecording, stopRecording, discardAudio } = voice;
   const isRecording = phase.kind === "recording";
   const isRequesting = phase.kind === "requesting";
+  // Effective policy for THIS capture: transcribe unless the user turned it off
+  // or there are no minutes. The switch shows this (out-of-minutes reads OFF).
+  const willTranscribe = !outOfMinutes && transcribe;
   // Only surface a minutes line on the hosted door (metered capability) and
   // only once it's actually low — self-host (no `minutesRemaining`) shows
   // nothing new.
@@ -869,10 +956,19 @@ function VoicePanel({
         <audio controls src={phase.url} className="w-full">
           <track kind="captions" />
         </audio>
+        {showTranscribeToggle ? (
+          <TranscribeToggle
+            checked={willTranscribe}
+            disabled={outOfMinutes}
+            onChange={onTranscribeChange}
+          />
+        ) : null}
         <p className="text-xs text-fg-dim">
           {outOfMinutes
             ? "Saved as audio-only — you're out of transcription minutes this month."
-            : "Transcript will be appended once your vault processes it. Save to commit."}
+            : willTranscribe
+              ? "Transcript will be appended once your vault processes it. Save to commit."
+              : "Saved as audio-only — transcription is off for this recording."}
         </p>
       </div>
     );
@@ -889,7 +985,9 @@ function VoicePanel({
             ? "Requesting microphone…"
             : outOfMinutes
               ? "You're out of transcription minutes this month — this saves as audio-only."
-              : "Add a voice memo to this note. Audio gets transcribed and appended."}
+              : willTranscribe
+                ? "Add a voice memo to this note. Audio gets transcribed and appended."
+                : "Add a voice memo to this note. Saved as audio-only — transcription is off for this recording."}
       </div>
       {isRecording ? (
         <button
@@ -921,6 +1019,13 @@ function VoicePanel({
           <span>{isRequesting ? "Requesting…" : "Record"}</span>
         </button>
       )}
+      {showTranscribeToggle ? (
+        <TranscribeToggle
+          checked={willTranscribe}
+          disabled={outOfMinutes}
+          onChange={onTranscribeChange}
+        />
+      ) : null}
       {showMinutesLine && !outOfMinutes ? (
         <p className="basis-full text-xs text-fg-dim" data-testid="voice-minutes-left">
           About {Math.round(minutesRemaining as number)} min of transcription left this month.
