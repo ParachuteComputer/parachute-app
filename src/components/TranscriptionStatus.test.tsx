@@ -1,7 +1,7 @@
 import { TranscriptionStatus } from "@/components/TranscriptionStatus";
 import type { NoteAttachment } from "@/lib/vault/types";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 const audioWith = (status: string, extra: Record<string, unknown> = {}): NoteAttachment =>
   ({
@@ -76,6 +76,59 @@ describe("TranscriptionStatus", () => {
       );
       expect(screen.getByText(/monthly voice limit reached/i)).toBeInTheDocument();
       expect(screen.queryByText(/transcription unavailable/i)).not.toBeInTheDocument();
+    });
+  });
+
+  // Voice Wave 2: segmented recordings + the Retry action.
+  describe("segmented + retry", () => {
+    it("shows a 'part k of n' hint while a segmented recording is in flight", () => {
+      render(
+        <TranscriptionStatus
+          content="body"
+          attachments={[audioWith("done"), audioWith("pending"), audioWith("pending")]}
+        />,
+      );
+      expect(screen.getByText(/transcribing/i)).toBeInTheDocument();
+      // 1 done of 3 → the part now in flight is part 2.
+      expect(screen.getByText(/part 2 of 3/i)).toBeInTheDocument();
+    });
+
+    it("a single-segment pending chip shows no part hint", () => {
+      render(<TranscriptionStatus content="body" attachments={[audioWith("pending")]} />);
+      expect(screen.getByText(/transcribing/i)).toBeInTheDocument();
+      expect(screen.queryByText(/part \d+ of \d+/i)).not.toBeInTheDocument();
+    });
+
+    it("the failed chip offers Retry when onRetry is provided, and fires it on click", () => {
+      const onRetry = vi.fn();
+      render(
+        <TranscriptionStatus
+          content="body"
+          attachments={[audioWith("failed")]}
+          onRetry={onRetry}
+        />,
+      );
+      const retry = screen.getByRole("button", { name: /^retry$/i });
+      fireEvent.click(retry);
+      expect(onRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it("the failed chip shows a spinner label and disables Retry while retrying", () => {
+      render(
+        <TranscriptionStatus
+          content="body"
+          attachments={[audioWith("failed")]}
+          onRetry={() => {}}
+          retrying
+        />,
+      );
+      const retry = screen.getByRole("button", { name: /retrying/i });
+      expect(retry).toBeDisabled();
+    });
+
+    it("no Retry button when onRetry is omitted (display-only surfaces)", () => {
+      render(<TranscriptionStatus content="body" attachments={[audioWith("failed")]} />);
+      expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
     });
   });
 });

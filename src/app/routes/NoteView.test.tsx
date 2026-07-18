@@ -2,6 +2,7 @@ import { NoteView } from "@/app/routes/NoteView";
 import { useFocusMode } from "@/lib/focus-mode";
 import { type LensDB, openLensDB } from "@/lib/sync/db";
 import { newLocalId, recordIdMap } from "@/lib/sync/id-map";
+import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -568,6 +569,82 @@ describe("NoteView — offline voice capture (local id → id-map resolution) [F
       await qc.refetchQueries({ queryKey: ["note", "dev", localId] });
     });
     expect(await screen.findByText("The transcribed text.")).toBeInTheDocument();
+  });
+});
+
+// Voice Wave 2 — the failed transcription chip's Retry action.
+describe("NoteView — retry transcription", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    seedStore();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // A note whose (single) audio segment failed transcription. `retry-transcription`
+  // is listed FIRST so the POST matches it before the generic `/api/notes` GET
+  // (installFetch iterates keys in insertion order).
+  function failedNote(retry: { status?: number; body: unknown }) {
+    return installFetch({
+      "retry-transcription": retry,
+      "/api/notes": {
+        body: {
+          id: "voice-1",
+          path: "Voice/memo",
+          createdAt: "2026-07-18T00:00:00Z",
+          content: "_Transcription unavailable._",
+          tags: ["capture"],
+          links: [],
+          attachments: [
+            {
+              id: "att-1",
+              filename: "memo.webm",
+              mimeType: "audio/webm",
+              metadata: { transcribe_status: "failed" },
+            },
+          ],
+        },
+      },
+    });
+  }
+
+  it("the failed chip's Retry POSTs /retry-transcription for the note", async () => {
+    const fetchImpl = failedNote({ status: 200, body: { ok: true } });
+    renderAt("/n/voice-1");
+
+    const retry = await screen.findByRole("button", { name: /^retry$/i });
+    fireEvent.click(retry);
+
+    await waitFor(() => {
+      const call = fetchImpl.mock.calls.find(([url, init]) => {
+        const u = typeof url === "string" ? url : url.toString();
+        return u.includes("/api/notes/voice-1/retry-transcription") && init?.method === "POST";
+      });
+      expect(call).toBeDefined();
+    });
+  });
+
+  it("an honest 4xx (nothing retriable) is handled gracefully — chip reverts, no crash", async () => {
+    failedNote({ status: 409, body: { error: "nothing to retry" } });
+    renderAt("/n/voice-1");
+
+    const retry = await screen.findByRole("button", { name: /^retry$/i });
+    fireEvent.click(retry);
+
+    // A quiet toast fires and the failed chip comes back (never a stuck spinner).
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => /couldn't retry/i.test(t.message))).toBe(
+        true,
+      );
+    });
+    // Retry only renders in the failed state — its presence proves the chip
+    // reverted rather than spinning on "Transcribing…".
+    expect(await screen.findByRole("button", { name: /^retry$/i })).toBeInTheDocument();
+    expect(screen.queryByText(/transcribing/i)).not.toBeInTheDocument();
   });
 });
 

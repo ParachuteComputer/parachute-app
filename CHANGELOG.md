@@ -1,5 +1,49 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.16] - 2026-07-18
+
+**Voice Wave 2 — unlimited-length voice recording via invisible segmentation + honest edges.** A
+recording of any length now stays a set of standalone, transcribable audio containers, and the app
+tells the truth at every seam (minutes, failures, audio-only). Both server doors already merged the
+per-segment support (an attachment with a numeric `metadata.segment_index` gets its own per-part
+markers) and the `POST /api/notes/:id/retry-transcription` endpoint; this is the app half.
+
+- **`src/lib/capture/segmented-recorder.ts`** (new) — `createSegmentedRecorder` rolls to a FRESH
+  `MediaRecorder` every `SEGMENT_MS` (10 min) on the SAME microphone stream, so each segment is a
+  standalone valid container (NOT `timeslice` chunks, which aren't independently decodable). The
+  handoff is a synchronous start-next-before-awaiting-flush so effectively no audio is lost at the
+  seam. `src/lib/capture/recorder.ts` gains a `releaseStreamOnStop` option (default true — the
+  single-recorder callers keep "stop releases the mic") that lets the segmented recorder keep the
+  stream alive across the roll; `memoFilename` gains a `-partN` suffix so same-timestamp segments
+  don't collide.
+- **`src/lib/capture/use-voice-capture.ts`** — the hook drives the segmented recorder; `have-audio`
+  now carries the ORDERED segment list and a `parts` count (a subtle "part k" hint while a long
+  recording is in flight). The UX is unchanged: one timer, one Stop button, segmentation invisible.
+- **`src/lib/capture/voice-capture-plan.ts`** (new) — `buildVoiceCapturePlan` is the pure
+  body-and-per-segment plan. **The common case is sacred:** a single-segment recording is
+  byte-identical to 0.20.15 — bare `_Transcript pending._`, one embed, one link with NO
+  `segment_index`. N>1 pre-seeds N per-part pending markers IN ORDER and each segment uploads as its
+  own attachment with `transcribe:true` + a numeric `metadata.segment_index` (0-based).
+- **`src/app/routes/NoteNew.tsx`** — `saveWithAudio` executes the plan: each segment runs the SAME
+  `validateFile` guard every other upload uses (a failure aborts the whole save, never a partial),
+  then uploads + links in order. Minutes honesty (hosted door only, capability carries
+  `minutes_remaining`): a quiet remaining-minutes line near the mic under ~30 min; at 0 the mic
+  STAYS available but says plainly the capture saves as audio-only and sends `transcribe:false` (no
+  server churn). Self-host (no minutes field) shows nothing new.
+- **`src/lib/transcription-status.ts`** — the derivation now scans ALL audio attachments: ANY
+  pending → "Transcribing…" (with a "part k of n" hint via `deriveTranscriptionProgress` when
+  segmented counts are known); none pending + any failed → the failed chip; the voice-limit marker
+  still distinguishes cap from failure. The marker-fallback regexes recognize both the bare AND the
+  `(part N)` forms. `retryOptimisticNote` flips failed segments + failure markers back to pending.
+- **`src/components/TranscriptionStatus.tsx`** + **`src/app/routes/NoteView.tsx`** — the failed chip
+  gains a **Retry** action → `POST retry-transcription` (new `VaultClient.retryTranscription` +
+  `useRetryTranscription`), optimistically flipping the chip to "Transcribing…"; the Wave 1 live
+  subscription + pending poll track reality, and an honest 4xx ("nothing retriable") reverts the
+  flip with a quiet toast rather than a stuck spinner.
+- **`src/lib/sync/{types,queue}.ts`** + **`src/lib/vault/client.ts`** — `link-attachment` rows +
+  `linkAttachment` carry optional `metadata` (forwarded verbatim; the door contract keys per-part
+  markers on `segment_index`).
+
 ## [0.20.15] - 2026-07-17
 
 **Voice Wave 1 — a voice note's transcript (and its failures) now appear in the open note view

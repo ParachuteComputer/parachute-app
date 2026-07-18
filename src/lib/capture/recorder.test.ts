@@ -158,6 +158,28 @@ describe("createRecorder", () => {
     rec.start();
     expect(() => rec.start()).toThrow();
   });
+
+  // Segmentation handoff: stop() must be able to leave the mic stream running
+  // so the segmented recorder can roll one MediaRecorder into the next on the
+  // same stream. `releaseStreamOnStop: false` opts out of the default release.
+  it("releaseStreamOnStop:false leaves the stream tracks running on stop()", async () => {
+    const trackStop = vi.fn();
+    const stream = {
+      getTracks: () => [{ stop: trackStop } as unknown as MediaStreamTrack],
+    } as unknown as MediaStream;
+    const rec = createRecorder({
+      stream,
+      mimeType: "audio/webm;codecs=opus",
+      releaseStreamOnStop: false,
+      MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+    });
+    rec.start();
+    await rec.stop();
+    expect(trackStop).not.toHaveBeenCalled();
+    // cancel() honors the same flag — the caller owns the stream's lifetime.
+    rec.cancel();
+    expect(trackStop).not.toHaveBeenCalled();
+  });
 });
 
 describe("requestMic", () => {
@@ -211,6 +233,18 @@ describe("memo helpers", () => {
     const at = new Date("2026-04-19T14:30:05.123Z");
     expect(memoFilename("audio/webm;codecs=opus", at)).toBe("memo-2026-04-19T14-30-05-123.webm");
     expect(memoFilename("audio/mp4", at)).toBe("memo-2026-04-19T14-30-05-123.m4a");
+  });
+
+  it("a segment part suffixes -partN so N segments sharing one timestamp don't collide", () => {
+    const at = new Date("2026-04-19T14:30:05.123Z");
+    // No part (or part 0) = the common single-segment case, byte-identical.
+    expect(memoFilename("audio/webm;codecs=opus", at)).toBe("memo-2026-04-19T14-30-05-123.webm");
+    expect(memoFilename("audio/webm;codecs=opus", at, 1)).toBe(
+      "memo-2026-04-19T14-30-05-123-part1.webm",
+    );
+    expect(memoFilename("audio/webm;codecs=opus", at, 2)).toBe(
+      "memo-2026-04-19T14-30-05-123-part2.webm",
+    );
   });
 
   it("path slots into Memos/YYYY/MM-DD/HH-MM-SS", () => {

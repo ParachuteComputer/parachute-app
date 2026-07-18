@@ -919,6 +919,135 @@ describe("NoteNew — voice affordance", () => {
     }
   });
 
+  // The SACRED common case: a recording that never rolls (single segment)
+  // produces the exact pre-segmentation note shape — bare `_Transcript
+  // pending._`, one embed, one link with transcribe:true and NO segment_index.
+  it("single-segment save is byte-identical to 0.20.15 (bare marker, no segment_index)", async () => {
+    installFetch({});
+    renderAt("/new");
+
+    const recordBtn = await screen.findByRole("button", { name: /record voice memo/i });
+    await act(async () => {
+      fireEvent.click(recordBtn);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tapStop();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() => expect(screen.getByText(/recorded\s+/i)).toBeInTheDocument());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+    await waitFor(() => expect(screen.getByText("NoteViewPage")).toBeInTheDocument());
+
+    const db = await openLensDB();
+    const pending = await listPending(db, "dev");
+    db.close();
+
+    const links = pending.filter((p) => p.mutation.kind === "link-attachment");
+    const uploads = pending.filter((p) => p.mutation.kind === "upload-attachment");
+    // Exactly ONE segment → one upload + one link.
+    expect(uploads).toHaveLength(1);
+    expect(links).toHaveLength(1);
+    const link = links[0]!;
+    if (link.mutation.kind === "link-attachment") {
+      expect(link.mutation.transcribe).toBe(true);
+      // The sacred invariant: no per-part metadata on a single-segment capture.
+      expect(link.mutation.metadata).toBeUndefined();
+    }
+    const create = pending.find((p) => p.mutation.kind === "create-note");
+    if (create && create.mutation.kind === "create-note") {
+      // Bare marker, single embed, trailing newline — the exact legacy body.
+      expect(create.mutation.payload.content).toMatch(
+        /^_Transcript pending\._\n\n!\[\[memo-[\dT-]+\.webm\]\]\n$/,
+      );
+    }
+  });
+
+  // Zero-minutes honesty (hosted door): the mic stays, but the capture saves
+  // audio-only — `transcribe: false` (no server churn) and NO pending marker.
+  it("out of monthly minutes → saves audio-only: transcribe:false, no pending marker", async () => {
+    installFetch({
+      "GET /api/vault": {
+        body: {
+          name: "dev",
+          description: "",
+          transcription: { enabled: true, minutes_remaining: 0 },
+        },
+      },
+    });
+    renderAt("/new");
+
+    // The gate resolved to enabled+0min: the mic shows AND the audio-only line
+    // is present before recording.
+    expect(await screen.findByText(/out of transcription minutes this month/i)).toBeInTheDocument();
+
+    const recordBtn = screen.getByRole("button", { name: /record voice memo/i });
+    await act(async () => {
+      fireEvent.click(recordBtn);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tapStop();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() => expect(screen.getByText(/recorded\s+/i)).toBeInTheDocument());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+    await waitFor(() => expect(screen.getByText("NoteViewPage")).toBeInTheDocument());
+
+    const db = await openLensDB();
+    const pending = await listPending(db, "dev");
+    db.close();
+    const link = pending.find((p) => p.mutation.kind === "link-attachment");
+    if (link && link.mutation.kind === "link-attachment") {
+      expect(link.mutation.transcribe).toBe(false);
+    }
+    const create = pending.find((p) => p.mutation.kind === "create-note");
+    if (create && create.mutation.kind === "create-note") {
+      // Audio-only: no transcript is coming, so no pending marker is seeded.
+      expect(create.mutation.payload.content).not.toContain("Transcript pending");
+      expect(create.mutation.payload.content).toMatch(/!\[\[memo-[\dT-]+\.webm\]\]/);
+    }
+  });
+
+  // The voice path runs the SAME `validateFile` guard every other upload uses.
+  // A segment that fails it (here: an extension outside the vault allowlist)
+  // aborts the whole save before anything is enqueued.
+  it("a segment failing the shared upload validation aborts the save (nothing enqueued)", async () => {
+    installFetch({});
+    // A mimeType that maps to a disallowed extension (extensionFor → "bin").
+    fakeState.pickResult = "audio/x-weird";
+    renderAt("/new");
+
+    const recordBtn = await screen.findByRole("button", { name: /record voice memo/i });
+    await act(async () => {
+      fireEvent.click(recordBtn);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tapStop();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() => expect(screen.getByText(/recorded\s+/i)).toBeInTheDocument());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    // An allowlist error surfaced and NOTHING was enqueued (no partial capture).
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => /allowlist/i.test(t.message))).toBe(true);
+    });
+    const db = await openLensDB();
+    const pending = await listPending(db, "dev");
+    db.close();
+    expect(pending).toHaveLength(0);
+    // Still on /new — the save didn't navigate away.
+    expect(screen.queryByText("NoteViewPage")).toBeNull();
+  });
+
   it("seeds the optimistic note into the query cache so /n/<localId> lands on a readable note [FIX 3]", async () => {
     installFetch({});
     // Non-zero gcTime: the seeded /n/<localId> query has no observer here (the

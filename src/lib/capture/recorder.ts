@@ -53,6 +53,12 @@ export interface RecorderController {
 export interface CreateRecorderOptions {
   stream: MediaStream;
   mimeType: string;
+  // When false, stop()/cancel() leave the MediaStream tracks running — the
+  // caller owns the stream's lifetime. This is what lets the segmented
+  // recorder roll one MediaRecorder into the next on the SAME stream without
+  // dropping the mic between segments (default true: single-recorder callers
+  // keep today's "stop releases the mic" behavior, byte-for-byte).
+  releaseStreamOnStop?: boolean;
   // Injection points for tests; default to the browser globals.
   now?: () => number;
   MediaRecorderCtor?: typeof MediaRecorder;
@@ -60,6 +66,7 @@ export interface CreateRecorderOptions {
 
 export function createRecorder(opts: CreateRecorderOptions): RecorderController {
   const now = opts.now ?? (() => Date.now());
+  const releaseStreamOnStop = opts.releaseStreamOnStop ?? true;
   const Ctor = opts.MediaRecorderCtor ?? MediaRecorder;
   const recorder = new Ctor(opts.stream, { mimeType: opts.mimeType });
   const chunks: Blob[] = [];
@@ -74,6 +81,7 @@ export function createRecorder(opts: CreateRecorderOptions): RecorderController 
   };
 
   const releaseTracks = () => {
+    if (!releaseStreamOnStop) return;
     for (const track of opts.stream.getTracks()) track.stop();
   };
 
@@ -190,9 +198,14 @@ export async function requestMic(): Promise<MediaStream> {
   }
 }
 
-export function memoFilename(mimeType: string, at: Date = new Date()): string {
+export function memoFilename(mimeType: string, at: Date = new Date(), part?: number): string {
   const iso = at.toISOString().replace(/[:.]/g, "-").replace(/Z$/, "");
-  return `memo-${iso}.${extensionFor(mimeType)}`;
+  // `part` distinguishes the segments of one long recording that rolled across
+  // the segment boundary (they share `at`, so without the suffix their storage
+  // filenames would collide). Omitted for a single-segment recording — the
+  // common case stays `memo-<iso>.<ext>`, byte-identical to before segmentation.
+  const suffix = part && part > 0 ? `-part${part}` : "";
+  return `memo-${iso}${suffix}.${extensionFor(mimeType)}`;
 }
 
 export function memoPath(at: Date = new Date()): string {
