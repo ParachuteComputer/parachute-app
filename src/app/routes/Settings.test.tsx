@@ -231,7 +231,7 @@ describe("Settings — voice recordings (audio retention)", () => {
   }
 
   async function findSection(): Promise<HTMLElement> {
-    const heading = await screen.findByRole("heading", { name: /voice recordings/i });
+    const heading = await screen.findByRole("heading", { name: /^voice$/i });
     return heading.closest("section") as HTMLElement;
   }
 
@@ -347,7 +347,7 @@ describe("Settings — voice recordings (audio retention)", () => {
     expect(r.never).toBeDisabled();
   });
 
-  it("vault explicitly declares transcription disabled → no voice recordings section (#167 gate)", async () => {
+  it("vault explicitly declares transcription disabled → no Voice section at all (#167 gate)", async () => {
     stubVaultFetch({
       getBody: {
         name: "dev",
@@ -360,12 +360,105 @@ describe("Settings — voice recordings (audio retention)", () => {
 
     // Another section renders (the page is up)…
     await screen.findByRole("heading", { name: /text size/i });
-    // …give the vault query a beat to settle, then pin the absence.
+    // …give the vault query a beat to settle, then pin the absence — neither the
+    // retention control NOR the transcribe-default toggle is offered.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /voice recordings/i })).toBeNull();
+      expect(screen.queryByRole("heading", { name: /^voice$/i })).toBeNull();
     });
+    expect(screen.queryByTestId("transcribe-default-toggle")).toBeNull();
+  });
+});
+
+// Voice W3 — the per-vault "Transcribe recordings by default" toggle. A CLIENT
+// capture-behavior preference (the client owns the `transcribe:` policy at
+// attach time), stored app-local per-vault under `lens:transcribe-default:<id>`
+// — it seeds what the per-capture toggle in the recorder starts at. Defaults
+// ON; gated by the same #167 capability check as the retention control.
+describe("Settings — transcribe recordings by default (voice W3)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    seedActiveVault();
+    localStorage.setItem(
+      "lens:token:dev",
+      JSON.stringify({ accessToken: "pvt_abc", scope: "full", vault: "default" }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function stubVaultFetch(getBody: unknown) {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/vault") && method === "GET") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => getBody,
+          text: async () => "",
+        } as Response;
+      }
+      return { ok: false, status: 404, json: async () => null, text: async () => "" } as Response;
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    return fetchImpl;
+  }
+
+  const ENABLED_VAULT = {
+    name: "dev",
+    description: "",
+    transcription: { enabled: true, provider: "scribe-http" },
+    config: { audio_retention: "keep", auto_transcribe: { enabled: true } },
+  };
+
+  it("renders ON by default and persists a flip to OFF under the per-vault key", async () => {
+    stubVaultFetch(ENABLED_VAULT);
+    renderSettings();
+
+    const toggle = await screen.findByTestId("transcribe-default-toggle");
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    const stored = JSON.parse(localStorage.getItem("lens:transcribe-default:dev") ?? "{}") as {
+      transcribe?: boolean;
+    };
+    expect(stored.transcribe).toBe(false);
+  });
+
+  it("reflects a stored OFF preference on mount", async () => {
+    localStorage.setItem("lens:transcribe-default:dev", JSON.stringify({ transcribe: false }));
+    stubVaultFetch(ENABLED_VAULT);
+    renderSettings();
+
+    const toggle = await screen.findByTestId("transcribe-default-toggle");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("older vault without the config block still offers the client-local default toggle", async () => {
+    // Absent config → retention is unsupported, but the transcribe-default is a
+    // pure client preference and must still render (absent ≠ transcription
+    // disabled — the mic renders on such vaults too).
+    stubVaultFetch({ name: "dev", description: "" });
+    renderSettings();
+
+    const toggle = await screen.findByTestId("transcribe-default-toggle");
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    // The retention radios below it are disabled (unsupported), independently.
+    const section = await screen.findByRole("heading", { name: /^voice$/i });
+    expect(
+      within(section.closest("section") as HTMLElement).getByTestId("retention-unsupported"),
+    ).toBeInTheDocument();
   });
 });

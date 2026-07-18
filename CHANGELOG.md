@@ -1,5 +1,36 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.17] - 2026-07-18
+
+**Voice Wave 3 — one policy, spoken once: the per-capture Transcribe toggle + a unified Voice
+section in Settings.** Whether a voice note comes back as text is now a choice the user makes right
+where they capture, with a per-vault default they can set once.
+
+- **`src/lib/capture/transcribe-default.ts`** (new) — the per-vault "transcribe by default"
+  preference. Deliberately CLIENT-LOCAL per-vault (localStorage, `lens:transcribe-default:<vaultId>`,
+  the same pattern as the path-tree + retention-choice flags), NOT server config: the client already
+  owns the `transcribe:` decision per attachment at attach time, so the DEFAULT for that per-capture
+  choice belongs with the app, per device — like the other capture-surface preferences. Defaults ON.
+- **`src/app/routes/NoteNew.tsx`** — a small "Transcribe this recording" switch sits with the record
+  controls, ON by default (seeded from the per-vault preference). OFF makes the capture save
+  audio-only: `saveWithAudio` folds the toggle into `willTranscribe` (`!outOfMinutes && transcribe`),
+  so `buildVoiceCapturePlan` drops the pending markers + `segment_index` and every link sends
+  `transcribe:false` — the SAME audio-only shape the out-of-minutes path already produces
+  (segmentation still rolls a long recording; it just doesn't pre-seed transcription slots). The
+  toggle is per-capture: it resets to the vault default at the top of every fresh capture, so a
+  one-off "just the audio" never leaks into the next recording. When out of monthly minutes it renders
+  OFF + disabled (Wave 2 already speaks the audio-only truth — no double-messaging). The panel copy
+  now tells the truth for both states (transcript-coming vs audio-only). Capability honesty: the
+  toggle only renders when the vault hasn't declared transcription disabled (the recorder is gated
+  away entirely there, unchanged from #167).
+- **`src/app/routes/Settings.tsx`** — the "Voice recordings" section grows into a unified **Voice**
+  section: a new "Transcribe recordings by default" switch (client-local, per device — sets what the
+  capture toggle starts at) above the unchanged retention control ("Keep recordings" —
+  `config.audio_retention`, server-side, per vault). Both knobs are gated by the same #167
+  transcription-capability check; the scope difference (this device vs every device on the vault) is
+  said out loud on each. The cloud door's stored `auto_transcribe` config stays inert — its
+  wiring/removal is a separate door-parity decision (W3 non-goal).
+
 ## [0.20.16] - 2026-07-18
 
 **Voice Wave 2 — unlimited-length voice recording via invisible segmentation + honest edges.** A

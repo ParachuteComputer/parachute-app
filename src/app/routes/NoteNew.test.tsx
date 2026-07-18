@@ -1158,6 +1158,202 @@ describe("NoteNew — voice affordance", () => {
   });
 });
 
+// Voice W3 — the per-capture "Transcribe" toggle. ONE policy spoken once: a
+// capture asks the vault to transcribe (default, seeded from the per-vault
+// Settings preference) or saves audio-only. OFF drops the pending markers +
+// segment_index and sends `transcribe:false`, exactly like the out-of-minutes
+// path. The toggle is per-capture (resets to the vault default at the top of
+// every fresh capture), sits with the record controls, and is hidden entirely
+// when the vault declares transcription disabled (the recorder is gated away).
+describe("NoteNew — per-capture transcribe toggle (voice W3)", () => {
+  let restoreOnline: (() => void) | null = null;
+
+  beforeEach(async () => {
+    const db = await freshDb();
+    db.close();
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    useVaultReachabilityStore.setState({ byVault: {} });
+    seedStore();
+    fakeState.controller = null;
+    fakeState.pickResult = "audio/webm;codecs=opus";
+    fakeState.requestMic = vi.fn(async () => ({ getTracks: () => [] }) as unknown as MediaStream);
+    vi.spyOn(window, "confirm").mockImplementation(() => true);
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, {
+        createObjectURL: vi.fn(() => "blob:fake"),
+        revokeObjectURL: vi.fn(),
+      }),
+    );
+    // Audio saves ride the sync queue (offline path) — force offline so the
+    // route never attempts a live create POST.
+    const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, "onLine");
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
+    restoreOnline = () => {
+      if (desc) Object.defineProperty(navigator, "onLine", desc);
+    };
+  });
+
+  afterEach(() => {
+    restoreOnline?.();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function tapStop() {
+    fireEvent.click(screen.getByRole("button", { name: /stop/i }));
+  }
+
+  async function recordAndStop() {
+    const recordBtn = await screen.findByRole("button", { name: /record voice memo/i });
+    await act(async () => {
+      fireEvent.click(recordBtn);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tapStop();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() => expect(screen.getByText(/recorded\s+/i)).toBeInTheDocument());
+  }
+
+  it("renders ON by default at the record controls — the default-on transcribe path is unchanged", async () => {
+    installFetch({});
+    renderAt("/new");
+
+    await screen.findByRole("button", { name: /record voice memo/i });
+    const toggle = screen.getByTestId("transcribe-toggle");
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(toggle).not.toBeDisabled();
+  });
+
+  it("toggle OFF → audio-only save shape: transcribe:false, no pending marker, no segment_index", async () => {
+    installFetch({});
+    renderAt("/new");
+
+    await screen.findByRole("button", { name: /record voice memo/i });
+    // Flip the per-capture toggle OFF before recording; the choice sticks
+    // through record → stop → save (no return-to-idle in between).
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("transcribe-toggle"));
+    });
+    expect(screen.getByTestId("transcribe-toggle")).toHaveAttribute("aria-checked", "false");
+
+    await recordAndStop();
+    // The have-audio panel keeps the OFF choice and says audio-only out loud.
+    expect(screen.getByTestId("transcribe-toggle")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByText(/transcription is off for this recording/i)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+    await waitFor(() => expect(screen.getByText("NoteViewPage")).toBeInTheDocument());
+
+    const db = await openLensDB();
+    const pending = await listPending(db, "dev");
+    db.close();
+    const link = pending.find((p) => p.mutation.kind === "link-attachment");
+    expect(link).toBeDefined();
+    if (link && link.mutation.kind === "link-attachment") {
+      expect(link.mutation.transcribe).toBe(false);
+      // Audio-only: no per-part metadata rides the link.
+      expect(link.mutation.metadata).toBeUndefined();
+    }
+    const create = pending.find((p) => p.mutation.kind === "create-note");
+    if (create && create.mutation.kind === "create-note") {
+      expect(create.mutation.payload.content).not.toContain("Transcript pending");
+      expect(create.mutation.payload.content).toMatch(/!\[\[memo-[\dT-]+\.webm\]\]/);
+    }
+  });
+
+  it("out of minutes → the toggle renders OFF and disabled (Wave 2 already speaks the audio-only truth)", async () => {
+    installFetch({
+      "GET /api/vault": {
+        body: {
+          name: "dev",
+          description: "",
+          transcription: { enabled: true, minutes_remaining: 0 },
+        },
+      },
+    });
+    renderAt("/new");
+
+    await screen.findByText(/out of transcription minutes this month/i);
+    const toggle = screen.getByTestId("transcribe-toggle");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(toggle).toBeDisabled();
+  });
+
+  it("Settings default OFF → capture starts with the toggle off but can be flipped on for one capture", async () => {
+    // Seed the per-vault client-local default to OFF before mount.
+    localStorage.setItem("lens:transcribe-default:dev", JSON.stringify({ transcribe: false }));
+    installFetch({});
+    renderAt("/new");
+
+    await screen.findByRole("button", { name: /record voice memo/i });
+    // Starts OFF (seeded default)…
+    expect(screen.getByTestId("transcribe-toggle")).toHaveAttribute("aria-checked", "false");
+    // …flip ON for this one capture.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("transcribe-toggle"));
+    });
+    expect(screen.getByTestId("transcribe-toggle")).toHaveAttribute("aria-checked", "true");
+
+    await recordAndStop();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+    await waitFor(() => expect(screen.getByText("NoteViewPage")).toBeInTheDocument());
+
+    const db = await openLensDB();
+    const pending = await listPending(db, "dev");
+    db.close();
+    const link = pending.find((p) => p.mutation.kind === "link-attachment");
+    if (link && link.mutation.kind === "link-attachment") {
+      expect(link.mutation.transcribe).toBe(true);
+    }
+    const create = pending.find((p) => p.mutation.kind === "create-note");
+    if (create && create.mutation.kind === "create-note") {
+      expect(create.mutation.payload.content).toContain("Transcript pending");
+    }
+  });
+
+  it("resets to the vault default on a fresh capture — a one-off OFF does not leak past a discard", async () => {
+    installFetch({});
+    renderAt("/new");
+
+    await screen.findByRole("button", { name: /record voice memo/i });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("transcribe-toggle"));
+    });
+    expect(screen.getByTestId("transcribe-toggle")).toHaveAttribute("aria-checked", "false");
+
+    await recordAndStop();
+    // Discard → back to a fresh idle capture surface.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /discard/i }));
+    });
+    await screen.findByRole("button", { name: /record voice memo/i });
+    // The toggle is back at the vault default (ON) — the one-off OFF is gone.
+    expect(screen.getByTestId("transcribe-toggle")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("transcription explicitly disabled → no toggle (recorder gated away, #167)", async () => {
+    installFetch({
+      "GET /api/vault": {
+        body: { name: "dev", description: "", transcription: { enabled: false } },
+      },
+    });
+    renderAt("/new");
+
+    await screen.findByTestId("voice-unavailable");
+    expect(screen.queryByTestId("transcribe-toggle")).toBeNull();
+    expect(screen.queryByRole("button", { name: /record voice memo/i })).toBeNull();
+  });
+});
+
 // Launch-audit P0-3: the mic gates on the vault's DECLARED transcription
 // capability. Explicit `enabled: false` hides the recorder (free cloud tier,
 // self-host without a provider); `enabled: true` or an ABSENT field keeps it
