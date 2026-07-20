@@ -129,6 +129,11 @@ describe("firstLineTitle (mirror of the vault's computeDisplayTitle)", () => {
     expect(firstLineTitle("intro line\n\n# Buried\n\nmore")).toBe("intro line");
   });
 
+  it("skips a leading bare heading marker line and titles by the next real line", () => {
+    expect(firstLineTitle("#\nActual title\n\nbody")).toBe("Actual title");
+    expect(firstLineTitle("## \nActual title")).toBe("Actual title");
+  });
+
   it("skips leading blank lines", () => {
     expect(firstLineTitle("\n\n\nfirst real line")).toBe("first real line");
   });
@@ -169,6 +174,13 @@ describe("stripFirstTitleLine", () => {
     expect(stripFirstTitleLine("Some intro paragraph.\n\n# Buried Title\n\nMore body.")).toBe(
       "# Buried Title\n\nMore body.",
     );
+  });
+
+  it("skips a leading bare marker line so the promoted title isn't left in the body", () => {
+    // `firstLineTitle` skips the bare `#` and titles by "Actual title"; the
+    // strip must remove BOTH lines so the body doesn't double-render the title.
+    expect(stripFirstTitleLine("#\nActual title\n\nbody")).toBe("body");
+    expect(stripFirstTitleLine("#\nActual title")).toBe("");
   });
 
   it("removes leading blank lines that preceded the first line", () => {

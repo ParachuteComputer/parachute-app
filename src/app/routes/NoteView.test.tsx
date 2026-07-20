@@ -299,6 +299,31 @@ describe("NoteView route", () => {
     expect(screen.queryByText(/nothing here yet/i)).toBeNull();
   });
 
+  it("does not double-render the title when the first line is a bare heading marker", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "baremarker",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T00:00:00Z",
+          // A bare `#` (no text) then the real first line — the title is the
+          // real line, promoted once and NOT left behind in the body.
+          content: "#\nActual title\n\nSome body.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    renderAt("/n/baremarker");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Actual title" }),
+    ).toBeInTheDocument();
+    // Rendered exactly once — in the header, never doubled in the body.
+    expect(screen.getAllByText("Actual title")).toHaveLength(1);
+    expect(screen.getByText("Some body.")).toBeInTheDocument();
+  });
+
   it("shows the empty-note prompt and a timestamp title for a genuinely empty note", async () => {
     installFetch({
       "/api/notes": {

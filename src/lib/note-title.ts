@@ -160,16 +160,27 @@ function bodyStartLine(lines: string[]): number {
   return 0;
 }
 
+// A line's title text: its content with one leading `#{1,6}` marker + trailing
+// whitespace stripped, trimmed. Empty when the line is blank OR a bare heading
+// marker with no text (`#`, `## `). `firstLineTitle` and `stripFirstTitleLine`
+// both use this to decide which leading lines to SKIP, so the two agree on the
+// exact line that is the title — a bare marker line before real content is
+// skipped by BOTH, never left behind as a body double of the promoted title.
+function titleTextOf(line: string): string {
+  return line.replace(/^#{1,6}\s*/, "").trim();
+}
+
 // The app's mirror of the vault's `computeDisplayTitle`: the first non-empty
 // content line (after any leading frontmatter), one leading `#{1,6}` marker and
 // its trailing whitespace stripped, truncated to DISPLAY_TITLE_MAX_LEN code
 // points. `null` when there's no non-empty line (empty / whitespace-only /
-// frontmatter-only note) — callers decide the fallback voice (path/timestamp).
+// frontmatter-only / bare-marker-only note) — callers decide the fallback voice
+// (path/timestamp).
 export function firstLineTitle(content: string | null | undefined): string | null {
   if (!content) return null;
   const lines = content.split("\n");
   for (let i = bodyStartLine(lines); i < lines.length; i++) {
-    const stripped = lines[i]!.replace(/^#{1,6}\s*/, "").trim();
+    const stripped = titleTextOf(lines[i]!);
     if (stripped === "") continue;
     // Code-point iteration so a truncation can't split a surrogate pair.
     const codePoints = Array.from(stripped);
@@ -181,20 +192,26 @@ export function firstLineTitle(content: string | null | undefined): string | nul
 }
 
 // Remove the first non-empty content line — the exact line `firstLineTitle`
-// lifts into a page header — plus the blank lines around it, so a read view
-// that promotes the first line to its title doesn't render that line twice.
-// Any leading frontmatter is preserved but skipped when locating the title line
-// (matching `firstLineTitle`). Returns `content` unchanged when there's no
-// non-empty line to lift (empty / whitespace / frontmatter-only note).
+// lifts into a page header — plus the blank / bare-marker lines that preceded
+// it and the blank lines that trailed it, so a read view that promotes the
+// first line to its title doesn't render that line twice. The leading-skip
+// predicate is `titleTextOf` (NOT a raw trim) so it lands on the same line
+// `firstLineTitle` chose: a bare `#` before real content is skipped here too,
+// rather than removed alone and leaving the title text in the body. Any leading
+// frontmatter is preserved but skipped when locating the title line. Returns
+// `content` unchanged when there's no title line to lift (empty / whitespace /
+// bare-marker-only / frontmatter-only note).
 export function stripFirstTitleLine(content: string): string {
   const lines = content.split("\n");
   const start = bodyStartLine(lines);
   let i = start;
-  while (i < lines.length && lines[i]!.trim() === "") i++;
-  if (i >= lines.length) return content; // no non-empty line to lift
-  // Drop everything from the body start through the title line (any blank lines
-  // that preceded it, then the line itself) plus the blanks that trailed it, so
-  // the body opens cleanly on the next real content.
+  while (i < lines.length && titleTextOf(lines[i]!) === "") i++;
+  if (i >= lines.length) return content; // no title line to lift
+  // Drop everything from the body start through the title line (any blank or
+  // bare-marker lines that preceded it, then the line itself) plus the blanks
+  // that trailed it, so the body opens cleanly on the next real content. The
+  // trailing skip is a raw trim — a bare marker AFTER the title is real body
+  // content (a heading), not part of the title region.
   let end = i + 1;
   while (end < lines.length && lines[end]!.trim() === "") end++;
   lines.splice(start, end - start);
