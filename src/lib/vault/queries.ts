@@ -1,3 +1,4 @@
+import { mirrorRecordRemove, mirrorRecordUpsert } from "@/lib/mirror/store";
 import type { LensDB } from "@/lib/sync/db";
 import { isLocalId, newLocalId, resolveNoteId } from "@/lib/sync/id-map";
 import { enqueue } from "@/lib/sync/queue";
@@ -546,6 +547,10 @@ export function useUpdateNote(id: string | undefined) {
       if (updated?.id && updated.id !== id) {
         qc.setQueryData(["note", activeId, updated.id], updated);
       }
+      // Keep the offline mirror current on the direct (online) update path;
+      // no-ops when the mirror flag is off. Fire-and-forget — the mutation's
+      // result doesn't depend on it.
+      if (db && activeId && updated) void mirrorRecordUpsert(db, activeId, updated);
     },
   });
 }
@@ -573,6 +578,10 @@ export function useCreateNote() {
       qc.invalidateQueries({ queryKey: ["notesForDateViews", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });
       qc.invalidateQueries({ queryKey: ["vaultInfo", activeId] });
+      // Seed the offline mirror with the new note. Online: the server row.
+      // Offline: the optimistic local-id row, which the queue drain later
+      // swaps for the server row. No-ops when the mirror flag is off.
+      if (db && activeId) void mirrorRecordUpsert(db, activeId, created);
     },
   });
 }
@@ -751,6 +760,8 @@ export function useDeleteNote() {
       qc.invalidateQueries({ queryKey: ["notes", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });
       qc.invalidateQueries({ queryKey: ["vaultInfo", activeId] });
+      // Drop the mirror row too (online path); no-ops when the flag is off.
+      if (db && activeId) void mirrorRecordRemove(db, activeId, id);
     },
   });
 }

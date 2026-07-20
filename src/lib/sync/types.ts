@@ -1,5 +1,6 @@
 import type { CreateNotePayload, UpdateNotePayload } from "@/lib/vault/client";
 import type { NotesSettingsPatch } from "@/lib/vault/settings";
+import type { Note } from "@/lib/vault/types";
 
 // Shape of every row in the `pending` object store. Mutations flow through here
 // FIFO by autoincrement `seq`. `targetId` may be a local-only ID that needs
@@ -147,4 +148,20 @@ export interface DrainOutcome {
   stashed: number;
   deferred: number;
   authHalted: boolean;
+}
+
+// A row in the durable-offline mirror (`mirror_notes`, DB v2). The full server
+// Note, plus the `vaultId` that makes the composite key [vaultId, id] unique
+// across a restored/imported vault copy (which shares note ids with its
+// origin), plus a bookkeeping bit for a future body-eviction pass. Stored
+// verbatim from a cursor page (content + links + attachment rows) or from a
+// write-path landing.
+export interface MirrorNoteRow extends Note {
+  // Discriminator for the composite key + `by-vault*` indexes. Never a Note
+  // field on the wire — added when the row is written to the mirror.
+  vaultId: string;
+  // Wave 2 will drop large bodies under quota pressure and set this so a reader
+  // knows the row's metadata is present but `content` must be refetched.
+  // Unused in Wave 1 — nothing evicts yet.
+  contentEvicted?: boolean;
 }

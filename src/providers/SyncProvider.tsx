@@ -1,3 +1,6 @@
+import { MirrorEngine } from "@/lib/mirror/engine";
+import { isMirrorEnabled } from "@/lib/mirror/flag";
+import { createMirrorWriteSink } from "@/lib/mirror/store";
 import { type BlobStore, createBlobStore } from "@/lib/sync/blob-store";
 import { type LensDB, openLensDB } from "@/lib/sync/db";
 import { SyncEngine } from "@/lib/sync/engine";
@@ -128,6 +131,9 @@ export function SyncProvider({ children }: { children: ReactNode }): ReactNode {
     return new SyncEngine({
       db,
       blobStore,
+      // Passed unconditionally; the sink's writes no-op when the mirror flag is
+      // off, so a drain keeps the mirror current only when the flag is on.
+      mirror: createMirrorWriteSink(db),
       resolveContext: () => {
         const c = clientRef.current;
         const v = activeVaultIdRef.current;
@@ -161,6 +167,30 @@ export function SyncProvider({ children }: { children: ReactNode }): ReactNode {
     engine.start();
     return () => engine.stop();
   }, [engine]);
+
+  // Durable-offline mirror engine (Wave 1). Only created when the flag is on,
+  // so it's fully inert otherwise (no cursor traffic, no timers). The flag is
+  // read once at mount — a change takes effect on the next reload. Its
+  // resolveContext follows the active vault, so a vault switch hydrates that
+  // vault from its own stored cursor on the next tick.
+  const mirrorEngine = useMemo(() => {
+    if (!db || !isMirrorEnabled()) return null;
+    return new MirrorEngine({
+      db,
+      resolveContext: () => {
+        const c = clientRef.current;
+        const v = activeVaultIdRef.current;
+        if (!c || !v) return null;
+        return { client: c, vaultId: v };
+      },
+    });
+  }, [db]);
+
+  useEffect(() => {
+    if (!mirrorEngine) return;
+    mirrorEngine.start();
+    return () => mirrorEngine.stop();
+  }, [mirrorEngine]);
 
   const value = useMemo<SyncContext>(
     () => ({ db, blobStore, engine, isOnline, isDraining, lastSyncedAt }),

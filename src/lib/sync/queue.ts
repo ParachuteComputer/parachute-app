@@ -1,3 +1,4 @@
+import type { MirrorWriteSink } from "@/lib/mirror/types";
 import {
   type UpdateNotePayload,
   VaultAuthError,
@@ -74,6 +75,10 @@ export interface DrainContext {
   vaultId: string;
   blobStore: BlobStore;
   now?: () => number;
+  // Optional durable-offline mirror sink (Wave 1). When present, each landing
+  // ALSO keeps the mirror current — the sink's methods no-op when the mirror
+  // flag is off, so the drain's own queue logic is unchanged either way.
+  mirror?: MirrorWriteSink;
 }
 
 // Drain every ready row for `vaultId` in FIFO (`seq`) order. Stops on auth
@@ -184,6 +189,8 @@ async function runMutation(ctx: DrainContext, row: PendingRow): Promise<void> {
     case "create-note": {
       const created = await ctx.client.createNote(m.payload);
       await recordIdMap(ctx.db, m.localId, created.id, ctx.vaultId);
+      // Swap the optimistic local-id mirror row (if any) for the server row.
+      await ctx.mirror?.localIdLanded(ctx.vaultId, m.localId, created);
       return;
     }
     case "update-note": {
@@ -191,7 +198,8 @@ async function runMutation(ctx: DrainContext, row: PendingRow): Promise<void> {
       if (!targetId) {
         throw new DeferRowError(`Awaiting local id ${m.targetId}`);
       }
-      await drainUpdateNote(ctx.client, targetId, m.payload, m.baselineUpdatedAt);
+      const updated = await drainUpdateNote(ctx.client, targetId, m.payload, m.baselineUpdatedAt);
+      if (updated) await ctx.mirror?.upsert(ctx.vaultId, updated);
       return;
     }
     case "update-settings": {
@@ -204,6 +212,7 @@ async function runMutation(ctx: DrainContext, row: PendingRow): Promise<void> {
         throw new DeferRowError(`Awaiting local id ${m.targetId}`);
       }
       await ctx.client.deleteNote(targetId);
+      await ctx.mirror?.remove(ctx.vaultId, targetId);
       return;
     }
     case "upload-attachment": {
@@ -297,15 +306,15 @@ async function drainUpdateNote(
   targetId: string,
   payload: UpdateNotePayload,
   initialBaseline: string | undefined,
-): Promise<void> {
+): Promise<Awaited<ReturnType<VaultClient["updateNote"]>>> {
   let baseline = initialBaseline;
   for (let attempt = 0; attempt <= NOTE_MERGE_RETRIES; attempt++) {
     const callPayload: UpdateNotePayload = baseline
       ? { ...payload, if_updated_at: baseline }
       : { ...payload };
     try {
-      await client.updateNote(targetId, callPayload);
-      return;
+      // Returns the server-authored Note; the caller feeds it to the mirror.
+      return await client.updateNote(targetId, callPayload);
     } catch (err) {
       if (err instanceof VaultConflictError && attempt < NOTE_MERGE_RETRIES) {
         if (err.currentUpdatedAt) {
@@ -323,12 +332,14 @@ async function drainUpdateNote(
       }
       if (err instanceof VaultConflictError) {
         // Exhausted polite retries — force the write.
-        await client.updateNote(targetId, { ...payload, force: true });
-        return;
+        return await client.updateNote(targetId, { ...payload, force: true });
       }
       throw err;
     }
   }
+  // Unreachable: the loop returns or throws on every path. The retry ceiling
+  // (`attempt <= NOTE_MERGE_RETRIES`) always forces on the final conflict.
+  return undefined as never;
 }
 
 // Drain handler for `update-settings`. We refetch the settings note, merge
