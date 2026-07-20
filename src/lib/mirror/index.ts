@@ -30,6 +30,7 @@ export {
 } from "./reconcile";
 export {
   clearMirrorForVault,
+  clearMirrorMeta,
   countMirrorNotes,
   createMirrorWriteSink,
   getMirrorLastSweepAt,

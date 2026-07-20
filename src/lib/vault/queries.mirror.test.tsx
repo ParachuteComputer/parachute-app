@@ -191,6 +191,8 @@ describe("read hooks — mirror fallback (flag-gated)", () => {
     // The safety net. Mirror HAS data, but with the flag off the hook must
     // behave exactly as before Wave 3: networkMode stays "online", so an
     // offline query pauses (queryFn never runs) rather than serving the mirror.
+    // The mirror is now ON by default, so force it OFF explicitly for this path.
+    localStorage.setItem(MIRROR_FLAG_KEY, "false");
     await upsertMirrorNotes(h.db!, "v1", [note("m1")]);
     restoreOnline = setOnline(false);
     // Drive React Query's connectivity tracker offline too — networkMode
@@ -207,6 +209,8 @@ describe("read hooks — mirror fallback (flag-gated)", () => {
   });
 
   it("flag OFF + online: plain network fetch, mirror untouched (byte-identical to today)", async () => {
+    // The mirror is now ON by default, so force it OFF explicitly for this path.
+    localStorage.setItem(MIRROR_FLAG_KEY, "false");
     await upsertMirrorNotes(h.db!, "v1", [note("mirror-only")]);
     restoreOnline = setOnline(true);
     const fetchSpy = vi.fn(() =>

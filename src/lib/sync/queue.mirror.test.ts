@@ -126,10 +126,14 @@ describe("queue drain — mirror write-path (flag OFF → inert)", () => {
   let db: LensDB;
   beforeEach(async () => {
     db = await freshDb();
-    localStorage.clear(); // flag absent → off
+    // The mirror is now ON by default, so force it OFF explicitly for the
+    // inert-path assertions below.
+    localStorage.clear();
+    localStorage.setItem(MIRROR_FLAG_KEY, "false");
   });
   afterEach(() => {
     db.close();
+    localStorage.clear();
   });
 
   it("leaves the mirror untouched on a create landing while the queue still drains", async () => {

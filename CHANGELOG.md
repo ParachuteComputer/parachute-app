@@ -1,5 +1,30 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.30] - 2026-07-20
+
+**Offline mirror — ACTIVATION: the durable-offline mirror is now ON by default.** Waves 1–4 built
+and shipped the whole mirror behind a default-OFF flag — store, cursor hydration, deletes-reconcile,
+local-first reads, staleness UX, storage ceiling/eviction, and a Settings surface. Aaron ratified
+turning it on. This release flips that single lever: a fresh browser now hydrates its vault into
+IndexedDB and serves reads local-first, with the offline/staleness UX live.
+
+- **Default flipped ON** (`src/lib/mirror/flag.ts`) — `MIRROR_ENABLED_DEFAULT = true`. The
+  `parachute:mirror:enabled` localStorage override still works per-device and now cuts **both ways**:
+  `"false"` forces the mirror OFF (a per-device opt-out without a rebuild), `"true"` forces it ON.
+  With neither key set, the compile-time default decides. `isMirrorEnabled()` remains the single lever
+  every read/write/hydration path reads.
+- **`clearOffline` meta cleanup** (#74) — "Clear offline copy" now also drops the vault's sync-state
+  meta (`state` / `lastSyncedAt` / `lastSweepAt` / `tags`) via a new `clearMirrorMeta` store helper,
+  not just the note rows + cursor. A cleared vault now reads truly EMPTY: a reload can't repaint a
+  stale "synced · last synced X ago", and the re-fill runs COLD (hydration progress shown) instead of
+  being treated as a warm no-op. The write queue (`pending` / `id_map` / `blob_path_map` / `blobs`) is
+  untouched — the same sacred-work exclusion as before; un-synced work is never dropped.
+- **Engine crash-safety** (`src/lib/mirror/engine.ts`) — `syncOnce()` runs fire-and-forget from the
+  tick interval + online/visibility listeners (and directly from Settings "Sync now"), so it must
+  never reject. It now backstops the rare throws outside `drainCursor`'s own guard (chiefly a
+  torn-down or evicted IndexedDB throwing from the pre-drain cursor reads or the error-state write)
+  and resolves to an error result instead of surfacing an unhandled promise rejection.
+
 ## [0.20.29] - 2026-07-20
 
 **Views Wave 2b — the board, gallery, and calendar view KINDS now render.** A `#view` note already

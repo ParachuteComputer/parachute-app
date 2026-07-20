@@ -1,4 +1,5 @@
 import { saveLastSigninEmail } from "@/lib/account/store";
+import { MIRROR_FLAG_KEY } from "@/lib/mirror/flag";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -16,6 +17,12 @@ describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    // Real-App routing/boot integration test, not a mirror test. The mirror is
+    // now ON by default, which would spin up the background hydration engine
+    // (extra re-renders + a second aria-live status region) and perturb these
+    // shell assertions. Force it OFF so the routing behavior stays what this
+    // suite pins.
+    localStorage.setItem(MIRROR_FLAG_KEY, "false");
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useToastStore.setState({ toasts: [] });
     // BrowserRouter is mounted with basename="/notes" (BASE_URL from Vite).
