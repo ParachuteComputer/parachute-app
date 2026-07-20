@@ -17,7 +17,7 @@ vi.mock("@/lib/vault/queries", () => ({
   useActiveVaultClient: () => mockClient,
 }));
 
-function seedVault({ url = "http://localhost:1940" } = {}) {
+function seedVault({ url = "http://localhost:1940", clientId = "c" } = {}) {
   useVaultStore.setState({
     vaults: {
       v: {
@@ -25,7 +25,7 @@ function seedVault({ url = "http://localhost:1940" } = {}) {
         url,
         name: "dev",
         issuer: url,
-        clientId: "c",
+        clientId,
         scope: "full",
         addedAt: "2026-04-18T00:00:00.000Z",
         lastUsedAt: "2026-04-18T00:00:00.000Z",
@@ -72,6 +72,48 @@ describe("VaultStatusBanner", () => {
     renderBanner();
     expect(screen.getByText(/vault session expired/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reconnect to vault/i })).toBeInTheDocument();
+  });
+
+  // home-door banner fix — the auth-halt banner is a cross-origin OAuth
+  // affordance and must NOT govern a home-door vault (clientId "home-door"),
+  // whose session-loss surface is the non-blocking AccountSessionBanner. A
+  // home-door vault never has an OAuth client to reconnect, and no home-door
+  // connect path clears the halt — so a stale halt would otherwise stick a
+  // "Vault session expired" bar at the top forever, surviving reloads.
+  it("hides the auth-halt banner for a home-door vault even when a halt is set", () => {
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    seedVault({ clientId: "home-door" });
+    // Simulate a lingering halt persisted from an earlier session (survives a
+    // reload because it's localStorage-backed).
+    useAuthHaltStore.getState().markHalted("v", "session expired");
+    const { container } = renderBanner();
+    expect(screen.queryByText(/vault session expired/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reconnect to vault/i })).not.toBeInTheDocument();
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("still shows the auth-halt banner for a cross-origin OAuth vault with a halt (unbroken)", () => {
+    // Default seedVault clientId is "c" — a real OAuth client, NOT home-door.
+    useAuthHaltStore.getState().markHalted("v", "session expired");
+    renderBanner();
+    expect(screen.getByText(/vault session expired/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reconnect to vault/i })).toBeInTheDocument();
+  });
+
+  it("still shows the unreachable banner for a home-door vault (network axis is unaffected)", () => {
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    seedVault({ clientId: "home-door" });
+    // A home-door vault with BOTH a stale auth-halt and a down reachability
+    // signal: the auth-halt is suppressed (OAuth affordance, wrong door) but
+    // the genuine "can't reach the vault" banner must still surface.
+    useAuthHaltStore.getState().markHalted("v", "session expired");
+    const store = useVaultReachabilityStore.getState();
+    store.reportSignal("v", "unreachable", "boom");
+    store.reportSignal("v", "unreachable", "boom");
+    store.reportSignal("v", "unreachable", "boom");
+    renderBanner();
+    expect(screen.queryByText(/vault session expired/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/vault not reachable/i)).toBeInTheDocument();
   });
 
   it("renders the unreachable banner when reachability is down", () => {
