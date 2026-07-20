@@ -1,5 +1,31 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.24] - 2026-07-20
+
+**Perf: the notes list opens its live subscription in the lean shape — titles and previews,
+not every note's full body.** The notes list (VaultSurface's All view) and the date-grouped
+surfaces (Recent, Activity, Calendar) keep their react-query cache fresh over a vault live
+subscription (`useLiveNotesQuery`). That subscription's snapshot shipped every matching note's
+FULL content, even though the list only renders `NoteRow` (title + preview + tags + provenance)
+and never reads `note.content` — so a large vault paid to stream its entire corpus on connect.
+The list subscriptions now request `include_content=false`, so vault (parachute-vault #620) sends
+lean `NoteIndex` frames (byteSize + preview + displayTitle + tags/metadata, no body) on snapshot
+and upsert. The REST poll already omitted content by the vault's list default, so this is purely a
+live-path win; the switcher (Cmd+K first-line search) and the graph/link hooks stay FULL because
+they genuinely read content/links.
+
+- **`src/lib/vault/queries.ts`** — `useNotes` and `useNotesForDateViews` now set
+  `include_content=false` on the shared query params that drive both the poll and the live
+  subscription. Left FULL, deliberately: `useAllNotesForSwitcher` (`include_content=true`),
+  `useAllNotesWithLinks` (`include_links=true`), `useViewList`/`useViewResults`, and the single-note
+  `useLiveNote`/`useNote` path (the read view + neighborhood graph).
+- **Back-compat with an older vault** (predates #620, ignores `include_content` on subscribe and
+  sends full frames): still renders — the full shape is a superset of the lean one, and
+  `displayTitle()` falls back to the first content line when no wire `displayTitle` is present.
+- **`src/lib/vault/queries.lean-list.test.tsx`** — new: the two list queries send
+  `include_content=false`; the switcher/link hooks stay full; and the list renders both a lean
+  `NoteIndex`-shaped note (no content) and an old vault's full frame without error.
+
 ## [0.20.23] - 2026-07-20
 
 **Fix: Enter and Backspace are now exact inverses — predictable line breaks, Obsidian-faithful.**

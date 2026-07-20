@@ -127,7 +127,20 @@ export function useNotes(queryState: NoteQueryState) {
   const activeId = useVaultStore((s) => s.activeVaultId);
 
   const queryKey = useMemo(() => ["notes", activeId, queryState], [activeId, queryState]);
-  const params = useMemo(() => buildNoteQueryParams(queryState), [queryState]);
+  const params = useMemo(() => {
+    const p = buildNoteQueryParams(queryState);
+    // Lean list shape: this list renders NoteRow (title + preview + tags +
+    // provenance), never `note.content`, so ask the vault for the lean frame.
+    // The win is on the LIVE subscription — vault#620 makes the subscribe
+    // snapshot/upsert ship titles+previews instead of every note's full body
+    // when `include_content=false` (default subscribe frame stays full). The
+    // REST poll already omits content (vault's list default), so this is a
+    // no-op there; against a vault that predates #620 the subscribe ignores the
+    // flag and sends full frames, which still render (full is a superset of
+    // lean — NoteRow reads displayTitle/preview either way).
+    p.set("include_content", "false");
+    return p;
+  }, [queryState]);
 
   // Live layer: open a live subscription (WebSocket) for this exact query and
   // reconcile events into the same cache key. When the stream is open + healthy
@@ -199,6 +212,11 @@ export function useNotesForDateViews() {
     const p = new URLSearchParams();
     p.set("sort", "desc");
     p.set("limit", String(VAULT_GRAPH_NOTE_CAP));
+    // Lean list shape — see `useNotes`. Recent / Activity / Calendar render
+    // NoteRow (title + preview + tags), never `note.content`, so the live
+    // subscription can ship lean frames (vault#620); the REST poll is already
+    // content-less by the vault list default.
+    p.set("include_content", "false");
     return p;
   }, []);
 
