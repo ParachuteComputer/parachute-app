@@ -1,5 +1,50 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.26] - 2026-07-20
+
+**Offline mirror — Wave 2: deletes reconciliation (full-ID sweep + live WS-remove), still behind
+the same default-OFF flag.** Wave 1's cursor tells the mirror what CHANGED (created/updated) but
+NEVER what was DELETED (`deleteNote` is a hard server-side delete, no tombstone), so a note deleted
+on the server stayed in the mirror forever; imported/restored notes that landed BEHIND the cursor
+watermark never appeared. This wave reconciles both. Still write-only/invisible — no read path
+consumes the mirror yet (Wave 3), and with the flag OFF every path stays inert.
+
+- **The reconcile sweep** (`src/lib/mirror/engine.ts` `reconcileSweep` + `src/lib/mirror/reconcile.ts`)
+  — a periodic full-ID sweep. It runs a fresh **lean** cursor walk (`include_content=false` → id +
+  updatedAt only) from `""` at a large page limit (1000) to enumerate the COMPLETE current server-id
+  set (Aaron's ~3400-note vault ≈ 4 requests), then diffs against the mirror: **mirror-has /
+  server-lacks → delete locally**, **server-has / mirror-lacks → fetch full bodies + upsert** (heals
+  behind-watermark imports), **server updatedAt newer than the mirror row → refetch full**
+  (belt-and-suspenders). Triggers: after the first hydration, on app start when online (throttled to
+  ≤ once / 6h via `mirror:<vaultId>:lastSweepAt`), and right after a cursor-error re-walk.
+- **The two critical safety properties.**
+  - **Exclusion — never prune un-synced user work.** The delete phase EXCLUDES (a) any row whose id
+    is a LOCAL id (`isLocalId` — offline-created, not yet synced) and (b) any row with a PENDING
+    queue mutation (create/update/delete/link/delete-attachment), including the id-map resolution of
+    a local id that has since drained to a server id. Both would destroy in-flight offline work.
+  - **Abort-on-incomplete — never mass-delete on a failed/empty enumeration.** If the lean walk
+    errors, breaks on a no-advance cursor, or completes but returns ZERO ids, the diff is REFUSED
+    (no deletions) — an "absent" id only means "gone" when we provably enumerated the whole set.
+- **Live WS-remove → mirror delete** — the engine holds an unfiltered, lean live subscription
+  (`VaultClient.subscribe`) bound to the active vault; on an unfiltered query a `remove` event IS a
+  real delete (no filter it could merely fall out of), so it prunes `mirror_notes` immediately
+  (honoring the same local-id/pending exclusion), closing the online-window delete gap the cursor
+  can't — the sweep is then the cold-start/reconnect backstop. Content upserts stay the cursor
+  poll's job (snapshot/upsert ignored).
+- **Wave-1 review follow-ups folded in** — (a) an id-change (path rename → new id) orphaned the
+  old-id row; the sweep now prunes it (mirror-has / server-lacks), unless it's local/pending; (b) the
+  cursor drain now BREAKS on a no-advance page (a non-empty page whose `next_cursor` didn't move) to
+  harden against a contract violation instead of spinning.
+- **Tags mirroring** — the sweep refreshes the vault's tag list under `mirror:<vaultId>:tags` (best
+  effort) so Wave 3's offline list can render tag filters without a round-trip.
+- **Tests** — `src/lib/mirror/reconcile.test.ts` (pure diff + protected-id collection incl. the
+  local→server id-map bridge) and `src/lib/mirror/engine.sweep.test.ts` pin the safety properties:
+  the sweep deletes a server-deleted note; NEVER deletes a local-id row or a pending row (stale +
+  pending survives); ABORTS on a failed walk AND on an empty walk; backfills server-has/mirror-lacks;
+  refetches on a newer server timestamp; prunes an id-change orphan (but not if pending); WS-remove
+  deletes a synced note yet spares local/pending; the no-advance drain break; throttle holds within
+  6h. All behind the same default-OFF flag.
+
 ## [0.20.25] - 2026-07-20
 
 **Offline mirror — Wave 1: the durable local-copy foundation, behind a default-OFF flag.**
