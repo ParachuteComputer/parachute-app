@@ -1,5 +1,30 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.21] - 2026-07-20
+
+**Fix: the "Vault session expired / Reconnect to vault" banner no longer sticks forever on the
+home-door vault.** On a self-hosted box where the hub serves the app at its own origin root, opening
+the app could show the red auth-halt banner; reconnecting loaded vault data correctly but the banner
+stayed pinned at the top and survived a full page reload.
+
+- **`src/components/VaultStatusBanner.tsx`** — root cause: the auth-halt banner is a CROSS-ORIGIN
+  OAuth-vault affordance. Its recovery action is `beginOAuth`, and its `lens:auth-halt:<id>` marker
+  is only ever cleared on the OAuth refresh path (`refresh.ts`). A HOME-DOOR vault (`clientId ===
+  "home-door"`, served same-origin by cloud or a hub) has no OAuth client — its per-vault token is
+  re-minted from the account session cookie, and no home-door connect path (`openHostedVault` /
+  `remintHostedVault`) touches the auth-halt store. So once a home-door vault acquired a halt (via
+  `queries.ts` `onAuthRevoked` when a post-remint retry still 401s), it was orphaned: the successful
+  re-mint loaded data but never cleared the localStorage-backed halt, and the banner re-appeared on
+  every reload. Fix: the auth-halt banner now excludes home-door vaults
+  (`halt && !isHostedVaultRecord(vault.clientId)`). Home-door session loss is already covered by the
+  non-blocking `AccountSessionBanner` ("your sign-in ended → sign in"), which is the correct recovery
+  door. The cross-origin OAuth reconnect banner is unchanged, and the network-unreachable axis still
+  applies to home-door vaults (a home-door vault can be genuinely offline).
+- **`src/components/VaultStatusBanner.test.tsx`** — pins the visibility condition at the banner's
+  logic layer: a home-door vault with a lingering halt renders nothing; a cross-origin OAuth vault
+  with a halt still shows the reconnect banner (unbroken); a home-door vault that is both halted and
+  unreachable still surfaces the unreachable banner.
+
 ## [0.20.20] - 2026-07-20
 
 **Voice: the per-capture "Transcribe" toggle now matches the app's other switches.** The switch

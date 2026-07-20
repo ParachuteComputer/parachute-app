@@ -1,4 +1,5 @@
 import { InsecureContextBanner } from "@/components/InsecureContextBanner";
+import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import { useAuthHaltStore } from "@/lib/vault/auth-halt-store";
 import { beginOAuth } from "@/lib/vault/oauth";
 import { InsecureContextError } from "@/lib/vault/pkce";
@@ -22,6 +23,18 @@ import { useState } from "react";
 // the user at the wrong recovery. Renamed from `ReconnectBanner` when the
 // unreachable axis landed (notes#113) — one banner covers both axes so we
 // never stack two red bars at the top of the app.
+//
+// The auth-halt banner is a CROSS-ORIGIN OAuth-vault affordance: its recovery
+// is `beginOAuth` and the halt marker is set/cleared on the OAuth refresh path
+// (refresh.ts). A HOME-DOOR vault (clientId === "home-door", served same-origin
+// by cloud or a hub) has NO OAuth client — its per-vault token is re-minted
+// from the account session cookie, and session loss surfaces through the
+// non-blocking AccountSessionBanner ("your sign-in ended → sign in"). So the
+// auth-halt banner must never govern a home-door vault: OAuth is the wrong
+// recovery for it, AND no home-door connect path clears the halt (only
+// refresh.ts's OAuth branch does) — which is why a stale halt persisted across
+// reloads even after a successful re-mint. The unreachable axis still applies
+// (a home-door vault can be genuinely offline). See notes: home-door banner fix.
 
 export function VaultStatusBanner() {
   const activeVaultId = useVaultStore((s) => s.activeVaultId);
@@ -32,7 +45,7 @@ export function VaultStatusBanner() {
   );
 
   if (!vault || !activeVaultId) return null;
-  if (halt)
+  if (halt && !isHostedVaultRecord(vault.clientId))
     return (
       <AuthHaltBanner
         reason={halt.reason}
