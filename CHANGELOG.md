@@ -1,5 +1,20 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.20] - 2026-07-20
+
+**Voice: the per-capture "Transcribe" toggle now matches the app's other switches.** The switch
+shipped in Wave 3 (0.20.17) used a bespoke, smaller geometry that read as misaligned — the knob
+looked pushed too far to the right and sat unevenly in its track.
+
+- **`src/app/routes/NoteNew.tsx`** — root cause: `TranscribeToggle` hand-rolled a smaller track +
+  thumb (`h-6 w-11` track, `h-5 w-5` thumb) than the app's established switch chrome, while its own
+  comment claimed it "mirrors Settings' switch." Settings' switches (Live preview, Transcribe-by-
+  default) use `h-7 w-12` track + `h-6 w-6` thumb. Converged the toggle onto that exact geometry so
+  the knob is the familiar size and seats the same way; behavior (default ON, per-capture,
+  `transcribe:true/false` wiring, forced-off-when-out-of-minutes) is untouched. Display-only. jsdom
+  has no layout, so the pixel-level alignment is an on-device eyeball; the existing behavior tests
+  (aria-checked, presence, toggle wiring) stay green.
+
 ## [0.20.18] - 2026-07-20
 
 **Editor: stop the viewport jumping to the paragraph top while typing.** Writing a long note

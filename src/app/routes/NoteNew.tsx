@@ -895,12 +895,12 @@ function TranscribeToggle({
         data-testid="transcribe-toggle"
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
+        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
           checked ? "bg-accent" : "bg-border"
         }`}
       >
         <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-card shadow-sm transition-transform ${
+          className={`absolute top-0.5 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
             checked ? "translate-x-5" : "translate-x-0.5"
           }`}
         />
