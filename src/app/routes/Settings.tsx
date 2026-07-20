@@ -1,5 +1,7 @@
 import { useTranscribeDefault } from "@/lib/capture/transcribe-default";
 import { readStoredLivePreview, writeStoredLivePreview } from "@/lib/editor-mode";
+import { MIRROR_CEILING_BYTES, measureMirrorBytes } from "@/lib/mirror/evict";
+import { countMirrorNotes } from "@/lib/mirror/store";
 import { PATH_TREE_MODES, type PathTreeMode, usePathTreeMode } from "@/lib/path-tree";
 import { isStandalone } from "@/lib/pwa";
 import {
@@ -10,6 +12,7 @@ import {
   textSizeLabel,
   writeStoredTextSize,
 } from "@/lib/text-size";
+import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
 import {
   DEFAULT_TAG_ROLES,
@@ -27,7 +30,8 @@ import {
 } from "@/lib/vault/audio-retention";
 import { useTranscriptionCapability } from "@/lib/vault/queries";
 import type { AudioRetention } from "@/lib/vault/types";
-import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import { useSync } from "@/providers/SyncProvider";
+import { type ReactNode, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router";
 
 // Per-vault settings UI. A calm, sectioned nav-and-panels page (SYNTHESIS
@@ -60,6 +64,7 @@ export function Settings() {
         <TextSizeSection />
         <PathTreeSection vaultId={activeVault.id} />
         <TagRolesSection vaultId={activeVault.id} />
+        <OfflineSection vaultId={activeVault.id} />
         <InstallStateSection />
       </div>
     </div>
@@ -419,6 +424,140 @@ function TextSizeSection() {
       </fieldset>
     </section>
   );
+}
+
+// Offline (durable mirror) — Wave 4. Only rendered when the mirror flag is on;
+// with it off the whole section is absent (no offline machinery to manage).
+// Shows the mirror's status + last sync + storage footprint against the 512 MB
+// ceiling, and two actions: sync now, and clear the offline copy (which wipes
+// only the mirror rows — never the un-synced write queue).
+//
+// COPY IS A DRAFT pending Aaron's sign-off.
+function OfflineSection({ vaultId }: { vaultId: string }) {
+  const { db, mirror } = useSync();
+  const pushToast = useToastStore((s) => s.push);
+  const [usage, setUsage] = useState<{ bytes: number; count: number } | null>(null);
+  const [busy, setBusy] = useState<null | "sync" | "clear">(null);
+
+  const refresh = useCallback(async () => {
+    if (!db) return;
+    const [bytes, count] = await Promise.all([
+      measureMirrorBytes(db, vaultId),
+      countMirrorNotes(db, vaultId),
+    ]);
+    setUsage({ bytes, count });
+  }, [db, vaultId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  if (!mirror.enabled) return null;
+
+  const onSync = async () => {
+    if (busy) return;
+    setBusy("sync");
+    try {
+      await mirror.syncNow();
+      await refresh();
+      pushToast("Synced offline copy.", "success");
+    } catch {
+      pushToast("Couldn't sync the offline copy right now.", "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onClear = async () => {
+    if (busy) return;
+    if (!confirm("Clear this vault's offline copy from this device? Un-synced changes are kept."))
+      return;
+    setBusy("clear");
+    try {
+      await mirror.clearOffline();
+      await refresh();
+      pushToast("Offline copy cleared.", "success");
+    } catch {
+      pushToast("Couldn't clear the offline copy.", "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="card space-y-5 rounded-xl p-6 shadow-soft" aria-label="Offline">
+      <div>
+        <h2 className="font-serif text-xl text-fg">Offline</h2>
+        <p className="mt-1 text-sm text-fg-muted">
+          A copy of this vault is kept on this device so your notes open without a connection.
+        </p>
+      </div>
+
+      <dl className="space-y-2 text-sm">
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="text-fg-muted">Status</dt>
+          <dd className="text-fg">{describeMirrorState(mirror.state)}</dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="text-fg-muted">Last synced</dt>
+          <dd className="text-fg-muted">
+            {mirror.lastSyncedAt
+              ? relativeTime(new Date(mirror.lastSyncedAt).toISOString())
+              : "never"}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="text-fg-muted">Saved on this device</dt>
+          <dd className="text-fg-muted tabular-nums" data-testid="offline-usage">
+            {usage
+              ? `${usage.count} note${usage.count === 1 ? "" : "s"} · ${formatOfflineBytes(usage.bytes)} of ${formatOfflineBytes(MIRROR_CEILING_BYTES)}`
+              : "—"}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        <button
+          type="button"
+          onClick={onSync}
+          disabled={busy !== null}
+          className="btn btn-secondary btn-touch"
+        >
+          {busy === "sync" ? "Syncing…" : "Sync now"}
+        </button>
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={busy !== null}
+          className="text-sm text-danger hover:underline disabled:opacity-60"
+        >
+          {busy === "clear" ? "Clearing…" : "Clear offline copy"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function describeMirrorState(state: string): string {
+  switch (state) {
+    case "hydrating":
+      return "Saving your vault…";
+    case "offline":
+      return "Offline — showing your saved vault";
+    case "error":
+      return "Sync error";
+    default:
+      return "Saved for offline";
+  }
+}
+
+// Coarse MB/GB formatting for the offline footprint line. The mirror byte
+// count is an estimate (see mirror/evict.ts), so one decimal place is honest
+// enough — no false precision.
+function formatOfflineBytes(n: number): string {
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function InstallStateSection() {

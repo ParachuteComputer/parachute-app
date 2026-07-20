@@ -31,6 +31,7 @@ import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
 import { isViewNote } from "@/lib/views/schema";
+import { useSync } from "@/providers/SyncProvider";
 import { type SVGProps, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
 
@@ -82,6 +83,12 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(vault?.id ?? null);
   const retryTranscription = useRetryTranscription();
+  const { mirror } = useSync();
+  // Served from the durable-offline mirror while offline: mark it a saved copy.
+  const savedCopy = mirror.state === "offline";
+  // A body dropped by the storage-ceiling eviction (mirror-only bookkeeping): the
+  // metadata + preview are here but the full text must be refetched online.
+  const bodyEvicted = (note as { contentEvicted?: boolean }).contentEvicted === true;
   const resolver = useMemo(() => buildWikilinkResolver(note), [note]);
   const focusOn = useFocusMode((s) => s.on);
   const setFocusOn = useFocusMode((s) => s.setOn);
@@ -150,6 +157,7 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
           <h1 className={title.kind === "timestamp" ? "page-title title-timestamp" : "page-title"}>
             {title.text}
           </h1>
+          {savedCopy ? <SavedCopyChip /> : null}
           {note.tags && note.tags.length > 0 ? <HeaderTags tags={note.tags} /> : null}
           {summary ? <p className="mt-3 text-fg-muted">{summary}</p> : null}
           <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -194,7 +202,12 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
           retrying={retryTranscription.isPending}
         />
 
-        {bodyNote.content?.trim() ? (
+        {bodyEvicted ? (
+          // The full body was dropped to keep the offline mirror under its
+          // storage ceiling — the note stays listed + titled, but the text
+          // needs a fetch. Show the retained preview (if any) above the prompt.
+          <EvictedNoteBody preview={note.preview} />
+        ) : bodyNote.content?.trim() ? (
           <NoteRenderer note={bodyNote} resolve={resolver} />
         ) : titleText === null ? (
           // Genuinely empty (no content line at all): a quiet prompt. When the
@@ -574,6 +587,32 @@ function EmptyNoteBody({ noteId }: { noteId: string }) {
         Start writing →
       </Link>
     </p>
+  );
+}
+
+// A subtle marker under the title when the note is served from the durable-
+// offline mirror while offline — "you're reading the saved copy," not a live
+// read. COPY IS A DRAFT pending Aaron's sign-off.
+function SavedCopyChip() {
+  return (
+    <p className="mt-2">
+      <span className="chip bg-bg-soft text-fg-muted" title="Served from your offline copy">
+        Saved copy
+      </span>
+    </p>
+  );
+}
+
+// Shown in place of the body when the note's full text was evicted from the
+// offline mirror to stay under its storage ceiling. The preview (kept on the
+// row) gives context; the line invites a reconnect to load the rest. COPY IS A
+// DRAFT pending Aaron's sign-off.
+function EvictedNoteBody({ preview }: { preview?: string }) {
+  return (
+    <div className="my-8">
+      {preview ? <p className="mb-4 text-fg-muted">{preview}</p> : null}
+      <p className="font-serif text-lg italic text-fg-muted">Connect to load this note.</p>
+    </div>
   );
 }
 

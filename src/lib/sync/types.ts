@@ -160,8 +160,17 @@ export interface MirrorNoteRow extends Note {
   // Discriminator for the composite key + `by-vault*` indexes. Never a Note
   // field on the wire — added when the row is written to the mirror.
   vaultId: string;
-  // Wave 2 will drop large bodies under quota pressure and set this so a reader
-  // knows the row's metadata is present but `content` must be refetched.
-  // Unused in Wave 1 — nothing evicts yet.
+  // Set by Wave 4's storage-ceiling eviction when a row's body (content +
+  // links + attachments) is dropped under quota pressure: the row's metadata
+  // stays present so the note is still listable/openable, but `content` is
+  // gone and must be refetched (a reader shows "Connect to load this note"
+  // offline). Unset on a full row.
   contentEvicted?: boolean;
+  // Retained title for an evicted row. Normally the list derives a note's
+  // title from its `content` first line; once content is evicted there's no
+  // line to derive from, so eviction snapshots the derived title here (the
+  // same field the vault sends on its lean list shape — `displayTitle()` reads
+  // it via a cast) so the row keeps its human title offline. `null` mirrors the
+  // vault's "no first-line title" signal (empty note → fall to path/timestamp).
+  displayTitle?: string | null;
 }

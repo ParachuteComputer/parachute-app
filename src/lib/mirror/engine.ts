@@ -1,11 +1,13 @@
 import type { LensDB } from "@/lib/sync/db";
 import { isLocalId } from "@/lib/sync/id-map";
 import type { VaultClient } from "@/lib/vault/client";
+import { MIRROR_CEILING_BYTES, type MirrorEvictResult, evictOverCeiling } from "./evict";
 import { collectProtectedIds, diffMirror, makeIsProtected } from "./reconcile";
 import {
   clearMirrorCursor,
   getMirrorCursor,
   getMirrorLastSweepAt,
+  getMirrorLastSyncedAt,
   listMirrorNotes,
   removeMirrorNote,
   removeMirrorNotes,
@@ -76,9 +78,18 @@ export interface MirrorEngineOptions {
   // Minimum spacing between reconcile sweeps (throttle). A cursor-error re-walk
   // forces a sweep regardless.
   sweepIntervalMs?: number;
-  // Fired on terminal transitions (live / error) — not on the transient
-  // "hydrating" a poll passes through — so a status consumer isn't spammed.
+  // Per-vault storage ceiling for the mirror (bytes). Past it, the post-drain
+  // eviction drops the oldest note bodies. Defaults to MIRROR_CEILING_BYTES.
+  ceilingBytes?: number;
+  // Fired on terminal transitions (live / error) and, on a COLD hydration only
+  // (first-ever sync of this vault), on entering "hydrating" — so a status
+  // consumer learns the first-hydration progress without being spammed by the
+  // transient hydrating→live a warm poll passes through every tick.
   onStateChange?: (vaultId: string, state: MirrorState) => void;
+  // Cumulative notes written so far during a COLD hydration (first-ever sync),
+  // emitted after each page so a one-time "Saving your vault for offline · {n}"
+  // progress line can tick. Not emitted on warm polls.
+  onProgress?: (vaultId: string, done: number) => void;
 }
 
 export interface MirrorSyncResult {
@@ -129,6 +140,8 @@ export class MirrorEngine {
   // Separate in-tab guard for the sweep — it runs AFTER a drain (outside the
   // drain's lock section) so a re-entrant lock acquisition can't deadlock.
   private sweeping = false;
+  // In-tab guard for the eviction pass (runs after the sweep, same reasoning).
+  private evicting = false;
   // The live remove-subscription, tracked by the vault it's bound to so a vault
   // switch tears the old socket down and opens a fresh one.
   private subscription: { vaultId: string; unsubscribe: () => void } | null = null;
@@ -137,6 +150,7 @@ export class MirrorEngine {
   private readonly pageLimit: number;
   private readonly sweepEnumLimit: number;
   private readonly sweepIntervalMs: number;
+  private readonly ceilingBytes: number;
   private readonly onlineListener: () => void;
   private readonly visibilityListener: () => void;
   // In-flight promise from the most recent trigger; tests await it.
@@ -148,6 +162,7 @@ export class MirrorEngine {
     this.pageLimit = opts.pageLimit ?? DEFAULT_PAGE_LIMIT;
     this.sweepEnumLimit = opts.sweepEnumLimit ?? DEFAULT_SWEEP_ENUM_LIMIT;
     this.sweepIntervalMs = opts.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
+    this.ceilingBytes = opts.ceilingBytes ?? MIRROR_CEILING_BYTES;
     this.onlineListener = () => {
       this.lastRun = this.syncOnce();
     };
@@ -218,6 +233,9 @@ export class MirrorEngine {
       // acquisition inside a held lock would deadlock — Web Locks aren't
       // reentrant). Only after a clean drain, and only when due.
       await this.maybeSweep(ctx, result);
+      // Then bring the mirror under its storage ceiling (drops oldest bodies).
+      // Also outside the drain lock, and only after a clean drain.
+      await this.maybeEvict(result);
       return result;
     } finally {
       this.syncing = false;
@@ -246,9 +264,19 @@ export class MirrorEngine {
     client: MirrorContext["client"],
     vaultId: string,
   ): Promise<MirrorSyncResult> {
-    // Persisted but not emitted — a caught-up poll passes through here briefly.
-    await setMirrorState(this.db, vaultId, { phase: "hydrating" });
+    // Persisted always. A COLD hydration (no stored cursor AND no prior
+    // successful sync) is the first-ever fill — emit the hydrating transition +
+    // progress so the one-time "Saving your vault for offline" line can tick. A
+    // warm poll passes through hydrating→live silently (no emit) so the status
+    // line stays "synced".
     let cursor = (await getMirrorCursor(this.db, vaultId)) ?? "";
+    const cold = cursor === "" && (await getMirrorLastSyncedAt(this.db, vaultId)) === undefined;
+    const hydrating: MirrorState = { phase: "hydrating" };
+    await setMirrorState(this.db, vaultId, hydrating);
+    if (cold) {
+      this.opts.onStateChange?.(vaultId, hydrating);
+      this.opts.onProgress?.(vaultId, 0);
+    }
     let pagesApplied = 0;
     let notesApplied = 0;
     let reWalked = false;
@@ -277,6 +305,7 @@ export class MirrorEngine {
             items as Parameters<typeof upsertMirrorNotes>[2],
           );
           notesApplied += items.length;
+          if (cold) this.opts.onProgress?.(vaultId, notesApplied);
         }
         // Advance + PERSIST the watermark after EVERY page (idempotent upserts
         // + a per-page cursor commit = a killed app resumes exactly here).
@@ -327,6 +356,43 @@ export class MirrorEngine {
       Date.now() - lastSweepAt >= this.sweepIntervalMs;
     if (!due) return;
     await this.reconcileSweep();
+  }
+
+  // ---------- storage-ceiling eviction ----------
+
+  // Run eviction after a clean drain. Skipped when the drain errored / was
+  // itself skipped (nothing changed, or we weren't in a position to write).
+  private async maybeEvict(result: MirrorSyncResult): Promise<void> {
+    if (result.error || result.skipped) return;
+    await this.evictIfOverCeiling();
+  }
+
+  // Bring the mirror at or under its per-vault ceiling by dropping the oldest
+  // note bodies (keeping every index row + preview). Public so it can be
+  // triggered/tested directly. Local-only (no network) but held under the same
+  // per-vault lock as the drain/sweep so it never races another tab's writes,
+  // plus an in-tab guard.
+  async evictIfOverCeiling(): Promise<MirrorEvictResult> {
+    const skip = (reason: NonNullable<MirrorEvictResult["skipped"]>): MirrorEvictResult => ({
+      evicted: 0,
+      freedBytes: 0,
+      totalBytes: 0,
+      skipped: reason,
+    });
+    if (this.evicting) return skip("in-flight");
+    const ctx = this.opts.resolveContext();
+    if (!ctx) return skip("no-context");
+
+    this.evicting = true;
+    try {
+      return await this.withVaultLock(
+        ctx.vaultId,
+        () => skip("locked"),
+        () => evictOverCeiling(this.db, ctx.vaultId, this.ceilingBytes),
+      );
+    } finally {
+      this.evicting = false;
+    }
   }
 
   // The full-ID reconcile. Public so it can be triggered/tested directly. Guards

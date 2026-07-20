@@ -1,10 +1,41 @@
 import { Settings } from "@/app/routes/Settings";
+import type { MirrorSlice } from "@/lib/mirror/types";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The Offline section reads `useSync().{db, mirror}`. Default the mirror OFF so
+// the section stays hidden (existing tests unaffected); individual tests flip
+// `syncHolder.mirror` on. `db` stays null — the section's usage measurement
+// no-ops without a handle, which is all these UI tests need.
+const { syncHolder } = vi.hoisted(() => ({
+  syncHolder: {
+    mirror: {
+      enabled: false,
+      state: "off",
+      lastSyncedAt: null,
+      syncNow: vi.fn(async () => {}),
+      clearOffline: vi.fn(async () => {}),
+    } as MirrorSlice,
+  },
+}));
+vi.mock("@/providers/SyncProvider", () => ({
+  useSync: () => ({ db: null, mirror: syncHolder.mirror }),
+}));
+
+function mirrorOn(over: Partial<MirrorSlice> = {}): void {
+  syncHolder.mirror = {
+    enabled: true,
+    state: "synced",
+    lastSyncedAt: Date.now(),
+    syncNow: vi.fn(async () => {}),
+    clearOffline: vi.fn(async () => {}),
+    ...over,
+  };
+}
 
 function seedActiveVault() {
   useVaultStore.setState({
@@ -48,12 +79,40 @@ describe("Settings route", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    syncHolder.mirror = {
+      enabled: false,
+      state: "off",
+      lastSyncedAt: null,
+      syncNow: vi.fn(async () => {}),
+      clearOffline: vi.fn(async () => {}),
+    };
   });
 
   it("redirects to / when no active vault", () => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     renderSettings();
     expect(screen.getByText("HomePage")).toBeInTheDocument();
+  });
+
+  // Wave-4: the Offline section is hidden entirely when the mirror flag is off
+  // (flag-off inert) and appears with its controls when on.
+  it("hides the Offline section when the mirror flag is off", () => {
+    renderSettings();
+    expect(screen.queryByRole("heading", { name: "Offline" })).not.toBeInTheDocument();
+  });
+
+  it("shows the Offline section with Sync now + Clear offline copy when the mirror is on", async () => {
+    const clearOffline = vi.fn(async () => {});
+    mirrorOn({ state: "synced", clearOffline });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderSettings();
+
+    expect(screen.getByRole("heading", { name: "Offline" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sync now/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /clear offline copy/i }));
+    await waitFor(() => expect(clearOffline).toHaveBeenCalledTimes(1));
   });
 
   it("does not render a scribe section — transcription is vault-level", () => {

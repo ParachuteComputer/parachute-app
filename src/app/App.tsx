@@ -4,6 +4,7 @@ import { BottomTabBar } from "@/components/BottomTabBar";
 import { AppErrorBoundary, RouteErrorBoundary } from "@/components/ErrorBoundary";
 import { FocusModeExitChip, FocusModeMount } from "@/components/FocusModeMount";
 import { Header } from "@/components/Header";
+import { MirrorStatusLine } from "@/components/MirrorStatusLine";
 import { QuickSwitchMount } from "@/components/QuickSwitchMount";
 import { Rail } from "@/components/Rail";
 import { SpeedDial } from "@/components/SpeedDial";
@@ -300,6 +301,7 @@ function AppShell() {
       <VaultStatusBanner />
       <AccountSessionBanner />
       <HubGateBanner />
+      <MirrorStatusLine />
       <FocusModeMount />
       {/*
         The shell: a left Rail (desktop spine, hidden lg:flex) beside the

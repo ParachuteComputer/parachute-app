@@ -15,6 +15,31 @@ export interface MirrorState {
   lastError?: string;
 }
 
+// The mirror's user-facing status, derived from the engine phase + online-ness
+// (Wave 4 staleness UX + Settings). "off" when the flag is off — every UX below
+// is inert in that state.
+export type MirrorUxState = "off" | "hydrating" | "synced" | "offline" | "error";
+
+// The `mirror` slice hung off SyncContext so the chrome staleness line, the
+// note "saved copy" chip, and the Settings offline row read one source of
+// truth. All flag-gated: when off, `state` is "off" and the actions are no-ops.
+export interface MirrorSlice {
+  enabled: boolean;
+  state: MirrorUxState;
+  // Cumulative notes saved so far during the first (cold) hydration — drives the
+  // one-time "Saving your vault for offline" progress line. Absent otherwise.
+  progress?: { done: number };
+  // Wall-clock ms of the mirror's last completed sync (persisted per vault),
+  // null before the first. Drives "updated {relative} ago".
+  lastSyncedAt: number | null;
+  // Settings "Sync now": an incremental cursor run + sweep + eviction now.
+  syncNow: () => Promise<void>;
+  // Settings "Clear offline copy": wipe this vault's mirror rows (and reset the
+  // cursor so a later sync re-fills). NEVER touches the write queue / un-synced
+  // work — only the `mirror_notes` store.
+  clearOffline: () => Promise<void>;
+}
+
 // The write-path seam the queue drain calls into so an online-landing note
 // keeps the mirror current. Every method is flag-gated internally (a no-op when
 // the mirror is off), so callers invoke it unconditionally. `vaultId` is passed

@@ -1,5 +1,41 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.28] - 2026-07-20
+
+**Offline mirror — Wave 4: staleness UX + storage ceiling/eviction + a Settings surface, behind the
+same default-OFF flag.** Waves 1–3 built the mirror store, cursor hydration, deletes-reconcile, and
+local-first reads. This wave adds the user-facing edges: how a stale/offline copy is signalled, a
+per-vault storage ceiling so the mirror can't grow without bound, and a place to see + manage it.
+Still gated by the SAME flag, and the flag **STAYS default OFF** — with it off, every path below is
+byte-identical to the network-only behavior that shipped before (no UX renders, no eviction runs,
+the Settings row is absent). Activation is a separately ratified step.
+
+- **Storage ceiling + eviction** (`src/lib/mirror/evict.ts`) — a **512 MB per-vault** ceiling
+  (Aaron-ratified). Past it, the mirror **evicts note bodies oldest-`updatedAt` first** but **keeps
+  the index row**: content/links/attachments are dropped and `contentEvicted` is set, while a
+  snapshotted preview + title are retained, so every note stays listable and openable-with-preview
+  offline (an evicted note shows "Connect to load this note" when opened offline). Eviction is
+  `byteSize`-aware (prefers the vault's wire `byteSize`, falls back to a content-length estimate) and
+  runs after a clean drain/sweep when over-ceiling, under the same per-vault Web Lock. It **NEVER
+  evicts a bare local-id row or a row with a pending queue mutation** — the same sacred-work
+  exclusion the reconcile sweep uses (un-synced work is never dropped).
+- **Staleness UX** (all subtle, flag-gated; COPY IS A DRAFT pending sign-off) —
+  - a quiet chrome line while offline and serving the saved vault: "Offline — showing your saved
+    vault · updated {relative} ago" (only once there's a saved vault to show);
+  - a one-time hydration progress line on first fill: "Saving your vault for offline · {n}/{total}"
+    (non-modal, gone on completion);
+  - a subtle "Saved copy" marker under the title of a note served from the mirror while offline;
+  - "Connect to load this note" in place of the body of a content-evicted note opened offline.
+- **SyncContext `mirror` slice** (`src/providers/SyncProvider.tsx`) — `{ enabled, state
+  ("off"|"hydrating"|"synced"|"offline"|"error"), progress?, lastSyncedAt, syncNow, clearOffline }`,
+  fed by new mirror-engine `onStateChange`(cold-hydration only) + `onProgress` callbacks. One source
+  of truth for the chrome line, the note chip, and Settings.
+- **Settings → Offline section** — mirror status + last-synced, storage used against the 512 MB
+  ceiling, **Sync now** (an incremental cursor run + sweep + eviction), and **Clear offline copy**
+  (wipes this vault's `mirror_notes` + resets its cursor, with a confirm). Clear touches ONLY the
+  mirror store — never the write queue / un-synced work. The whole section is hidden when the flag is
+  off.
+
 ## [0.20.27] - 2026-07-20
 
 **Offline mirror — Wave 3: local-first READS + cold-launch offline, behind the same default-OFF

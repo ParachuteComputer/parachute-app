@@ -15,7 +15,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // (deterministic — no async provider bootstrap). The default `db: null` matches
 // the un-wrapped context default the other describes already run against, so
 // real-id tests are unaffected.
-const { syncState } = vi.hoisted(() => ({ syncState: { db: null as LensDB | null } }));
+const { syncState } = vi.hoisted(() => ({
+  syncState: { db: null as LensDB | null, mirrorState: "off" as string },
+}));
 vi.mock("@/providers/SyncProvider", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/providers/SyncProvider")>();
   return {
@@ -27,6 +29,13 @@ vi.mock("@/providers/SyncProvider", async (importOriginal) => {
       isOnline: true,
       isDraining: false,
       lastSyncedAt: null,
+      mirror: {
+        enabled: syncState.mirrorState !== "off",
+        state: syncState.mirrorState,
+        lastSyncedAt: null,
+        syncNow: async () => {},
+        clearOffline: async () => {},
+      },
     }),
   };
 });
@@ -114,6 +123,7 @@ describe("NoteView route", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    syncState.mirrorState = "off";
   });
 
   it("renders markdown content, metadata, tags, and back link", async () => {
@@ -147,6 +157,60 @@ describe("NoteView route", () => {
     expect(screen.getByRole("link", { name: /edit/i })).toHaveAttribute("href", "/n/abc-123/edit");
     // Not a #view-tagged note — no bridge into the ViewSurface.
     expect(screen.queryByRole("link", { name: /open as view/i })).not.toBeInTheDocument();
+  });
+
+  // Wave-4 staleness UX: a note served from the durable-offline mirror while
+  // offline wears a subtle "Saved copy" marker.
+  it("marks the note a saved copy when served from the mirror offline", async () => {
+    syncState.mirrorState = "offline";
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T04:30:54.177Z",
+          content: "# Aaron Gabriel\n\nTeacher and builder.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+
+    renderAt("/n/abc-123");
+
+    expect(await screen.findByText("Aaron Gabriel")).toBeInTheDocument();
+    expect(screen.getByText(/saved copy/i)).toBeInTheDocument();
+  });
+
+  // Wave-4: a note whose body was evicted to keep the mirror under its storage
+  // ceiling shows a "Connect to load this note" prompt (with its retained
+  // preview) in place of the missing body.
+  it("shows 'Connect to load this note' for a content-evicted note", async () => {
+    syncState.mirrorState = "offline";
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T04:30:54.177Z",
+          content: "",
+          preview: "Teacher and builder.",
+          contentEvicted: true,
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+
+    renderAt("/n/abc-123");
+
+    expect(await screen.findByText(/connect to load this note/i)).toBeInTheDocument();
+    // The retained preview gives context; the missing body isn't rendered as
+    // the empty "Nothing here yet" prompt.
+    expect(screen.getByText("Teacher and builder.")).toBeInTheDocument();
+    expect(screen.queryByText(/nothing here yet/i)).not.toBeInTheDocument();
   });
 
   // Path is plumbing, but on a note it stays grabbable (ratified 2026-07-17)
