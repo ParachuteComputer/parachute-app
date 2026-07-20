@@ -1,5 +1,39 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.22] - 2026-07-20
+
+**Fix: the first line of a note now reads as its title in the read view and the note list, not just
+the editor.** The editor already styles a note's first non-empty line at title scale in place (the
+Bear / Apple Notes model — no literal `#` written; the vault's `displayTitle`). But when VIEWING a
+note or scrolling the note LIST, that same first line did not render as the title: the read view
+only promoted a literal leading `# H1`, and the list fell back to the path/timestamp. So a note that
+starts with plain text (by design) looked titled while editing and untitled everywhere else. All
+three surfaces now agree that the first non-empty content line IS the title.
+
+- **`src/lib/note-title.ts`** — added `firstLineTitle`, the app's byte-for-byte mirror of the vault
+  core's `computeDisplayTitle` (first non-empty line, one leading `#{1,6}` marker stripped, leading
+  YAML frontmatter skipped, hard 120-code-point cap, `null` for empty content), and
+  `stripFirstTitleLine`, which lifts that exact line out of a body. `displayTitle()` now PREFERS the
+  vault's computed `displayTitle` field — which already rides the lean list shape (`toNoteIndex`) on
+  the wire — so the list agrees with the vault by construction, and derives from content only when
+  that field is absent (a full-content fetch, or a pre-`displayTitle` vault). `noteTitle` /
+  `displayTitle` share this one derivation, so read / editor / list can't drift. Truncation is now a
+  hard cap with no ellipsis, matching the vault (the sole behavior change to the existing helpers).
+- **`src/app/routes/NoteView.tsx`** — the read view now derives its page title from
+  `firstLineTitle(note.content)` (plain first line OR literal `#` heading) instead of a literal-H1
+  check, and strips that line from the rendered body via `stripFirstTitleLine` so the note isn't
+  headed by its own first line twice (the extract-and-strip model the header already used for H1s,
+  generalized). A one-line note whose only line became the title renders no body rather than the
+  misleading "Nothing here yet" prompt; a genuinely empty note still shows that prompt with a
+  timestamp/path title.
+- **`src/components/NoteRow.tsx`** — unchanged; it already renders `displayTitle(note)`, so the list
+  fix flows through the `displayTitle` wire-preference above.
+- Cross-door: this is app-side rendering keyed off the vault's `displayTitle`, identical on
+  self-host and cloud once shipped. Tests: `note-title.test.ts` (firstLineTitle / stripFirstTitleLine
+  / the wire-preferred `displayTitle`), `NoteView.test.tsx` (plain-first-line title + strip, buried
+  heading stays in-body, one-line note has no empty-state, genuinely-empty note keeps it),
+  `NoteRow.test.tsx` (the vault's `displayTitle` renders as the row title, not the quickPath stamp).
+
 ## [0.20.21] - 2026-07-20
 
 **Fix: the "Vault session expired / Reconnect to vault" banner no longer sticks forever on the

@@ -175,3 +175,32 @@ describe("NoteRow — the §3 row pattern (grass-soft active, never underline-se
     }
   });
 });
+
+describe("NoteRow — title from the vault's displayTitle (lean list shape)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    seedStore();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the vault's computed displayTitle as the row title, not the quickPath timestamp", () => {
+    // The lean list shape carries no content but a server-computed displayTitle
+    // (untyped on the surface-client Note). Before the fix the row fell to the
+    // path/timestamp for a quickPath-shaped note; now the first line wins.
+    const lean = {
+      id: "q1",
+      path: "Notes/2026/07-16/22-10-48",
+      displayTitle: "Buy milk and eggs",
+      updatedAt: "2026-07-16T22:10:48.000Z",
+    } as unknown as Note;
+    render(<RecentTimeline notes={[lean]} />, { wrapper: Wrapper });
+    const row = rowFor(document.body, "Buy milk and eggs");
+    expect(within(row).getByText("Buy milk and eggs")).toBeInTheDocument();
+    // The quickPath timestamp is no longer the headline.
+    expect(within(row).queryByText(/July 16/)).toBeNull();
+  });
+});
