@@ -1,5 +1,46 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.25] - 2026-07-20
+
+**Offline mirror — Wave 1: the durable local-copy foundation, behind a default-OFF flag.**
+Lays the groundwork for reading the whole vault offline / cold-launching offline (later waves):
+a complete LOCAL MIRROR of the vault's notes in IndexedDB, kept fresh by the vault's cursor
+incremental-sync primitive. This wave builds the STORE + hydration ENGINE + write-path upserts.
+It is **write-only and invisible** — no read path consumes the mirror yet, so with the flag ON the
+only observable effect is IndexedDB growth, and with it OFF every mirror code path is fully inert
+(no cursor traffic, no timers, no writes).
+
+- **Flag** (`src/lib/mirror/flag.ts`) — `isMirrorEnabled()`. Default OFF via `MIRROR_ENABLED_DEFAULT`;
+  a per-device override lives in localStorage `parachute:mirror:enabled`, read once at provider mount
+  (a change takes effect on reload). Everything below is gated on it.
+- **IndexedDB v2** (`src/lib/sync/db.ts`) — bumps `DB_VERSION` 1→2, adding ONE store `mirror_notes`
+  via the existing migration ladder. Composite key `[vaultId, id]` (a restored/imported vault copy
+  shares note ids across vaults, so a bare id would collide); indexes `by-vault` and
+  `by-vault-updated` (`[vaultId, updatedAt]`) for sorted offline lists. Value = the full Note
+  (content, path, tags, metadata, links, attachment rows) + a `contentEvicted?` bookkeeping bit for
+  a future eviction pass. The v2 upgrade is **purely additive** — it does NOT touch the v1 queue
+  stores (pending/id_map/blob_path_map/blobs/meta), which hold un-synced user writes. Cursor + sync
+  state live in the existing `meta` store under `mirror:<vaultId>:cursor` / `:state` / `:lastSyncedAt`.
+- **Hydration engine** (`src/lib/mirror/engine.ts`) — a `MirrorEngine` (sibling to `SyncEngine`) that
+  walks `queryNotesCursor` (unfiltered, full shape) and upserts each page into `mirror_notes` in one
+  txn, **persisting `next_cursor` after every page** (a killed app resumes exactly), terminating on
+  `items.length === 0` (never on a falsy cursor — the watermark never is). A rejected cursor
+  (`cursor_invalid` / `cursor_query_mismatch`) drops the stored cursor and re-walks from `""`
+  (idempotent). Triggers: app start, `online`, visibility→visible, and a 60s interval while online;
+  guarded per-tab by an in-flight flag and cross-tab by `navigator.locks` (`mirror:<vaultId>`),
+  degrading to run-directly where Web Locks is unavailable. Active-vault only.
+- **Write-path upserts** — a create/update landing (direct online OR queue-drain) upserts the server
+  Note into the mirror; a delete removes the row; a drained offline-create swaps its optimistic
+  local-id row for the server row via the id-map. The write queue's own logic is unchanged — the
+  mirror sink is additive and no-ops when the flag is off (`src/lib/sync/queue.ts`,
+  `src/lib/sync/engine.ts`, `src/lib/vault/queries.ts`, `src/providers/SyncProvider.tsx`).
+- **No read-path changes** — that's Wave 3.
+- **Tests** — `src/lib/sync/db.migration.test.ts` (v1→v2 adds `mirror_notes` AND preserves the queue
+  stores + their data), `src/lib/mirror/store.test.ts` (composite-key isolation, cursor/state meta,
+  flag-gated helpers), `src/lib/mirror/engine.test.ts` (per-page cursor persistence, empty-page
+  termination, resume, cursor-error re-walk), `src/lib/sync/queue.mirror.test.ts` (drain-landing
+  upsert/remove/local-id swap; flag-off is inert).
+
 ## [0.20.24] - 2026-07-20
 
 **Perf: the notes list opens its live subscription in the lean shape — titles and previews,

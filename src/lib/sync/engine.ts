@@ -1,3 +1,4 @@
+import type { MirrorWriteSink } from "@/lib/mirror/types";
 import type { VaultClient } from "@/lib/vault/client";
 import type { BlobStore } from "./blob-store";
 import type { LensDB } from "./db";
@@ -20,6 +21,9 @@ export interface EngineOptions {
   // Fires right before a drain starts — UI can flip "syncing" on.
   onDrainStart?: () => void;
   onDrain?: (outcome: DrainOutcome) => void;
+  // Optional durable-offline mirror sink (Wave 1) — passed through to each
+  // drain so a landing keeps the mirror current. No-ops when the flag is off.
+  mirror?: MirrorWriteSink;
 }
 
 const DEFAULT_TICK_MS = 30_000;
@@ -81,6 +85,7 @@ export class SyncEngine {
         client: ctx.client,
         vaultId: ctx.vaultId,
         blobStore: this.opts.blobStore,
+        ...(this.opts.mirror && { mirror: this.opts.mirror }),
       });
       this.opts.onDrain?.(outcome);
       return outcome;
