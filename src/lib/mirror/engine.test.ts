@@ -10,6 +10,7 @@ import {
   getMirrorNote,
   getMirrorState,
   setMirrorCursor,
+  setMirrorLastSweepAt,
 } from "./store";
 
 async function freshDb(): Promise<LensDB> {
@@ -95,6 +96,10 @@ describe("MirrorEngine — hydration loop", () => {
       return { items: [], nextCursor: "c2" };
     }) as unknown as VaultClient["queryNotesCursor"];
 
+    // Isolate the DRAIN's paging from the post-hydration reconcile sweep (which
+    // would leanly re-walk the same cursor and pad `calls`): stamp a fresh sweep
+    // watermark so `syncOnce` finds no sweep due. The sweep has its own tests.
+    await setMirrorLastSweepAt(db, "v1", Date.now());
     const engine = engineFor(db, client);
     const result = await engine.syncOnce();
 

@@ -1,6 +1,6 @@
 import { type LensDB, deleteMeta, getMeta, setMeta } from "@/lib/sync/db";
 import type { MirrorNoteRow } from "@/lib/sync/types";
-import type { Note } from "@/lib/vault/types";
+import type { Note, TagSummary } from "@/lib/vault/types";
 import { isMirrorEnabled } from "./flag";
 import type { MirrorState, MirrorWriteSink } from "./types";
 
@@ -14,6 +14,16 @@ export function stateKey(vaultId: string): string {
 }
 export function lastSyncedAtKey(vaultId: string): string {
   return `mirror:${vaultId}:lastSyncedAt`;
+}
+// The reconcile sweep's own watermark (distinct from the per-poll lastSyncedAt).
+// Throttles the full-ID sweep to at most once per interval across app starts.
+export function lastSweepAtKey(vaultId: string): string {
+  return `mirror:${vaultId}:lastSweepAt`;
+}
+// The vault's tag list, refreshed on each sweep so Wave 3's offline note list
+// can render tag filters without a network round-trip.
+export function tagsKey(vaultId: string): string {
+  return `mirror:${vaultId}:tags`;
 }
 
 export async function getMirrorCursor(db: LensDB, vaultId: string): Promise<string | undefined> {
@@ -59,6 +69,30 @@ export async function setMirrorLastSyncedAt(
   await setMeta(db, lastSyncedAtKey(vaultId), at);
 }
 
+export async function getMirrorLastSweepAt(
+  db: LensDB,
+  vaultId: string,
+): Promise<number | undefined> {
+  return getMeta<number>(db, lastSweepAtKey(vaultId));
+}
+export async function setMirrorLastSweepAt(db: LensDB, vaultId: string, at: number): Promise<void> {
+  await setMeta(db, lastSweepAtKey(vaultId), at);
+}
+
+export async function getMirrorTags(
+  db: LensDB,
+  vaultId: string,
+): Promise<TagSummary[] | undefined> {
+  return getMeta<TagSummary[]>(db, tagsKey(vaultId));
+}
+export async function setMirrorTags(
+  db: LensDB,
+  vaultId: string,
+  tags: TagSummary[],
+): Promise<void> {
+  await setMeta(db, tagsKey(vaultId), tags);
+}
+
 // ---------- note rows (unconditional store ops — NOT flag-gated) ----------
 
 // Normalize a Note into a mirror row: stamp the vault discriminator and
@@ -86,6 +120,17 @@ export async function upsertMirrorNotes(db: LensDB, vaultId: string, notes: Note
 
 export async function removeMirrorNote(db: LensDB, vaultId: string, id: string): Promise<void> {
   await db.delete("mirror_notes", [vaultId, id]);
+}
+
+// Batch-delete a set of ids for a vault in one transaction — the reconcile
+// sweep's prune of server-deleted notes.
+export async function removeMirrorNotes(db: LensDB, vaultId: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const tx = db.transaction("mirror_notes", "readwrite");
+  for (const id of ids) {
+    await tx.store.delete([vaultId, id]);
+  }
+  await tx.done;
 }
 
 export async function getMirrorNote(

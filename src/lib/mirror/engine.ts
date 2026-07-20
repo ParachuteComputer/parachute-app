@@ -1,11 +1,20 @@
 import type { LensDB } from "@/lib/sync/db";
+import { isLocalId } from "@/lib/sync/id-map";
 import type { VaultClient } from "@/lib/vault/client";
+import { collectProtectedIds, diffMirror, makeIsProtected } from "./reconcile";
 import {
   clearMirrorCursor,
   getMirrorCursor,
+  getMirrorLastSweepAt,
+  listMirrorNotes,
+  removeMirrorNote,
+  removeMirrorNotes,
   setMirrorCursor,
+  setMirrorLastSweepAt,
   setMirrorLastSyncedAt,
   setMirrorState,
+  setMirrorTags,
+  upsertMirrorNote,
   upsertMirrorNotes,
 } from "./store";
 import type { MirrorState } from "./types";
@@ -21,13 +30,35 @@ const MIRROR_QUERY: Parameters<VaultClient["queryNotesCursor"]>[0] = {
   includeAttachments: true,
 };
 
+// The reconcile sweep's ENUMERATION query — id + updatedAt only (no bodies).
+// This is the "what does the server have RIGHT NOW" probe; a lean shape lets a
+// large vault enumerate in a handful of requests. Also the shape of the live
+// remove-subscription (an unfiltered remove == a real delete).
+const LEAN_QUERY: Parameters<VaultClient["queryNotesCursor"]>[0] = {
+  includeContent: false,
+  includeLinks: false,
+  includeAttachments: false,
+};
+
 const DEFAULT_TICK_MS = 60_000;
 const DEFAULT_PAGE_LIMIT = 200;
+// The enumeration walk asks for big pages — the full id set is what matters and
+// a lean row is cheap (Aaron's ~3400-note vault = ~4 requests at 1000).
+const DEFAULT_SWEEP_ENUM_LIMIT = 1000;
+// At most one full sweep per this window across app starts (throttled via the
+// persisted lastSweepAt). A cursor-error re-walk forces one regardless.
+const DEFAULT_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+// The client capability the mirror needs. `queryNotesCursor` is the only hard
+// requirement (Wave 1); `getNote` (backfill), `listTags` (offline filters), and
+// `subscribe` (live removes) are optional so a Wave-1-shaped mock still
+// satisfies the type and the engine degrades gracefully when one is absent. The
+// real VaultClient supplies all four.
+export type MirrorClient = Pick<VaultClient, "queryNotesCursor"> &
+  Partial<Pick<VaultClient, "getNote" | "listTags" | "subscribe">>;
 
 export interface MirrorContext {
-  // Only the cursor method is used; `Pick` keeps the surface tight and mocks
-  // trivial. The app's VaultClient (which extends the SDK client) satisfies it.
-  client: Pick<VaultClient, "queryNotesCursor">;
+  client: MirrorClient;
   vaultId: string;
 }
 
@@ -40,6 +71,11 @@ export interface MirrorEngineOptions {
   resolveContext: () => MirrorContext | null;
   tickIntervalMs?: number;
   pageLimit?: number;
+  // Page size for the reconcile sweep's lean enumeration walk.
+  sweepEnumLimit?: number;
+  // Minimum spacing between reconcile sweeps (throttle). A cursor-error re-walk
+  // forces a sweep regardless.
+  sweepIntervalMs?: number;
   // Fired on terminal transitions (live / error) — not on the transient
   // "hydrating" a poll passes through — so a status consumer isn't spammed.
   onStateChange?: (vaultId: string, state: MirrorState) => void;
@@ -56,6 +92,26 @@ export interface MirrorSyncResult {
   error?: string;
 }
 
+// Outcome of a reconcile sweep. `aborted` is set (and the counts are 0) when a
+// safety guard tripped — either the sweep didn't run at all (in-flight /
+// offline / no-context / locked) or the lean enumeration was NOT provably
+// complete, so the diff was refused rather than risk a mass-delete on partial
+// data.
+export interface MirrorSweepResult {
+  deleted: number;
+  backfilled: number;
+  refetched: number;
+  // Size of the enumerated server-id set (0 when the walk failed/was empty).
+  enumerated: number;
+  aborted?:
+    | "in-flight"
+    | "offline"
+    | "no-context"
+    | "locked"
+    | "incomplete-enumeration"
+    | "empty-enumeration";
+}
+
 // A stored cursor the server won't accept — invalidated, or bound to a
 // different query hash than the one we're sending now. The SDK surfaces a 400
 // as a plain Error whose message carries the response body (which holds the
@@ -70,9 +126,17 @@ export class MirrorEngine {
   // In-tab guard so overlapping triggers (interval + visibility + online firing
   // together) don't run concurrent drains. Cross-TAB safety is the Web Lock.
   private syncing = false;
+  // Separate in-tab guard for the sweep — it runs AFTER a drain (outside the
+  // drain's lock section) so a re-entrant lock acquisition can't deadlock.
+  private sweeping = false;
+  // The live remove-subscription, tracked by the vault it's bound to so a vault
+  // switch tears the old socket down and opens a fresh one.
+  private subscription: { vaultId: string; unsubscribe: () => void } | null = null;
   private readonly db: LensDB;
   private readonly tickMs: number;
   private readonly pageLimit: number;
+  private readonly sweepEnumLimit: number;
+  private readonly sweepIntervalMs: number;
   private readonly onlineListener: () => void;
   private readonly visibilityListener: () => void;
   // In-flight promise from the most recent trigger; tests await it.
@@ -82,6 +146,8 @@ export class MirrorEngine {
     this.db = opts.db;
     this.tickMs = opts.tickIntervalMs ?? DEFAULT_TICK_MS;
     this.pageLimit = opts.pageLimit ?? DEFAULT_PAGE_LIMIT;
+    this.sweepEnumLimit = opts.sweepEnumLimit ?? DEFAULT_SWEEP_ENUM_LIMIT;
+    this.sweepIntervalMs = opts.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
     this.onlineListener = () => {
       this.lastRun = this.syncOnce();
     };
@@ -118,6 +184,7 @@ export class MirrorEngine {
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", this.visibilityListener);
     }
+    this.teardownSubscription();
   }
 
   get isSyncing(): boolean {
@@ -131,28 +198,46 @@ export class MirrorEngine {
       return { ...empty, skipped: "offline" };
     }
     const ctx = this.opts.resolveContext();
-    if (!ctx) return { ...empty, skipped: "no-context" };
+    if (!ctx) {
+      // No active vault (logout / vault forgotten) — drop any live socket so it
+      // doesn't outlive its vault.
+      this.teardownSubscription();
+      return { ...empty, skipped: "no-context" };
+    }
+    // Keep the live remove-subscription bound to the active vault. Cheap no-op
+    // when already subscribed to this vault.
+    this.ensureSubscription(ctx);
     this.syncing = true;
     try {
-      return await this.withLock(ctx.vaultId, () => this.drainCursor(ctx.client, ctx.vaultId));
+      const result = await this.withVaultLock(
+        ctx.vaultId,
+        () => ({ ...empty, skipped: "locked" as const }),
+        () => this.drainCursor(ctx.client, ctx.vaultId),
+      );
+      // Reconcile AFTER the drain's lock section has released (a fresh lock
+      // acquisition inside a held lock would deadlock — Web Locks aren't
+      // reentrant). Only after a clean drain, and only when due.
+      await this.maybeSweep(ctx, result);
+      return result;
     } finally {
       this.syncing = false;
     }
   }
 
-  // Only one tab hydrates a given vault at a time. `ifAvailable` means a tab
-  // that can't get the lock (another holds it) skips this tick instead of
-  // queuing behind it. Degrades to running directly where Web Locks is
-  // unavailable (older browsers, jsdom under tests).
-  private async withLock(
+  // Only one tab operates on a given vault at a time. `ifAvailable` means a tab
+  // that can't get the lock (another holds it) skips instead of queuing behind
+  // it. Degrades to running directly where Web Locks is unavailable (older
+  // browsers, jsdom under tests). Generic so the drain and the sweep share the
+  // same per-vault lock name.
+  private async withVaultLock<T>(
     vaultId: string,
-    fn: () => Promise<MirrorSyncResult>,
-  ): Promise<MirrorSyncResult> {
+    onLocked: () => T,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
     if (!locks?.request) return fn();
-    const empty: MirrorSyncResult = { pagesApplied: 0, notesApplied: 0, reWalked: false };
     return locks.request(`mirror:${vaultId}`, { ifAvailable: true }, async (lock) => {
-      if (!lock) return { ...empty, skipped: "locked" as const };
+      if (!lock) return onLocked();
       return fn();
     });
   }
@@ -170,9 +255,10 @@ export class MirrorEngine {
 
     try {
       while (true) {
+        const sent = cursor;
         let page: { items: unknown[]; nextCursor?: string };
         try {
-          page = await client.queryNotesCursor(MIRROR_QUERY, cursor, this.pageLimit);
+          page = await client.queryNotesCursor(MIRROR_QUERY, sent, this.pageLimit);
         } catch (err) {
           if (!reWalked && isCursorRejection(err)) {
             await clearMirrorCursor(this.db, vaultId);
@@ -202,6 +288,11 @@ export class MirrorEngine {
         // Terminate on an empty page — the watermark is never falsy, so an
         // empty page (not a falsy cursor) is the only end signal.
         if (items.length === 0) break;
+        // NO-ADVANCE GUARD: a NON-empty page whose next_cursor didn't move is a
+        // contract violation (the watermark must advance across returned rows).
+        // Break rather than spin forever; the items are already upserted
+        // (idempotent) and the next poll retries from the same watermark.
+        if (page.nextCursor !== undefined && page.nextCursor === sent) break;
       }
 
       await setMirrorLastSyncedAt(this.db, vaultId, Date.now());
@@ -215,6 +306,232 @@ export class MirrorEngine {
       await setMirrorState(this.db, vaultId, errored);
       this.opts.onStateChange?.(vaultId, errored);
       return { pagesApplied, notesApplied, reWalked, error: message };
+    }
+  }
+
+  // ---------- reconcile sweep ----------
+
+  // Run a sweep after a drain when one is due. The cursor tells us what CHANGED
+  // (created/updated) but never what was DELETED, so a periodic full-ID diff is
+  // the only way a server-side delete leaves the mirror. Triggered:
+  //   - after the FIRST successful hydration (no lastSweepAt yet), and
+  //   - on any later clean drain once the throttle window has elapsed, and
+  //   - immediately after a cursor-error re-walk (state may be stale).
+  // Skipped when the drain errored / was itself skipped.
+  private async maybeSweep(ctx: MirrorContext, result: MirrorSyncResult): Promise<void> {
+    if (result.error || result.skipped) return;
+    const lastSweepAt = await getMirrorLastSweepAt(this.db, ctx.vaultId);
+    const due =
+      result.reWalked ||
+      lastSweepAt === undefined ||
+      Date.now() - lastSweepAt >= this.sweepIntervalMs;
+    if (!due) return;
+    await this.reconcileSweep();
+  }
+
+  // The full-ID reconcile. Public so it can be triggered/tested directly. Guards
+  // itself against concurrency (in-tab + cross-tab) and no active vault.
+  async reconcileSweep(): Promise<MirrorSweepResult> {
+    const aborted = (reason: NonNullable<MirrorSweepResult["aborted"]>): MirrorSweepResult => ({
+      deleted: 0,
+      backfilled: 0,
+      refetched: 0,
+      enumerated: 0,
+      aborted: reason,
+    });
+
+    if (this.sweeping) return aborted("in-flight");
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      return aborted("offline");
+    }
+    const ctx = this.opts.resolveContext();
+    if (!ctx) return aborted("no-context");
+
+    this.sweeping = true;
+    try {
+      return await this.withVaultLock(
+        ctx.vaultId,
+        () => aborted("locked"),
+        () => this.runSweep(ctx.client, ctx.vaultId),
+      );
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  private async runSweep(client: MirrorClient, vaultId: string): Promise<MirrorSweepResult> {
+    // 1. Enumerate the COMPLETE current server-id set (lean: id + updatedAt).
+    const enumeration = await this.enumerateServerIds(client);
+
+    // ABORT-ON-INCOMPLETE — the critical anti-mass-delete guard. If the walk
+    // errored or couldn't guarantee full coverage, we did NOT provably see the
+    // whole server set, so an "absent" id might just be one we never fetched.
+    // Refuse the diff entirely; the next sweep retries. We STILL refresh tags
+    // below only when complete (a partial walk says nothing about tags either).
+    if (!enumeration.complete) {
+      return {
+        deleted: 0,
+        backfilled: 0,
+        refetched: 0,
+        enumerated: enumeration.index.size,
+        aborted: "incomplete-enumeration",
+      };
+    }
+    // A cleanly-completed but EMPTY enumeration is treated as implausible: never
+    // nuke a populated mirror on a zero-result walk (a transient server state, a
+    // misconfigured token, etc.). Real deletes reach the mirror via the live
+    // remove-subscription + the write path; the sweep stays conservative here.
+    if (enumeration.index.size === 0) {
+      return {
+        deleted: 0,
+        backfilled: 0,
+        refetched: 0,
+        enumerated: 0,
+        aborted: "empty-enumeration",
+      };
+    }
+
+    // 2. Build the EXCLUSION set: never prune un-synced user work. A row is
+    //    protected if it's a bare local id (offline-created, not yet synced) OR
+    //    its id has a pending queue mutation (edited/created offline, drain not
+    //    landed) — including the id-map resolution of a local id that drained.
+    const protectedIds = await collectProtectedIds(this.db, vaultId);
+    const isProtected = makeIsProtected(protectedIds);
+
+    // 3. Diff the mirror against the enumerated server set.
+    const mirrorRows = await listMirrorNotes(this.db, vaultId);
+    const diff = diffMirror(mirrorRows, enumeration.index, isProtected);
+
+    // 4. Prune server-deleted notes (excludes anything protected, by construction).
+    await removeMirrorNotes(this.db, vaultId, diff.toDelete);
+
+    // 5. Backfill (behind-watermark imports) + refetch (stale bodies): both need
+    //    full bodies, so pull each with getNote and upsert. Sequential to stay
+    //    gentle on the vault; these sets are small on a healthy mirror.
+    let backfilled = 0;
+    let refetched = 0;
+    if (client.getNote) {
+      for (const id of diff.toBackfill) {
+        const note = await client.getNote(id, { includeLinks: true, includeAttachments: true });
+        if (note) {
+          await upsertMirrorNote(this.db, vaultId, note);
+          backfilled += 1;
+        }
+      }
+      for (const id of diff.toRefetch) {
+        const note = await client.getNote(id, { includeLinks: true, includeAttachments: true });
+        if (note) {
+          await upsertMirrorNote(this.db, vaultId, note);
+          refetched += 1;
+        }
+      }
+    }
+
+    // 6. Refresh the mirrored tag list (Wave 3 offline filters). Best-effort.
+    await this.refreshTags(client, vaultId);
+
+    // 7. Watermark the sweep so the throttle holds across app starts.
+    await setMirrorLastSweepAt(this.db, vaultId, Date.now());
+
+    return {
+      deleted: diff.toDelete.length,
+      backfilled,
+      refetched,
+      enumerated: enumeration.index.size,
+    };
+  }
+
+  // Walk the LEAN cursor from "" to collect every current server id (→ its
+  // updatedAt). Returns `complete: false` on ANY error or a no-advance break, so
+  // the caller can refuse to diff against a partial set. Independent of the
+  // mirror's stored cursor — always starts fresh and never persists a watermark.
+  private async enumerateServerIds(
+    client: MirrorClient,
+  ): Promise<{ index: Map<string, string>; complete: boolean }> {
+    const index = new Map<string, string>();
+    let cursor = "";
+    try {
+      while (true) {
+        const sent = cursor;
+        const page = await client.queryNotesCursor(LEAN_QUERY, sent, this.sweepEnumLimit);
+        const items = (page.items ?? []) as Array<{
+          id: string;
+          updatedAt?: string;
+          createdAt?: string;
+        }>;
+        for (const it of items) {
+          index.set(it.id, it.updatedAt ?? it.createdAt ?? "");
+        }
+        if (page.nextCursor !== undefined) cursor = page.nextCursor;
+        if (items.length === 0) break;
+        // NO-ADVANCE on a non-empty page → we can't guarantee full coverage.
+        // Mark incomplete so the diff aborts rather than over-delete.
+        if (page.nextCursor !== undefined && page.nextCursor === sent) {
+          return { index, complete: false };
+        }
+      }
+      return { index, complete: true };
+    } catch {
+      // Any transport/query failure → NOT a full enumeration. Incomplete so the
+      // caller aborts (never mass-delete on a failed walk).
+      return { index, complete: false };
+    }
+  }
+
+  private async refreshTags(client: MirrorClient, vaultId: string): Promise<void> {
+    if (!client.listTags) return;
+    try {
+      const tags = await client.listTags();
+      await setMirrorTags(this.db, vaultId, tags);
+    } catch {
+      // Tags are a convenience for Wave 3's filters — a failure here must never
+      // fail the sweep (the deletes/backfills already landed).
+    }
+  }
+
+  // ---------- live remove-subscription ----------
+
+  // Keep a live subscription bound to the active vault. The cursor can't report
+  // deletes; the live-query WS delivers `remove` events while connected, closing
+  // the online-window delete gap (the sweep is the cold-start/reconnect net). We
+  // subscribe UNFILTERED + LEAN: on an unfiltered query a `remove` means the note
+  // was truly deleted (there's no filter it could merely fall out of), and lean
+  // keeps the snapshot cheap — content upserts stay the cursor poll's job, so we
+  // ignore snapshot/upsert here and act only on removes.
+  private ensureSubscription(ctx: MirrorContext): void {
+    const client = ctx.client;
+    if (!client.subscribe) return;
+    if (this.subscription?.vaultId === ctx.vaultId) return;
+    this.teardownSubscription();
+    const vaultId = ctx.vaultId;
+    // The handler RETURNS the prune promise (assignable to the `void` handler
+    // type) so tests can await it; the SDK ignores the return at runtime.
+    const unsubscribe = client.subscribe(LEAN_QUERY, {
+      onSnapshot: () => {},
+      onUpsert: () => {},
+      onRemove: (id: string) => this.applyWsRemove(vaultId, id),
+    });
+    this.subscription = { vaultId, unsubscribe };
+  }
+
+  private teardownSubscription(): void {
+    this.subscription?.unsubscribe();
+    this.subscription = null;
+  }
+
+  // Apply a live `remove` to the mirror, honoring the SAME exclusion as the
+  // sweep: a server remove of a synced note is safe to prune, but never drop a
+  // local-only row or one with an un-synced pending mutation. Never rejects — a
+  // failed prune on a WS callback would be an unhandled rejection, and the next
+  // sweep reconciles regardless.
+  private async applyWsRemove(vaultId: string, id: string): Promise<void> {
+    try {
+      if (isLocalId(id)) return;
+      const protectedIds = await collectProtectedIds(this.db, vaultId);
+      if (protectedIds.has(id)) return;
+      await removeMirrorNote(this.db, vaultId, id);
+    } catch {
+      // Swallow — reconciliation is idempotent; the sweep is the backstop.
     }
   }
 }
