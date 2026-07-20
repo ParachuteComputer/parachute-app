@@ -8,6 +8,7 @@ export {
   type MirrorSyncResult,
   isCursorRejection,
 } from "./engine";
+export { readNote, readNotesList } from "./read";
 export {
   type MirrorDiff,
   type MirrorRowRef,

@@ -1,4 +1,6 @@
-import { mirrorRecordRemove, mirrorRecordUpsert } from "@/lib/mirror/store";
+import { isMirrorEnabled } from "@/lib/mirror/flag";
+import { readNote, readNotesList } from "@/lib/mirror/read";
+import { getMirrorTags, mirrorRecordRemove, mirrorRecordUpsert } from "@/lib/mirror/store";
 import type { LensDB } from "@/lib/sync/db";
 import { isLocalId, newLocalId, resolveNoteId } from "@/lib/sync/id-map";
 import { enqueue } from "@/lib/sync/queue";
@@ -6,7 +8,7 @@ import { useToastStore } from "@/lib/toast/store";
 import { isTranscriptionPending, retryOptimisticNote } from "@/lib/transcription-status";
 import { useSync } from "@/providers/SyncProvider";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuthHaltStore } from "./auth-halt-store";
 import {
   type CreateNotePayload,
@@ -14,6 +16,7 @@ import {
   type UpdateNotePayload,
   type UploadProgress,
   VaultClient,
+  VaultUnreachableError,
 } from "./client";
 import { useLiveNotesQuery } from "./live-query";
 import { type NoteQueryState, buildNoteQueryParams } from "./note-query";
@@ -25,6 +28,7 @@ import type {
   Note,
   NoteAttachment,
   TagRecord,
+  TagSummary,
   TagUpsertPayload,
   TranscriptionCapability,
 } from "./types";
@@ -48,6 +52,181 @@ export function useActiveVaultClient(): VaultClient | null {
         useVaultReachabilityStore.getState().reportSignal(activeId, signal, reason),
     });
   }, [vault, activeId]);
+}
+
+// ---------- Mirror read-path (Wave 3, flag-gated) ----------
+//
+// Local-first reads: when the mirror flag is on, the touched read hooks try the
+// network first and fall back to the durable-offline mirror when the vault is
+// offline or unreachable, and seed their first render from the mirror so a cold
+// launch paints instantly. Every hook reaches these helpers ONLY on the
+// `isMirrorEnabled()` branch, so with the flag off the hooks are byte-identical
+// to the network-only path that shipped before Wave 3 (`isOffline` /
+// `VaultUnreachableError` are hoisted / imported — safe to reference here even
+// though `isOffline` is defined lower in the file).
+
+// Network-first, mirror-fallback for a LIST query. Offline: skip the network
+// and serve the mirror when it can faithfully answer (else fall through so the
+// caller's real error surfaces). Online-but-unreachable: try the network, and
+// on `VaultUnreachableError` serve the mirror. `readNotesList` returns null for
+// a query it can't reproduce faithfully (e.g. `search`), in which case the
+// network result/throw stands rather than a divergent list.
+async function withMirrorList(
+  db: LensDB | null,
+  vaultId: string | null,
+  params: URLSearchParams,
+  online: () => Promise<Note[]>,
+): Promise<Note[]> {
+  const fromMirror = () =>
+    db && vaultId ? readNotesList(db, vaultId, params) : Promise.resolve(null);
+  if (db && vaultId && isOffline()) {
+    const rows = await fromMirror();
+    if (rows) return rows;
+  }
+  try {
+    return await online();
+  } catch (err) {
+    if (err instanceof VaultUnreachableError) {
+      const rows = await fromMirror();
+      if (rows) return rows;
+    }
+    throw err;
+  }
+}
+
+// Network-first, mirror-fallback for a single NOTE (the view). Always the FULL
+// mirror row (`readNote`), never a lean list stub. The `online` closure keeps
+// the existing local-id / optimistic-note behavior; the mirror is interposed
+// only on the offline / unreachable edges.
+async function withMirrorNote(
+  db: LensDB | null,
+  vaultId: string | null,
+  id: string | undefined,
+  online: () => Promise<Note | null>,
+): Promise<Note | null> {
+  const fromMirror = () =>
+    db && vaultId && id ? readNote(db, vaultId, id) : Promise.resolve(undefined);
+  if (db && vaultId && id && isOffline()) {
+    const row = await fromMirror();
+    if (row) return row;
+  }
+  try {
+    return await online();
+  } catch (err) {
+    if (err instanceof VaultUnreachableError) {
+      const row = await fromMirror();
+      if (row) return row;
+    }
+    throw err;
+  }
+}
+
+// Network-first, mirror-fallback for the vault TAG list. The mirror stores the
+// `TagSummary[]` (name + count) refreshed on each reconcile sweep — exactly
+// `useTags`' shape — so the filter bar keeps working offline. The schema-bearing
+// reads (`useTagsWithSchema` / `useTag`) stay network-only: the mirror doesn't
+// hold tag schemas.
+async function withMirrorTags(
+  db: LensDB | null,
+  vaultId: string | null,
+  online: () => Promise<TagSummary[]>,
+): Promise<TagSummary[]> {
+  const fromMirror = () =>
+    db && vaultId ? getMirrorTags(db, vaultId) : Promise.resolve(undefined);
+  if (db && vaultId && isOffline()) {
+    const tags = await fromMirror();
+    if (tags) return tags;
+  }
+  try {
+    return await online();
+  } catch (err) {
+    if (err instanceof VaultUnreachableError) {
+      const tags = await fromMirror();
+      if (tags) return tags;
+    }
+    throw err;
+  }
+}
+
+// Seed hooks — read the mirror asynchronously on mount and expose the result as
+// synchronous state the query renders via `placeholderData`. `placeholderData`
+// (unlike `initialData`) is re-read every render until real data lands, so a
+// source that resolves a tick after mount still paints. Each returns `undefined`
+// until the mirror answers, and stays `undefined` entirely when `enabled` is
+// false — so a flag-off hook seeds nothing.
+function useMirrorListSeed(
+  db: LensDB | null,
+  vaultId: string | null,
+  params: URLSearchParams,
+  enabled: boolean,
+): Note[] | undefined {
+  const [seed, setSeed] = useState<Note[] | undefined>(undefined);
+  const paramsKey = params.toString();
+  useEffect(() => {
+    if (!enabled || !db || !vaultId) {
+      setSeed(undefined);
+      return;
+    }
+    let live = true;
+    readNotesList(db, vaultId, new URLSearchParams(paramsKey))
+      .then((rows) => {
+        if (live && rows) setSeed(rows);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [enabled, db, vaultId, paramsKey]);
+  return seed;
+}
+
+function useMirrorNoteSeed(
+  db: LensDB | null,
+  vaultId: string | null,
+  id: string | undefined,
+  enabled: boolean,
+): Note | undefined {
+  const [seed, setSeed] = useState<Note | undefined>(undefined);
+  useEffect(() => {
+    // Clear any prior note first so navigating A→B never flashes A as the
+    // placeholder for B's query while B's mirror read is in flight.
+    setSeed(undefined);
+    if (!enabled || !db || !vaultId || !id) return;
+    let live = true;
+    readNote(db, vaultId, id)
+      .then((n) => {
+        if (live && n) setSeed(n);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [enabled, db, vaultId, id]);
+  return seed;
+}
+
+function useMirrorTagsSeed(
+  db: LensDB | null,
+  vaultId: string | null,
+  enabled: boolean,
+): TagSummary[] | undefined {
+  const [seed, setSeed] = useState<TagSummary[] | undefined>(undefined);
+  useEffect(() => {
+    if (!enabled || !db || !vaultId) {
+      setSeed(undefined);
+      return;
+    }
+    let live = true;
+    getMirrorTags(db, vaultId)
+      .then((tags) => {
+        if (live && tags) setSeed(tags);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [enabled, db, vaultId]);
+  return seed;
 }
 
 export function useVaultInfo() {
@@ -126,6 +305,8 @@ export function useTranscriptionGate(): {
 export function useNotes(queryState: NoteQueryState) {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
+  const { db } = useSync();
+  const mirrorOn = isMirrorEnabled();
 
   const queryKey = useMemo(() => ["notes", activeId, queryState], [activeId, queryState]);
   const params = useMemo(() => {
@@ -150,11 +331,17 @@ export function useNotes(queryState: NoteQueryState) {
   // no-op for unsubscribable queries (e.g. `search`) — those stay on polling.
   // See `live-query.ts` for the full fallback guarantee.
   const { isLive } = useLiveNotesQuery({ queryKey, params, client });
+  // Cold-launch seed (flag-gated): render the last-mirrored list instantly
+  // while the network revalidates.
+  const seed = useMirrorListSeed(db, activeId, params, mirrorOn);
 
   return useQuery({
     queryKey,
     enabled: !!client,
-    queryFn: () => client!.queryNotes(params),
+    queryFn: () =>
+      mirrorOn
+        ? withMirrorList(db, activeId, params, () => client!.queryNotes(params))
+        : client!.queryNotes(params),
     staleTime: isLive ? Number.POSITIVE_INFINITY : 10_000,
     // The polling FLOOR (live is WebSocket-only; there's no SSE fallback — the
     // fallback IS polling). When the live stream is down (old server without
@@ -164,7 +351,13 @@ export function useNotes(queryState: NoteQueryState) {
     // interval, and re-enables automatically the moment `isLive` flips false.
     refetchInterval: isLive ? false : 30_000,
     refetchOnWindowFocus: !isLive,
-    placeholderData: keepPreviousData,
+    // Flag on: keep the previous list on filter changes (as before), else fall
+    // to the mirror seed on cold launch. Flag off: exactly keepPreviousData.
+    placeholderData: mirrorOn ? (prev) => prev ?? seed : keepPreviousData,
+    // Flag on: run the queryFn even when navigator.onLine is false so the
+    // cold-launch-offline fallback can reach the mirror (default "online" pauses
+    // the fetch offline and would render nothing). Flag off: the default.
+    networkMode: mirrorOn ? "always" : "online",
   });
 }
 
@@ -207,6 +400,8 @@ export function useAllNotesForSwitcher(enabled: boolean) {
 export function useNotesForDateViews() {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
+  const { db } = useSync();
+  const mirrorOn = isMirrorEnabled();
 
   const queryKey = useMemo(() => ["notesForDateViews", activeId], [activeId]);
   const params = useMemo(() => {
@@ -226,14 +421,22 @@ export function useNotesForDateViews() {
   // sort+limit query (subscribable). When live, relax the 60s staleTime; when
   // not, the same polling floor as `useNotes` (interval + focus refetch).
   const { isLive } = useLiveNotesQuery({ queryKey, params, client });
+  const seed = useMirrorListSeed(db, activeId, params, mirrorOn);
 
   return useQuery({
     queryKey,
     enabled: !!client,
-    queryFn: () => client!.queryNotes(params),
+    queryFn: () =>
+      mirrorOn
+        ? withMirrorList(db, activeId, params, () => client!.queryNotes(params))
+        : client!.queryNotes(params),
     staleTime: isLive ? Number.POSITIVE_INFINITY : 60_000,
     refetchInterval: isLive ? false : 60_000,
     refetchOnWindowFocus: !isLive,
+    // Flag on: cold-launch seed from the mirror (Recent / Calendar paint
+    // instantly); flag off: unchanged (no placeholderData).
+    placeholderData: mirrorOn ? (prev) => prev ?? seed : undefined,
+    networkMode: mirrorOn ? "always" : "online",
   });
 }
 
@@ -246,17 +449,27 @@ export function useNotesForDateViews() {
 export function useNotesForPathTree(enabled: boolean) {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
+  const { db } = useSync();
+  const mirrorOn = isMirrorEnabled();
+
+  const params = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("sort", "desc");
+    p.set("limit", String(VAULT_GRAPH_NOTE_CAP));
+    return p;
+  }, []);
+  const seed = useMirrorListSeed(db, activeId, params, mirrorOn && enabled);
 
   return useQuery({
     queryKey: ["notesForPathTree", activeId],
     enabled: !!client && enabled,
-    queryFn: () => {
-      const params = new URLSearchParams();
-      params.set("sort", "desc");
-      params.set("limit", String(VAULT_GRAPH_NOTE_CAP));
-      return client!.queryNotes(params);
-    },
+    queryFn: () =>
+      mirrorOn
+        ? withMirrorList(db, activeId, params, () => client!.queryNotes(params))
+        : client!.queryNotes(params),
     staleTime: 60_000,
+    placeholderData: mirrorOn ? (prev) => prev ?? seed : undefined,
+    networkMode: mirrorOn ? "always" : "online",
   });
 }
 
@@ -284,12 +497,18 @@ export function useAllNotesWithLinks() {
 export function useTags() {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
+  const { db } = useSync();
+  const mirrorOn = isMirrorEnabled();
+  const seed = useMirrorTagsSeed(db, activeId, mirrorOn);
 
   return useQuery({
     queryKey: ["tags", activeId],
     enabled: !!client,
-    queryFn: () => client!.listTags(),
+    queryFn: () =>
+      mirrorOn ? withMirrorTags(db, activeId, () => client!.listTags()) : client!.listTags(),
     staleTime: 60_000,
+    placeholderData: mirrorOn ? (prev) => prev ?? seed : undefined,
+    networkMode: mirrorOn ? "always" : "online",
   });
 }
 
@@ -392,33 +611,45 @@ export function useNote(id: string | undefined) {
   const activeId = useVaultStore((s) => s.activeVaultId);
   const { db } = useSync();
   const qc = useQueryClient();
+  const mirrorOn = isMirrorEnabled();
+  // Cold-launch seed: the FULL mirror row (never a lean stub), so opening a note
+  // offline / on first paint shows real content, not a placeholder.
+  const seed = useMirrorNoteSeed(db, activeId, id, mirrorOn);
 
   return useQuery({
     queryKey: ["note", activeId, id],
     enabled: !!client && !!id,
-    queryFn: async () => {
-      // Offline-created notes (a voice or text capture made while offline)
-      // navigate to `/n/<localId>` before their `create-note` row drains.
-      // `getNote(localId)` would 404, so resolve the local id to its server id
-      // via the sync id-map first. Until the row drains (no mapping yet), serve
-      // the optimistic note the capture flow seeded into the cache — the
-      // capture must land on a readable note, not an error screen.
-      if (id && isLocalId(id)) {
-        const realId = db && activeId ? await resolveNoteId(db, id, activeId) : null;
-        if (!realId) {
-          const optimistic = qc.getQueryData<Note>(["note", activeId, id]);
-          if (optimistic) return optimistic;
-          throw new Error("This note is still syncing — try again in a moment.");
+    queryFn: () => {
+      const online = async (): Promise<Note | null> => {
+        // Offline-created notes (a voice or text capture made while offline)
+        // navigate to `/n/<localId>` before their `create-note` row drains.
+        // `getNote(localId)` would 404, so resolve the local id to its server id
+        // via the sync id-map first. Until the row drains (no mapping yet), serve
+        // the optimistic note the capture flow seeded into the cache — the
+        // capture must land on a readable note, not an error screen.
+        if (id && isLocalId(id)) {
+          const realId = db && activeId ? await resolveNoteId(db, id, activeId) : null;
+          if (!realId) {
+            const optimistic = qc.getQueryData<Note>(["note", activeId, id]);
+            if (optimistic) return optimistic;
+            throw new Error("This note is still syncing — try again in a moment.");
+          }
+          return client!.getNote(realId, { includeLinks: true, includeAttachments: true });
         }
-        return client!.getNote(realId, { includeLinks: true, includeAttachments: true });
-      }
-      return client!.getNote(id!, { includeLinks: true, includeAttachments: true });
+        return client!.getNote(id!, { includeLinks: true, includeAttachments: true });
+      };
+      return mirrorOn ? withMirrorNote(db, activeId, id, online) : online();
     },
     // See `noteRefetchInterval` — the two-poll fallback (local-id bridge +
     // pending-transcription) that converges the note view even when the live
     // socket (`useLiveNote`) is down or absent.
     refetchInterval: (query) => noteRefetchInterval(id, query.state.data as Note | undefined),
     staleTime: 10_000,
+    // Flag on: paint the mirrored note instantly on cold launch, and run the
+    // queryFn offline so the fallback reaches the FULL mirror row (default
+    // "online" would pause the fetch offline). Flag off: unchanged.
+    placeholderData: mirrorOn ? seed : undefined,
+    networkMode: mirrorOn ? "always" : "online",
   });
 }
 
