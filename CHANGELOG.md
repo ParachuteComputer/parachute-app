@@ -1,5 +1,32 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.23] - 2026-07-20
+
+**Fix: Enter and Backspace are now exact inverses — predictable line breaks, Obsidian-faithful.**
+Writing prose in the editor, hitting Enter then Backspace could leave "sometimes one line break,
+sometimes two." Root cause: prose Enter inserted TWO newlines (`\n\n`, a paragraph gap), but the
+default Backspace only removed ONE, stranding a `\n`. Enter now inserts exactly ONE newline, so
+Enter-then-Backspace returns the document to its byte-identical prior state in every context. A
+paragraph gap is a genuine blank line you make by pressing Enter twice (`\n\n`) and un-make with two
+Backspaces — exactly how Obsidian behaves. The ratified rendering is preserved: a single newline
+still renders as a `<br>` line break (surface-render `breaks: true`), so one Enter shows a visible
+break. **Revises the 2026-07-15 Typora-school ratification (Enter = paragraph) in favour of the
+Obsidian source-faithful model Aaron named; wants his on-device confirmation.**
+
+- **`src/lib/editor/paragraph-break.ts`** — prose/fence/table Enter now delegates to CM6's
+  `insertNewline` (a single `\n`), the exact inverse of the default `deleteCharBackward`. List/quote
+  Enter is unchanged (`insertNewlineContinueMarkup` — marker continuation and empty-item-exits-list).
+  Renamed the command `insertParagraphBreak` → `insertContextualNewline`, since it no longer inserts a
+  paragraph break. `insertHardOrPlainBreak` (Shift+Enter, explicit `\`-hard-break) is unchanged.
+- **`src/components/CodeMirrorEditor.tsx`** — bind Backspace to lang-markdown's `deleteMarkupBackward`
+  ahead of `defaultKeymap`, the canonical inverse of `insertNewlineContinueMarkup`: a Backspace right
+  after a continued list/quote marker strips the marker cleanly (one level per press) instead of
+  nibbling a single character; off markup it returns false and falls through to `deleteCharBackward`.
+- **`src/components/CodeMirrorEditor.newline.test.ts`** — updated the prose Enter test to expect one
+  newline; added an "Enter then Backspace — byte-identical round-trip" block asserting the invariant
+  across five prose contexts (end/mid/empty/after-paragraph/start-of-doc) plus the two-Enters/
+  two-Backspaces paragraph-gap case, and a list-continuation clean-reversal test.
+
 ## [0.20.22] - 2026-07-20
 
 **Fix: the first line of a note now reads as its title in the read view and the note list, not just

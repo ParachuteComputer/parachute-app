@@ -8,12 +8,12 @@ import {
 } from "@/lib/editor/format-commands";
 import { listAwareIndent, listAwareOutdent, swipeIndent } from "@/lib/editor/list-indent";
 import { livePreview } from "@/lib/editor/live-preview";
-import { insertHardOrPlainBreak, insertParagraphBreak } from "@/lib/editor/paragraph-break";
+import { insertContextualNewline, insertHardOrPlainBreak } from "@/lib/editor/paragraph-break";
 import { selectionToolbar } from "@/lib/editor/selection-toolbar";
 import { createSlashCompletionSource } from "@/lib/editor/slash-completion";
 import { autocompletion } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { deleteMarkupBackward, markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import {
@@ -333,8 +333,15 @@ export function buildExtensions(
       // slash-menu's own Enter-commits-completion binding lives at
       // Prec.highest (inside autocompletion(), below) and is tried before
       // this keymap entirely, so it's never in the race.
-      { key: "Enter", run: insertParagraphBreak },
+      { key: "Enter", run: insertContextualNewline },
       { key: "Shift-Enter", run: insertHardOrPlainBreak },
+      // Backspace's list/quote-aware inverse of insertNewlineContinueMarkup
+      // (the continuation Enter uses in markup). Ahead of defaultKeymap so a
+      // Backspace right after a continued marker removes that marker cleanly
+      // instead of nibbling one char; off markup it returns false and falls
+      // through to defaultKeymap's deleteCharBackward. Pairs Enter/Backspace
+      // as inverses in lists, the same way single-newline prose already is.
+      { key: "Backspace", run: deleteMarkupBackward },
       // The shared format-commands module (POLISH-WAVE PR 5 / EDITOR-STUDY
       // §5-6) — both editor modes, same as the selection toolbar's buttons
       // (which call these exact same commands). Today ⌘B does nothing; these
