@@ -1,14 +1,19 @@
 import { type LensDB, openLensDB } from "@/lib/sync/db";
+import { countPending, enqueue } from "@/lib/sync/queue";
 import type { Note } from "@/lib/vault/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MIRROR_FLAG_KEY } from "./flag";
 import {
+  clearMirrorCursor,
   clearMirrorForVault,
+  clearMirrorMeta,
   countMirrorNotes,
   getMirrorCursor,
+  getMirrorLastSweepAt,
   getMirrorLastSyncedAt,
   getMirrorNote,
   getMirrorState,
+  getMirrorTags,
   listMirrorNotes,
   mirrorRecordLocalIdLanded,
   mirrorRecordRemove,
@@ -16,8 +21,10 @@ import {
   removeMirrorNote,
   replaceLocalMirrorNote,
   setMirrorCursor,
+  setMirrorLastSweepAt,
   setMirrorLastSyncedAt,
   setMirrorState,
+  setMirrorTags,
   upsertMirrorNote,
   upsertMirrorNotes,
 } from "./store";
@@ -137,6 +144,64 @@ describe("mirror store — cursor + sync-state meta", () => {
     // Per-vault isolation.
     expect(await getMirrorCursor(db, "v2")).toBeUndefined();
   });
+
+  it("clearMirrorMeta drops state/lastSyncedAt/lastSweepAt/tags but leaves the cursor", async () => {
+    await setMirrorCursor(db, "v1", "cursor-xyz");
+    await setMirrorState(db, "v1", { phase: "live" });
+    await setMirrorLastSyncedAt(db, "v1", 12345);
+    await setMirrorLastSweepAt(db, "v1", 999);
+    await setMirrorTags(db, "v1", [{ name: "#x", count: 2 }]);
+
+    await clearMirrorMeta(db, "v1");
+
+    // The sync-state meta is gone, so a reload reads truly EMPTY (cold re-fill).
+    expect(await getMirrorState(db, "v1")).toBeUndefined();
+    expect(await getMirrorLastSyncedAt(db, "v1")).toBeUndefined();
+    expect(await getMirrorLastSweepAt(db, "v1")).toBeUndefined();
+    expect(await getMirrorTags(db, "v1")).toBeUndefined();
+    // The cursor is NOT this helper's business (clearMirrorCursor owns it).
+    expect(await getMirrorCursor(db, "v1")).toBe("cursor-xyz");
+  });
+
+  it("clearMirrorMeta is per-vault — another vault's meta is untouched", async () => {
+    await setMirrorState(db, "v1", { phase: "live" });
+    await setMirrorState(db, "v2", { phase: "live" });
+    await setMirrorLastSyncedAt(db, "v2", 7);
+
+    await clearMirrorMeta(db, "v1");
+
+    expect(await getMirrorState(db, "v1")).toBeUndefined();
+    expect(await getMirrorState(db, "v2")).toEqual({ phase: "live" });
+    expect(await getMirrorLastSyncedAt(db, "v2")).toBe(7);
+  });
+
+  it("the composed Clear-offline-copy store ops leave the write queue intact (sacred work)", async () => {
+    // Mirror what SyncProvider.clearOffline does at the store layer: wipe note
+    // rows + cursor + sync-state meta. The pending write queue (un-synced user
+    // work) must survive untouched.
+    await upsertMirrorNotes(db, "v1", [note("a"), note("b")]);
+    await setMirrorCursor(db, "v1", "cursor-xyz");
+    await setMirrorState(db, "v1", { phase: "live" });
+    await setMirrorLastSyncedAt(db, "v1", 12345);
+    await enqueue(
+      db,
+      { kind: "create-note", localId: "local-1", payload: { content: "# unsynced" } },
+      { vaultId: "v1" },
+    );
+    expect(await countPending(db)).toBe(1);
+
+    await clearMirrorForVault(db, "v1");
+    await clearMirrorCursor(db, "v1");
+    await clearMirrorMeta(db, "v1");
+
+    // Mirror copy + sync-state gone …
+    expect(await countMirrorNotes(db, "v1")).toBe(0);
+    expect(await getMirrorCursor(db, "v1")).toBeUndefined();
+    expect(await getMirrorState(db, "v1")).toBeUndefined();
+    expect(await getMirrorLastSyncedAt(db, "v1")).toBeUndefined();
+    // … but the queued mutation is preserved (the pin).
+    expect(await countPending(db)).toBe(1);
+  });
 });
 
 describe("mirror store — flag-gated write helpers", () => {
@@ -151,7 +216,8 @@ describe("mirror store — flag-gated write helpers", () => {
   });
 
   it("does nothing when the mirror flag is OFF", async () => {
-    // Flag defaults off (no localStorage key set).
+    // The mirror is now ON by default, so force it OFF explicitly.
+    localStorage.setItem(MIRROR_FLAG_KEY, "false");
     await mirrorRecordUpsert(db, "v1", note("n1"));
     await mirrorRecordLocalIdLanded(db, "v1", "local-1", note("srv-1"));
     await mirrorRecordRemove(db, "v1", "whatever");

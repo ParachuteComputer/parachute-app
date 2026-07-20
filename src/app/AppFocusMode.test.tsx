@@ -1,5 +1,6 @@
 import { App } from "@/app/App";
 import { useFocusMode } from "@/lib/focus-mode";
+import { MIRROR_FLAG_KEY } from "@/lib/mirror/flag";
 import { useVaultStore } from "@/lib/vault/store";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -72,6 +73,12 @@ describe("App shell — focus mode (POLISH-WAVE PR 4)", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    // This shell test mounts the REAL App + SyncProvider with a seeded vault.
+    // The durable-offline mirror is now ON by default, which would spin up the
+    // background hydration engine and race IndexedDB writes against per-test
+    // teardown. This suite is about focus-mode chrome, not the mirror, so force
+    // the mirror OFF to keep the shell behavior it asserts unchanged.
+    localStorage.setItem(MIRROR_FLAG_KEY, "false");
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useFocusMode.setState({ on: false });
     seedStore();

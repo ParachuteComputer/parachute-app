@@ -93,6 +93,18 @@ export async function setMirrorTags(
   await setMeta(db, tagsKey(vaultId), tags);
 }
 
+// Wipe the vault's sync-state meta — state, lastSyncedAt, lastSweepAt, tags — so
+// a cleared vault reads truly EMPTY and the next fill runs COLD (hydration
+// progress shown), instead of repainting a stale "synced / last synced X ago".
+// Deliberately does NOT touch the cursor (its own `clearMirrorCursor` handles
+// that) nor any note rows or write-queue state.
+export async function clearMirrorMeta(db: LensDB, vaultId: string): Promise<void> {
+  await deleteMeta(db, stateKey(vaultId));
+  await deleteMeta(db, lastSyncedAtKey(vaultId));
+  await deleteMeta(db, lastSweepAtKey(vaultId));
+  await deleteMeta(db, tagsKey(vaultId));
+}
+
 // ---------- note rows (unconditional store ops — NOT flag-gated) ----------
 
 // Normalize a Note into a mirror row: stamp the vault discriminator and

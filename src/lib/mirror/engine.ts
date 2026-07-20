@@ -237,6 +237,16 @@ export class MirrorEngine {
       // Also outside the drain lock, and only after a clean drain.
       await this.maybeEvict(result);
       return result;
+    } catch (err) {
+      // syncOnce runs fire-and-forget from the tick interval + the online /
+      // visibility listeners (and directly from Settings "Sync now"), so it must
+      // NEVER reject — an escaped rejection becomes an unhandled promise
+      // rejection. drainCursor already catches its own drain/network errors and
+      // records the error state; this backstops the rare throws OUTSIDE that
+      // guard, chiefly a torn-down or evicted IndexedDB throwing from the
+      // pre-drain cursor reads or the error-state write. Resolve to an error
+      // result instead of throwing.
+      return { ...empty, error: err instanceof Error ? err.message : String(err) };
     } finally {
       this.syncing = false;
     }

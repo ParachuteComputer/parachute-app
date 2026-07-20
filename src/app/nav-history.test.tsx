@@ -8,6 +8,7 @@ import {
 } from "@/lib/account/client";
 import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
+import { MIRROR_FLAG_KEY } from "@/lib/mirror/flag";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -77,6 +78,11 @@ describe("Golden flows — history-depth measurements (mirrors WALK-nav.md)", ()
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    // Real-App history/routing golden-flow test, not a mirror test. The mirror
+    // is now ON by default; its background hydration engine adds async
+    // re-renders that perturb these timing-sensitive nav/history assertions.
+    // Force it OFF so the measured routing shape stays what this suite pins.
+    localStorage.setItem(MIRROR_FLAG_KEY, "false");
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useToastStore.setState({ toasts: [] });
     window.history.replaceState({}, "", "/");

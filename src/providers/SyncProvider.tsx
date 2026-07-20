@@ -3,6 +3,7 @@ import { isMirrorEnabled } from "@/lib/mirror/flag";
 import {
   clearMirrorCursor,
   clearMirrorForVault,
+  clearMirrorMeta,
   createMirrorWriteSink,
   getMirrorLastSyncedAt,
   getMirrorState,
@@ -288,15 +289,20 @@ export function SyncProvider({ children }: { children: ReactNode }): ReactNode {
     await mirrorEngine?.syncOnce();
   }, [mirrorEngine]);
 
-  // Settings "Clear offline copy": wipe this vault's mirror rows and reset its
-  // cursor so a later sync re-fills from scratch. Deliberately touches ONLY the
-  // `mirror_notes` store + the mirror cursor meta — never `pending`, `id_map`,
-  // `blob_path_map`, or `blobs`, which hold un-synced user work. Invalidate the
-  // mirror-seeded read caches so any placeholder painted from the mirror clears.
+  // Settings "Clear offline copy": wipe this vault's mirror rows, reset its
+  // cursor, AND drop its sync-state meta (state / lastSyncedAt / lastSweepAt /
+  // tags) so a cleared vault reads truly EMPTY — a reload can't repaint a stale
+  // "synced / last synced X ago", and the re-fill runs COLD (hydration progress
+  // shown) instead of being treated as a warm no-op. Deliberately touches ONLY
+  // the `mirror_notes` store + the mirror cursor/sync-state meta — never
+  // `pending`, `id_map`, `blob_path_map`, or `blobs`, which hold un-synced user
+  // work. Invalidate the mirror-seeded read caches so any placeholder painted
+  // from the mirror clears.
   const clearOffline = useCallback(async () => {
     if (!db || !activeVaultId) return;
     await clearMirrorForVault(db, activeVaultId);
     await clearMirrorCursor(db, activeVaultId);
+    await clearMirrorMeta(db, activeVaultId);
     setMirrorPhase(undefined);
     setMirrorProgress(undefined);
     setMirrorLastSyncedAt(null);
