@@ -1,5 +1,29 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.18] - 2026-07-20
+
+**Editor: stop the viewport jumping to the paragraph top while typing.** Writing a long note
+(morning pages) made the view lurch on essentially every new line, pinning the current line in a
+fixed high band with dead space below — a partial typewriter/snap effect.
+
+- **`src/components/CodeMirrorEditor.tsx`** — root cause: the Wave-1 (0.20.17) scroll block set
+  `EditorView.scrollMargins.of((view) => ({ bottom: view.dom.clientHeight * 0.3 }))`. Every
+  keystroke asks CM to scroll the cursor into view (`applyDOMChange` sets `scrollIntoView: true`)
+  and that margin inflates the scroll target downward by ~a third of the viewport, so CM treated
+  the caret as "out of view" the moment it passed ~70% of the screen and re-scrolled on every new
+  visual line — holding the caret at a fixed ~70% band with a large empty gap below. Replaced with a
+  small, fixed scroll-off of two line-heights (new exported `bottomScrollMargin`), tied to
+  line-height rather than viewport height so a taller screen can never inflate it. The caret now
+  travels naturally down the viewport and the view only scrolls when the caret truly nears the
+  bottom edge — standard-editor behavior, no snapping, no typewriter centering. `scrollPastEnd()` is
+  unchanged (the last line can still reach the top). Verified in a real headless browser via CDP:
+  under the old margin the caret pinned at ~67% and the view scrolled on every line; with the fix
+  the caret descends 35%→90% with the viewport held still.
+- **`src/components/CodeMirrorEditor.scroll.test.ts`** (new) — pins the cause: the bottom scroll-off
+  is a small fixed amount tied to line-height, identical on a 200px and a 10000px viewport (the old
+  code would register 3000 on the tall one), and is the editor's only registered bottom scroll
+  margin. jsdom has no layout, so the pixel-level scroll itself remains an on-device eyeball.
+
 ## [0.20.17] - 2026-07-18
 
 **Voice Wave 3 — one policy, spoken once: the per-capture Transcribe toggle + a unified Voice
