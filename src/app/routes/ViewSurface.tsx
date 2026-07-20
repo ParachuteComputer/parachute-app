@@ -3,6 +3,9 @@ import { ViewNavIcon } from "@/components/ViewNavIcon";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { BoardView } from "@/components/views/BoardView";
+import { CalendarView } from "@/components/views/CalendarView";
+import { GalleryView } from "@/components/views/GalleryView";
 import { useToastStore } from "@/lib/toast/store";
 import { useCreateNote, useUpdateNote, useVaultStore } from "@/lib/vault";
 import { useTagRoles } from "@/lib/vault/settings";
@@ -117,7 +120,7 @@ function ViewSurfaceBody({ note }: { note: Note }) {
       />
       {problems.length > 0 ? <ProblemsBanner problems={problems} /> : null}
       <div className="mt-6">
-        <ViewResultsList
+        <ViewResults
           def={def}
           data={results.data}
           isPending={results.isPending}
@@ -174,11 +177,14 @@ function ProblemsBanner({ problems }: { problems: ViewProblem[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Results — list kind only this wave (§4.1); board/calendar/gallery degrade
-// to this same renderer via decodeViewDef's kind fallback.
+// Results — shared state guards (§3), then dispatch on the view's KIND
+// (Views Wave 2b). list is byte-identical to before; board/gallery/calendar
+// each render the SAME fetched results a different way. An unknown kind — or a
+// board/calendar missing its lane/date config — falls through to the list, the
+// one shape a view is never wrong to render as (§1).
 // ---------------------------------------------------------------------------
 
-function ViewResultsList({
+function ViewResults({
   def,
   data,
   isPending,
@@ -197,7 +203,7 @@ function ViewResultsList({
   retry: () => void;
   pinned: Note[];
   rest: Note[];
-  roles: { pinned: string; archived: string };
+  roles: TagRoles;
 }) {
   // §3: an unparseable query never fetches — nothing to render but the
   // problems banner above (already shown) plus a quiet placeholder here.
@@ -230,6 +236,44 @@ function ViewResultsList({
   if (!data || (pinned.length === 0 && rest.length === 0)) {
     return <EmptyState title="No notes match this view yet." />;
   }
+
+  // board/gallery/calendar all read one flat set — pinning surfaces within a
+  // lane / grid / day rather than as its own band (the list's Pinned section
+  // is the only kind that partitions).
+  const all = [...pinned, ...rest];
+  switch (def.kind) {
+    case "board":
+      if (def.laneBy) {
+        return (
+          <BoardView
+            notes={all}
+            laneBy={def.laneBy}
+            subjectTag={primaryQueryTag(def.query)}
+            roles={roles}
+          />
+        );
+      }
+      break;
+    case "gallery":
+      return <GalleryView notes={all} roles={roles} />;
+    case "calendar":
+      if (def.dateField) {
+        return <CalendarView notes={all} dateField={def.dateField} roles={roles} />;
+      }
+      break;
+  }
+  return <ListResults pinned={pinned} rest={rest} roles={roles} />;
+}
+
+function ListResults({
+  pinned,
+  rest,
+  roles,
+}: {
+  pinned: Note[];
+  rest: Note[];
+  roles: { pinned: string; archived: string };
+}) {
   return (
     <div className="space-y-6">
       {pinned.length > 0 ? (
