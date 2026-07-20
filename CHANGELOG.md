@@ -1,5 +1,31 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.29] - 2026-07-20
+
+**Views Wave 2b — the board, gallery, and calendar view KINDS now render.** A `#view` note already
+carried its `kind` (`list` | `board` | `calendar` | `gallery`), and the nav glyph already matched, but
+ViewSurface only ever drew a list — so a board laned by status, a meetings calendar, and a reference
+gallery all flattened into the same rows. ViewSurface now dispatches on `view.kind` over the SAME
+fetched results; the `list` kind is unchanged and any unknown/missing kind (or a board/calendar
+missing its lane/date config) still degrades to the list.
+
+- **Board** (`kind: "board"`, `lane_by: <field>`) — result notes become COLUMNS keyed by the distinct
+  values of the `lane_by` metadata field; notes missing that field collect in a trailing, muted
+  "No {field}" lane (always last). Lane order honors the subject tag's schema `enum` when it declares
+  one (the authored order), else a small built-in order for common fields (`status`, `priority`), else
+  alphabetical. Lanes scroll horizontally on overflow; pinned notes surface within their lane, keeping
+  their star. Empty lanes are never drawn.
+- **Gallery** (`kind: "gallery"`) — results as a responsive auto-fill grid of cover cards (a cover
+  image when the note carries a directly-usable image attachment, else a text tile) — the "bookshelf".
+- **Calendar** (`kind: "calendar"`, `date_field: <field>`) — a real month grid: weeks as rows, days as
+  cells, each dated note a chip on its day. Clicking a day with notes opens a panel of that day's notes
+  below; ◀/▶ navigate months and it opens on the month of the most recent dated note. The `date_field`
+  value is parsed defensively (ISO date / datetime, read on its wall-clock day); notes with a
+  missing/unparseable date are omitted and counted in a footnote. The grid mechanics are shared with
+  the `/calendar` route via `@/lib/dates`.
+- New: `src/lib/views/grouping.ts` (pure lane-grouping + calendar-placement logic, unit-tested),
+  `src/components/views/{NoteCard,BoardView,GalleryView,CalendarView}.tsx`.
+
 ## [0.20.28] - 2026-07-20
 
 **Offline mirror — Wave 4: staleness UX + storage ceiling/eviction + a Settings surface, behind the

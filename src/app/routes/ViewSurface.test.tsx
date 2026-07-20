@@ -268,4 +268,157 @@ describe("ViewSurface", () => {
     await screen.findByRole("dialog", { name: /save this view/i });
     expect(screen.getByLabelText(/save as new view/i)).toBeChecked();
   });
+
+  // --- Wave 2b: the board / gallery / calendar kinds ---------------------
+
+  it("board kind: lanes notes by laneBy, a note lands in its lane, uncategorized last", async () => {
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Projects",
+        tags: ["view"],
+        metadata: {
+          kind: "board",
+          lane_by: "status",
+          query: JSON.stringify({ tag: "project" }),
+        },
+      },
+      results: [
+        {
+          id: "n1",
+          path: "Alpha",
+          metadata: { status: "active" },
+          createdAt: "2026-07-01T00:00:00Z",
+        },
+        {
+          id: "n2",
+          path: "Beta",
+          metadata: { status: "incubating" },
+          createdAt: "2026-07-02T00:00:00Z",
+        },
+        { id: "n3", path: "Gamma", createdAt: "2026-07-03T00:00:00Z" }, // no status
+      ],
+    });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Projects" });
+
+    // A note with the field renders inside its lane's region.
+    const activeLane = await screen.findByRole("region", { name: "active" });
+    expect(activeLane.textContent).toContain("Alpha");
+    const incubatingLane = screen.getByRole("region", { name: "incubating" });
+    expect(incubatingLane.textContent).toContain("Beta");
+
+    // The uncategorized lane is present, labelled "No status", and LAST.
+    const lanes = screen.getAllByRole("region");
+    const uncategorized = screen.getByRole("region", { name: "No status" });
+    expect(uncategorized.textContent).toContain("Gamma");
+    expect(lanes[lanes.length - 1]).toBe(uncategorized);
+
+    // Board is not the list — no Pinned/Results partition bands.
+    expect(screen.queryByRole("region", { name: "Results" })).toBeNull();
+  });
+
+  it("gallery kind: renders the results as cards, not the list partition", async () => {
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Shelf",
+        tags: ["view"],
+        metadata: { kind: "gallery", query: JSON.stringify({ tag: "reference" }) },
+      },
+      results: [
+        { id: "n1", path: "Reference A", createdAt: "2026-07-01T00:00:00Z" },
+        { id: "n2", path: "Reference B", createdAt: "2026-07-02T00:00:00Z" },
+      ],
+    });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Shelf" });
+
+    // Each result is a card linking to its note.
+    expect(await screen.findByRole("link", { name: /Reference A/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Reference B/ })).toBeTruthy();
+    // Gallery, not list — no Results partition band.
+    expect(screen.queryByRole("region", { name: "Results" })).toBeNull();
+  });
+
+  it("calendar kind: places a dated note on its day and omits undated notes with a footnote", async () => {
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Meetings",
+        tags: ["view"],
+        metadata: {
+          kind: "calendar",
+          date_field: "meeting_date",
+          query: JSON.stringify({ tag: "meeting" }),
+        },
+      },
+      results: [
+        {
+          id: "n1",
+          path: "Weekly sync",
+          metadata: { meeting_date: "2026-07-14" },
+          createdAt: "2026-07-01T00:00:00Z",
+        },
+        {
+          id: "n2",
+          path: "Undated chat",
+          metadata: {},
+          createdAt: "2026-07-02T00:00:00Z",
+        },
+      ],
+    });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Meetings" });
+    // Wait for the results to fetch + the calendar to render (the footnote only
+    // exists once CalendarView has mounted with data).
+    await screen.findByText(/no meeting_date date/i);
+
+    // The dated note appears on the July-14 cell (the cell's button carries
+    // both the day number and the note's title chip).
+    const cell = screen.getAllByRole("button").find((b) => b.textContent?.includes("Weekly sync"));
+    expect(cell).toBeTruthy();
+    expect(cell?.textContent).toContain("14");
+
+    // The undated note is not plotted onto the grid.
+    expect(screen.queryByText("Undated chat")).toBeNull();
+  });
+
+  it("unknown kind still degrades to the list renderer", async () => {
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Mystery",
+        tags: ["view"],
+        metadata: { kind: "mystery", query: JSON.stringify({ tag: "project" }) },
+      },
+      results: [{ id: "n1", path: "Alpha", createdAt: "2026-07-01T00:00:00Z" }],
+    });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Mystery" });
+    // The list's Results band is the tell it fell back to list rendering.
+    const results = await screen.findByRole("region", { name: "Results" });
+    expect(results.textContent).toContain("Alpha");
+  });
+
+  it("board kind without lane_by degrades to the list renderer", async () => {
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Laneless",
+        tags: ["view"],
+        metadata: { kind: "board", query: JSON.stringify({ tag: "project" }) },
+      },
+      results: [{ id: "n1", path: "Alpha", createdAt: "2026-07-01T00:00:00Z" }],
+    });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Laneless" });
+    const results = await screen.findByRole("region", { name: "Results" });
+    expect(results.textContent).toContain("Alpha");
+  });
 });
