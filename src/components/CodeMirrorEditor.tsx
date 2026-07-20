@@ -223,6 +223,28 @@ interface BuildExtensionsOpts {
   placeholder?: string;
 }
 
+// The vertical breathing room CM keeps below the caret when it auto-scrolls to
+// keep the cursor in view — a small, fixed "scroll-off" of two lines (the
+// standard-editor amount), so the caret is never jammed against the very bottom
+// pixel when typing the last line.
+//
+// Deliberately tied to LINE-HEIGHT, not the viewport height. The 0.20.17 Wave-1
+// version used `view.dom.clientHeight * 0.3`, which reserved ~a third of the
+// screen as a no-go zone below the caret: because every typed keystroke asks CM
+// to scroll the cursor into view (`applyDOMChange` sets `scrollIntoView: true`)
+// and the scroll margin inflates the target rect, CM treated the caret as "out
+// of view" the moment it dropped past ~70% of the viewport and auto-scrolled —
+// on essentially every new visual line. That pinned the caret in a fixed high
+// band with dead space below it: a partial typewriter/snap effect, the very
+// thing `scrollPastEnd()` above is chosen over full centering to avoid. Two
+// line-heights keeps the caret off the floor WITHOUT moving the viewport while
+// the caret is comfortably in view. (Aaron's live feel-test, morning pages:
+// "always jumping to the top of the current paragraph while typing.") Exported
+// for CodeMirrorEditor.scroll.test.ts, which pins the viewport-independence.
+export function bottomScrollMargin(view: EditorView): number {
+  return view.defaultLineHeight * 2;
+}
+
 // Pulled out of the mount effect so it's independently testable against a
 // real (non-React) EditorView — trigger behavior and keymap precedence
 // (the Esc-closes-menu-first layering) are exercised against this exact
@@ -277,13 +299,13 @@ export function buildExtensions(
     // Wave 1 §3.1: scroll-past-end (not typewriter mode — full centering
     // fights virtual-keyboard scroll-into-view on mobile, A4-SPEC's own
     // typing-canvas study). `scrollPastEnd()` is CM6's stock extension so
-    // any line can reach the viewport top; `scrollMargins` keeps ~30% of
-    // the viewport below the active line whenever CM auto-scrolls to keep
-    // the cursor in view, so typing at the bottom of a long note never
-    // pins the caret to the floor. Mode-agnostic — both raw and live mode
-    // benefit, this is a scroll behavior, not a typography concern.
+    // any line can reach the viewport top. Mode-agnostic — both raw and
+    // live mode benefit, this is a scroll behavior, not a typography concern.
     scrollPastEnd(),
-    EditorView.scrollMargins.of((view) => ({ bottom: view.dom.clientHeight * 0.3 })),
+    // A SMALL, fixed scroll-off below the caret (see `bottomScrollMargin`) so
+    // ordinary typing doesn't move the viewport until the caret truly nears
+    // the bottom edge — standard-editor behavior, no typewriter snap.
+    EditorView.scrollMargins.of((view) => ({ bottom: bottomScrollMargin(view) })),
     EditorView.domEventHandlers({
       paste(event) {
         const items = event.clipboardData?.items;
