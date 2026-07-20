@@ -1,5 +1,53 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.27] - 2026-07-20
+
+**Offline mirror — Wave 3: local-first READS + cold-launch offline, behind the same default-OFF
+flag.** Waves 1–2 built the mirror store, cursor hydration, and deletes reconciliation — all
+write-only/invisible. This wave adds the READ path so the app serves notes from the mirror when
+offline or on a cold launch. Still gated by the SAME flag, and the flag **STAYS default OFF** — with
+it off every path below is byte-identical to the network-only behavior that shipped before; with it
+on (dev/test), reads fall back to the mirror. Activation (flipping the flag on) is a separately
+ratified step — Aaron ratifies the storage ceiling + staleness UX + flag-on timing as a batch after
+Wave 4; this wave ships nothing user-visible on its own.
+
+- **The read evaluator** (`src/lib/mirror/read.ts`) — `readNote(vaultId, id)` returns the FULL
+  mirror row (content/links/attachments, never a lean stub), resolving a synced local id through the
+  id-map and falling back to the optimistic local-id row for an offline-created note that hasn't
+  drained. `readNotesList(vaultId, params)` is a client-side evaluator over `mirror_notes` for the
+  SMALL query subset the list hooks actually send — tag filter (`tag_match` any/all), `path_prefix`,
+  `has_tags`/`has_links`, `sort`, `limit`/`offset` — reproducing the vault's server semantics
+  exactly, including the default sort by **`created_at DESC, id DESC`** (the vault's non-cursor list
+  order — NOT `updated_at`). It returns `null` for anything it can't reproduce faithfully (a `search`
+  FTS query, or any param outside the subset), so the caller stays network-only rather than ever show
+  a list that DIFFERS from the server's. (Fidelity note: the app sends no `expand`, so exact-match tag
+  filtering equals the vault's default `subtypes` expansion for FLAT vaults; a declared tag hierarchy
+  would see child-tagged notes omitted under a parent-tag filter offline — documented, acceptable.)
+- **Network-first, mirror-fallback read hooks** (`src/lib/vault/queries.ts`) — `useNote`, `useNotes`,
+  `useNotesForDateViews`, `useNotesForPathTree`, and `useTags` now (when the flag is on) try the
+  network first and fall back to the mirror when the vault is offline (fast path, skips the network)
+  or unreachable (`VaultUnreachableError` — the installed-PWA `onLine===true`-but-dead case). They
+  seed `placeholderData` from the mirror so a cold launch paints the last-mirrored notes instantly,
+  then background-revalidate. The switcher (`useAllNotesForSwitcher`) and graph (`useAllNotesWithLinks`)
+  stay network-only (Wave-later); the schema-bearing tag reads (`useTagsWithSchema`/`useTag`) stay
+  network-only (the mirror holds only `TagSummary`, not schemas).
+- **`networkMode: "always"` (flag-on only).** React Query's default `networkMode: "online"` pauses
+  the queryFn while `navigator.onLine === false`, so a cold-launch-offline would render nothing
+  regardless of the fallback. The touched hooks switch to `"always"` when the flag is on so the
+  queryFn runs offline and reaches the mirror. When the flag is OFF, `networkMode` stays `"online"`
+  and the queryFn/placeholderData are exactly as before — pinned by a "flag-off + offline PAUSES,
+  never reads the mirror" test.
+- **Lean-vs-full coherence.** The mirror only ever holds FULL rows (hydration + write-path landings);
+  the lean live list is display-only and never written to the mirror, so reading a note for the VIEW
+  always gets full content. List rows returned from the mirror are full Notes (a superset of the lean
+  shape — `NoteRow` derives its title from content).
+- **Tests** — `src/lib/mirror/read.test.ts` (16: evaluator fidelity for tag/path/has_*/sort+id-tiebreak/
+  limit-offset, `search`→null, unknown-param→null, and `readNote` local-id resolution) +
+  `src/lib/vault/queries.mirror.test.tsx` (8: flag-ON offline list + note render from a populated
+  mirror; flag-ON online seeds-then-network-wins; flag-ON onLine-but-unreachable serves the mirror;
+  flag-OFF offline pauses + never reads the mirror; flag-OFF online plain fetch; `networkMode:"always"`
+  keeps online errors surfacing and retries engaged).
+
 ## [0.20.26] - 2026-07-20
 
 **Offline mirror — Wave 2: deletes reconciliation (full-ID sweep + live WS-remove), still behind
