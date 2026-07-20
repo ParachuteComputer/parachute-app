@@ -8,6 +8,17 @@ export {
   type MirrorSyncResult,
   isCursorRejection,
 } from "./engine";
+export {
+  MIRROR_CEILING_BYTES,
+  type EvictionPlan,
+  type MirrorEvictResult,
+  derivePreview,
+  evictOverCeiling,
+  evictedShell,
+  measureMirrorBytes,
+  mirrorRowBytes,
+  planEviction,
+} from "./evict";
 export { readNote, readNotesList } from "./read";
 export {
   type MirrorDiff,
