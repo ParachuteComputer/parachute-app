@@ -1,12 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   displayTitle,
+  firstLineTitle,
   leadingH1,
   noteTitle,
   pathDisplayTitle,
   pathLeaf,
+  stripFirstTitleLine,
   stripLeadingH1,
 } from "./note-title";
+
+// The lean list shape carries a `displayTitle` (computed server-side) that the
+// surface-client Note type doesn't declare — model that untyped wire field
+// with a cast so the wire-preference path can be exercised.
+function leanNote(fields: {
+  id: string;
+  path?: string;
+  displayTitle: string | null;
+}): Parameters<typeof displayTitle>[0] {
+  return fields as unknown as Parameters<typeof displayTitle>[0];
+}
 
 describe("noteTitle", () => {
   it("prefers a leading H1 in the content", () => {
@@ -33,11 +46,11 @@ describe("noteTitle", () => {
     expect(noteTitle({ id: "a", content: "\n\n\nfirst real line" })).toBe("first real line");
   });
 
-  it("truncates a very long first line with an ellipsis", () => {
+  it("truncates a very long first line to a hard 120-codepoint cap (matching the vault, no ellipsis)", () => {
     const long = "x".repeat(200);
     const title = noteTitle({ id: "a", content: long });
-    expect(title.length).toBeLessThanOrEqual(120);
-    expect(title.endsWith("…")).toBe(true);
+    expect(title).toHaveLength(120);
+    expect(title.endsWith("…")).toBe(false);
   });
 
   it("falls back to the last path segment without .md", () => {
@@ -102,6 +115,82 @@ describe("stripLeadingH1", () => {
   });
 });
 
+describe("firstLineTitle (mirror of the vault's computeDisplayTitle)", () => {
+  it("returns the first non-empty line", () => {
+    expect(firstLineTitle("Hello world\n\nmore")).toBe("Hello world");
+  });
+
+  it("strips one leading heading marker at any level", () => {
+    expect(firstLineTitle("# Title\n\nbody")).toBe("Title");
+    expect(firstLineTitle("### Deep\n\nbody")).toBe("Deep");
+  });
+
+  it("promotes a plain first line even when a heading is buried below", () => {
+    expect(firstLineTitle("intro line\n\n# Buried\n\nmore")).toBe("intro line");
+  });
+
+  it("skips leading blank lines", () => {
+    expect(firstLineTitle("\n\n\nfirst real line")).toBe("first real line");
+  });
+
+  it("skips a leading YAML frontmatter block before deriving", () => {
+    expect(firstLineTitle("---\ntitle: X\n---\n# Real Title\n\nbody")).toBe("Real Title");
+  });
+
+  it("treats an unterminated leading --- as ordinary content, not frontmatter", () => {
+    expect(firstLineTitle("---\nnot frontmatter")).toBe("---");
+  });
+
+  it("truncates to a hard 120 code points, no ellipsis (matches the vault)", () => {
+    const t = firstLineTitle("y".repeat(200));
+    expect(t).toHaveLength(120);
+    expect(t?.endsWith("…")).toBe(false);
+  });
+
+  it("returns null for empty, whitespace-only, or heading-marker-only content", () => {
+    expect(firstLineTitle("")).toBeNull();
+    expect(firstLineTitle("   \n\n\t")).toBeNull();
+    expect(firstLineTitle("#\n##")).toBeNull();
+    expect(firstLineTitle(undefined)).toBeNull();
+    expect(firstLineTitle(null)).toBeNull();
+  });
+});
+
+describe("stripFirstTitleLine", () => {
+  it("removes a plain first line and the blank lines after it", () => {
+    expect(stripFirstTitleLine("Groceries\n\n- milk\n- eggs")).toBe("- milk\n- eggs");
+  });
+
+  it("removes a leading heading line the same way", () => {
+    expect(stripFirstTitleLine("# Title\n\nHello.")).toBe("Hello.");
+  });
+
+  it("lifts only the first line, leaving a buried heading in the body", () => {
+    expect(stripFirstTitleLine("Some intro paragraph.\n\n# Buried Title\n\nMore body.")).toBe(
+      "# Buried Title\n\nMore body.",
+    );
+  });
+
+  it("removes leading blank lines that preceded the first line", () => {
+    expect(stripFirstTitleLine("\n\nTitle\n\nbody")).toBe("body");
+  });
+
+  it("returns empty when the whole note is a single title line", () => {
+    expect(stripFirstTitleLine("Just a title")).toBe("");
+  });
+
+  it("leaves an empty / whitespace-only note unchanged (nothing to lift)", () => {
+    expect(stripFirstTitleLine("")).toBe("");
+    expect(stripFirstTitleLine("   \n\n")).toBe("   \n\n");
+  });
+
+  it("preserves a leading frontmatter block, lifting the first body line", () => {
+    expect(stripFirstTitleLine("---\ntitle: X\n---\n\n# Real\n\nbody")).toBe(
+      "---\ntitle: X\n---\nbody",
+    );
+  });
+});
+
 describe("pathLeaf", () => {
   it("returns the last segment without .md", () => {
     expect(pathLeaf("a/b/c.md")).toBe("c");
@@ -139,6 +228,35 @@ describe("pathDisplayTitle", () => {
 });
 
 describe("displayTitle", () => {
+  it("prefers the vault's wire displayTitle (lean list shape) over the path", () => {
+    // The lean list shape carries no content but a server-computed displayTitle
+    // — the list must render THAT as the title, not fall to the quickPath stamp.
+    expect(
+      displayTitle(
+        leanNote({
+          id: "a",
+          path: "Notes/2026/07-16/22-10-48",
+          displayTitle: "Groceries for the week",
+        }),
+      ),
+    ).toEqual({ kind: "title", text: "Groceries for the week" });
+  });
+
+  it("falls to the timestamp voice when the vault reports displayTitle: null (empty note)", () => {
+    const result = displayTitle(
+      leanNote({ id: "a", path: "Notes/2026/07-16/22-10-48", displayTitle: null }),
+    );
+    expect(result.kind).toBe("timestamp");
+    expect(result.text).toMatch(/July 16/);
+  });
+
+  it("derives from content when no wire displayTitle was sent (full-shape fetch)", () => {
+    expect(displayTitle({ id: "a", path: "Some/Path.md", content: "First line\n\nbody" })).toEqual({
+      kind: "title",
+      text: "First line",
+    });
+  });
+
   it("prefers content over the quickPath timestamp, same as noteTitle()", () => {
     expect(
       displayTitle({ id: "a", path: "Notes/2026/07-16/22-10-48", content: "# Real title" }),

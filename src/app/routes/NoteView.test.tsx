@@ -245,16 +245,16 @@ describe("NoteView route", () => {
     expect(screen.getByText("Teacher and builder.")).toBeInTheDocument();
   });
 
-  it("falls back to the path leaf for a buried H1 and leaves it in the body", async () => {
+  it("promotes the first content line as the title (plain, no #) and strips it, keeping a buried heading in the body", async () => {
     installFetch({
       "/api/notes": {
         body: {
           id: "buried",
           path: "Canon/Aaron",
           createdAt: "2026-04-16T00:00:00Z",
-          // The H1 isn't the leading line, so it is NOT the title — and must
-          // still render in the body (regression guard for the strip/derive
-          // mismatch the reviewer caught).
+          // No leading `#`, but the first line is still the title — matching the
+          // editor's first-line decoration and the list's displayTitle. A
+          // heading buried below is NOT the title and still renders in-body.
           content: "Some intro paragraph.\n\n# Buried Title\n\nMore body.",
           tags: [],
           links: [],
@@ -263,12 +263,61 @@ describe("NoteView route", () => {
       },
     });
     renderAt("/n/buried");
-    // Header falls back to the path leaf, not the buried heading.
-    expect(await screen.findByRole("heading", { level: 1, name: "Aaron" })).toBeInTheDocument();
-    // The buried H1 renders once (in the body), never promoted to the title.
+    // The first line is the page title (not the old path-leaf fallback) …
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Some intro paragraph." }),
+    ).toBeInTheDocument();
+    // … and appears exactly once (stripped from the rendered body).
+    expect(screen.getAllByText("Some intro paragraph.")).toHaveLength(1);
+    // The buried H1 renders once, in the body, never promoted to the title.
     expect(screen.getAllByText("Buried Title")).toHaveLength(1);
-    expect(screen.getByText("Some intro paragraph.")).toBeInTheDocument();
     expect(screen.getByText("More body.")).toBeInTheDocument();
+    // Regression guard: the path leaf is no longer the title.
+    expect(screen.queryByRole("heading", { level: 1, name: "Aaron" })).toBeNull();
+  });
+
+  it("promotes a one-line note's only line to the title and shows no empty-state body", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "oneline",
+          path: "Notes/2026/07-16/22-10-48",
+          createdAt: "2026-04-16T00:00:00Z",
+          content: "Buy milk and eggs",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    renderAt("/n/oneline");
+    // The single line is the title …
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Buy milk and eggs" }),
+    ).toBeInTheDocument();
+    // … with no misleading "Nothing here yet" prompt (the note isn't empty).
+    expect(screen.queryByText(/nothing here yet/i)).toBeNull();
+  });
+
+  it("shows the empty-note prompt and a timestamp title for a genuinely empty note", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "empty",
+          path: "Notes/2026/07-16/22-10-48",
+          createdAt: "2026-04-16T00:00:00Z",
+          content: "",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    renderAt("/n/empty");
+    // No content line → the quickPath default renders as a timestamp title …
+    expect(await screen.findByRole("heading", { level: 1, name: /July 16/ })).toBeInTheDocument();
+    // … and the empty-note prompt shows (this note really is empty).
+    expect(screen.getByText(/nothing here yet/i)).toBeInTheDocument();
   });
 
   it("resolves [[wikilinks]] via the outbound links table and renders as a /n/<id> link", async () => {
@@ -278,7 +327,9 @@ describe("NoteView route", () => {
           id: "me",
           path: "Canon/Aaron",
           createdAt: "2026-04-16T00:00:00Z",
-          content: "See [[Canon/Uni]] for more. Also [[Missing/Note]].",
+          // First line is the title; the wikilinks live in the body below it,
+          // where they must resolve to /n/<id> links.
+          content: "Links\n\nSee [[Canon/Uni]] for more. Also [[Missing/Note]].",
           tags: [],
           links: [
             {
@@ -554,9 +605,12 @@ describe("NoteView — offline voice capture (local id → id-map resolution) [F
     });
     renderWith(qc, `/n/${encodeURIComponent(localId)}`);
 
-    // Lands on a readable note, not an error/404 screen.
-    expect(await screen.findByRole("heading", { level: 1, name: "memo" })).toBeInTheDocument();
-    expect(screen.getByText(/transcript pending/i)).toBeInTheDocument();
+    // Lands on a readable note, not an error/404 screen. The optimistic note's
+    // first line (the pending placeholder) IS its title now, so the page heads
+    // on it rather than the path leaf.
+    expect(
+      await screen.findByRole("heading", { level: 1, name: /transcript pending/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/could not load note/i)).toBeNull();
     expect(screen.queryByText(/note not found/i)).toBeNull();
 

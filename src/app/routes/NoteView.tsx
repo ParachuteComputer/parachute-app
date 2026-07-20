@@ -12,7 +12,12 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { OfflineRibbon } from "@/components/ui/OfflineRibbon";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFocusMode } from "@/lib/focus-mode";
-import { leadingH1, pathDisplayTitle, stripLeadingH1 } from "@/lib/note-title";
+import {
+  type DisplayTitle,
+  firstLineTitle,
+  pathDisplayTitle,
+  stripFirstTitleLine,
+} from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { relativeTime } from "@/lib/time";
 import {
@@ -96,23 +101,26 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [focusOn, setFocusOn]);
   const label = note.path ?? note.id;
-  // Human title: the content's leading H1 when it has one, else the path
-  // leaf — an untouched quickPath() default becomes a timestamp variant
-  // (metadata voice, never a headline) rather than the raw "22-10-48" leaf.
-  // When the H1 becomes the page title we strip it from the rendered body so
-  // the note isn't headed by its own title twice. Deliberately not
-  // `noteTitle()`'s first-line fallback: an untitled first line would stay
-  // unstripped in the body below it, so titling by it here would duplicate
-  // that line on screen.
-  const h1 = leadingH1(note.content);
-  const title = h1
-    ? { kind: "title" as const, text: h1 }
-    : note.path
-      ? pathDisplayTitle(note.path)
-      : { kind: "title" as const, text: note.id };
+  // Title coherence: the first non-empty content line IS the title — whether or
+  // not it opens with a literal `#` — matching the editor's first-line-title
+  // decoration and the list's `displayTitle`. It renders in the page header and
+  // is STRIPPED from the body so the note isn't headed by its own first line
+  // twice. `firstLineTitle` is the shared vault-`displayTitle` derivation, so
+  // read / editor / list can't drift. When content has no non-empty line
+  // (empty / whitespace / frontmatter-only note) there's no content title: an
+  // untouched quickPath() default renders as a timestamp variant (metadata
+  // voice, never a headline), else the path leaf.
+  const titleText = firstLineTitle(note.content);
+  const title: DisplayTitle =
+    titleText !== null
+      ? { kind: "title", text: titleText }
+      : note.path
+        ? pathDisplayTitle(note.path)
+        : { kind: "title", text: note.id };
   const bodyNote = useMemo(
-    () => (h1 ? { ...note, content: stripLeadingH1(note.content ?? "") } : note),
-    [note, h1],
+    () =>
+      titleText !== null ? { ...note, content: stripFirstTitleLine(note.content ?? "") } : note,
+    [note, titleText],
   );
   const summary = typeof note.metadata?.summary === "string" ? note.metadata.summary : null;
   const inbound = useMemo(
@@ -188,9 +196,13 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
 
         {bodyNote.content?.trim() ? (
           <NoteRenderer note={bodyNote} resolve={resolver} />
-        ) : (
+        ) : titleText === null ? (
+          // Genuinely empty (no content line at all): a quiet prompt. When the
+          // note's only line became the title, `titleText` is non-null and we
+          // render nothing here — the "Nothing here yet" prompt would misread a
+          // titled one-line note as empty.
           <EmptyNoteBody noteId={note.id} />
-        )}
+        ) : null}
 
         {note.attachments && note.attachments.length > 0 ? (
           <section className="mt-10 border-t border-border pt-6">
