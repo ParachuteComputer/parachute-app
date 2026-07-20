@@ -4,11 +4,21 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, StateCommand } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
 
-// Aaron-ratified (2026-07-15): Enter is a context-aware paragraph break
-// (the Typora school), Shift+Enter is an explicit hard break. Both commands
-// sit at the editor's DEFAULT keymap precedence — CodeMirrorEditor's
-// slash-menu (`autocompletion()`'s own keymap, `Prec.highest` in
-// `@codemirror/autocomplete`) is tried first, so Enter while the menu is
+// Aaron-ratified (2026-07-20, revising the 2026-07-15 Typora-school model):
+// Enter is a context-aware SINGLE newline (the Obsidian school), Shift+Enter
+// an explicit hard break. Obsidian is source-faithful — one Enter puts exactly
+// one `\n` in the source, and the default Backspace removes exactly that `\n`,
+// so the two are exact inverses. A paragraph gap is a genuine blank line the
+// user makes by pressing Enter twice (`\n\n`), and un-makes with two
+// Backspaces. This kills the old asymmetry where prose Enter inserted `\n\n`
+// but a single Backspace only removed one of them, leaving a stray `\n`
+// ("sometimes one line break, sometimes two"). A lone `\n` is not ambiguous
+// here: surface-render renders with `breaks: true`, so a single newline is a
+// visible line break (`<br>`) — the ratified rendering, see CHANGELOG 0.20.3.
+//
+// Both commands sit at the editor's DEFAULT keymap precedence —
+// CodeMirrorEditor's slash-menu (`autocompletion()`'s own keymap, `Prec.highest`
+// in `@codemirror/autocomplete`) is tried first, so Enter while the menu is
 // open commits the selected command and never reaches here.
 
 const CODE_NODE_NAMES = new Set(["FencedCode", "CodeBlock"]);
@@ -40,28 +50,18 @@ function lineContextAt(state: EditorState, pos: number): LineContext {
 
 // Enter: in a list/quote, delegate to lang-markdown's own continuation
 // command (it already handles marker-continue AND empty-item-exits-list —
-// nothing to reproduce). In a fence, a plain single newline — exploding a
-// blank line into code would corrupt it. Everywhere else (prose), a REAL
-// blank line: two newlines, so the file stays unambiguous CommonMark (a
-// lone \n is a soft break inside the same paragraph, not a new one).
-export const insertParagraphBreak: StateCommand = ({ state, dispatch }) => {
+// nothing to reproduce; its Backspace inverse `deleteMarkupBackward` is bound
+// in CodeMirrorEditor so the continued marker un-does cleanly). Everywhere
+// else — prose, fence, table — a plain SINGLE newline. `insertNewline` is the
+// exact inverse of the default Backspace, so pressing Enter then Backspace
+// always returns the document to its byte-identical prior state.
+export const insertContextualNewline: StateCommand = ({ state, dispatch }) => {
   const context = lineContextAt(state, state.selection.main.head);
 
   if (context === "markup" && insertNewlineContinueMarkup({ state, dispatch })) {
     return true;
   }
-  if (context === "code" || context === "table") {
-    return insertNewline({ state, dispatch });
-  }
-
-  const breakText = state.lineBreak + state.lineBreak;
-  dispatch(
-    state.update(state.replaceSelection(breakText), {
-      scrollIntoView: true,
-      userEvent: "input",
-    }),
-  );
-  return true;
+  return insertNewline({ state, dispatch });
 };
 
 // Shift+Enter: an explicit hard break in prose — backslash-before-newline

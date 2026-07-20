@@ -25,11 +25,14 @@ if (!Range.prototype.getBoundingClientRect) {
     }) as DOMRect;
 }
 
-// Aaron-ratified (2026-07-15): Enter is a context-aware paragraph break,
-// Shift+Enter an explicit hard break (src/lib/editor/paragraph-break.ts).
-// Exercises the ACTUAL keymap buildExtensions() assembles — Enter/Shift-Enter
-// placed ahead of defaultKeymap in the same plain keymap.of([...]) call — not
-// a re-description of it, against a real headless CM6 EditorView.
+// Aaron-ratified (2026-07-20, revising 2026-07-15): Enter is a context-aware
+// SINGLE newline (Obsidian school), Shift+Enter an explicit hard break
+// (src/lib/editor/paragraph-break.ts). Enter and the default Backspace are
+// exact inverses — see the "Enter/Backspace round-trip" block below, the
+// invariant that kills Aaron's "sometimes one line break, sometimes two".
+// Exercises the ACTUAL keymap buildExtensions() assembles — Enter/Shift-Enter/
+// Backspace placed ahead of defaultKeymap in the same plain keymap.of([...])
+// call — not a re-description of it, against a real headless CM6 EditorView.
 
 let host: HTMLDivElement;
 
@@ -65,16 +68,22 @@ function pressEnter(view: EditorView, shift = false) {
   );
 }
 
+function pressBackspace(view: EditorView) {
+  view.contentDOM.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }),
+  );
+}
+
 async function flush() {
   await new Promise((r) => setTimeout(r, 80));
 }
 
-describe("Enter — context-aware paragraph break", () => {
-  it("in prose, inserts a real blank line and lands the cursor on the new paragraph", () => {
+describe("Enter — context-aware single newline", () => {
+  it("in prose, inserts ONE newline (a paragraph gap is two Enters, Obsidian-style)", () => {
     const view = makeEditor("hello world", 11);
     pressEnter(view);
-    expect(view.state.doc.toString()).toBe("hello world\n\n");
-    expect(view.state.selection.main.head).toBe(13);
+    expect(view.state.doc.toString()).toBe("hello world\n");
+    expect(view.state.selection.main.head).toBe(12);
   });
 
   it("in a list item, continues the marker on the next line", () => {
@@ -106,6 +115,64 @@ describe("Enter — context-aware paragraph break", () => {
     pressEnter(view);
     expect(view.state.doc.toString()).toBe("# ");
     expect(view.state.selection.main.head).toBe(2);
+  });
+});
+
+// The invariant that fixes Aaron's report: pressing Enter then immediately
+// Backspace returns the document (and caret) to its byte-identical prior
+// state, in every prose context. This is only true because Enter inserts ONE
+// newline and the default Backspace removes exactly one — the old \n\n Enter
+// left a stray \n after a single Backspace ("sometimes one, sometimes two").
+describe("Enter then Backspace — byte-identical round-trip", () => {
+  const cases: Array<{ name: string; doc: string; cursor: number }> = [
+    { name: "at the end of a line", doc: "hello world", cursor: 11 },
+    { name: "in the middle of a line", doc: "hello world", cursor: 5 },
+    { name: "on an already-empty line", doc: "one\n", cursor: 4 },
+    { name: "on the blank line after a paragraph", doc: "one\n\n", cursor: 5 },
+    { name: "at the very start of the document", doc: "one", cursor: 0 },
+  ];
+
+  for (const { name, doc, cursor } of cases) {
+    it(`returns to the exact prior state — ${name}`, () => {
+      const view = makeEditor(doc, cursor);
+      pressEnter(view);
+      expect(view.state.doc.toString()).toBe(`${doc.slice(0, cursor)}\n${doc.slice(cursor)}`);
+      pressBackspace(view);
+      expect(view.state.doc.toString()).toBe(doc);
+      expect(view.state.selection.main.head).toBe(cursor);
+    });
+  }
+
+  it("two Enters make a paragraph gap, two Backspaces undo it exactly", () => {
+    const view = makeEditor("hello", 5);
+    pressEnter(view);
+    pressEnter(view);
+    expect(view.state.doc.toString()).toBe("hello\n\n");
+    pressBackspace(view);
+    pressBackspace(view);
+    expect(view.state.doc.toString()).toBe("hello");
+    expect(view.state.selection.main.head).toBe(5);
+  });
+});
+
+// In a list, Enter continues the marker (insertNewlineContinueMarkup); its
+// bound inverse deleteMarkupBackward removes that continued marker in ONE
+// Backspace instead of nibbling a single char — the clean list reversal the
+// old keymap lacked (it had continue-Enter but no markup-aware Backspace).
+describe("Enter then Backspace — list continuation reverses cleanly", () => {
+  it("continues the bullet on Enter, and Backspace strips the marker as a unit", () => {
+    const view = makeEditor("- one", 5);
+    pressEnter(view);
+    expect(view.state.doc.toString()).toBe("- one\n- ");
+    // deleteMarkupBackward de-markers the continuation line in ONE press,
+    // replacing "- " with equal-width spaces (its documented first step) — the
+    // exact-bytes assertion bites: main's plain deleteCharBackward would leave
+    // "- one\n-" (dash intact), which is not this string.
+    pressBackspace(view);
+    expect(view.state.doc.toString()).toBe("- one\n  ");
+    // A second press deletes those spaces, fully clearing the added line.
+    pressBackspace(view);
+    expect(view.state.doc.toString()).toBe("- one\n");
   });
 });
 
