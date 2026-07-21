@@ -43,8 +43,13 @@ vi.mock("@/lib/account/client", async () => {
     mintAccountToken: vi.fn(),
   };
 });
+// These golden flows are the CLOUD magic-link path, so the front door must
+// resolve to a confirmed cloud descriptor (a null/absent one now paints the
+// door-NEUTRAL card, which has no email field). The synchronous peek returns
+// cloud too, so the front door paints cloud on first render (no neutral flash).
 vi.mock("@/lib/account/descriptor", () => ({
-  getDoorDescriptor: vi.fn().mockResolvedValue(null),
+  getDoorDescriptor: vi.fn().mockResolvedValue({ door: "cloud" }),
+  peekDoorDescriptor: vi.fn().mockReturnValue({ door: "cloud" }),
 }));
 vi.mock("@/lib/account/hosted-vault", () => ({
   openHostedVault: vi.fn(),
@@ -92,7 +97,7 @@ describe("Golden flows — history-depth measurements (mirrors WALK-nav.md)", ()
     vi.mocked(listVaults).mockReset();
     vi.mocked(logout).mockReset().mockResolvedValue(undefined);
     vi.mocked(mintAccountToken).mockReset().mockResolvedValue({ token: "acct-token" });
-    vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
+    vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue({ door: "cloud" });
     vi.mocked(openHostedVault).mockReset().mockResolvedValue("v1");
     vi.mocked(createHostedVault).mockReset().mockResolvedValue("v1");
   });

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetDoorDescriptorCacheForTests, getDoorDescriptor } from "./descriptor";
+import {
+  __resetDoorDescriptorCacheForTests,
+  getDoorDescriptor,
+  peekDoorDescriptor,
+} from "./descriptor";
 
 // HUB-PARITY P4 — the door descriptor is the ONE fetch that tells the app
 // which kind of door it's being served by. Fallback rule under test: ANY
@@ -7,19 +11,29 @@ import { __resetDoorDescriptorCacheForTests, getDoorDescriptor } from "./descrip
 // callers (Landing's FrontDoor, Welcome's address echo) treat identically to
 // "no descriptor / no auth block" — today's magic-link behavior.
 
-const STORAGE_KEY = "parachute:door-descriptor";
+// Durable cache is per-origin localStorage now (Fix 2). Key derived exactly as
+// descriptor.ts does, so a test can seed / assert the persisted entry.
+const STORAGE_KEY = `parachute:door-descriptor:${window.location.origin}`;
 
 function res(body: unknown, status = 200): Response {
   const text = typeof body === "string" ? body : JSON.stringify(body);
   return new Response(text, { status, headers: { "content-type": "application/json" } });
 }
 
+// Let the fire-and-forget background revalidation settle (a macrotask drains
+// the fetch → adopt/persist → notify microtask chain).
+function flush(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0));
+}
+
 beforeEach(() => {
+  localStorage.clear();
   sessionStorage.clear();
   __resetDoorDescriptorCacheForTests();
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  localStorage.clear();
   sessionStorage.clear();
   __resetDoorDescriptorCacheForTests();
 });
@@ -168,23 +182,108 @@ describe("getDoorDescriptor", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("persists the resolved value to sessionStorage under the pinned key", async () => {
+  it("persists the resolved (non-null) door to localStorage under the per-origin key", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "hub" }));
     await getDoorDescriptor(fetchImpl);
-    expect(JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ door: "hub" });
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ door: "hub" });
   });
 
-  it("persists a null resolution too (so a returning tab doesn't re-fetch a no-descriptor door)", async () => {
+  it("NEVER persists a null (fetch failure / no-door) to localStorage", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => res({}, 404));
     await getDoorDescriptor(fetchImpl);
-    expect(sessionStorage.getItem(STORAGE_KEY)).toBe("null");
+    await flush();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
-  it("reuses a sessionStorage cache entry without re-fetching (a fresh module load, e.g. hard reload)", async () => {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ door: "cloud" }));
-    const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "hub" }));
+  // Stale-while-revalidate: a known door from localStorage paints IMMEDIATELY,
+  // and the background refetch (which found a DIFFERENT door here) notifies via
+  // onRevalidate.
+  it("paints a known door from localStorage immediately, then revalidates on change", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ door: "cloud" }));
+    const seen: (unknown | null)[] = [];
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ door: "hub", auth: { methods: ["password"], signin_path: "/login" } }),
+    );
+    const first = await getDoorDescriptor(fetchImpl, (d) => seen.push(d));
+    // Painted the cached (stale) door without waiting on the network.
+    expect(first).toEqual({ door: "cloud" });
+    // Background revalidation swapped in the changed door.
+    await flush();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([{ door: "hub", auth: { methods: ["password"], signin_path: "/login" } }]);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({
+      door: "hub",
+      auth: { methods: ["password"], signin_path: "/login" },
+    });
+  });
+
+  it("does NOT notify onRevalidate when the refetch confirms the same door", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ door: "cloud" }));
+    const seen: (unknown | null)[] = [];
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "cloud" }));
+    const first = await getDoorDescriptor(fetchImpl, (d) => seen.push(d));
+    expect(first).toEqual({ door: "cloud" });
+    await flush();
+    expect(seen).toEqual([]);
+  });
+
+  // The offline self-heal: a known hub door SURVIVES a subsequent fetch failure
+  // — never overwritten, never cleared, never downgraded to null.
+  it("a known door survives a fetch FAILURE (not overwritten, cache + localStorage intact)", async () => {
+    const hub = { door: "hub", auth: { methods: ["password"], signin_path: "/login" } };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(hub));
+    const seen: (unknown | null)[] = [];
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("offline");
+    });
+    const first = await getDoorDescriptor(fetchImpl, (d) => seen.push(d));
+    expect(first).toEqual(hub);
+    await flush();
+    // Failure ignored: no notify, storage unchanged.
+    expect(seen).toEqual([]);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual(hub);
+    // A subsequent read still returns the known door.
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(hub);
+  });
+
+  // Offline COLD-launch: descriptor unfetchable but a previously-known hub is in
+  // localStorage → still hub (no cloud flash).
+  it("offline cold-launch → paints the previously-known hub from localStorage (no null flash)", async () => {
+    const hub = { door: "hub", auth: { methods: ["password"], signin_path: "/login" } };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(hub));
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("offline");
+    });
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(hub);
+  });
+
+  // Per-origin keying: a door cached for origin A must not leak into origin B.
+  it("per-origin keying — a hub cached at one origin does not contaminate another", async () => {
+    const otherOrigin = "https://cloud.example.com";
+    const hub = { door: "hub", auth: { methods: ["password"], signin_path: "/login" } };
+    // Seed origin A (the OTHER origin's key), then read as origin B (the test's
+    // live origin) — the two keys must not collide.
+    localStorage.setItem(`parachute:door-descriptor:${otherOrigin}`, JSON.stringify(hub));
+    const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "cloud" }));
+    // Live-origin read sees NO seed → fetches cloud.
     await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "cloud" });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    await flush();
+    // The other origin's entry is untouched.
+    expect(
+      JSON.parse(localStorage.getItem(`parachute:door-descriptor:${otherOrigin}`) ?? "null"),
+    ).toEqual(hub);
+  });
+
+  describe("peekDoorDescriptor (synchronous warm-cache read)", () => {
+    it("returns the localStorage door synchronously (no fetch)", () => {
+      const hub = { door: "hub", auth: { methods: ["password"], signin_path: "/login" } };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(hub));
+      expect(peekDoorDescriptor()).toEqual(hub);
+    });
+
+    it("returns null on a cold first visit (nothing known)", () => {
+      expect(peekDoorDescriptor()).toBeNull();
+    });
   });
 
   // F1/F3/F5 — cloud now publishes per-interval pricing on each plan row.

@@ -1,3 +1,4 @@
+import { __resetDoorDescriptorCacheForTests } from "@/lib/account/descriptor";
 import { saveLastSigninEmail } from "@/lib/account/store";
 import { MIRROR_FLAG_KEY } from "@/lib/mirror/flag";
 import { useToastStore } from "@/lib/toast/store";
@@ -13,6 +14,17 @@ function stubFetch() {
   );
 }
 
+// The signed-out boot tests here are the CLOUD front door: a null/absent door
+// descriptor now paints the door-NEUTRAL card (no email field). Seed the
+// durable per-origin cache with a confirmed cloud door so the front door paints
+// cloud synchronously (peekDoorDescriptor) — no neutral→cloud remount to race.
+function seedCloudDoor() {
+  localStorage.setItem(
+    `parachute:door-descriptor:${window.location.origin}`,
+    JSON.stringify({ door: "cloud" }),
+  );
+}
+
 describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -25,6 +37,11 @@ describe("App", () => {
     localStorage.setItem(MIRROR_FLAG_KEY, "false");
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useToastStore.setState({ toasts: [] });
+    // The door descriptor cache is a module-level memo + per-origin localStorage
+    // — reset it, then seed a confirmed cloud door so the signed-out front door
+    // paints cloud synchronously (no neutral flash to race).
+    __resetDoorDescriptorCacheForTests();
+    seedCloudDoor();
     // BrowserRouter is mounted with basename="/notes" (BASE_URL from Vite).
     // Tests simulate the external mount by placing the browser under /notes/.
     window.history.replaceState({}, "", "/notes/");
