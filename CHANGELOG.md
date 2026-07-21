@@ -1,5 +1,34 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.31] - 2026-07-21
+
+**Offline mirror — correctness fix: never serve a PARTIAL list from a mid-hydration mirror.**
+A vault's mirror hydrates by walking an `updated_at`-ordered cursor, but the offline list evaluator
+(`readNotesList`) sorts by `created_at` (the vault's non-cursor list default). While the initial cold
+hydration is still in flight, the mirror therefore holds an arbitrary, shifting SUBSET — so an offline
+list read (or the cold-launch seed) could present a partial vault as if it were the whole thing, with
+the visible set changing as hydration advanced. Aaron hit this live. This release gates mirror LIST
+reads on a **completed initial hydration**.
+
+- **Completeness gate in `readNotesList`** (`src/lib/mirror/read.ts`) — the evaluator now returns
+  `null` (caller stays network-only, exactly as for an unreproducible query shape) until the vault's
+  initial cold hydration has drained its cursor to exhaustion at least once. The signal is the
+  persisted **`lastSyncedAt`** watermark, which the engine writes only AFTER `drainCursor`'s full walk
+  completes — it is durable across restarts, is unaffected by the transient `hydrating` phase a warm
+  re-poll passes through every tick (so a complete mirror never briefly refuses reads), and is cleared
+  only by "Clear offline copy" (which correctly re-arms the gate so the re-fill runs cold). Because
+  both the offline fallback (`withMirrorList`) and the cold-launch seed (`useMirrorListSeed`) route
+  through `readNotesList`, one gate covers both. Before the mirror is ready, the app keeps its normal
+  network-first behavior and the "Saving your vault for offline · N" progress line is the user's cue.
+- **Single-note reads unchanged** — `readNote` is intentionally NOT gated: an already-mirrored note
+  opens correctly mid-hydration, and a not-yet-mirrored one already falls through to the network.
+- **Tag list exempt** — the mirrored tag list is written atomically (one `listTags()` → one
+  `setMirrorTags`) and only after a clean drain's reconcile sweep, so `getMirrorTags` never returns a
+  mid-hydration partial; no gate needed (documented at `withMirrorTags` in `queries.ts`).
+- **Drain cadence** — verified `drainCursor` already loops to cursor exhaustion within a SINGLE tick
+  (not one page per 60s), so a cold hydration finishes as fast as the network allows; no fast-path
+  change was needed.
+
 ## [0.20.30] - 2026-07-20
 
 **Offline mirror — ACTIVATION: the durable-offline mirror is now ON by default.** Waves 1–4 built

@@ -3,11 +3,19 @@ import { recordIdMap } from "@/lib/sync/id-map";
 import type { Note } from "@/lib/vault/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readNote, readNotesList } from "./read";
-import { upsertMirrorNote, upsertMirrorNotes } from "./store";
+import { setMirrorLastSyncedAt, upsertMirrorNote, upsertMirrorNotes } from "./store";
 
 async function freshDb(): Promise<LensDB> {
   indexedDB.deleteDatabase("parachute-lens");
   return openLensDB();
+}
+
+// Mark a vault's initial cold hydration as COMPLETE (the persisted `lastSyncedAt`
+// watermark the completeness gate reads). The faithful-evaluator tests below all
+// assert over a COMPLETE mirror, so they mark hydration done in `beforeEach`; the
+// dedicated "completeness gate" block leaves it unset to exercise the gate.
+async function markHydrated(db: LensDB, vaultId: string): Promise<void> {
+  await setMirrorLastSyncedAt(db, vaultId, Date.now());
 }
 
 function note(id: string, over: Partial<Note> = {}): Note {
@@ -29,6 +37,10 @@ describe("readNotesList — faithful evaluator over the mirror", () => {
   let db: LensDB;
   beforeEach(async () => {
     db = await freshDb();
+    // These tests assert the SHAPE of a complete mirror's answer, so the vault
+    // under test (`v1`) is marked hydrated. `v2` (the scoping test) is read-only
+    // via `v1`, so it needs no watermark.
+    await markHydrated(db, "v1");
   });
   afterEach(() => {
     db.close();
@@ -185,6 +197,48 @@ describe("readNotesList — faithful evaluator over the mirror", () => {
     await upsertMirrorNote(db, "v2", note("theirs"));
     const rows = await readNotesList(db, "v1", params({ sort: "desc", limit: "50" }));
     expect(rows?.map((r) => r.id)).toEqual(["mine"]);
+  });
+});
+
+describe("readNotesList — completeness gate (never serve a mid-hydration partial)", () => {
+  let db: LensDB;
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it("returns null while the initial cold hydration is in flight (no lastSyncedAt), even with rows present", async () => {
+    // Rows are streaming in via the updated_at-ordered cursor but the walk hasn't
+    // finished — the mirror holds an arbitrary, shifting SUBSET. A list read here
+    // must NOT present it as complete.
+    await upsertMirrorNotes(db, "v1", [
+      note("a", { createdAt: "2026-07-20T00:00:00Z" }),
+      note("b", { createdAt: "2026-07-19T00:00:00Z" }),
+    ]);
+    expect(await readNotesList(db, "v1", params({ sort: "desc", limit: "50" }))).toBeNull();
+  });
+
+  it("serves the mirror once the initial hydration completes (lastSyncedAt set)", async () => {
+    await upsertMirrorNotes(db, "v1", [
+      note("a", { createdAt: "2026-07-20T00:00:00Z" }),
+      note("b", { createdAt: "2026-07-19T00:00:00Z" }),
+    ]);
+    // Same data, now flagged complete → the gate opens.
+    await markHydrated(db, "v1");
+    const rows = await readNotesList(db, "v1", params({ sort: "desc", limit: "50" }));
+    expect(rows?.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  it("gates per-vault: v1 hydrated serves, v2 mid-hydration returns null", async () => {
+    await upsertMirrorNote(db, "v1", note("mine"));
+    await upsertMirrorNote(db, "v2", note("theirs"));
+    await markHydrated(db, "v1");
+    expect(
+      (await readNotesList(db, "v1", params({ sort: "desc", limit: "50" })))?.map((r) => r.id),
+    ).toEqual(["mine"]);
+    expect(await readNotesList(db, "v2", params({ sort: "desc", limit: "50" }))).toBeNull();
   });
 });
 

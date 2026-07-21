@@ -120,6 +120,42 @@ describe("MirrorEngine — hydration loop", () => {
     expect(await getMirrorLastSyncedAt(db, "v1")).toBeGreaterThan(0);
   });
 
+  it("commits the completeness watermark ONLY after the full drain — not after the first page", async () => {
+    // The read-side completeness gate keys on `lastSyncedAt`. Observe the mirror's
+    // readiness signals MID-drain: when the engine requests page 2, page 1 is
+    // already upserted but the walk isn't done, so `lastSyncedAt` and the "live"
+    // phase must NOT be set yet (the gate stays closed on a partial mirror). Only
+    // the terminating empty page flips them.
+    let midDrain: { lastSyncedAt: number | undefined; phase: string | undefined } | null = null;
+    const { client, calls } = cursorClient(() => ({ items: [] }));
+    client.queryNotesCursor = vi.fn(async (_p: unknown, cursor?: string): Promise<Page> => {
+      const c = cursor ?? "";
+      calls.push(c);
+      if (c === "") return { items: [note("a")], nextCursor: "c1" };
+      if (c === "c1") {
+        // Page 1 has landed; capture the readiness signals before page 2 applies.
+        midDrain = {
+          lastSyncedAt: await getMirrorLastSyncedAt(db, "v1"),
+          phase: (await getMirrorState(db, "v1"))?.phase,
+        };
+        return { items: [note("bb")], nextCursor: "c2" };
+      }
+      return { items: [], nextCursor: "c2" };
+    }) as unknown as VaultClient["queryNotesCursor"];
+
+    await setMirrorLastSweepAt(db, "v1", Date.now());
+    const engine = engineFor(db, client);
+    await engine.syncOnce();
+
+    // Mid-drain: partial mirror, watermark absent, phase still hydrating.
+    expect(midDrain).not.toBeNull();
+    expect(midDrain!.lastSyncedAt).toBeUndefined();
+    expect(midDrain!.phase).toBe("hydrating");
+    // After the full walk: watermark committed + phase live → gate opens.
+    expect(await getMirrorLastSyncedAt(db, "v1")).toBeGreaterThan(0);
+    expect(await getMirrorState(db, "v1")).toEqual({ phase: "live" });
+  });
+
   it("resumes from the persisted cursor rather than re-walking from empty", async () => {
     await setMirrorCursor(db, "v1", "resume-here");
     const { client, calls } = cursorClient((cursor) => {
