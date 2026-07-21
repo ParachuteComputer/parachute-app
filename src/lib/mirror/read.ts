@@ -8,12 +8,13 @@
 // semantics for the SMALL query subset the app's list hooks actually send, and
 // returns `null` for anything it can't reproduce faithfully — so a caller never
 // shows a list that DIFFERS from what the server would return (a wrong offline
-// list is worse than none). See `readNotesList`'s param guard.
+// list is worse than none). See `readNotesList`'s param guard (query SHAPE) and
+// its completeness gate (query TIME — never answer from a mid-hydration mirror).
 
 import type { LensDB } from "@/lib/sync/db";
 import { resolveNoteId } from "@/lib/sync/id-map";
 import type { Note } from "@/lib/vault/types";
-import { getMirrorNote, listMirrorNotes } from "./store";
+import { getMirrorLastSyncedAt, getMirrorNote, listMirrorNotes } from "./store";
 
 // Read a single note for the VIEW — always the FULL mirror row (content, links,
 // attachments), never a lean list stub. `resolveNoteId` maps a synced local id
@@ -70,6 +71,26 @@ export async function readNotesList(
   vaultId: string,
   params: URLSearchParams,
 ): Promise<Note[] | null> {
+  // COMPLETENESS GATE (the "a partial list is worse than none" invariant, in the
+  // TIME dimension — the param guard below covers the SHAPE dimension). The mirror
+  // hydrates via an `updated_at`-ordered cursor, but this evaluator sorts by
+  // `created_at` (the vault's non-cursor list default). MID-hydration the mirror
+  // therefore holds an arbitrary, shifting SUBSET (old-created-but-recently-updated
+  // notes surface first; the set changes as the cursor advances), so answering a
+  // list here would present a PARTIAL vault as if it were complete. Serve ONLY once
+  // the initial cold hydration has drained the cursor to exhaustion at least once —
+  // signalled by a persisted `lastSyncedAt`. That watermark is written only AFTER
+  // `drainCursor`'s walk completes (engine.ts), is DURABLE (it survives app
+  // restarts and the transient "hydrating" phase a warm re-poll passes through on
+  // every tick, so a complete mirror never briefly refuses reads), and is cleared
+  // only by "Clear offline copy" (`clearMirrorMeta`) — which correctly re-arms the
+  // gate so the re-fill runs cold. Before it lands, behave as if the mirror has no
+  // LIST (return null → the caller stays network-only; the HydrationLine progress
+  // is the user's cue). Single-note reads (`readNote`) are intentionally NOT gated:
+  // an already-mirrored note opens correctly mid-hydration, and a not-yet-mirrored
+  // one already falls through to the network.
+  if ((await getMirrorLastSyncedAt(db, vaultId)) == null) return null;
+
   for (const key of params.keys()) {
     // `search` is a real query the app sends but FTS isn't reproducible
     // offline; every other non-faithful param is a shape we don't model.

@@ -1,5 +1,5 @@
 import { MIRROR_FLAG_KEY } from "@/lib/mirror/flag";
-import { upsertMirrorNote, upsertMirrorNotes } from "@/lib/mirror/store";
+import { setMirrorLastSyncedAt, upsertMirrorNote, upsertMirrorNotes } from "@/lib/mirror/store";
 import { type LensDB, openLensDB } from "@/lib/sync/db";
 import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
@@ -116,6 +116,8 @@ describe("read hooks — mirror fallback (flag-gated)", () => {
       note("m1", { createdAt: "2026-07-20T00:00:00Z" }),
       note("m2", { createdAt: "2026-07-19T00:00:00Z" }),
     ]);
+    // The mirror only serves list reads once its initial cold hydration finished.
+    await setMirrorLastSyncedAt(h.db!, "v1", Date.now());
     restoreOnline = setOnline(false);
     const fetchSpy = vi.fn(() => Promise.reject(new Error("network must not be touched offline")));
     vi.stubGlobal("fetch", fetchSpy);
@@ -145,6 +147,8 @@ describe("read hooks — mirror fallback (flag-gated)", () => {
   it("flag ON + online: the mirror SEEDS the first paint, then the network revalidates and WINS", async () => {
     localStorage.setItem(MIRROR_FLAG_KEY, "true");
     await upsertMirrorNotes(h.db!, "v1", [note("seed1", { createdAt: "2026-07-20T00:00:00Z" })]);
+    // The cold-launch seed only fires once the initial hydration finished.
+    await setMirrorLastSyncedAt(h.db!, "v1", Date.now());
     restoreOnline = setOnline(true);
     // Hold the poll open so we can observe the seed BEFORE the network lands.
     let resolveFetch!: (r: Response) => void;
@@ -175,6 +179,8 @@ describe("read hooks — mirror fallback (flag-gated)", () => {
     // path falls back to the mirror instead of erroring.
     localStorage.setItem(MIRROR_FLAG_KEY, "true");
     await upsertMirrorNotes(h.db!, "v1", [note("cached1", { createdAt: "2026-07-20T00:00:00Z" })]);
+    // Unreachable falls back to the mirror only once hydration finished.
+    await setMirrorLastSyncedAt(h.db!, "v1", Date.now());
     restoreOnline = setOnline(true);
     vi.stubGlobal(
       "fetch",
@@ -185,6 +191,80 @@ describe("read hooks — mirror fallback (flag-gated)", () => {
     await waitFor(() => expect(result.current.data).toBeDefined());
     expect(result.current.data?.map((n) => n.id)).toEqual(["cached1"]);
     expect(result.current.isError).toBe(false);
+  });
+
+  it("flag ON + offline, hydration INCOMPLETE: the LIST does NOT serve a partial mirror (stays network-only)", async () => {
+    // The bug this gate closes: with rows present but the initial cold hydration
+    // still in flight (no lastSyncedAt), the mirror holds a shifting SUBSET
+    // (updated_at-ordered), so a list read must NOT paint it as complete. Offline
+    // + networkMode "always" → the queryFn runs, readNotesList returns null (gate
+    // closed), the network is unreachable → the query errors rather than showing a
+    // partial list. NB: `upsertMirrorNotes` deliberately does NOT set lastSyncedAt.
+    localStorage.setItem(MIRROR_FLAG_KEY, "true");
+    await upsertMirrorNotes(h.db!, "v1", [
+      note("partial1", { createdAt: "2026-07-20T00:00:00Z" }),
+      note("partial2", { createdAt: "2026-07-19T00:00:00Z" }),
+    ]);
+    restoreOnline = setOnline(false);
+    const fetchSpy = vi.fn(() => Promise.reject(new TypeError("Failed to fetch")));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { result } = renderHook(() => useNotes(DEFAULT_NOTE_QUERY), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    // A PARTIAL list was never presented as data.
+    expect(result.current.data).toBeUndefined();
+  });
+
+  it("cold-launch SEED is suppressed while hydration is incomplete (no partial first paint)", async () => {
+    // The seed path (useMirrorListSeed → readNotesList) obeys the same gate as the
+    // offline fallback. Hold the network open so the ONLY thing that could paint
+    // is the seed; with hydration incomplete (no lastSyncedAt), nothing paints —
+    // a partial mirror never flashes as the first frame. (The complete-mirror seed
+    // IS covered by the "mirror SEEDS the first paint" test above, which sets
+    // lastSyncedAt.)
+    localStorage.setItem(MIRROR_FLAG_KEY, "true");
+    await upsertMirrorNotes(h.db!, "v1", [note("seedgate", { createdAt: "2026-07-20T00:00:00Z" })]);
+    restoreOnline = setOnline(true);
+    let resolveFetch!: (r: Response) => void;
+    const fetchPromise = new Promise<Response>((res) => {
+      resolveFetch = res;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => fetchPromise),
+    );
+
+    const { result } = renderHook(() => useNotes(DEFAULT_NOTE_QUERY), {
+      wrapper: makeWrapper(),
+    });
+    // The query is fetching (network held open) and the seed found the gate
+    // closed, so there is no placeholder data to paint.
+    await waitFor(() => expect(result.current.fetchStatus).toBe("fetching"));
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isPlaceholderData).toBe(false);
+
+    // Let the held network settle so the test tears down cleanly.
+    act(() => {
+      resolveFetch(jsonResponse([{ id: "seedgate", createdAt: "2026-07-20T00:00:00Z" }]));
+    });
+    await waitFor(() => expect(result.current.data?.map((n) => n.id)).toEqual(["seedgate"]));
+  });
+
+  it("single-NOTE read is unaffected by hydration phase — opens mid-hydration (no lastSyncedAt)", async () => {
+    // readNote is intentionally NOT gated: an already-mirrored note opens
+    // correctly mid-hydration, and a not-yet-mirrored one falls through to the
+    // network. No lastSyncedAt is set here.
+    localStorage.setItem(MIRROR_FLAG_KEY, "true");
+    await upsertMirrorNote(h.db!, "v1", note("mid-note", { content: "# opens mid-hydration" }));
+    restoreOnline = setOnline(false);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new Error("offline"))),
+    );
+
+    const { result } = renderHook(() => useNote("mid-note"), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data?.content).toBe("# opens mid-hydration");
   });
 
   it("flag OFF + offline: the query PAUSES (network-only) and never reads the mirror", async () => {

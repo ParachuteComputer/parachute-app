@@ -126,6 +126,14 @@ async function withMirrorNote(
 // `useTags`' shape — so the filter bar keeps working offline. The schema-bearing
 // reads (`useTagsWithSchema` / `useTag`) stay network-only: the mirror doesn't
 // hold tag schemas.
+//
+// No completeness gate here (unlike the note LIST reads, which the mirror gates
+// on a finished cold hydration): the tag list is written ATOMICALLY — the
+// reconcile sweep calls `listTags()` once and persists the WHOLE array in a
+// single `setMirrorTags`, and the sweep runs only AFTER a clean drain
+// (`maybeSweep`). So `getMirrorTags` returns either `undefined` (nothing written
+// yet → this helper falls through to the network) or the COMPLETE tag set, never
+// a mid-hydration partial. There's no shifting-subset hazard to gate against.
 async function withMirrorTags(
   db: LensDB | null,
   vaultId: string | null,
