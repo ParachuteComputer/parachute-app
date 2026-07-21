@@ -1,5 +1,38 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.32] - 2026-07-21
+
+**Door-aware pre-auth — stop showing cloud onboarding on a self-hosted hub.**
+The hub already serves a correct door descriptor (`door: "hub"` + an `auth` block), but the app
+DEFAULTED to cloud onboarding (the magic-link email form + hardcoded pricing) whenever the descriptor
+was unresolved, failed, stale, or absent — so a self-hosted box (and any surface-mount served by a
+descriptor-less host) landed on a cloud sign-up. The door is a property of the SERVING origin's
+runtime; the app now treats an unknown door as NEUTRAL, never cloud, and gates cloud copy on a
+CONFIRMED cloud-shaped descriptor. No hostname assumptions; account endpoints stay
+serving-origin-relative.
+
+- **Neutral unknown-door state** (`src/app/routes/Landing.tsx`) — `FrontDoor` now forks into THREE
+  states instead of "hub-or-cloud": (a) UNRESOLVED (null / in-flight / unclassifiable) → a
+  door-NEUTRAL shell (mark + headline + one "Sign in" → the `/add` connect flow), with NO cloud email
+  form, NO pricing, NO "create your account"; (b) CONFIRMED cloud/magic-link → the existing email form
+  (unchanged); (c) CONFIRMED hub/password → the hybrid card below. This also fixes the surface-mount
+  class (app at `/surface/<slug>` on a descriptor-less host → neutral, not cloud onboarding).
+- **Durable per-origin door cache** (`src/lib/account/descriptor.ts`) — the resolved door moved from
+  sessionStorage to **localStorage keyed by origin**, with **stale-while-revalidate**: a door already
+  known for the origin paints synchronously (`peekDoorDescriptor`, no neutral flash on a returning
+  tab) while a single background refetch runs and `onRevalidate` swaps in a changed door. A fetch
+  FAILURE never overwrites a known door and `null` is NEVER persisted — so a box that once identified
+  as a hub keeps painting hub across reloads and OFFLINE (pairs with the offline-mirror arc).
+- **Hybrid hub sign-in card** (Aaron's ratified choice) — a confirmed-hub door renders one PRIMARY
+  action, **"Open your parachute"** (OAuth-connect at the serving origin — the hub's login rides
+  inside its authorize/consent — landing straight in the vault; reuses the `/add` `beginOAuth` path,
+  skipping the URL form), plus a quiet SECONDARY **"Manage this parachute"** (the existing ceremony
+  hop to the hub's `/login?next=<mount-aware /welcome>` → account session → vault manager). The card
+  names the box ("Sign in to `<serving-origin-host>`"); no cloud email/pricing anywhere on it.
+- **Descriptor-driven pricing** — the cloud form's "Plans from $N a year" line is derived from the
+  descriptor's `plans` (cheapest advertised yearly, falling back to monthly) instead of a hardcoded
+  string, so the copy travels with the door (cloud carries `plans`; a hub's is empty → no price line).
+
 ## [0.20.31] - 2026-07-21
 
 **Offline mirror — correctness fix: never serve a PARTIAL list from a mid-hydration mirror.**

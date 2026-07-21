@@ -2,17 +2,22 @@ import { Landing } from "@/app/routes/Landing";
 import { getSession, requestMagicLink } from "@/lib/account/client";
 import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { openHostedVault } from "@/lib/account/hosted-vault";
+import { beginOAuth } from "@/lib/vault/oauth";
+import { probeForIssuer } from "@/lib/vault/probe";
 import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The front door (SYNTHESIS #1): ONE email field that both signs in and creates
-// (magic-link resolves new-vs-returning). Plus the self-hosted side door, the
-// already-signed-in card (#9), and net-error weather (#12). HUB-PARITY P4 adds
-// the ONE door-conditional branch: a password-only door swaps the email form
-// for a ceremony-hop card (see the "front door — door descriptor branch"
-// describe block below).
+// The front door forks on the door descriptor into THREE states (the fix for
+// "cloud onboarding on a hub"):
+//   - CONFIRMED cloud/magic-link → the email form (sign in OR create).
+//   - CONFIRMED hub/password     → the HYBRID card (OAuth "Open your parachute"
+//                                  + quiet "Manage this parachute").
+//   - UNRESOLVED (null / in-flight / unclassifiable) → a door-NEUTRAL shell,
+//                                  never cloud onboarding.
+// Plus the self-hosted side door, the already-signed-in card (#9), and
+// net-error weather (#12).
 
 vi.mock("@/lib/account/client", () => ({
   getSession: vi.fn().mockResolvedValue({ signed_in: false, csrf: "csrf-123" }),
@@ -20,15 +25,29 @@ vi.mock("@/lib/account/client", () => ({
   logout: vi.fn().mockResolvedValue(undefined),
 }));
 
-// Defaults to null (no descriptor) — the documented fallback that keeps every
-// pre-P4 test's behavior byte-unchanged; individual tests override per fixture.
 vi.mock("@/lib/account/descriptor", () => ({
   getDoorDescriptor: vi.fn().mockResolvedValue(null),
+  // Cold synchronous peek (no warm cache) → the front door starts NEUTRAL and
+  // resolves to the confirmed card via getDoorDescriptor; tests use findBy.
+  peekDoorDescriptor: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock("@/lib/account/hosted-vault", () => ({
   openHostedVault: vi.fn().mockResolvedValue("v1"),
 }));
+
+// The hub card's PRIMARY begins OAuth at the serving origin; mock the two
+// pieces it reaches for so a click can be asserted without a live issuer.
+vi.mock("@/lib/vault/oauth", () => ({
+  beginOAuth: vi.fn(),
+}));
+vi.mock("@/lib/vault/probe", () => ({
+  probeForIssuer: vi.fn(),
+}));
+
+// A confirmed cloud descriptor — the fixture the cloud-form tests run against
+// (a null/absent descriptor now renders the NEUTRAL card, not the email form).
+const CLOUD_DESCRIPTOR = { door: "cloud" as const };
 
 function renderLanding(ui = <Landing />, initial = "/", navLog?: NavLogEntry[]) {
   return render(
@@ -44,14 +63,15 @@ function renderLanding(ui = <Landing />, initial = "/", navLog?: NavLogEntry[]) 
   );
 }
 
-describe("Landing — the front door", () => {
+describe("Landing — the front door (confirmed cloud)", () => {
   beforeEach(() => {
     localStorage.clear();
     // Re-establish the factory defaults each run (mockClear alone would leave a
     // prior test's override in place; restoreAllMocks would wipe the impl).
     vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
     vi.mocked(requestMagicLink).mockReset().mockResolvedValue(undefined);
-    vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
+    // The cloud email form only paints for a CONFIRMED cloud descriptor now.
+    vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(CLOUD_DESCRIPTOR);
     vi.mocked(openHostedVault).mockReset().mockResolvedValue("v1");
   });
 
@@ -59,9 +79,9 @@ describe("Landing — the front door", () => {
     vi.unstubAllGlobals();
   });
 
-  it("leads with one email field that signs in OR creates (not vault-naming)", () => {
+  it("leads with one email field that signs in OR creates (not vault-naming)", async () => {
     renderLanding();
-    expect(screen.getByText(/sign in or create your account/i)).toBeInTheDocument();
+    expect(await screen.findByText(/sign in or create your account/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /email me a sign-in link/i })).toBeInTheDocument();
     expect(screen.getByText(/one link does both/i)).toBeInTheDocument();
@@ -70,9 +90,9 @@ describe("Landing — the front door", () => {
     expect(screen.queryByText(/what should we call your vault/i)).not.toBeInTheDocument();
   });
 
-  it("keeps the CTA disabled until a plausible email is entered", () => {
+  it("keeps the CTA disabled until a plausible email is entered", async () => {
     renderLanding();
-    const cta = screen.getByRole("button", { name: /email me a sign-in link/i });
+    const cta = await screen.findByRole("button", { name: /email me a sign-in link/i });
     expect(cta).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: "nope" } });
     expect(cta).toBeDisabled();
@@ -84,7 +104,7 @@ describe("Landing — the front door", () => {
 
   it("requests the magic link (JSON, same-origin) and advances to check-email", async () => {
     renderLanding();
-    fireEvent.change(screen.getByLabelText(/email address/i), {
+    fireEvent.change(await screen.findByLabelText(/email address/i), {
       target: { value: "moss@example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: /email me a sign-in link/i }));
@@ -93,18 +113,40 @@ describe("Landing — the front door", () => {
     expect(requestMagicLink).toHaveBeenCalledWith("moss@example.com", "csrf-123", "/welcome");
   });
 
-  it("offers the self-hosted side door → /add", () => {
+  it("offers the self-hosted side door → /add", async () => {
     renderLanding();
-    expect(screen.getByRole("link", { name: /connect your own vault/i })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: /connect your own vault/i })).toHaveAttribute(
       "href",
       "/add",
     );
   });
 
-  it("shows the expired-link cue on ?link=expired", () => {
+  it("shows the expired-link cue on ?link=expired", async () => {
     renderLanding(<Landing />, "/?link=expired");
-    expect(screen.getByText(/that link has/i)).toBeInTheDocument();
+    expect(await screen.findByText(/that link has/i)).toBeInTheDocument();
     expect(screen.getByText(/no harm done/i)).toBeInTheDocument();
+  });
+
+  // The pricing line travels WITH the door: cloud's descriptor carries `plans`,
+  // and the "from" price is derived (cheapest yearly), not hardcoded.
+  it("derives the plans price line from the descriptor's `plans` (cheapest yearly)", async () => {
+    vi.mocked(getDoorDescriptor).mockResolvedValue({
+      door: "cloud",
+      plans: [
+        {
+          id: "entry",
+          name: "Entry",
+          intervals: { yearly: { available: true, price: 10, label: "$10/yr" } },
+        },
+        {
+          id: "standard",
+          name: "Standard",
+          intervals: { yearly: { available: true, price: 25, label: "$25/yr" } },
+        },
+      ],
+    });
+    renderLanding();
+    expect(await screen.findByText(/plans from \$10 a year/i)).toBeInTheDocument();
   });
 
   it("renders the already-signed-in card (never a sign-in field) for a signed-in session", () => {
@@ -162,16 +204,18 @@ describe("Landing — the front door", () => {
   });
 });
 
-// HUB-PARITY P4 — the front door's ONE door-conditional branch (SYNTHESIS
-// "PORTABILITY"): a password-only door (a hub) swaps the magic-link email
-// form for a ceremony-hop card. Three fixtures per the build plan: magic_link
-// (unchanged), password+signup, password-no-signup — plus the mount-aware hop
-// URL under a simulated `/app` base (a hub-mounted app).
-describe("Landing — front door, door descriptor branch", () => {
+// The front door's door-descriptor fork: the NEUTRAL default (the bug fix), the
+// hub HYBRID card, and the preserved cloud onboarding.
+describe("Landing — front door, door descriptor fork", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
     vi.mocked(requestMagicLink).mockReset().mockResolvedValue(undefined);
+    vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
+    vi.mocked(beginOAuth)
+      .mockReset()
+      .mockResolvedValue({ authorizeUrl: "https://hub.example/authorize?x=1" } as never);
+    vi.mocked(probeForIssuer).mockReset().mockResolvedValue("https://hub.example");
   });
 
   afterEach(() => {
@@ -188,33 +232,84 @@ describe("Landing — front door, door descriptor branch", () => {
     document.head.appendChild(meta);
   }
 
-  it("magic_link door → the existing email form (byte-unchanged), not the ceremony-hop card", async () => {
+  // (a) UNRESOLVED — null / in-flight / unclassifiable — is the door-NEUTRAL
+  // shell: a "Sign in" affordance to /add, and NONE of the cloud onboarding.
+  it("null / unresolved descriptor → NEUTRAL card (no cloud email, no pricing, no create-account)", async () => {
+    vi.mocked(getDoorDescriptor).mockResolvedValue(null);
+    renderLanding();
+    const signIn = await screen.findByRole("link", { name: /^sign in/i });
+    expect(signIn).toHaveAttribute("href", "/add");
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/free for 30 days/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/plans from/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sign in or create your account/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /create your account/i })).not.toBeInTheDocument();
+  });
+
+  // A descriptor claiming a door but carrying no usable auth is unclassifiable
+  // → still NEUTRAL, never cloud.
+  it("an unclassifiable descriptor ({ door: 'hub' }, no auth) → NEUTRAL, not cloud", async () => {
+    vi.mocked(getDoorDescriptor).mockResolvedValue({ door: "hub" });
+    renderLanding();
+    expect(await screen.findByRole("link", { name: /^sign in/i })).toHaveAttribute("href", "/add");
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
+  });
+
+  // (b) CONFIRMED cloud — the existing onboarding is untouched.
+  it("confirmed cloud descriptor → the existing cloud email form (no regression)", async () => {
     vi.mocked(getDoorDescriptor).mockResolvedValue({
       door: "cloud",
       auth: { methods: ["magic_link"], signin_path: "/login" },
     });
     renderLanding();
-    await waitFor(() => expect(getDoorDescriptor).toHaveBeenCalled());
-    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /continue to sign in/i })).not.toBeInTheDocument();
+    expect(await screen.findByLabelText(/email address/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /email me a sign-in link/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open your parachute/i })).not.toBeInTheDocument();
   });
 
-  it("password door + signup_path → the ceremony-hop card + a quiet signup link, mount-aware hop URL", async () => {
+  // (c) CONFIRMED hub — the HYBRID card. PRIMARY begins OAuth at the serving
+  // origin (fastest to notes); no cloud email / pricing anywhere on it.
+  it("confirmed hub → hybrid card: PRIMARY 'Open your parachute' begins OAuth at the serving origin", async () => {
+    vi.mocked(getDoorDescriptor).mockResolvedValue({
+      door: "hub",
+      auth: { methods: ["password"], signin_path: "/login" },
+    });
+    const assign = vi.fn();
+    vi.stubGlobal("location", {
+      ...window.location,
+      host: "hub.example.com",
+      origin: "https://hub.example.com",
+      assign,
+    });
+
+    renderLanding();
+    const primary = await screen.findByRole("button", { name: /open your parachute/i });
+    // No cloud onboarding on the hub card.
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/free for 30 days/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/plans from/i)).not.toBeInTheDocument();
+    // Names the box.
+    expect(screen.getByText(/hub\.example\.com/)).toBeInTheDocument();
+
+    fireEvent.click(primary);
+    await waitFor(() => expect(probeForIssuer).toHaveBeenCalledWith("https://hub.example.com"));
+    await waitFor(() => expect(beginOAuth).toHaveBeenCalledWith("https://hub.example"));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://hub.example/authorize?x=1"));
+  });
+
+  it("confirmed hub → hybrid card: SECONDARY 'Manage this parachute' hops to the door /login?next=<mount /welcome>", async () => {
     vi.mocked(getDoorDescriptor).mockResolvedValue({
       door: "hub",
       auth: { methods: ["password"], signin_path: "/login" },
       signup_path: "/signup",
     });
     stubAppMount();
-    vi.stubGlobal("location", { ...window.location, assign: vi.fn() });
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
 
     renderLanding();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /continue to sign in/i })).toBeInTheDocument(),
-    );
-    // The magic-link form is gone — no email field on a password-only door.
-    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/sign in to your parachute/i)).toBeInTheDocument();
+    const manage = await screen.findByRole("button", { name: /manage this parachute/i });
+    // The quiet signup affordance rides along on a self-serve door.
     expect(screen.getByRole("link", { name: /create your account/i })).toHaveAttribute(
       "href",
       "/signup",
@@ -222,45 +317,52 @@ describe("Landing — front door, door descriptor branch", () => {
     // The self-host side door stays on this branch too.
     expect(screen.getByRole("link", { name: /connect your own vault/i })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /continue to sign in/i }));
+    fireEvent.click(manage);
     // signin_path is the DOOR's own path — origin-rooted, NEVER mount-prefixed.
     // next IS mount-prefixed (`/app/welcome`) — under a hub the app serves at
     // `/app`.
-    expect(window.location.assign).toHaveBeenCalledWith(
-      `/login?next=${encodeURIComponent("/app/welcome")}`,
-    );
+    expect(assign).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/app/welcome")}`);
   });
 
-  it("password door, no signup_path → the operator-provisioned line, no signup link", async () => {
+  it("confirmed hub, no signup_path → the operator-provisioned line, no signup link", async () => {
     vi.mocked(getDoorDescriptor).mockResolvedValue({
       door: "hub",
       auth: { methods: ["password"], signin_path: "/login" },
     });
 
     renderLanding();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /continue to sign in/i })).toBeInTheDocument(),
-    );
+    await screen.findByRole("button", { name: /open your parachute/i });
     expect(
       screen.getByText(/accounts on this parachute are created by its operator/i),
     ).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /create your account/i })).not.toBeInTheDocument();
   });
 
-  it("password door with no mount base → the hop URL falls back to root (`/welcome`, no prefix)", async () => {
+  it("confirmed hub with no mount base → the manage hop URL falls back to root (`/welcome`, no prefix)", async () => {
     vi.mocked(getDoorDescriptor).mockResolvedValue({
       door: "hub",
       auth: { methods: ["password"], signin_path: "/login" },
     });
-    vi.stubGlobal("location", { ...window.location, assign: vi.fn() });
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
 
     renderLanding();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /continue to sign in/i })).toBeInTheDocument(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /continue to sign in/i }));
-    expect(window.location.assign).toHaveBeenCalledWith(
-      `/login?next=${encodeURIComponent("/welcome")}`,
-    );
+    const manage = await screen.findByRole("button", { name: /manage this parachute/i });
+    fireEvent.click(manage);
+    expect(assign).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/welcome")}`);
+  });
+
+  it("hub PRIMARY falls back to the /add connect form when OAuth can't start", async () => {
+    vi.mocked(getDoorDescriptor).mockResolvedValue({
+      door: "hub",
+      auth: { methods: ["password"], signin_path: "/login" },
+    });
+    vi.mocked(beginOAuth).mockRejectedValue(new Error("insecure context"));
+
+    renderLanding();
+    const primary = await screen.findByRole("button", { name: /open your parachute/i });
+    fireEvent.click(primary);
+    // Hands off to the full connect form (stubbed route content).
+    await waitFor(() => expect(screen.getByText("Add form")).toBeInTheDocument());
   });
 });

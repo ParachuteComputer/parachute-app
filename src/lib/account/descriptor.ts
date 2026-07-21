@@ -5,14 +5,26 @@
  * from anywhere — per the app's contract-of-record convention (see
  * `types.ts:1-16`), these shapes are PINNED LOCALLY, verified against the P0
  * design. Same-origin, public (no session/cookie needed): whoever serves the
- * app also serves this file.
+ * app also serves this file. The door is a property of the SERVING ORIGIN's
+ * runtime — no hostname assumptions, and account endpoints stay
+ * serving-origin-relative (the my.-canonical intersection).
  *
- * Fallback rule (pin it here, it's load-bearing): `null` (fetch failed,
- * network error, non-200, unparsable body) OR a descriptor with no `auth`
- * block ⇒ the app behaves EXACTLY as it does today — the magic-link door.
- * Cloud is the only currently-shipped door and it has no `auth` block yet, so
- * this is the safe, ship-today default; a hub descriptor adds `auth` to
- * switch the front door to the password-ceremony-hop branch (Landing.tsx).
+ * Classification rule (pin it here — it's load-bearing). This resolver is the
+ * data side; the front door (`Landing.tsx`) forks on it into THREE states:
+ *   - a CONFIRMED cloud/magic-link descriptor → the cloud email form,
+ *   - a CONFIRMED hub/password descriptor (`auth`, no `magic_link`) → the hub
+ *     hybrid card,
+ *   - anything UNRESOLVED — `null` (fetch failed / non-200 / unparsable), or a
+ *     descriptor we can't classify — → a door-NEUTRAL shell.
+ * The old rule ("null ⇒ magic-link, cloud is the only shipped door") was the
+ * bug: a hub's descriptor going unfetched/stale would DEFAULT the app to cloud
+ * onboarding. Cloud copy is now gated on a confirmed cloud shape, never the
+ * absence of a signal.
+ *
+ * Durable cache (Fix 2): the resolved door is memoized per-origin in
+ * localStorage with stale-while-revalidate — a box that once identified as a
+ * hub keeps painting hub across reloads and OFFLINE, because a fetch FAILURE
+ * never overwrites a known door and `null` is NEVER persisted.
  */
 
 import type { BillingInterval, DoorPlan, DoorPlanInterval } from "./types";
@@ -44,14 +56,34 @@ export interface DoorDescriptor {
 
 type Fetch = typeof fetch;
 
-const STORAGE_KEY = "parachute:door-descriptor";
+// Per-origin localStorage key. The door is a serving-origin runtime property,
+// so keying by origin means a cloud origin and a hub origin sharing one browser
+// never cross-contaminate each other's cached door.
+const STORAGE_PREFIX = "parachute:door-descriptor";
+
+function storageKey(): string {
+  const origin = typeof window !== "undefined" && window.location ? window.location.origin : "";
+  return `${STORAGE_PREFIX}:${origin}`;
+}
 
 // In-module memo so a single tab pays at most one fetch across the whole app
 // lifetime, regardless of how many components call getDoorDescriptor() during
-// boot. `undefined` = not yet resolved this module lifetime; `null` is itself
-// a valid resolved value (no door / no descriptor).
+// boot.
+//   `undefined` = nothing known yet (no localStorage seed, no resolved fetch)
+//   `null`      = resolved to "no door" via a fetch MISS (never from storage —
+//                 we never persist null)
+//   descriptor  = a known door (seeded from localStorage or a fresh fetch)
 let cache: DoorDescriptor | null | undefined;
 let inflight: Promise<DoorDescriptor | null> | null = null;
+// The background revalidation runs at most ONCE per module lifetime — a door is
+// a stable per-origin property, so one stale-while-revalidate pass is enough
+// (this also keeps the "one fetch across all consumers" memo guarantee).
+let revalidationStarted = false;
+let revalidationDone = false;
+// Consumers that asked to be told when the background revalidation CHANGES the
+// painted door (stale-while-revalidate "update on change"). Fired at most once,
+// only when the fresh door differs from the one already painted.
+const revalidateListeners = new Set<(d: DoorDescriptor | null) => void>();
 
 const INTERVAL_KEYS: readonly BillingInterval[] = ["monthly", "quarterly", "yearly"];
 
@@ -196,61 +228,122 @@ async function fetchDescriptor(fetchImpl: Fetch): Promise<DoorDescriptor | null>
   }
 }
 
-function persist(value: DoorDescriptor | null): void {
+/**
+ * Read the durable per-origin door from localStorage. Returns `undefined` for
+ * "nothing known" (absent / unparsable / a value that normalizes to null) so
+ * the caller falls through to a fresh fetch — we never persist null, but a
+ * legacy/tampered entry is treated as no-knowledge rather than trusted.
+ */
+function readPersisted(): DoorDescriptor | undefined {
   try {
-    sessionStorage.setItem(STORAGE_KEY, value === null ? "null" : JSON.stringify(value));
+    const raw = localStorage.getItem(storageKey());
+    if (raw == null) return undefined;
+    const parsed = normalizeDescriptor(JSON.parse(raw));
+    return parsed === null ? undefined : parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Persist a KNOWN door (never null) to the per-origin localStorage key. */
+function persist(value: DoorDescriptor): void {
+  try {
+    localStorage.setItem(storageKey(), JSON.stringify(value));
   } catch {
     // best-effort (private mode / storage full) — the in-module memo still
     // holds for the rest of this tab's lifetime.
   }
 }
 
-/**
- * Resolve the door descriptor, memoized in-module + sessionStorage (key
- * `parachute:door-descriptor`) so a boot with several consumers (the front
- * door, Welcome's naming echo, the boot dispatcher) pays exactly one fetch.
- * Returns `null` on any non-200 / network / parse failure (see the fallback
- * rule above) — callers never need to distinguish "no door" from "old door".
- */
-export async function getDoorDescriptor(
-  fetchImpl: Fetch = fetch.bind(globalThis),
-): Promise<DoorDescriptor | null> {
-  if (cache !== undefined) return cache;
-  if (inflight) return inflight;
-
-  // sessionStorage survives a hard reload within the same tab (the in-module
-  // memo doesn't — a fresh module instance loses it), so a returning tab
-  // still skips the network round-trip.
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (raw != null) {
-      try {
-        cache = raw === "null" ? null : normalizeDescriptor(JSON.parse(raw));
-        return cache;
-      } catch {
-        // corrupted cache entry — fall through and fetch fresh
-      }
-    }
-  } catch {
-    // sessionStorage unavailable (private mode / SSR) — fetch fresh below;
-    // the in-module memo still dedupes concurrent callers this tab.
-  }
-
+/** Kick the single background revalidation for this module lifetime. */
+function startRevalidate(fetchImpl: Fetch): void {
+  if (revalidationStarted) return;
+  revalidationStarted = true;
   inflight = fetchDescriptor(fetchImpl)
-    .then((result) => {
-      cache = result;
-      persist(result);
-      return result;
+    .then((fresh) => {
+      if (fresh !== null) {
+        // A real door — adopt + persist. Tell listeners only when the painted
+        // door actually CHANGED (a returning tab whose door is unchanged must
+        // not trigger a spurious re-render).
+        const changed = JSON.stringify(cache) !== JSON.stringify(fresh);
+        cache = fresh;
+        persist(fresh);
+        if (changed) for (const cb of revalidateListeners) cb(fresh);
+      } else if (cache === undefined) {
+        // A cold MISS (no cached door AND the fetch failed / found nothing) —
+        // record it in-memo so callers resolve to `null`, but DON'T persist
+        // null and DON'T clobber (there's nothing to clobber).
+        cache = null;
+        for (const cb of revalidateListeners) cb(null);
+      }
+      // else: `fresh === null` but a door is already KNOWN — keep it. A fetch
+      // failure must NEVER downgrade a known door (the offline self-heal).
+      revalidationDone = true;
+      revalidateListeners.clear();
+      return cache ?? null;
     })
     .finally(() => {
       inflight = null;
     });
-  return inflight;
 }
 
-/** Test-only: clear the in-module memo (sessionStorage is cleared by the
- *  test's own `sessionStorage.clear()` in `beforeEach`). */
+/**
+ * Resolve the door descriptor, memoized in-module + a durable per-origin
+ * localStorage cache so a boot with several consumers (the front door,
+ * Welcome's naming echo, the boot dispatcher) pays exactly one fetch and a
+ * returning/OFFLINE tab paints its last-known door immediately.
+ *
+ * Stale-while-revalidate: a known door (from localStorage) is returned
+ * synchronously while a single background refetch runs; pass `onRevalidate` to
+ * be notified if that refetch CHANGES the door. Returns `null` only when
+ * there's no cached door AND the fetch resolves to nothing — a failure never
+ * downgrades a door already known for this origin.
+ */
+export async function getDoorDescriptor(
+  fetchImpl: Fetch = fetch.bind(globalThis),
+  onRevalidate?: (d: DoorDescriptor | null) => void,
+): Promise<DoorDescriptor | null> {
+  // Seed the memo from the durable per-origin cache on first call (survives a
+  // hard reload / fresh module instance — the in-module memo alone doesn't).
+  if (cache === undefined) {
+    const persisted = readPersisted();
+    if (persisted !== undefined) cache = persisted;
+  }
+
+  // Register the change listener only while the revalidation can still fire —
+  // once it's done, this caller already has the freshest value via the return.
+  if (onRevalidate && !revalidationDone) revalidateListeners.add(onRevalidate);
+
+  startRevalidate(fetchImpl);
+
+  // Paint the last-known door immediately when we have one; otherwise (cold,
+  // nothing cached) wait for the in-flight fetch.
+  if (cache !== undefined) return cache;
+  return inflight ?? null;
+}
+
+/**
+ * Synchronous best-known door for THIS origin — the durable per-origin cache
+ * (in-module memo, else localStorage), WITHOUT triggering a fetch. Lets the
+ * front door paint the RIGHT door on first render (no neutral flash) when the
+ * door is already known for this origin; returns `null` for a genuine cold
+ * first visit, where the caller shows the neutral state until
+ * `getDoorDescriptor` resolves.
+ */
+export function peekDoorDescriptor(): DoorDescriptor | null {
+  if (cache === undefined) {
+    const persisted = readPersisted();
+    if (persisted !== undefined) cache = persisted;
+  }
+  return cache ?? null;
+}
+
+/** Test-only: clear the in-module memo + revalidation state (localStorage is
+ *  cleared by the test's own `localStorage.clear()` in `beforeEach`). */
 export function __resetDoorDescriptorCacheForTests(): void {
   cache = undefined;
   inflight = null;
+  revalidationStarted = false;
+  revalidationDone = false;
+  revalidateListeners.clear();
 }
