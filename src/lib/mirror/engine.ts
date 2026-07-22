@@ -50,6 +50,13 @@ const DEFAULT_SWEEP_ENUM_LIMIT = 1000;
 // At most one full sweep per this window across app starts (throttled via the
 // persisted lastSweepAt). A cursor-error re-walk forces one regardless.
 const DEFAULT_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+// Hard ceiling on pages walked in a SINGLE drain / enumeration — belt against a
+// non-terminating cursor walk (a broken client or daemon that keeps handing back
+// rows without ever advancing to exhaustion). A healthy vault exhausts in orders
+// of magnitude fewer pages (Aaron's ~3400 notes = ~17 pages at 200); at 1000
+// pages this is well past any realistic vault, so tripping it means the walk is
+// genuinely stuck and we bail loud rather than spin forever.
+const MAX_DRAIN_PAGES = 1000;
 
 // The client capability the mirror needs. `queryNotesCursor` is the only hard
 // requirement (Wave 1); `getNote` (backfill), `listTags` (offline filters), and
@@ -73,6 +80,10 @@ export interface MirrorEngineOptions {
   resolveContext: () => MirrorContext | null;
   tickIntervalMs?: number;
   pageLimit?: number;
+  // Hard ceiling on pages walked in a single drain / enumeration — the belt
+  // against a non-terminating cursor walk. Defaults to MAX_DRAIN_PAGES; overridable
+  // mainly so tests can trip it cheaply.
+  maxDrainPages?: number;
   // Page size for the reconcile sweep's lean enumeration walk.
   sweepEnumLimit?: number;
   // Minimum spacing between reconcile sweeps (throttle). A cursor-error re-walk
@@ -148,6 +159,7 @@ export class MirrorEngine {
   private readonly db: LensDB;
   private readonly tickMs: number;
   private readonly pageLimit: number;
+  private readonly maxDrainPages: number;
   private readonly sweepEnumLimit: number;
   private readonly sweepIntervalMs: number;
   private readonly ceilingBytes: number;
@@ -160,6 +172,7 @@ export class MirrorEngine {
     this.db = opts.db;
     this.tickMs = opts.tickIntervalMs ?? DEFAULT_TICK_MS;
     this.pageLimit = opts.pageLimit ?? DEFAULT_PAGE_LIMIT;
+    this.maxDrainPages = opts.maxDrainPages ?? MAX_DRAIN_PAGES;
     this.sweepEnumLimit = opts.sweepEnumLimit ?? DEFAULT_SWEEP_ENUM_LIMIT;
     this.sweepIntervalMs = opts.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
     this.ceilingBytes = opts.ceilingBytes ?? MIRROR_CEILING_BYTES;
@@ -292,6 +305,10 @@ export class MirrorEngine {
     let reWalked = false;
 
     try {
+      // Set ONLY on a clean empty-page exhaustion — the sole exit that stamps
+      // the completion watermark below. A no-advance stop or a thrown contract
+      // violation leaves this false so a partial mirror never reads as "synced".
+      let exhausted = false;
       while (true) {
         const sent = cursor;
         let page: { items: unknown[]; nextCursor?: string };
@@ -317,6 +334,19 @@ export class MirrorEngine {
           notesApplied += items.length;
           if (cold) this.opts.onProgress?.(vaultId, notesApplied);
         }
+        // CONTRACT VIOLATION → FAIL LOUD. A NON-empty page that carries no
+        // next_cursor means the client/daemon isn't speaking cursor pagination
+        // at all (e.g. a stale surface-client that only read an `X-Next-Cursor`
+        // header the self-host daemon never sends — the exact 0.3.5 bug). Every
+        // "page" is then the same first rows forever. THROW into the error state
+        // instead of looping — and crucially WITHOUT stamping the completion
+        // watermark (the mirror stays cold, not a false "complete"). This is
+        // distinct from the no-advance case below, where a cursor IS present.
+        if (items.length > 0 && page.nextCursor === undefined) {
+          throw new Error(
+            `mirror drain: ${items.length}-row page returned no next_cursor — cursor pagination contract violated (stale surface-client?)`,
+          );
+        }
         // Advance + PERSIST the watermark after EVERY page (idempotent upserts
         // + a per-page cursor commit = a killed app resumes exactly here).
         if (page.nextCursor !== undefined) {
@@ -325,16 +355,34 @@ export class MirrorEngine {
         }
         pagesApplied += 1;
         // Terminate on an empty page — the watermark is never falsy, so an
-        // empty page (not a falsy cursor) is the only end signal.
-        if (items.length === 0) break;
-        // NO-ADVANCE GUARD: a NON-empty page whose next_cursor didn't move is a
-        // contract violation (the watermark must advance across returned rows).
-        // Break rather than spin forever; the items are already upserted
-        // (idempotent) and the next poll retries from the same watermark.
-        if (page.nextCursor !== undefined && page.nextCursor === sent) break;
+        // empty page (not a falsy cursor) is the only CLEAN end signal, and the
+        // ONLY exit that marks the mirror complete below.
+        if (items.length === 0) {
+          exhausted = true;
+          break;
+        }
+        // NO-ADVANCE GUARD: a NON-empty page whose next_cursor didn't move can't
+        // be walked further (a cursor IS present here — the contract throw above
+        // already handled the absent-cursor case). Stop, but do NOT mark
+        // complete; the items are already upserted (idempotent) and the next
+        // poll retries from the same watermark.
+        if (page.nextCursor === sent) break;
+        // HARD PAGE CAP — belt against any other non-terminating walk. A healthy
+        // vault exhausts far sooner; tripping this means the walk is stuck.
+        if (pagesApplied >= this.maxDrainPages) {
+          throw new Error(
+            `mirror drain: exceeded ${this.maxDrainPages} pages without exhausting the cursor`,
+          );
+        }
       }
 
-      await setMirrorLastSyncedAt(this.db, vaultId, Date.now());
+      // COMPLETION watermark ONLY on a clean empty-page exhaustion (#79 item 1):
+      // a no-advance stop leaves `exhausted` false and must not mark the mirror
+      // synced (a stamped watermark would make a partial mirror look complete +
+      // flip `cold` off, suppressing the re-hydrate).
+      if (exhausted) {
+        await setMirrorLastSyncedAt(this.db, vaultId, Date.now());
+      }
       const live: MirrorState = { phase: "live" };
       await setMirrorState(this.db, vaultId, live);
       this.opts.onStateChange?.(vaultId, live);
@@ -526,6 +574,7 @@ export class MirrorEngine {
   ): Promise<{ index: Map<string, string>; complete: boolean }> {
     const index = new Map<string, string>();
     let cursor = "";
+    let pages = 0;
     try {
       while (true) {
         const sent = cursor;
@@ -538,11 +587,25 @@ export class MirrorEngine {
         for (const it of items) {
           index.set(it.id, it.updatedAt ?? it.createdAt ?? "");
         }
+        // CONTRACT: a non-empty page must carry a next_cursor. Its absence (a
+        // stale surface-client that never parsed next_cursor — the 0.3.5 bug)
+        // means we can't walk further and can't prove full coverage, so mark
+        // INCOMPLETE (the sweep then aborts rather than over-delete) and never
+        // loop. Mirrors drainCursor's contract guard.
+        if (items.length > 0 && page.nextCursor === undefined) {
+          return { index, complete: false };
+        }
         if (page.nextCursor !== undefined) cursor = page.nextCursor;
         if (items.length === 0) break;
         // NO-ADVANCE on a non-empty page → we can't guarantee full coverage.
         // Mark incomplete so the diff aborts rather than over-delete.
-        if (page.nextCursor !== undefined && page.nextCursor === sent) {
+        if (page.nextCursor === sent) {
+          return { index, complete: false };
+        }
+        // HARD PAGE CAP — same belt as the drain; a stuck walk is not a proven
+        // enumeration, so bail INCOMPLETE (never mass-delete on it).
+        pages += 1;
+        if (pages >= this.maxDrainPages) {
           return { index, complete: false };
         }
       }
