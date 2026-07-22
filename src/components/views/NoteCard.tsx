@@ -125,7 +125,12 @@ export function NoteCard({
   return (
     <div className="relative">
       {card}
-      <div className="absolute right-2 top-2 z-10">{overlay}</div>
+      {/* No z-index here: an equal stacking context per card would let a later
+          card's overlay paint over an earlier card's open Move menu. Absolute
+          positioning still paints above the static card content (.card creates
+          no stacking context), and the menu/backdrop z-values resolve in the
+          shared root context. */}
+      <div className="absolute right-2 top-2">{overlay}</div>
     </div>
   );
 }
