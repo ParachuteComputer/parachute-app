@@ -2,13 +2,17 @@ import { todayKey } from "@/lib/dates";
 import type { TagFieldSchema } from "@/lib/vault/types";
 import type { Note } from "@/lib/vault/types";
 
-// The view-kind grouping/placement logic (Views Wave 2b) — the pure half of
-// the board / calendar renderers, split out so the "which note lands where"
-// decisions are testable without a DOM. The renderers in
-// `src/components/views/` are the thin presentational shell over these.
+// The shared grouping/placement engine (Views Wave 2b; generalized in the
+// view-experience wave) — the pure half of the board / calendar renderers,
+// split out so the "which note lands where" decisions are testable without a
+// DOM. `groupIntoLanes`/`resolveLaneOrder` are the general grouping engine a
+// view drives with its `group_by` field (the board renders that grouping as
+// lanes); `placeOnCalendar` is its date-placement counterpart. The renderers
+// in `src/components/views/` are the thin presentational shell over these.
 
 // ---------------------------------------------------------------------------
-// Board lanes — group result notes into columns by a `laneBy` metadata field.
+// Grouping — bucket result notes by the distinct values of a `group_by`
+// metadata field (the board renders each bucket as a lane/column).
 // ---------------------------------------------------------------------------
 
 export interface Lane {

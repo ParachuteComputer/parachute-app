@@ -37,8 +37,22 @@ export interface ViewDef {
    * malformed view means).
    */
   query: Record<string, unknown> | null;
-  laneBy?: string;
+  /**
+   * The metadata field a view GROUPS by — the board renders it as lanes, but
+   * grouping is the general gesture (view-experience wave: "the lens's
+   * organizing gesture writes the field"). Decoded from the canonical
+   * `group_by` key, falling back to the PERMANENT `lane_by` alias so no
+   * pre-rename `#view` note breaks.
+   */
+  groupBy?: string;
   dateField?: string;
+  /**
+   * The ORDERED field names a view shows/edits (Part B) — an optional
+   * per-view override of the primary tag's declared schema fields. Decoded
+   * from the `fields` metadata key (a JSON-string array); absent/malformed
+   * degrades to the tag-schema default (see `resolveViewFields`).
+   */
+  fields?: string[];
   problems: ViewProblem[];
 }
 
@@ -92,10 +106,42 @@ export function decodeViewDef(note: Note): ViewDef {
     title: titleFor(note),
     kind,
     query,
-    laneBy: typeof meta.lane_by === "string" ? meta.lane_by : undefined,
+    // `group_by` is canonical; `lane_by` is a permanent decoder alias so
+    // every board authored before the rename still groups.
+    groupBy:
+      typeof meta.group_by === "string"
+        ? meta.group_by
+        : typeof meta.lane_by === "string"
+          ? meta.lane_by
+          : undefined,
     dateField: typeof meta.date_field === "string" ? meta.date_field : undefined,
+    fields: decodeFieldsList(meta.fields),
     problems,
   };
+}
+
+/**
+ * Decode the optional `fields` key — an ORDERED list of metadata field names
+ * a view shows/edits. The wire format is a JSON-string array (mirroring
+ * `query`); a raw string[] is also accepted for tolerance. Anything else
+ * (missing, malformed JSON, non-string entries) degrades to `undefined` —
+ * the view falls back to its primary tag's schema fields, today's behavior.
+ * Unlike `query`, a malformed `fields` records NO problem: it only ever adds
+ * an optional band, so silence is the graceful posture.
+ */
+function decodeFieldsList(value: unknown): string[] | undefined {
+  let raw: unknown = value;
+  if (typeof value === "string") {
+    if (value.trim().length === 0) return undefined;
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!Array.isArray(raw)) return undefined;
+  const names = raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  return names.length > 0 ? names : undefined;
 }
 
 /** True when the note carries the vault's `view` role tag. */

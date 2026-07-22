@@ -27,10 +27,10 @@ describe("decodeViewDef", () => {
 
   it("decodes board/calendar kinds without recording a problem", () => {
     const board = decodeViewDef(
-      note({ path: "Views/Board", metadata: { kind: "board", query: "{}", lane_by: "status" } }),
+      note({ path: "Views/Board", metadata: { kind: "board", query: "{}", group_by: "status" } }),
     );
     expect(board.kind).toBe("board");
-    expect(board.laneBy).toBe("status");
+    expect(board.groupBy).toBe("status");
     expect(board.problems).toEqual([]);
 
     const calendar = decodeViewDef(
@@ -41,6 +41,47 @@ describe("decodeViewDef", () => {
     );
     expect(calendar.kind).toBe("calendar");
     expect(calendar.dateField).toBe("due");
+  });
+
+  it("group_by → groupBy is canonical; lane_by is a PERMANENT alias so old boards still group", () => {
+    const legacyLaneBy = decodeViewDef(
+      note({ path: "Views/Old", metadata: { kind: "board", query: "{}", lane_by: "status" } }),
+    );
+    expect(legacyLaneBy.groupBy).toBe("status");
+
+    // When both keys are present, the canonical group_by wins.
+    const both = decodeViewDef(
+      note({
+        path: "Views/Both",
+        metadata: { kind: "board", query: "{}", group_by: "stage", lane_by: "status" },
+      }),
+    );
+    expect(both.groupBy).toBe("stage");
+  });
+
+  it("decodes the optional `fields` override from a JSON-string array (and a raw array), else undefined", () => {
+    const jsonString = decodeViewDef(
+      note({ path: "Views/F", metadata: { query: "{}", fields: '["status","priority"]' } }),
+    );
+    expect(jsonString.fields).toEqual(["status", "priority"]);
+
+    const rawArray = decodeViewDef(
+      note({ path: "Views/F2", metadata: { query: "{}", fields: ["owner"] } }),
+    );
+    expect(rawArray.fields).toEqual(["owner"]);
+
+    // Absent / malformed / empty → undefined (degrade to today's behavior), no problem recorded.
+    expect(
+      decodeViewDef(note({ path: "Views/F3", metadata: { query: "{}" } })).fields,
+    ).toBeUndefined();
+    const malformed = decodeViewDef(
+      note({ path: "Views/F4", metadata: { query: "{}", fields: "{not json" } }),
+    );
+    expect(malformed.fields).toBeUndefined();
+    expect(malformed.problems).toEqual([]);
+    expect(
+      decodeViewDef(note({ path: "Views/F5", metadata: { query: "{}", fields: "[]" } })).fields,
+    ).toBeUndefined();
   });
 
   it("degrades an unknown kind to list with no problem — a view is never wrong to render as a list", () => {
