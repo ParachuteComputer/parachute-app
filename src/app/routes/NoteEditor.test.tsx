@@ -234,6 +234,27 @@ describe("NoteEditor route", () => {
     expect(screen.queryByText(/unsaved/i)).not.toBeInTheDocument();
   });
 
+  // Regression guard for the down-arrow freeze on long notes: `scrollPastEnd()`
+  // grows `.cm-content` padding without bound in a CONTENT-sized editor (its
+  // clientHeight feeds back on the padding it just wrote). The fix bounds the
+  // editor pane with a DEFINITE, content-independent height so `.cm-scroller`
+  // becomes the real scroll container and the padding converges. jsdom can't
+  // lay out `dvh`, so we can't measure the pixel runaway here — we pin the
+  // structural cause instead: the editor pane must carry a definite height plus
+  // `min-h-0` (so the grid item can shrink below its content), NOT `min-h`-only
+  // auto height. If this class is dropped, the runaway returns.
+  it("bounds the editor pane with a definite height so scrollPastEnd can't run away", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+
+    const pane = (await screen.findByTestId("cm-editor")).closest("div.relative");
+    expect(pane).not.toBeNull();
+    // A definite viewport-relative height (dvh so a mobile keyboard shrinks it),
+    // paired with min-h-0 so the grid item is not floored at its content size.
+    expect(pane?.className).toContain("h-[60dvh]");
+    expect(pane?.className).toContain("min-h-0");
+  });
+
   it("marks dirty on typing, saves with if_updated_at and changed fields, clears dirty on success", async () => {
     const updated = {
       ...baseNote,
