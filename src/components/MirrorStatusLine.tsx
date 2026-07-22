@@ -32,11 +32,24 @@ export function MirrorStatusLine() {
 }
 
 function HydrationLine({ done }: { done: number }) {
-  // The denominator is the vault's own note count when known (a cached read —
-  // no new traffic in practice); until it resolves we show just the running
-  // count rather than a misleading "/0".
-  const total = useVaultInfo().data?.stats?.noteCount;
-  const detail = typeof total === "number" && total > 0 ? `${done}/${total}` : `${done}`;
+  // The denominator is the vault's own point-in-time note count when known. It
+  // rides the ALREADY-fetched vault-info query (`?include_stats=true`, keyed
+  // ["vaultInfo", activeVaultId], staleTime 30s) so this costs ZERO extra
+  // traffic; until it resolves we show just the running count rather than a
+  // misleading "/0".
+  //
+  // The real wire field is `totalNotes` — both the self-host daemon
+  // (getVaultStats) and cloud emit it. The surface-client `VaultInfo` type only
+  // declares a stale `noteCount` the wire never sends (which is why the earlier
+  // denominator was always undefined), so we read `totalNotes` through a local
+  // type until the SDK's VaultInfo catches up. Read-only augmentation, no
+  // runtime effect.
+  const stats = useVaultInfo().data?.stats as { totalNotes?: number } | undefined;
+  const total = stats?.totalNotes;
+  // "~T" (tilde): T is point-in-time while N accumulates across the walk, so N
+  // may briefly exceed T if notes are added mid-sync — the tilde keeps it honest
+  // rather than showing an impossible "205 of 200".
+  const detail = typeof total === "number" && total > 0 ? `${done} of ~${total}` : `${done}`;
   return <StatusStrip>Saving your vault for offline · {detail}</StatusStrip>;
 }
 

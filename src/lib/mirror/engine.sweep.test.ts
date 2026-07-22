@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type MirrorClient, MirrorEngine } from "./engine";
 import {
   getMirrorLastSweepAt,
+  getMirrorLastSyncedAt,
   getMirrorNote,
   getMirrorTags,
   setMirrorLastSweepAt,
@@ -405,5 +406,8 @@ describe("MirrorEngine — no-advance cursor guard", () => {
     expect(result.notesApplied).toBe(1);
     expect(query).toHaveBeenCalledTimes(1); // did not spin
     expect(await getMirrorNote(db, "v1", "stuck")).toBeDefined();
+    // #79 item 1: a no-advance stop is NOT a clean exhaustion, so it must not
+    // stamp the completion watermark (a partial mirror can't read as "synced").
+    expect(await getMirrorLastSyncedAt(db, "v1")).toBeUndefined();
   });
 });

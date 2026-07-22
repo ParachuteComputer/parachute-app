@@ -196,6 +196,68 @@ describe("MirrorEngine — hydration loop", () => {
     expect(result.error).toContain("network exploded");
     expect(await getMirrorState(db, "v1")).toMatchObject({ phase: "error" });
   });
+
+  it("ERRORS (does not loop) on a 0.3.5-shaped page — full rows, no next_cursor", async () => {
+    // The runaway Aaron hit live: surface-client 0.3.5 read next_cursor only from
+    // an `X-Next-Cursor` header the self-host daemon never sends, so EVERY page
+    // came back as the same first rows with `nextCursor: undefined`. Before the
+    // guard the drain looped forever (+200 notes/round-trip → the 33k). Now a
+    // non-empty page with no next_cursor is a hard contract violation → error
+    // state, no watermark, and the walk is BOUNDED (called once, not spinning).
+    let calls = 0;
+    const client = {
+      queryNotesCursor: vi.fn(async (): Promise<Page> => {
+        calls += 1;
+        // Safety net: if the guard regresses and the drain spins, fail FAST with a
+        // clear message instead of hanging the suite until the vitest timeout.
+        if (calls > 20) throw new Error("drain spun — no-next_cursor guard regressed");
+        // 0.3.5 shape: a full page, NO nextCursor key (identical every call).
+        return { items: [note("a"), note("bb")] };
+      }),
+    } as unknown as Pick<VaultClient, "queryNotesCursor">;
+
+    const engine = engineFor(db, client);
+    const result = await engine.syncOnce();
+
+    // Bounded, not infinite — the drain threw on the first offending page.
+    expect(client.queryNotesCursor).toHaveBeenCalledTimes(1);
+    expect(result.error).toMatch(/next_cursor|contract/i);
+    expect(await getMirrorState(db, "v1")).toMatchObject({ phase: "error" });
+    // Crucially the completion watermark is NOT stamped, so the mirror stays
+    // COLD and re-hydrates once a fixed client (0.3.6) is in place.
+    expect(await getMirrorLastSyncedAt(db, "v1")).toBeUndefined();
+  });
+
+  it("caps a pathological ever-advancing walk instead of running forever", async () => {
+    // Belt-and-suspenders: a daemon that keeps handing back a NEW cursor + rows
+    // and never exhausts would still be an infinite walk. The hard page cap turns
+    // it into a bounded error rather than a hang. Distinct from the no-advance +
+    // no-next_cursor guards (both of which fire far sooner in practice).
+    let n = 0;
+    const client = {
+      queryNotesCursor: vi.fn(async (): Promise<Page> => {
+        n += 1;
+        // Always non-empty, always a fresh advancing cursor → never terminates.
+        return { items: [note("x")], nextCursor: `c${n}` };
+      }),
+    } as unknown as Pick<VaultClient, "queryNotesCursor">;
+
+    // Small cap so the test trips it cheaply (prod default is MAX_DRAIN_PAGES).
+    const engine = new MirrorEngine({
+      db,
+      resolveContext: () => ({ client, vaultId: "v1" }),
+      tickIntervalMs: 10 * 60_000,
+      pageLimit: 50,
+      maxDrainPages: 5,
+    });
+    const result = await engine.syncOnce();
+
+    expect(result.error).toMatch(/exceeded .* pages/i);
+    expect(await getMirrorState(db, "v1")).toMatchObject({ phase: "error" });
+    expect(await getMirrorLastSyncedAt(db, "v1")).toBeUndefined();
+    // Bounded by the cap — not the 33k+ of the live runaway.
+    expect((client.queryNotesCursor as ReturnType<typeof vi.fn>).mock.calls.length).toBe(5);
+  });
 });
 
 describe("MirrorEngine — guards", () => {

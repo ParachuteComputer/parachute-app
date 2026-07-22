@@ -1,5 +1,32 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.33] - 2026-07-21
+
+**Offline-mirror runaway fix — stop re-fetching the same 200 notes forever.** On a self-hosted box the
+mirror hydration walk never terminated: it kept re-applying the first page of notes (the `notesApplied`
+count ran into the tens of thousands) and never persisted a cursor, so every refresh started cold. Root
+cause was a broken cursor contract in the bundled SDK, plus an engine loop that couldn't defend against
+it. Three fixes:
+
+- **Bump `@openparachute/surface-client` `0.3.5` → `^0.3.6`** (the actual fix). 0.3.5's
+  `queryNotesCursor` omitted the `cursor` param on the bootstrap (empty-cursor) call and read the next
+  cursor ONLY from an `X-Next-Cursor` header the self-host daemon never emits (the cross-door contract
+  is the body's `next_cursor`). Net: every page returned the same first 200 notes with
+  `nextCursor: undefined`, so the drain never advanced, never persisted a cursor, and never terminated.
+  0.3.6 sends `?cursor=` (empty included) and parses the `{ notes, next_cursor }` body envelope. Lockfile
+  deduped to a single 0.3.6 (surface-render's transitive `^0.3.3` resolves to it).
+- **Engine defense-in-depth** (`src/lib/mirror/engine.ts`, closes app#79 items 1+3). A non-empty page
+  that carries no `next_cursor` is now a hard contract violation → error state (never
+  `lastSyncedAt`-stamped), instead of an infinite loop. The completion watermark is gated on CLEAN
+  empty-page exhaustion only — a no-advance stop no longer marks a partial mirror "synced" (#79 item 1).
+  The same contract guard is mirrored in the reconcile sweep's enumeration (`complete: false` → aborts
+  rather than over-deletes). Plus a hard per-drain/enumeration page cap (default 1000) as a final belt.
+- **"N of ~T" hydration progress** (`src/components/MirrorStatusLine.tsx`, #79 item 3). The denominator
+  now reads the real wire field `stats.totalNotes` (both daemons emit it) instead of the SDK type's
+  stale `noteCount` (never on the wire → always undefined). Rides the already-fetched vault-info query,
+  so zero extra traffic; copy is "Saving your vault for offline · N of ~T", falling back to bare "· N"
+  when the total is unknown.
+
 ## [0.20.32] - 2026-07-21
 
 **Door-aware pre-auth — stop showing cloud onboarding on a self-hosted hub.**
