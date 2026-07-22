@@ -27,6 +27,7 @@ import {
   searchParamsToRefinements,
 } from "@/lib/views/query";
 import { type ViewDef, type ViewProblem, decodeViewDef } from "@/lib/views/schema";
+import type { QueryKey } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router";
 
@@ -127,6 +128,7 @@ function ViewSurfaceBody({ note }: { note: Note }) {
           isError={results.isError}
           error={results.error}
           retry={results.refetch}
+          viewResultsKey={results.queryKey}
           pinned={partition.pinned}
           rest={partition.rest}
           roles={roles}
@@ -191,6 +193,7 @@ function ViewResults({
   isError,
   error,
   retry,
+  viewResultsKey,
   pinned,
   rest,
   roles,
@@ -201,6 +204,7 @@ function ViewResults({
   isError: boolean;
   error: unknown;
   retry: () => void;
+  viewResultsKey: QueryKey;
   pinned: Note[];
   rest: Note[];
   roles: TagRoles;
@@ -250,6 +254,7 @@ function ViewResults({
             laneBy={def.laneBy}
             subjectTag={primaryQueryTag(def.query)}
             roles={roles}
+            viewResultsKey={viewResultsKey}
           />
         );
       }

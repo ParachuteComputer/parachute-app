@@ -19,6 +19,17 @@ export interface Lane {
   notes: Note[];
   /** True for the trailing "missing the field" lane (rendered last, muted). */
   uncategorized: boolean;
+  /**
+   * The ORIGINAL typed metadata value the lane's notes carry (a number/boolean
+   * stays a number/boolean; a string stays a string) — taken from the first
+   * note that fell into the lane. `null` for the uncategorized lane. This is the
+   * value a tap-to-move write MUST send: `key`/`label` are stringified for
+   * grouping (a numeric/boolean status still lanes), but writing a STRING back
+   * to an `indexed` integer/boolean field is hard-rejected by the vault, so the
+   * mutation writes `value`, not `key`. Moving to the uncategorized lane writes
+   * `null` (vault's null-as-delete clears the field).
+   */
+  value: unknown;
 }
 
 /**
@@ -76,6 +87,10 @@ export function resolveLaneOrder(
  */
 export function groupIntoLanes(notes: Note[], field: string, order: string[] = []): Lane[] {
   const byKey = new Map<string, Note[]>();
+  // The original typed value per key — captured from the first note in each
+  // lane so a tap-to-move write can send the value with its authored type
+  // (number 3, not the string "3"), which is what an `indexed` field requires.
+  const rawByKey = new Map<string, unknown>();
   const uncategorized: Note[] = [];
 
   for (const note of notes) {
@@ -85,8 +100,12 @@ export function groupIntoLanes(notes: Note[], field: string, order: string[] = [
       continue;
     }
     const bucket = byKey.get(value);
-    if (bucket) bucket.push(note);
-    else byKey.set(value, [note]);
+    if (bucket) {
+      bucket.push(note);
+    } else {
+      byKey.set(value, [note]);
+      rawByKey.set(value, note.metadata?.[field]);
+    }
   }
 
   const ordered = order.filter((k) => byKey.has(k));
@@ -100,10 +119,17 @@ export function groupIntoLanes(notes: Note[], field: string, order: string[] = [
     label: key,
     notes: byKey.get(key) ?? [],
     uncategorized: false,
+    value: rawByKey.get(key),
   }));
 
   if (uncategorized.length > 0) {
-    lanes.push({ key: "", label: `No ${field}`, notes: uncategorized, uncategorized: true });
+    lanes.push({
+      key: "",
+      label: `No ${field}`,
+      notes: uncategorized,
+      uncategorized: true,
+      value: null,
+    });
   }
   return lanes;
 }

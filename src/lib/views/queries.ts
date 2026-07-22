@@ -5,7 +5,7 @@ import { loadToken } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
 import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { type QueryKey, keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { type DefaultPageId, defaultPagePath, resolveDefaultViewDef } from "./defaults";
 import {
@@ -88,6 +88,12 @@ export interface UseViewResultsResult {
   refetch: () => void;
   /** Decode + query-mapping problems merged — the problems banner's source (§3). */
   problems: MappedViewQuery["problems"];
+  /**
+   * The exact TanStack Query key this view's results live under — the target an
+   * editable kind (e.g. the board's tap-to-move) optimistically writes so a
+   * change re-lanes instantly (see `src/lib/views/mutate.ts`).
+   */
+  queryKey: QueryKey;
 }
 
 /**
@@ -138,6 +144,7 @@ export function useViewResults(
     error: query.error,
     refetch: () => void query.refetch(),
     problems: mapped?.problems ?? [],
+    queryKey,
   };
 }
 

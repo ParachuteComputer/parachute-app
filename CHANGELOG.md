@@ -1,5 +1,36 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.36] - 2026-07-22
+
+**Editable kanban — tap a card, move it between lanes (+ a shared view-mutation primitive).**
+The first slice of the view-experience wave: the board stops being a read-only render and becomes a
+task list you can rearrange. Every board card gains a small **"Move"** button that opens a menu of the
+other lanes; picking one writes that lane's value onto the note and re-lanes the card instantly. The
+read-only render is untouched for list/gallery/calendar.
+
+- **Shared "view mutation" primitive (`src/lib/views/mutate.ts`):** `useViewFieldMutation(noteId,
+  viewResultsKey)` writes ONE metadata field via the existing `useUpdateNote` — server-side a shallow
+  RFC-7386 merge with null-as-delete (`parachute-vault/core/src/notes.ts:2981-2994`), so one key moves
+  and the note's siblings + body are untouched, and it rides the offline queue
+  (`src/lib/sync/queue.ts`) so a move works offline. `useUpdateNote.onSuccess` invalidates
+  `["notes"]`/`["note"]`/`["tags"]` but NOT `["viewResults", …]`
+  (`src/lib/vault/queries.ts:781-793`), so the primitive adds an **optimistic `setQueryData` on the
+  active view-results key with rollback on error** — the card moves the instant you tap, and snaps back
+  if the write fails; the live-reconcile layer (`live-query.ts`) still provides eventual truth.
+  `useViewResults` now returns its `queryKey` so the board can target it (`src/lib/views/queries.ts`).
+- **Type preservation:** lane keys are stringified for grouping (`grouping.ts`), but writing a string
+  back to an `indexed` integer/boolean field is hard-rejected by the vault (`mcp-manifest.ts:514`), so
+  each lane now carries its ORIGINAL typed value and the move writes THAT (number `3`, not `"3"`).
+  Moving to the "No {field}" lane writes `{ [field]: null }` (null-as-delete).
+- **Tap-to-move UI (`src/components/views/BoardView.tsx`, `NoteCard.tsx`):** the "Move" affordance is a
+  corner button laid OVER the card but OUTSIDE its navigating anchor (a button nested in an `<a>` is
+  invalid and would double-fire navigation); it opens a `role="menu"` of target lanes with an
+  outside-tap backdrop. Mobile-first and dependency-free. **Real drag-and-drop is the NEXT slice** (it
+  needs a touch DnD lib like dnd-kit — deliberately not added here).
+- Tests (synthetic data only): the primitive writes exactly one key with its type preserved (and `null`
+  for the unset lane); the optimistic update re-lanes the card and rolls back on failure; tap-to-move
+  PATCHes `{ [laneBy]: value }`; an offline move enqueues without throwing.
+
 ## [0.20.35] - 2026-07-22
 
 **Tall focus-mode editor canvas — long-form writing gets the room the collapsed header frees up.**
