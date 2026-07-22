@@ -1,5 +1,33 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.34] - 2026-07-22
+
+**Editor freeze fix — stop `scrollPastEnd` padding runaway (down-arrow freeze on long notes).**
+After a writing session on a long note, holding or repeatedly pressing the down arrow at the bottom of
+the editor could stall the tab for ~15s. Root cause: `scrollPastEnd()` (CodeMirror's stock extension,
+added in editor Wave 1) sets `.cm-content` `padding-bottom` to `scroller.clientHeight − oneLine`. In a
+CONTENT-sized editor the scroller's `clientHeight` *includes* the padding it wrote last pass, so every
+cursor move at the viewport bottom re-reads inflated geometry and grows the padding by ~one doc-height —
+on a long note it reaches millions of px and the layout/paint stalls. The editor was content-sized
+because the height chain collapsed: `NoteEditor`/`NoteNew`'s editor grid was `min-h-[60vh]` + auto, so
+the `height:100%` chain down to `.cm-scroller` never resolved to a definite value and `.cm-scroller`
+never became the scroll container (the page was). CodeMirror's own docs: `scrollPastEnd` "should not be
+enabled in editors that take the size of their content."
+
+- **Fix (approach A — bound the pane):** the editor (and, on desktop, the side-by-side preview) pane now
+  gets a DEFINITE `h-[60dvh]` height plus `min-h-0`, so `.cm-scroller` is the real, content-INDEPENDENT
+  scroll container. `scrollPastEnd`'s padding now converges to one viewport (only when the doc actually
+  overflows) instead of running away. `dvh` (not `vh`) so a mobile soft keyboard shrinks the pane with
+  the visual viewport. Covers every `buildExtensions` surface — `NoteEditor` (edit route) and `NoteNew`
+  (compose) — in both raw and live-preview modes, desktop and mobile. `NoteNew`'s preview binds only at
+  `lg` (its panes stack on mobile, where a second fixed box would just be dead space above Attachments).
+  `src/app/routes/NoteEditor.tsx`, `src/app/routes/NoteNew.tsx`.
+- Does not touch `scrollPastEnd()` itself or `bottomScrollMargin` (the #64 "jumping to paragraph top"
+  fix) — the scroll-off is unchanged; the bounded pane makes that area behave better, not worse.
+- Regression guards in `NoteEditor.test.tsx` / `NoteNew.test.tsx` pin the structural cause (the pane
+  carries a definite height + `min-h-0`, not `min-h`-only). Manual verify on a long note:
+  `document.querySelector('.cm-content').style.paddingBottom` stays ~500–900px, not 6–8 digits.
+
 ## [0.20.33] - 2026-07-21
 
 **Offline-mirror runaway fix — stop re-fetching the same 200 notes forever.** On a self-hosted box the

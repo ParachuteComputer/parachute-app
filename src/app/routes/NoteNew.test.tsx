@@ -303,6 +303,20 @@ describe("NoteNew route — unified create surface", () => {
     expect(screen.queryByLabelText(/summary/i)).toBeNull();
   });
 
+  // Same down-arrow-freeze regression guard as NoteEditor: the compose editor
+  // shares `scrollPastEnd()` via buildExtensions, so its pane must also carry a
+  // definite, content-independent height (h-[60dvh] + min-h-0) or the padding
+  // runaway returns. jsdom can't lay out dvh; we pin the structural cause.
+  it("bounds the compose editor pane with a definite height so scrollPastEnd can't run away", async () => {
+    installFetch({});
+    renderAt("/new");
+
+    const pane = (await screen.findByTestId("cm-editor")).closest("div.relative");
+    expect(pane).not.toBeNull();
+    expect(pane?.className).toContain("h-[60dvh]");
+    expect(pane?.className).toContain("min-h-0");
+  });
+
   it("Create is disabled until content (or audio) is present", async () => {
     installFetch({});
     renderAt("/new");

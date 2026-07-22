@@ -698,10 +698,19 @@ export function NoteNew() {
           </>
         )}
 
-        <div className={`grid min-h-[60vh] gap-4 ${livePreviewOn ? "" : "lg:grid-cols-2"}`}>
+        {/* DEFINITE editor-pane height — see NoteEditor.tsx for the full why.
+            `scrollPastEnd()` runs away in a content-sized editor (padding-bottom
+            feeds back on the scroller's own clientHeight → multi-second freeze
+            on a long note); `h-[60dvh] min-h-0` bounds the pane so `.cm-scroller`
+            is the real, content-independent scroll container. The EDITOR pane is
+            bounded on every viewport (the freeze must be fixed on mobile too);
+            the PREVIEW pane only binds at `lg` — unlike NoteEditor it has no
+            mobile pane-toggle, so on a phone the two panes STACK, and a second
+            fixed-height box there would just be dead space above Attachments. */}
+        <div className={`grid min-h-[60dvh] gap-4 ${livePreviewOn ? "" : "lg:grid-cols-2"}`}>
           <AttachmentDropZone
             onDropFiles={uploader.start}
-            className="card min-w-0"
+            className="card min-h-0 h-[60dvh] min-w-0"
             hint="Images, audio, webm video"
           >
             <CodeMirrorEditor
@@ -725,7 +734,7 @@ export function NoteNew() {
             />
           </AttachmentDropZone>
           {livePreviewOn ? null : (
-            <div className="card min-w-0 overflow-auto p-4">
+            <div className="card min-w-0 overflow-auto p-4 lg:h-[60dvh] lg:min-h-0">
               {draft.content.trim() ? (
                 <NoteRenderer
                   note={{ path: draft.path, content: draft.content }}

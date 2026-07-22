@@ -440,10 +440,22 @@ function EditorSurface({ note }: { note: Note }) {
         </div>
       )}
 
-      <div className={`grid min-h-[60vh] gap-4 ${livePreviewOn ? "" : "lg:grid-cols-2"}`}>
+      {/* DEFINITE editor-pane height (fix: down-arrow freeze on long notes).
+          `scrollPastEnd()` sets `.cm-content` padding-bottom = the scroller's
+          clientHeight − a line; in a CONTENT-sized editor that clientHeight
+          includes the padding it just wrote, so each bottom-edge cursor move
+          re-reads inflated geometry and grows the padding without bound (→ a
+          multi-second layout stall on a long note). Bounding the pane with a
+          definite `h-[60dvh]` (plus `min-h-0` so the grid item can shrink below
+          its content) makes `.cm-scroller` the real scroll container: its
+          clientHeight is now content-INDEPENDENT, so the padding converges to
+          one viewport instead of running away. `dvh` (not `vh`) so a mobile
+          keyboard shrinks the pane with the visual viewport. Applies to BOTH
+          panes so the desktop split stays a matched, symmetric pair. */}
+      <div className={`grid min-h-[60dvh] gap-4 ${livePreviewOn ? "" : "lg:grid-cols-2"}`}>
         <AttachmentDropZone
           onDropFiles={uploader.start}
-          className={`card min-w-0 ${livePreviewOn || mobilePane === "edit" ? "" : "hidden lg:block"}`}
+          className={`card min-h-0 h-[60dvh] min-w-0 ${livePreviewOn || mobilePane === "edit" ? "" : "hidden lg:block"}`}
           hint={ALLOWLIST_HINT}
         >
           <CodeMirrorEditor
@@ -465,7 +477,7 @@ function EditorSurface({ note }: { note: Note }) {
         </AttachmentDropZone>
         {livePreviewOn ? null : (
           <div
-            className={`card min-w-0 overflow-auto p-4 ${
+            className={`card min-h-0 h-[60dvh] min-w-0 overflow-auto p-4 ${
               mobilePane === "preview" ? "" : "hidden lg:block"
             }`}
           >
@@ -582,7 +594,7 @@ function ConflictBanner({
 
 function EditorSkeleton() {
   return (
-    <div className="grid min-h-[60vh] gap-4 lg:grid-cols-2" aria-busy="true">
+    <div className="grid min-h-[60dvh] gap-4 lg:grid-cols-2" aria-busy="true">
       <div className="card animate-pulse" />
       <div className="card animate-pulse" />
     </div>
