@@ -29,6 +29,8 @@ vi.mock("@/lib/account/hosted-vault", async () => {
 
 vi.mock("@/lib/account/descriptor", () => ({
   getDoorDescriptor: vi.fn().mockResolvedValue(null),
+  peekDoorDescriptor: vi.fn().mockReturnValue(null),
+  retryDoorDescriptorIfCold: vi.fn(),
 }));
 
 // A browser-Back stand-in: navigate(-1) drives the same POP the OS/browser

@@ -1,5 +1,27 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.37] - 2026-07-22
+
+**Hardening nits: quieter offline-hydration progress for screen readers + pre-auth cosmetics.** Two
+filed low-risk items off the hardening backlog; no behavior change to the mirror engine or any flag.
+
+- **a11y — hydration progress no longer spams screen readers (#77).** The one-time "Saving your vault
+  for offline · N of ~T" line ticks once per synced page during cold hydration; its `<output>` carried
+  an implicit polite live region, so each tick re-announced. It's now `aria-live="off"` — the count
+  stays VISIBLE but silent (`src/components/MirrorStatusLine.tsx`). The offline/synced STATE transition
+  ("Offline — showing your saved vault") keeps its implicit polite announcement. CSS/aria only; the
+  mirror engine is untouched.
+- **Pre-auth cosmetics (#81, items a–c).**
+  - (a) Reworded stale comments in `src/lib/account/descriptor.ts` (+ `descriptor.test.ts`) that still
+    described the retired "null ⇒ magic-link" fallback — the rule has been "unresolved/unclassifiable ⇒
+    door-NEUTRAL shell" since the door-aware front door landed.
+  - (b) Added a component test for the WARM-CACHE hub paint: `peekDoorDescriptor` → hub means the FIRST
+    render is already the hub card, no neutral flash (`src/app/routes/Landing.test.tsx`).
+  - (c) Cold-boot self-heal: a first-fetch descriptor failure otherwise pinned the door NEUTRAL for the
+    whole SPA lifetime (the revalidation runs once). A fresh front-door mount now re-arms it via
+    `retryDoorDescriptorIfCold` (`descriptor.ts`, wired in `Landing.tsx`) — narrowly gated to the
+    cold-MISS case, a no-op once a door is known, so the "one fetch per lifetime" happy path is intact.
+
 ## [0.20.36] - 2026-07-22
 
 **Editable kanban — tap a card, move it between lanes (+ a shared view-mutation primitive).**

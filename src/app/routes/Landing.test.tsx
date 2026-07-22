@@ -1,6 +1,6 @@
 import { Landing } from "@/app/routes/Landing";
 import { getSession, requestMagicLink } from "@/lib/account/client";
-import { getDoorDescriptor } from "@/lib/account/descriptor";
+import { getDoorDescriptor, peekDoorDescriptor } from "@/lib/account/descriptor";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { beginOAuth } from "@/lib/vault/oauth";
 import { probeForIssuer } from "@/lib/vault/probe";
@@ -30,6 +30,8 @@ vi.mock("@/lib/account/descriptor", () => ({
   // Cold synchronous peek (no warm cache) → the front door starts NEUTRAL and
   // resolves to the confirmed card via getDoorDescriptor; tests use findBy.
   peekDoorDescriptor: vi.fn().mockReturnValue(null),
+  // The cold-miss self-heal re-arm (#81c) — a no-op stub for the fork tests.
+  retryDoorDescriptorIfCold: vi.fn(),
 }));
 
 vi.mock("@/lib/account/hosted-vault", () => ({
@@ -212,6 +214,8 @@ describe("Landing — front door, door descriptor fork", () => {
     vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
     vi.mocked(requestMagicLink).mockReset().mockResolvedValue(undefined);
     vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
+    // Default cold peek (no warm cache) — the warm-cache test overrides this.
+    vi.mocked(peekDoorDescriptor).mockReset().mockReturnValue(null);
     vi.mocked(beginOAuth)
       .mockReset()
       .mockResolvedValue({ authorizeUrl: "https://hub.example/authorize?x=1" } as never);
@@ -295,6 +299,26 @@ describe("Landing — front door, door descriptor fork", () => {
     await waitFor(() => expect(probeForIssuer).toHaveBeenCalledWith("https://hub.example.com"));
     await waitFor(() => expect(beginOAuth).toHaveBeenCalledWith("https://hub.example"));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("https://hub.example/authorize?x=1"));
+  });
+
+  // WARM-CACHE HUB paint (#81b): a door already KNOWN for this origin is peeked
+  // SYNCHRONOUSLY, so the FIRST render is already the hub card — no NEUTRAL flash
+  // before getDoorDescriptor resolves. Asserted with synchronous getBy* (no
+  // findBy): the hub card must be present on the very first paint.
+  it("warm-cache hub → first render is the hub card synchronously (no neutral flash)", () => {
+    const hub = {
+      door: "hub" as const,
+      auth: { methods: ["password" as const], signin_path: "/login" },
+    };
+    vi.mocked(peekDoorDescriptor).mockReturnValue(hub);
+    vi.mocked(getDoorDescriptor).mockResolvedValue(hub);
+    renderLanding();
+    // First paint IS the hub card — no await.
+    expect(screen.getByRole("button", { name: /open your parachute/i })).toBeInTheDocument();
+    // The neutral shell never flashed: no door-agnostic "Sign in →" link, and
+    // none of the cloud onboarding.
+    expect(screen.queryByRole("link", { name: /^sign in/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
   });
 
   it("confirmed hub → hybrid card: SECONDARY 'Manage this parachute' hops to the door /login?next=<mount /welcome>", async () => {

@@ -50,15 +50,25 @@ function HydrationLine({ done }: { done: number }) {
   // may briefly exceed T if notes are added mid-sync — the tilde keeps it honest
   // rather than showing an impossible "205 of 200".
   const detail = typeof total === "number" && total > 0 ? `${done} of ~${total}` : `${done}`;
-  return <StatusStrip>Saving your vault for offline · {detail}</StatusStrip>;
+  // The count ticks once per synced page during cold hydration; announcing each
+  // tick spams screen readers (#77). Keep the line VISIBLE but silence its live
+  // region — the count isn't worth announcing. The offline/synced STATE
+  // transition below still announces (implicit polite `status` role).
+  return <StatusStrip live="off">Saving your vault for offline · {detail}</StatusStrip>;
 }
 
 // A thin, calm full-width strip in the muted offline voice — not the red
 // alert bar the failure banners use. `<output>` carries an implicit ARIA
 // `status` role, so it's announced politely (same pattern as OfflineRibbon).
-function StatusStrip({ children }: { children: React.ReactNode }) {
+// `live="off"` opts a strip out of that announcement (the chatty hydration
+// progress) while leaving the DOM node reusable — when the strip's next render
+// omits `live`, React drops the attribute and the implicit polite role returns.
+function StatusStrip({ children, live }: { children: React.ReactNode; live?: "off" }) {
   return (
-    <output className="block border-b border-border bg-bg-soft px-4 py-1.5 text-center text-xs text-fg-muted md:px-6">
+    <output
+      aria-live={live}
+      className="block border-b border-border bg-bg-soft px-4 py-1.5 text-center text-xs text-fg-muted md:px-6"
+    >
       {children}
     </output>
   );
