@@ -30,6 +30,8 @@ vi.mock("@/lib/account/hosted-vault", async () => {
 // documented fallback.
 vi.mock("@/lib/account/descriptor", () => ({
   getDoorDescriptor: vi.fn().mockResolvedValue(null),
+  peekDoorDescriptor: vi.fn().mockReturnValue(null),
+  retryDoorDescriptorIfCold: vi.fn(),
 }));
 
 function LocationEcho({ label }: { label: string }) {

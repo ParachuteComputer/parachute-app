@@ -50,6 +50,7 @@ vi.mock("@/lib/account/client", async () => {
 vi.mock("@/lib/account/descriptor", () => ({
   getDoorDescriptor: vi.fn().mockResolvedValue({ door: "cloud" }),
   peekDoorDescriptor: vi.fn().mockReturnValue({ door: "cloud" }),
+  retryDoorDescriptorIfCold: vi.fn(),
 }));
 vi.mock("@/lib/account/hosted-vault", () => ({
   openHostedVault: vi.fn(),
