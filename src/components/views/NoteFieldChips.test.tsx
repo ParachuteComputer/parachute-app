@@ -64,6 +64,46 @@ function installFetch(patchOk: boolean) {
   return fetchImpl;
 }
 
+// A PATCH stub that enforces optimistic concurrency the way the vault does:
+// a write whose `if_updated_at` doesn't match the note's current server stamp
+// is REJECTED (conflict). Each accepted write bumps the stamp. This is what
+// makes the sequential-edit test meaningful — a stale baseline would 409.
+function installConflictAwareFetch() {
+  let serverUpdatedAt = "2026-07-10T00:00:00Z"; // matches NOTE.updatedAt
+  let bump = 0;
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "PATCH") {
+      const body = JSON.parse((init?.body as string) ?? "{}");
+      if (body.if_updated_at && body.if_updated_at !== serverUpdatedAt) {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ error: "conflict" }),
+          text: async () => "conflict",
+        } as Response;
+      }
+      bump += 1;
+      serverUpdatedAt = `2026-07-22T12:00:0${bump}Z`;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: url.split("/").pop(),
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: serverUpdatedAt,
+          ...body,
+        }),
+        text: async () => "",
+      } as Response;
+    }
+    return { ok: true, status: 200, json: async () => [], text: async () => "" } as Response;
+  });
+  vi.stubGlobal("fetch", fetchImpl);
+  return fetchImpl;
+}
+
 // A band that reads its note from the SAME cache key the write targets — the
 // production wiring (renderer maps results.data → chips), in miniature.
 function Band({
@@ -167,6 +207,38 @@ describe("NoteFieldChips", () => {
     const body = JSON.parse(((patch![1] as RequestInit).body as string) ?? "{}");
     expect(body.metadata).toEqual({ status: "done" });
     expect(body.if_updated_at).toBe("2026-07-10T00:00:00Z");
+  });
+
+  it("two sequential edits on ONE note both succeed — the second sends the fresh baseline, not a stale one", async () => {
+    const fetchImpl = installConflictAwareFetch();
+    const qc = renderBand([NOTE], FIELDS);
+
+    // Edit 1: status → done. Baseline is the note's original stamp.
+    fireEvent.click(screen.getByRole("button", { name: /edit status/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "done" }));
+    // Wait for SUCCESS (the fresh server stamp folded into the cache), not just
+    // the optimistic paint — so edit 2 reads the refreshed baseline.
+    await waitFor(() => {
+      const cached = qc.getQueryData<Note[]>(VIEW_KEY as unknown as string[]);
+      expect(cached?.[0].updatedAt).toBe("2026-07-22T12:00:01Z");
+    });
+
+    // Edit 2: status → active, on the SAME note. Without the fix this sends the
+    // stale original stamp → 409 → rollback + error toast.
+    fireEvent.click(screen.getByRole("button", { name: /edit status/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "active" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /edit status/i })).toHaveTextContent("active");
+    });
+
+    // Both writes landed; the 2nd carried the refreshed baseline; no conflict toast.
+    const patches = fetchImpl.mock.calls.filter(
+      ([, init]) => (init as RequestInit)?.method === "PATCH",
+    );
+    expect(patches).toHaveLength(2);
+    const body2 = JSON.parse(((patches[1][1] as RequestInit).body as string) ?? "{}");
+    expect(body2.if_updated_at).toBe("2026-07-22T12:00:01Z");
+    expect(useToastStore.getState().toasts.some((t) => t.tone === "error")).toBe(false);
   });
 
   it("rolls back and toasts when the write fails", async () => {

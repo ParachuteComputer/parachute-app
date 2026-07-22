@@ -32,6 +32,11 @@ first cross-kind piece — the fields a tag declares are now visible and editabl
   primitive (optimistic, offline, rolls back on error). Absent when no fields resolve — the card
   looks exactly as before (`src/components/views/NoteFieldChips.tsx`, `NoteCard`/`NoteRow` gained a
   `footer` slot).
+- **Sequential edits on one note no longer spuriously conflict.** `useViewFieldMutation` now folds
+  the server's new `updatedAt` back into the note's `["viewResults", …]` cache entry on success
+  (`src/lib/views/mutate.ts`), so a follow-up edit of the same card (status → priority → due, now
+  common with chips) sends a fresh `if_updated_at` baseline instead of the stale one — no more
+  spurious "Couldn't update…" reject-and-rollback on the second write.
 - **Next slices (not in this PR):** the display switcher (kind-as-refinement) and query-adjust UI;
   the calendar tray / drag / table kind / create-in-view come later.
 
