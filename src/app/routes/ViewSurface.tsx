@@ -6,12 +6,14 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { BoardView } from "@/components/views/BoardView";
 import { CalendarView } from "@/components/views/CalendarView";
 import { GalleryView } from "@/components/views/GalleryView";
+import { NoteFieldChips } from "@/components/views/NoteFieldChips";
 import { useToastStore } from "@/lib/toast/store";
 import { useCreateNote, useUpdateNote, useVaultStore } from "@/lib/vault";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
 import { viewPathForName } from "@/lib/views/defaults";
+import { type ResolvedField, useResolvedViewFields } from "@/lib/views/fields";
 import { partitionPinned } from "@/lib/views/partition";
 import { defaultSaveMode, useMySub, useViewNote, useViewResults } from "@/lib/views/queries";
 import {
@@ -102,6 +104,10 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   };
 
   const results = useViewResults(def, refinements);
+  // The view's shown/editable fields (Part B) — the tag-schema default or the
+  // view's `fields` override — resolved once and threaded to every kind, so a
+  // card/row can show + edit them through the shared mutation primitive.
+  const fields = useResolvedViewFields(def);
   const problems: ViewProblem[] = [...def.problems, ...results.problems];
 
   const partition = useMemo(() => {
@@ -129,6 +135,7 @@ function ViewSurfaceBody({ note }: { note: Note }) {
           error={results.error}
           retry={results.refetch}
           viewResultsKey={results.queryKey}
+          fields={fields}
           pinned={partition.pinned}
           rest={partition.rest}
           roles={roles}
@@ -194,6 +201,7 @@ function ViewResults({
   error,
   retry,
   viewResultsKey,
+  fields,
   pinned,
   rest,
   roles,
@@ -205,6 +213,7 @@ function ViewResults({
   error: unknown;
   retry: () => void;
   viewResultsKey: QueryKey;
+  fields: ResolvedField[];
   pinned: Note[];
   rest: Note[];
   roles: TagRoles;
@@ -247,38 +256,68 @@ function ViewResults({
   const all = [...pinned, ...rest];
   switch (def.kind) {
     case "board":
-      if (def.laneBy) {
+      if (def.groupBy) {
         return (
           <BoardView
             notes={all}
-            laneBy={def.laneBy}
+            laneBy={def.groupBy}
             subjectTag={primaryQueryTag(def.query)}
             roles={roles}
             viewResultsKey={viewResultsKey}
+            fields={fields}
           />
         );
       }
       break;
     case "gallery":
-      return <GalleryView notes={all} roles={roles} />;
+      return (
+        <GalleryView notes={all} roles={roles} viewResultsKey={viewResultsKey} fields={fields} />
+      );
     case "calendar":
       if (def.dateField) {
-        return <CalendarView notes={all} dateField={def.dateField} roles={roles} />;
+        return (
+          <CalendarView
+            notes={all}
+            dateField={def.dateField}
+            roles={roles}
+            viewResultsKey={viewResultsKey}
+            fields={fields}
+          />
+        );
       }
       break;
   }
-  return <ListResults pinned={pinned} rest={rest} roles={roles} />;
+  return (
+    <ListResults
+      pinned={pinned}
+      rest={rest}
+      roles={roles}
+      viewResultsKey={viewResultsKey}
+      fields={fields}
+    />
+  );
 }
 
 function ListResults({
   pinned,
   rest,
   roles,
+  viewResultsKey,
+  fields,
 }: {
   pinned: Note[];
   rest: Note[];
   roles: { pinned: string; archived: string };
+  viewResultsKey: QueryKey;
+  fields: ResolvedField[];
 }) {
+  // The list row's editable field-chips band (Part C), when fields resolve —
+  // rendered outside the row's anchor via NoteRow's `footer` slot, written
+  // through the same shared mutation primitive as every other kind.
+  const footerFor = (n: Note) =>
+    fields.length > 0 ? (
+      <NoteFieldChips note={n} fields={fields} viewResultsKey={viewResultsKey} />
+    ) : null;
   return (
     <div className="space-y-6">
       {pinned.length > 0 ? (
@@ -286,7 +325,13 @@ function ListResults({
           <p className="eyebrow mb-2">Pinned</p>
           <NoteRowList aria-label="Pinned notes">
             {pinned.map((n) => (
-              <NoteRow key={n.id} note={n} pinnedTag={roles.pinned} archivedTag={roles.archived} />
+              <NoteRow
+                key={n.id}
+                note={n}
+                pinnedTag={roles.pinned}
+                archivedTag={roles.archived}
+                footer={footerFor(n)}
+              />
             ))}
           </NoteRowList>
         </section>
@@ -295,7 +340,13 @@ function ListResults({
         <section aria-label="Results">
           <NoteRowList aria-label="View results">
             {rest.map((n) => (
-              <NoteRow key={n.id} note={n} pinnedTag={roles.pinned} archivedTag={roles.archived} />
+              <NoteRow
+                key={n.id}
+                note={n}
+                pinnedTag={roles.pinned}
+                archivedTag={roles.archived}
+                footer={footerFor(n)}
+              />
             ))}
           </NoteRowList>
         </section>

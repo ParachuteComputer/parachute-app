@@ -1,5 +1,45 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.38] - 2026-07-22
+
+**Views become one system: a shared foundation + tag-schema-driven fields + inline field chips.**
+The editable-kanban slice proved that a view can show AND edit a note's field through one mutation
+primitive; this turns that proof into the shared base every view kind stands on, and lights up the
+first cross-kind piece — the fields a tag declares are now visible and editable from any view.
+
+- **Foundation A1 — the mutation key reaches every kind.** `ViewSurface` now threads the
+  `useViewResults` cache key to list, gallery, and calendar renderers, not just the board
+  (`src/app/routes/ViewSurface.tsx`) — so any kind can write a field optimistically, not the board
+  alone.
+- **Foundation A2 — one shared field editor.** The board's tap-to-move menu was the enum case of a
+  general control; it's now `FieldValueControl` (`src/components/views/FieldValueControl.tsx`),
+  driven by the tag schema field type: **enum → menu, date → date picker, boolean → toggle,
+  string/number → inline input**. The board consumes the enum case with its lanes as options — the
+  shipped tap-to-move is unchanged. Every write goes through the shared `useViewFieldMutation`
+  primitive (type-preserving, `null`-as-delete for a cleared field).
+- **Foundation A3 — `lane_by` → `group_by`.** The grouping field renamed to the general
+  `group_by` (`src/lib/views/schema.ts`), with `lane_by` kept as a PERMANENT decoder alias so no
+  existing `#view` note breaks; `groupIntoLanes`/`resolveLaneOrder` (`src/lib/views/grouping.ts`)
+  are now framed as the shared grouping engine.
+- **Configurable fields (cross-kind primitive).** A view's shown fields default to its primary
+  tag's declared schema fields (in schema order), and are configurable per view via a new optional
+  `fields` metadata key — an ordered subset/override (`src/lib/views/fields.ts`,
+  `resolveViewFields`). This one resolution is read by every kind; it degrades to today's behavior
+  (no fields) when the view has no single primary tag and no override.
+- **First visible slice — inline field chips.** Cards (board/gallery/calendar) and list rows now
+  carry a small band of the resolved fields, each showing the note's current value; tapping a chip
+  opens `FieldValueControl` to edit that field IN PLACE, written through the shared mutation
+  primitive (optimistic, offline, rolls back on error). Absent when no fields resolve — the card
+  looks exactly as before (`src/components/views/NoteFieldChips.tsx`, `NoteCard`/`NoteRow` gained a
+  `footer` slot).
+- **Sequential edits on one note no longer spuriously conflict.** `useViewFieldMutation` now folds
+  the server's new `updatedAt` back into the note's `["viewResults", …]` cache entry on success
+  (`src/lib/views/mutate.ts`), so a follow-up edit of the same card (status → priority → due, now
+  common with chips) sends a fresh `if_updated_at` baseline instead of the stale one — no more
+  spurious "Couldn't update…" reject-and-rollback on the second write.
+- **Next slices (not in this PR):** the display switcher (kind-as-refinement) and query-adjust UI;
+  the calendar tray / drag / table kind / create-in-view come later.
+
 ## [0.20.37] - 2026-07-22
 
 **Hardening nits: quieter offline-hydration progress for screen readers + pre-auth cosmetics.** Two

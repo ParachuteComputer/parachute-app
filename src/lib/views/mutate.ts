@@ -85,10 +85,24 @@ export function useViewFieldMutation(noteId: string, viewResultsKey: QueryKey): 
         applyFieldToViewCache(old, noteId, field, value),
       );
       try {
-        await updateNote.mutateAsync({
+        const updated = await updateNote.mutateAsync({
           metadata: { [field]: value },
           ...(baselineUpdatedAt ? { if_updated_at: baselineUpdatedAt } : { force: true }),
         });
+        // Fold the server's NEW `updatedAt` back into this note's view-cache
+        // entry so a SUBSEQUENT edit of the same note sends a fresh
+        // `if_updated_at` baseline. Without this, the optimistic paint keeps
+        // the stale stamp and a second edit (status → priority → due, now
+        // common with field chips) would fail optimistic concurrency and
+        // roll back with a spurious "Couldn't update…" toast. Only the stamp
+        // is patched — never the whole returned note, whose metadata on the
+        // offline path is just this one field (it would clobber siblings).
+        const nextStamp = updated?.updatedAt;
+        if (nextStamp) {
+          qc.setQueryData<Note[] | undefined>(viewResultsKey, (old) =>
+            old?.map((n) => (n.id === noteId ? { ...n, updatedAt: nextStamp } : n)),
+          );
+        }
       } catch (err) {
         // Restore the pre-move cache — the live layer still reconciles to truth.
         qc.setQueryData(viewResultsKey, previous);

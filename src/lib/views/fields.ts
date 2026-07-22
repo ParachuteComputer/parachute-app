@@ -1,0 +1,86 @@
+import { useTag } from "@/lib/vault/queries";
+import type { TagFieldSchema, TagRecord } from "@/lib/vault/types";
+import { useMemo } from "react";
+import { queryTags } from "./query";
+import type { ViewDef } from "./schema";
+
+// Tag-schema-driven configurable FIELDS (view-experience wave, Part B) — the
+// SHARED primitive that answers "which fields does this view show and let you
+// edit?" A view's fields default to the declared schema fields of its primary
+// tag (in schema order), and are configurable per view via the optional
+// `fields` metadata key (an ordered subset/override). Every kind reads this
+// one resolution: field chips on cards now; table columns + menu ordering
+// later.
+
+/** A single resolved field: its metadata key + the schema that types it. */
+export interface ResolvedField {
+  /** The metadata key on the note (e.g. "status", "meeting_date"). */
+  name: string;
+  /**
+   * The field's declared type — drives which control edits it
+   * (`FieldValueControl`). When the tag has no schema for the field (an
+   * override naming an undeclared field, or a schema-less vault), it degrades
+   * to a free-form string field.
+   */
+  schema: TagFieldSchema;
+}
+
+const STRING_FIELD: TagFieldSchema = { type: "string" };
+
+/**
+ * The single tag a view filters by, or `null` when it filters by zero or
+ * many tags. Field resolution keys off a SINGLE primary tag — a multi-tag
+ * intersection has no one schema to read (§Part B: "when the query filters
+ * by a single tag").
+ */
+export function singleQueryTag(query: Record<string, unknown> | null): string | null {
+  const tags = queryTags(query);
+  return tags.length === 1 ? tags[0] : null;
+}
+
+/**
+ * Resolve a view's shown/editable fields (pure — testable without a network):
+ *
+ *   1. the view's `fields` override if present (in that order), each typed by
+ *      the tag's schema when the schema declares it, else a string field;
+ *   2. else the primary tag's declared schema fields, in schema order, when
+ *      the query filters by a single tag AND that tag has a schema;
+ *   3. else `[]` (no chips — today's look).
+ *
+ * `tagFields` is the primary tag's `fields` record (from `useTag`), or
+ * `null`/`undefined` when there's no single tag or no schema yet.
+ */
+export function resolveViewFields(
+  def: Pick<ViewDef, "query" | "fields">,
+  tagFields: Record<string, TagFieldSchema> | null | undefined,
+): ResolvedField[] {
+  if (def.fields && def.fields.length > 0) {
+    return def.fields.map((name) => ({ name, schema: tagFields?.[name] ?? STRING_FIELD }));
+  }
+  const single = singleQueryTag(def.query);
+  if (single && tagFields) {
+    // Object key order is insertion order — the authored schema order.
+    return Object.entries(tagFields).map(([name, schema]) => ({ name, schema }));
+  }
+  return [];
+}
+
+/**
+ * The view's resolved fields, fetching the primary tag's schema when the
+ * query filters by exactly one tag. Fetch-deduped with the board's own
+ * `useTag(subjectTag)` (same query key), so a board pays for the schema once.
+ * Returns `[]` while the schema loads or when nothing resolves — the
+ * graceful "no chips" state.
+ */
+export function useResolvedViewFields(def: ViewDef | null): ResolvedField[] {
+  const single = def ? singleQueryTag(def.query) : null;
+  const tag = useTag(single);
+  return useMemo(() => {
+    if (!def) return [];
+    return resolveViewFields(def, tagFieldsOf(tag.data));
+  }, [def, tag.data]);
+}
+
+function tagFieldsOf(tag: TagRecord | null | undefined): Record<string, TagFieldSchema> | null {
+  return tag?.fields ?? null;
+}

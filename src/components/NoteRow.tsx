@@ -29,11 +29,19 @@ export function NoteRow({
   pinnedTag,
   archivedTag,
   trailing,
+  footer,
 }: {
   note: Note;
   pinnedTag: string;
   archivedTag: string;
   trailing?: ReactNode;
+  /**
+   * An optional band BELOW the row, outside the navigating anchor — the
+   * field-chips band (`NoteFieldChips`) a view row uses to show + edit the
+   * tag's fields. Absent → the row is byte-identical to before (Recent,
+   * DayView, /notes all omit it).
+   */
+  footer?: ReactNode;
 }) {
   const title = displayTitle(note);
   // The mono path is metadata under the human title — but only when it says
@@ -90,6 +98,7 @@ export function NoteRow({
         </Link>
         {trailing ? <div className="shrink-0 self-center">{trailing}</div> : null}
       </div>
+      {footer ? <div className="pl-4">{footer}</div> : null}
     </li>
   );
 }

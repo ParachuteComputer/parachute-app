@@ -1,10 +1,13 @@
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NoteCard } from "@/components/views/NoteCard";
+import { NoteFieldChips } from "@/components/views/NoteFieldChips";
 import { formatLongDate, formatLongMonth, monthGrid, shiftMonth, todayKey } from "@/lib/dates";
 import { displayTitle } from "@/lib/note-title";
 import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
+import type { ResolvedField } from "@/lib/views/fields";
 import { defaultMonth, placeOnCalendar } from "@/lib/views/grouping";
+import type { QueryKey } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -23,10 +26,16 @@ export function CalendarView({
   notes,
   dateField,
   roles,
+  viewResultsKey,
+  fields = [],
 }: {
   notes: Note[];
   dateField: string;
   roles: TagRoles;
+  /** The `useViewResults` cache key — the optimistic write target for the chips. */
+  viewResultsKey: QueryKey;
+  /** The view's resolved fields (Part B) — an editable chip band on the day panel. */
+  fields?: ResolvedField[];
 }) {
   const placement = useMemo(() => placeOnCalendar(notes, dateField), [notes, dateField]);
   // First-render default: the month of the most recent dated note. A lazy
@@ -140,6 +149,11 @@ export function CalendarView({
                 note={note}
                 pinnedTag={roles.pinned}
                 archivedTag={roles.archived}
+                footer={
+                  fields.length > 0 ? (
+                    <NoteFieldChips note={note} fields={fields} viewResultsKey={viewResultsKey} />
+                  ) : null
+                }
               />
             ))}
           </div>

@@ -38,6 +38,7 @@ export function NoteCard({
   archivedTag,
   variant = "compact",
   overlay,
+  footer,
 }: {
   note: Note;
   pinnedTag: string;
@@ -50,6 +51,13 @@ export function NoteCard({
    * nothing and the card renders exactly as before.
    */
   overlay?: ReactNode;
+  /**
+   * An optional band rendered BELOW the card body, also outside the anchor —
+   * the field-chips band (`NoteFieldChips`) that shows + edits the tag's
+   * fields. Tucked flush under the tile so card + band read as one unit.
+   * Absent → the card is byte-identical to before.
+   */
+  footer?: ReactNode;
 }) {
   const title = displayTitle(note);
   const stamp = note.updatedAt ?? note.createdAt;
@@ -119,18 +127,20 @@ export function NoteCard({
     </Link>
   );
 
-  // No overlay → identical markup to before (list/gallery/every non-board card).
-  if (!overlay) return card;
+  // No overlay AND no footer → identical markup to before (list/gallery/every
+  // plain card).
+  if (!overlay && !footer) return card;
 
   return (
-    <div className="relative">
+    <div className="relative flex flex-col">
       {card}
       {/* No z-index here: an equal stacking context per card would let a later
           card's overlay paint over an earlier card's open Move menu. Absolute
           positioning still paints above the static card content (.card creates
           no stacking context), and the menu/backdrop z-values resolve in the
           shared root context. */}
-      <div className="absolute right-2 top-2">{overlay}</div>
+      {overlay ? <div className="absolute right-2 top-2">{overlay}</div> : null}
+      {footer ? <div className="mt-1">{footer}</div> : null}
     </div>
   );
 }
