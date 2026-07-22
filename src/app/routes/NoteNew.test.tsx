@@ -313,7 +313,12 @@ describe("NoteNew route — unified create surface", () => {
 
     const pane = (await screen.findByTestId("cm-editor")).closest("div.relative");
     expect(pane).not.toBeNull();
-    expect(pane?.className).toContain("h-[60dvh]");
+    // Word-boundary match, not a bare toContain: `h-[60dvh]` is also a substring
+    // of `min-h-[60dvh]`, so a silent demotion to min-h-only (which revives the
+    // padding runaway) would pass. Require a standalone `h-[…dvh]`. (Compose has
+    // no focus mode, but the 85 alternate keeps this guard identical to
+    // NoteEditor's.)
+    expect(pane?.className).toMatch(/(?:^|\s)h-\[(?:60|85)dvh\]/);
     expect(pane?.className).toContain("min-h-0");
   });
 

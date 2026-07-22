@@ -1,5 +1,30 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.35] - 2026-07-22
+
+**Tall focus-mode editor canvas — long-form writing gets the room the collapsed header frees up.**
+Follow-up to the 0.20.34 freeze fix. That fix bound the editor pane to a definite `h-[60dvh]` so
+`.cm-scroller` (not the page) is the scroll container — but `NoteEditor`'s focus mode collapses the
+whole header card to a floating whisper, then still rendered the editor inside that same 60dvh box,
+leaving ~40% of the viewport as dead space below the words — the opposite of "just me and the words"
+for morning-pages writing.
+
+- **Fix:** in focus mode the editor (and, on desktop, its side-by-side preview) pane now gets a taller
+  `h-[85dvh]` — still a DEFINITE, `dvh`-relative height paired with `min-h-0`, so the `.cm-scroller`-is-
+  the-scroll-container invariant (and thus the freeze fix) holds in focus mode too. Non-focus mode is
+  unchanged at `h-[60dvh]`. A single `paneHeight` var drives both panes so the desktop split stays a
+  matched pair. `src/app/routes/NoteEditor.tsx`.
+- **Freeze-guard tests tightened:** the regression guards used `className.toContain("h-[60dvh]")`, which
+  also matches the substring inside `min-h-[60dvh]` — a silent demotion to `min-h`-only (which revives
+  the padding runaway) would have passed. Now a word-boundary regex (`/(?:^|\s)h-\[(?:60|85)dvh\]/`)
+  requires a standalone definite height, and a new test asserts focus mode gets the taller `h-[85dvh]`
+  while keeping `min-h-0`. `src/app/routes/NoteEditor.test.tsx`, `src/app/routes/NoteNew.test.tsx`.
+- **Height-chain + iOS notes:** added a cross-reference comment at the `CodeMirrorEditor` host div
+  (`h-full overflow-auto`) pinning the four-link height chain (pane definite height → dropzone
+  passthrough → `h-full` host → `.cm-scroller`) against a future silent break, and a note flagging that
+  CM tooltips (`position:absolute`, e.g. the "/" slash menu) can clip at the pane's `overflow-auto` edge
+  on iOS — a manual-check exposure, no speculative fix. `src/components/CodeMirrorEditor.tsx`.
+
 ## [0.20.34] - 2026-07-22
 
 **Editor freeze fix — stop `scrollPastEnd` padding runaway (down-arrow freeze on long notes).**

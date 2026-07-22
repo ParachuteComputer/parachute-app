@@ -465,5 +465,19 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, Props>(functi
     }
   }, [value]);
 
+  // HEIGHT-CHAIN DEPENDENCY (do not break silently): this host is `h-full`, so
+  // it only has a definite height when its ancestor pane gives it one. That
+  // four-link chain — pane `h-[60dvh]/h-[85dvh]` + `min-h-0` (NoteEditor.tsx /
+  // NoteNew.tsx) → AttachmentDropZone passthrough → this `h-full` div → the
+  // `height:100%` `.cm-editor` theme (above) → `.cm-scroller` (CodeMirror's
+  // stock flex-grow scroll region) — is what keeps `.cm-scroller` the
+  // content-independent scroll container. Drop the pane's definite height and
+  // `scrollPastEnd()` padding runs away (the #84 down-arrow freeze); this div
+  // must stay inside a definite-height ancestor.
+  // iOS manual-check exposure: CodeMirror tooltips (the "/" slash menu, autocomplete)
+  // are `position:absolute` and this host now `overflow-auto`-clips at the pane
+  // height, so a menu opened on the last visible line can be clipped on iOS
+  // Safari rather than overflowing the pane. Verify the slash menu on the bottom
+  // line by hand on-device; revisit only if it actually clips (no speculative fix).
   return <div ref={host} className="h-full overflow-auto" />;
 });

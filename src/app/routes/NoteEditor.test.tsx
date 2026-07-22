@@ -212,6 +212,10 @@ describe("NoteEditor route", () => {
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useToastStore.setState({ toasts: [] });
+    // The renderAt harness has no FocusModeMount (which resets on navigation),
+    // so the ephemeral focus flag would otherwise leak between tests in this
+    // block — reset it explicitly.
+    useFocusMode.setState({ on: false });
     seedStore();
     // jsdom doesn't implement confirm; default it to true so paths that gate
     // on user approval proceed.
@@ -251,7 +255,33 @@ describe("NoteEditor route", () => {
     expect(pane).not.toBeNull();
     // A definite viewport-relative height (dvh so a mobile keyboard shrinks it),
     // paired with min-h-0 so the grid item is not floored at its content size.
+    // Word-boundary match: a bare `toContain("h-[60dvh]")` would also pass on
+    // `min-h-[60dvh]`, so a silent demotion to min-h-only (which revives the
+    // runaway) would slip through. Require a standalone `h-[…dvh]` (60 normal,
+    // 85 in focus mode) and keep the min-h-0 assertion.
+    expect(pane?.className).toMatch(/(?:^|\s)h-\[(?:60|85)dvh\]/);
+    expect(pane?.className).toContain("min-h-0");
+  });
+
+  // Focus mode collapses the header to a floating whisper, so the editor pane
+  // grows to fill the reclaimed room (85dvh vs the compact 60dvh). It must
+  // still carry a DEFINITE height + min-h-0 — the scrollPastEnd invariant holds
+  // in focus mode too, or the freeze returns there.
+  it("gives the editor pane a taller definite height in focus mode", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+
+    const pane = (await screen.findByTestId("cm-editor")).closest("div.relative");
     expect(pane?.className).toContain("h-[60dvh]");
+
+    const focus = screen.getByRole("button", { name: /focus/i });
+    await act(async () => {
+      fireEvent.click(focus);
+    });
+
+    // Now the tall — but still DEFINITE — height, keeping min-h-0.
+    expect(pane?.className).toMatch(/(?:^|\s)h-\[85dvh\]/);
+    expect(pane?.className).not.toContain("h-[60dvh]");
     expect(pane?.className).toContain("min-h-0");
   });
 
