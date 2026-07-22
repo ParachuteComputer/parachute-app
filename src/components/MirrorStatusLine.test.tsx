@@ -73,6 +73,22 @@ describe("MirrorStatusLine", () => {
     expect(screen.getByText(/Saving your vault for offline · 7$/)).toBeInTheDocument();
   });
 
+  it("silences the ticking hydration progress for screen readers (aria-live=off)", () => {
+    // #77: the count re-announces on each synced page during cold hydration.
+    // Keep it visible but drop it from the live region.
+    holder.mirror = slice({ state: "hydrating", progress: { done: 3 } });
+    holder.stats = { totalNotes: 10 };
+    render(<MirrorStatusLine />);
+    expect(screen.getByText(/Saving your vault for offline/)).toHaveAttribute("aria-live", "off");
+  });
+
+  it("still announces the offline state transition (no aria-live=off)", () => {
+    holder.mirror = slice({ state: "offline", lastSyncedAt: Date.now() - 60_000 });
+    render(<MirrorStatusLine />);
+    // The implicit `status` role (polite) stays — no explicit aria-live override.
+    expect(screen.getByText(/showing your saved vault/i)).not.toHaveAttribute("aria-live");
+  });
+
   it("renders nothing when the mirror is off (flag-off inert) or synced", () => {
     holder.mirror = slice({ enabled: false, state: "off" });
     const { container, rerender } = render(<MirrorStatusLine />);

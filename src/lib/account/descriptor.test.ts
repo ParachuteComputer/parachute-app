@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type DoorDescriptor,
   __resetDoorDescriptorCacheForTests,
   getDoorDescriptor,
   peekDoorDescriptor,
+  retryDoorDescriptorIfCold,
 } from "./descriptor";
 
 // HUB-PARITY P4 — the door descriptor is the ONE fetch that tells the app
 // which kind of door it's being served by. Fallback rule under test: ANY
-// failure (404 / network error / garbage body) degrades to `null`, which
-// callers (Landing's FrontDoor, Welcome's address echo) treat identically to
-// "no descriptor / no auth block" — today's magic-link behavior.
+// failure (404 / network error / garbage body) resolves to `null`, which
+// callers (Landing's FrontDoor, Welcome's address echo) treat as "no door
+// known" ⇒ the door-NEUTRAL shell (see descriptor.ts's header rule), never a
+// defaulted door.
 
 // Durable cache is per-origin localStorage now (Fix 2). Key derived exactly as
 // descriptor.ts does, so a test can seed / assert the persisted entry.
@@ -74,7 +77,7 @@ describe("getDoorDescriptor", () => {
     await expect(getDoorDescriptor(fetchImpl)).resolves.toBeNull();
   });
 
-  it("absent auth block → still a valid (magic-link-fallback) descriptor", async () => {
+  it("absent auth block → descriptor passes through verbatim (auth is optional)", async () => {
     const descriptor = { door: "cloud" };
     const fetchImpl = vi.fn<typeof fetch>(async () => res(descriptor));
     await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(descriptor);
@@ -83,7 +86,8 @@ describe("getDoorDescriptor", () => {
   // A door we don't control could serve a well-formed body with a MALFORMED
   // `auth` — the front door would then throw (white screen, no ErrorBoundary)
   // or hop to "undefined?next=…". The guard DROPS a bad `auth` (keeping the rest
-  // of the descriptor) so the front door falls back to the magic-link form.
+  // of the descriptor) so the front door classifies on what's left (⇒ neutral
+  // when nothing usable remains) rather than crashing.
   it("malformed auth (methods not an array) → auth dropped, rest kept", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       res({ door: "hub", auth: { methods: 5, signin_path: "/login" }, signup_path: "/s" }),
@@ -106,7 +110,7 @@ describe("getDoorDescriptor", () => {
   it("auth with an UNRECOGNIZED method (but valid shape) → kept (forward-compat: hop, don't fall back)", async () => {
     // A door advertising a method we don't know (passkey) is still crash-safe
     // (string methods + absolute signin_path), so we keep it — the front door
-    // hops to the door's own sign-in page rather than showing a magic-link form.
+    // hops to the door's own sign-in page rather than falling back to neutral.
     const descriptor = { door: "hub", auth: { methods: ["passkey"], signin_path: "/login" } };
     const fetchImpl = vi.fn<typeof fetch>(async () => res(descriptor));
     await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(descriptor);
@@ -255,6 +259,47 @@ describe("getDoorDescriptor", () => {
       throw new TypeError("offline");
     });
     await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(hub);
+  });
+
+  // #81 item (c): a cold-boot MISS otherwise pins NEUTRAL for the SPA lifetime
+  // (the revalidation runs once). `retryDoorDescriptorIfCold` re-arms it so a
+  // later front-door mount refetches and the door self-heals without a reload.
+  describe("retryDoorDescriptorIfCold (cold-miss self-heal)", () => {
+    it("re-arms after a cold MISS so the next resolve refetches + heals the door via onRevalidate", async () => {
+      const hub = { door: "hub", auth: { methods: ["password"], signin_path: "/login" } };
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(res({ error: "down" }, 503))
+        .mockResolvedValueOnce(res(hub));
+
+      // Cold boot: the fetch fails → door resolves NEUTRAL (null), pass finishes.
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toBeNull();
+      await flush();
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+      // A fresh front-door mount re-arms the once-per-lifetime revalidation, so
+      // the next resolve kicks a new fetch; the found door arrives via onRevalidate.
+      retryDoorDescriptorIfCold();
+      const seen: (DoorDescriptor | null)[] = [];
+      await getDoorDescriptor(fetchImpl, (d) => seen.push(d));
+      await flush();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(seen).toEqual([hub]);
+
+      // Once a door is KNOWN the retry is inert — no re-fetch, stable per-origin.
+      retryDoorDescriptorIfCold();
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual(hub);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it("is a no-op while a door is already known (does not re-fetch a stable door)", async () => {
+      const fetchImpl = vi.fn<typeof fetch>(async () => res({ door: "cloud" }));
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "cloud" });
+      await flush();
+      retryDoorDescriptorIfCold();
+      await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "cloud" });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
   });
 
   // Per-origin keying: a door cached for origin A must not leak into origin B.

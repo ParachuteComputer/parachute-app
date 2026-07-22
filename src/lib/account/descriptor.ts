@@ -77,7 +77,10 @@ let cache: DoorDescriptor | null | undefined;
 let inflight: Promise<DoorDescriptor | null> | null = null;
 // The background revalidation runs at most ONCE per module lifetime — a door is
 // a stable per-origin property, so one stale-while-revalidate pass is enough
-// (this also keeps the "one fetch across all consumers" memo guarantee).
+// (this also keeps the "one fetch across all consumers" memo guarantee). The
+// lone exception is a cold-boot MISS (see `retryDoorDescriptorIfCold`): when the
+// single pass resolved to no-door, a later Landing mount may re-arm it so a
+// transient first-fetch failure self-heals without a full page reload.
 let revalidationStarted = false;
 let revalidationDone = false;
 // Consumers that asked to be told when the background revalidation CHANGES the
@@ -156,10 +159,10 @@ function sanitizePlan(raw: object): DoorPlan {
  * body with a MALFORMED `auth` block — `methods` not an array, `signin_path`
  * not a string, or `auth: {}`. The front door does `auth.methods.includes(...)`
  * and hops to `signin_path`, so a bad shape would throw (white screen — the app
- * has no ErrorBoundary) or hop to `"undefined?next=…"`. The fallback rule is
- * "anything we can't trust ⇒ behave as the magic-link door", so we DROP a
- * malformed `auth` (leaving the descriptor otherwise intact) rather than trust
- * it. A non-object body coerces to `null` (pure magic-link fallback). A
+ * has no ErrorBoundary) or hop to `"undefined?next=…"`. So we DROP a malformed
+ * `auth` (leaving the descriptor otherwise intact) rather than trust it — a
+ * descriptor we can't classify ⇒ neutral (see the header rule), never a
+ * defaulted door. A non-object body coerces to `null` ⇒ neutral. A
  * malformed `plans` (the Billing section's ladder) is dropped the same way,
  * and each surviving plan's `intervals` sub-block (F1/F3/F5) is independently
  * sanitized via `sanitizePlan`.
@@ -222,8 +225,8 @@ async function fetchDescriptor(fetchImpl: Fetch): Promise<DoorDescriptor | null>
     if (!res.ok) return null;
     return normalizeDescriptor(await res.json());
   } catch {
-    // Network failure, CORS, or a garbage (non-JSON) body — degrade to the
-    // fallback rule above rather than throwing into the boot path.
+    // Network failure, CORS, or a garbage (non-JSON) body — resolve to `null`
+    // ⇒ neutral (see the header rule) rather than throwing into the boot path.
     return null;
   }
 }
@@ -336,6 +339,25 @@ export function peekDoorDescriptor(): DoorDescriptor | null {
     if (persisted !== undefined) cache = persisted;
   }
   return cache ?? null;
+}
+
+/**
+ * Re-arm the single background revalidation IFF the last pass resolved to a cold
+ * MISS (no door known for this origin, `cache === null`, pass finished). The
+ * revalidation otherwise runs at most once per SPA lifetime, so a transient
+ * first-fetch failure would pin the door NEUTRAL until a full page reload. A
+ * fresh Landing mount calls this so the NEXT `getDoorDescriptor` kicks a new
+ * fetch and the door can self-heal in place. Deliberately narrow:
+ *   - a KNOWN door (cache is a descriptor) is stable per origin → no-op, and the
+ *     "one fetch across consumers" guarantee holds for the happy path;
+ *   - a pass still IN FLIGHT (`!revalidationDone`) → no-op, don't double-fetch.
+ * Idempotent and side-effect-free beyond flag reset (no fetch of its own).
+ */
+export function retryDoorDescriptorIfCold(): void {
+  if (cache === null && revalidationDone) {
+    revalidationStarted = false;
+    revalidationDone = false;
+  }
 }
 
 /** Test-only: clear the in-module memo + revalidation state (localStorage is

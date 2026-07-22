@@ -4,6 +4,7 @@ import {
   type DoorDescriptor,
   getDoorDescriptor,
   peekDoorDescriptor,
+  retryDoorDescriptorIfCold,
 } from "@/lib/account/descriptor";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { clearAccountToken, loadLastSigninEmail, saveLastSigninEmail } from "@/lib/account/store";
@@ -142,6 +143,11 @@ function FrontDoor() {
 
   useEffect(() => {
     let live = true;
+    // A cold-boot descriptor failure pins NEUTRAL for the SPA's lifetime (the
+    // revalidation runs once); a fresh front-door mount re-arms it so a transient
+    // first-fetch failure self-heals here without a full reload. No-op once a
+    // door is known for this origin.
+    retryDoorDescriptorIfCold();
     getDoorDescriptor(undefined, (fresh) => {
       if (live) setDescriptor(fresh);
     }).then((d) => {
