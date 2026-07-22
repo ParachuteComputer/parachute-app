@@ -1,0 +1,278 @@
+import { BoardView } from "@/components/views/BoardView";
+import { useToastStore } from "@/lib/toast/store";
+import { useVaultStore } from "@/lib/vault/store";
+import { DEFAULT_TAG_ROLES } from "@/lib/vault/tag-roles";
+import type { Note } from "@/lib/vault/types";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { BrowserRouter } from "react-router";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Editable kanban — tap-to-move (view-experience wave, slice 1). Drives the
+// board through a real QueryClient so the optimistic `["viewResults", …]` write
+// re-lanes the card the same way it does in the app: a small `useQuery` stands
+// in for `useViewResults`, feeding BoardView from the very cache key the move
+// writes. The vault PATCH is stubbed at `fetch` (VaultClient uses global fetch),
+// so we can read the exact wire payload and drive the success / failure paths.
+
+const VIEW_KEY = ["viewResults", "dev", "v1", "tag=project"] as const;
+
+function seedStore() {
+  useVaultStore.setState({
+    vaults: {
+      dev: {
+        id: "dev",
+        url: "http://localhost:1940",
+        name: "dev",
+        issuer: "http://localhost:1940",
+        clientId: "client-test",
+        scope: "full",
+        addedAt: "2026-07-01T00:00:00.000Z",
+        lastUsedAt: "2026-07-01T00:00:00.000Z",
+      },
+    },
+    activeVaultId: "dev",
+  });
+  localStorage.setItem(
+    "lens:token:dev",
+    JSON.stringify({ accessToken: "pvt_abc", scope: "full", vault: "default" }),
+  );
+}
+
+// A PATCH stub echoing the merged note (ok), or a failing PATCH (throws in the
+// client → the move rolls back). Any GET returns [] so no stray fetch 500s.
+function installFetch(patchOk: boolean) {
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "PATCH") {
+      const body = JSON.parse((init?.body as string) ?? "{}");
+      return {
+        ok: patchOk,
+        status: patchOk ? 200 : 500,
+        json: async () => ({
+          id: url.split("/").pop(),
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-22T12:00:00Z",
+          ...body,
+        }),
+        text: async () => "",
+      } as Response;
+    }
+    return { ok: true, status: 200, json: async () => [], text: async () => "" } as Response;
+  });
+  vi.stubGlobal("fetch", fetchImpl);
+  return fetchImpl;
+}
+
+// A board that reads its notes from the SAME cache key the move writes — the
+// production wiring (ViewSurface → useViewResults → BoardView), in miniature.
+function Board({ initial, laneBy }: { initial: Note[]; laneBy: string }) {
+  const { data } = useQuery<Note[]>({
+    queryKey: VIEW_KEY as unknown as string[],
+    queryFn: async () => initial,
+    initialData: initial,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  return (
+    <BoardView
+      notes={data ?? []}
+      laneBy={laneBy}
+      roles={DEFAULT_TAG_ROLES}
+      viewResultsKey={VIEW_KEY as unknown as string[]}
+    />
+  );
+}
+
+function renderBoard(initial: Note[], laneBy: string) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <BrowserRouter>
+        <Board initial={initial} laneBy={laneBy} />
+      </BrowserRouter>
+    </QueryClientProvider>,
+  );
+  return qc;
+}
+
+// The `.relative` wrapper NoteCard puts around a board card + its Move overlay.
+function cardFor(title: string): HTMLElement {
+  const el = screen.getByText(title).closest("div.relative");
+  if (!el) throw new Error(`no card wrapper for "${title}"`);
+  return el as HTMLElement;
+}
+
+function openMoveMenu(title: string): HTMLElement {
+  const card = cardFor(title);
+  fireEvent.click(within(card).getByRole("button", { name: /move to another/i }));
+  return card;
+}
+
+function laneSection(label: string): HTMLElement {
+  return screen.getByRole("region", { name: label });
+}
+
+describe("BoardView tap-to-move", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.getState().clear();
+    seedStore();
+    window.history.replaceState({}, "", "/");
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("moves a card to the chosen lane optimistically and PATCHes { [laneBy]: value }", async () => {
+    const fetchImpl = installFetch(true);
+    renderBoard(
+      [
+        {
+          id: "a",
+          path: "proj-a",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { status: "active" },
+        },
+        {
+          id: "b",
+          path: "proj-b",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { status: "done" },
+        },
+      ],
+      "status",
+    );
+
+    // Card "proj-a" starts in the active lane.
+    expect(within(laneSection("active")).getByText("proj-a")).toBeInTheDocument();
+
+    const card = openMoveMenu("proj-a");
+    fireEvent.click(within(card).getByRole("menuitem", { name: "done" }));
+
+    // Optimistic: proj-a is now in the done lane (and active lane emptied away).
+    await waitFor(() => {
+      expect(within(laneSection("done")).getByText("proj-a")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("region", { name: "active" })).toBeNull();
+
+    // The wire write moved exactly one field with the string value.
+    const patch = fetchImpl.mock.calls.find(
+      ([, init]) => (init as RequestInit)?.method === "PATCH",
+    );
+    expect(patch).toBeDefined();
+    const body = JSON.parse(((patch![1] as RequestInit).body as string) ?? "{}");
+    expect(body.metadata).toEqual({ status: "done" });
+    expect(body.if_updated_at).toBe("2026-07-10T00:00:00Z");
+  });
+
+  it("preserves the value TYPE — moving between integer lanes writes a number, not '3'", async () => {
+    const fetchImpl = installFetch(true);
+    renderBoard(
+      [
+        {
+          id: "a",
+          path: "proj-a",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { priority: 1 },
+        },
+        {
+          id: "b",
+          path: "proj-b",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { priority: 3 },
+        },
+      ],
+      "priority",
+    );
+
+    const card = openMoveMenu("proj-a");
+    fireEvent.click(within(card).getByRole("menuitem", { name: "3" }));
+
+    await waitFor(() => {
+      expect(within(laneSection("3")).getByText("proj-a")).toBeInTheDocument();
+    });
+    const patch = fetchImpl.mock.calls.find(
+      ([, init]) => (init as RequestInit)?.method === "PATCH",
+    );
+    const body = JSON.parse(((patch![1] as RequestInit).body as string) ?? "{}");
+    expect(body.metadata).toEqual({ priority: 3 });
+    expect(typeof body.metadata.priority).toBe("number");
+  });
+
+  it("moving to the 'No status' lane writes null (null-as-delete)", async () => {
+    const fetchImpl = installFetch(true);
+    renderBoard(
+      [
+        {
+          id: "a",
+          path: "proj-a",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { status: "active" },
+        },
+        {
+          id: "b",
+          path: "proj-b",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: {},
+        },
+      ],
+      "status",
+    );
+
+    const card = openMoveMenu("proj-a");
+    fireEvent.click(within(card).getByRole("menuitem", { name: "No status" }));
+
+    await waitFor(() => {
+      expect(within(laneSection("No status")).getByText("proj-a")).toBeInTheDocument();
+    });
+    const patch = fetchImpl.mock.calls.find(
+      ([, init]) => (init as RequestInit)?.method === "PATCH",
+    );
+    const body = JSON.parse(((patch![1] as RequestInit).body as string) ?? "{}");
+    expect(body.metadata).toEqual({ status: null });
+  });
+
+  it("rolls back to the original lane and toasts when the write fails", async () => {
+    installFetch(false); // PATCH → 500 → client throws
+    renderBoard(
+      [
+        {
+          id: "a",
+          path: "proj-a",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { status: "active" },
+        },
+        {
+          id: "b",
+          path: "proj-b",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { status: "done" },
+        },
+      ],
+      "status",
+    );
+
+    const card = openMoveMenu("proj-a");
+    fireEvent.click(within(card).getByRole("menuitem", { name: "done" }));
+
+    // After the failed write, the card is back in its original lane…
+    await waitFor(() => {
+      expect(within(laneSection("active")).getByText("proj-a")).toBeInTheDocument();
+    });
+    // …and an error toast explains why.
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts.some((t) => t.tone === "error" && /couldn't move/i.test(t.message))).toBe(true);
+    });
+  });
+});

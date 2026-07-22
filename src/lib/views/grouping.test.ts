@@ -79,6 +79,24 @@ describe("groupIntoLanes", () => {
     );
     expect(lanes.find((l) => l.key === "1")?.notes.map((n) => n.id)).toEqual(["a"]);
   });
+
+  it("carries each lane's ORIGINAL typed value — a number stays a number, not '3'", () => {
+    const lanes = groupIntoLanes(
+      [note("a", { priority: 3 }), note("b", { priority: 3 }), note("c", { priority: 1 })],
+      "priority",
+    );
+    const high = lanes.find((l) => l.key === "3");
+    expect(high?.value).toBe(3);
+    expect(typeof high?.value).toBe("number");
+    // The key is still the stringified grouping key.
+    expect(high?.key).toBe("3");
+  });
+
+  it("carries a string lane's value as the string, and the uncategorized lane's value as null", () => {
+    const lanes = groupIntoLanes([note("a", { status: "active" }), note("b")], "status");
+    expect(lanes.find((l) => l.key === "active")?.value).toBe("active");
+    expect(lanes.find((l) => l.uncategorized)?.value).toBeNull();
+  });
 });
 
 describe("resolveLaneOrder", () => {

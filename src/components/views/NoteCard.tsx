@@ -2,7 +2,7 @@ import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import { displayTitle } from "@/lib/note-title";
 import { relativeTime } from "@/lib/time";
 import type { Note } from "@/lib/vault/types";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Link } from "react-router";
 
 // The card face of a note (Views Wave 2b) — the board/gallery counterpart to
@@ -37,11 +37,19 @@ export function NoteCard({
   pinnedTag,
   archivedTag,
   variant = "compact",
+  overlay,
 }: {
   note: Note;
   pinnedTag: string;
   archivedTag: string;
   variant?: "compact" | "gallery";
+  /**
+   * An optional corner control laid OVER the card, OUTSIDE its navigating
+   * anchor (a button nested in an `<a>` is invalid + would double-fire the
+   * navigation). Boards pass the "Move to…" menu here; list/gallery pass
+   * nothing and the card renders exactly as before.
+   */
+  overlay?: ReactNode;
 }) {
   const title = displayTitle(note);
   const stamp = note.updatedAt ?? note.createdAt;
@@ -51,7 +59,7 @@ export function NoteCard({
   const [coverBroken, setCoverBroken] = useState(false);
   const showCover = cover && !coverBroken;
 
-  return (
+  const card = (
     <Link
       to={`/n/${encodeURIComponent(note.id)}`}
       className={`focus-ring card group flex flex-col overflow-hidden transition-colors hover:border-accent ${
@@ -109,5 +117,15 @@ export function NoteCard({
         </span>
       </div>
     </Link>
+  );
+
+  // No overlay → identical markup to before (list/gallery/every non-board card).
+  if (!overlay) return card;
+
+  return (
+    <div className="relative">
+      {card}
+      <div className="absolute right-2 top-2 z-10">{overlay}</div>
+    </div>
   );
 }
