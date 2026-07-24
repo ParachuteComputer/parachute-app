@@ -1,5 +1,34 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.40] - 2026-07-24
+
+**Views: explore-then-save — switch lens / adjust the query / change fields in place, Save or
+Revert deliberately; forking a view now carries its full layout (PR B of the views train).** A
+view's CONFIG (lens/kind, group-by, date-field, field set, query refinements) is now
+explore-then-save: changing any of it is a temporary exploration living in the URL — leave and
+it's discarded silently, back-button restores it, a shared link carries it — and the saved
+`#view` note changes only on an explicit Save. DATA writes through the view (field chips, board
+moves) stay immediate, as PR A shipped them; the two affordances never blur.
+
+- **The config draft** (`src/lib/views/config.ts`) — `ViewConfigDraft` with a URL round-trip
+  (params `kind`/`group`/`date`/`fields`, disjoint from the shipped refinement params), the pure
+  `applyConfig` overlay, per-key normalization (setting a control back to the saved value clears
+  its draft key), and the two save-payload builders.
+- **The in-place lens switcher** (`src/components/views/LensSwitcher.tsx`) — List / Board /
+  Calendar / Gallery on the view itself, lossless by construction: the results cache key excludes
+  the lens, so switching re-renders the one cached result set without a refetch. A board with no
+  group-by defaults to the tag schema's first enum-typed field; a calendar with no date-field to
+  the first date-typed one. Board-only Group and calendar-only Date-field selects ride alongside.
+- **The "View modified — Save / Revert" bar** — ONE bar covers both axes (config draft + query
+  refinements), absorbing the refinement bar's standalone Save button. A bottom-anchored strip
+  (above the tab bar on phones, safe-area aware; the ambient Map button yields while the bar is
+  up). Save runs the existing update-or-fork sheet; Revert clears the URL and writes nothing.
+- **Save writes a partial metadata patch** — kind + merged query plus exactly the config keys the
+  draft overrides (`group_by` canonical, `fields` as a JSON-string array), guarded by
+  `if_updated_at`. **Fork fix rides along**: forking used to write only kind+query, silently
+  dropping `group_by`/`date_field`/`fields` — forking a board lost its lanes. Fork now writes the
+  full effective config.
+
 ## [0.20.39] - 2026-07-24
 
 **Views: immediate field writes now confirm themselves — shared write hook + microconfirmation

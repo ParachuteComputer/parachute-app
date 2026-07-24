@@ -1,6 +1,7 @@
 import { AmbientMapFab } from "@/components/AmbientMapFab";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
+import { useViewModifiedBar } from "@/lib/views/modified-bar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
@@ -33,9 +34,11 @@ function renderFab(path = "/") {
 describe("AmbientMapFab", () => {
   beforeEach(() => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useViewModifiedBar.setState({ shown: false });
   });
   afterEach(() => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useViewModifiedBar.setState({ shown: false });
   });
 
   it("renders nothing with no active vault", () => {
@@ -61,6 +64,19 @@ describe("AmbientMapFab", () => {
       activeVaultId: "a",
     });
     const { container } = renderFab("/map");
+    expect(container.querySelector("a")).toBeNull();
+  });
+
+  // Views train B (review must-fix): the "View modified — Save / Revert" bar
+  // docks in the same corner at the same z — the FAB yields while it's up so
+  // it never paints over / steals taps from Save.
+  it("yields while a view's modified bar is shown", () => {
+    useVaultStore.setState({
+      vaults: { a: makeVault("a", "http://localhost:1940") },
+      activeVaultId: "a",
+    });
+    useViewModifiedBar.setState({ shown: true });
+    const { container } = renderFab("/");
     expect(container.querySelector("a")).toBeNull();
   });
 
