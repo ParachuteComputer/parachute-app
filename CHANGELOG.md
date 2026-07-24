@@ -1,5 +1,29 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.42] - 2026-07-24
+
+**Views: the table lens — the field set as columns, click-to-edit cells (PR D of the views
+train).** A fifth kind, `"table"`: a title column (a navigating link, the NoteRow/NoteCard
+gesture) plus one column per resolved field (`resolveViewFields` — the same ordered set the
+chips band renders), rows = the view results.
+
+- **`src/components/views/TableView.tsx`** — every cell renders the shipped `FieldValueControl`
+  (enum menu / date picker / boolean toggle / text / number; no second editor), committing
+  through the shared `useViewFieldWrite` hook (PR A): immediate optimistic write, rollback on
+  error, microconfirmation toast + row flash (`data-note-id` on the row). An empty cell shows
+  the control's quiet "—" affordance. Mobile: a horizontal-scroll wrapper with a min-width
+  table (the BoardView pattern) — the page body never scrolls sideways; the title column is
+  sticky against that scroll. Accepted v1 caveat (as on the board): the editor popovers can
+  clip at the scroll container's edge.
+- **Wire compat: `"table"` joins `VIEW_KINDS` additively** — every decoder degrades an unknown
+  kind to list silently, so old app versions render a table view as a list. No breakage;
+  covered by decode tests both directions (a `kind:"table"` note decodes as table; a
+  hypothetical unknown kind still lists).
+- **Dispatch + affordances** — ViewSurface renders `kind === "table"` (no required config:
+  zero resolved fields is still a coherent title-column table); the lens switcher gains the
+  Table option (PR B's switcher maps `VIEW_KINDS`); `ViewNavIcon` + the switcher get a table
+  glyph (`IconTable`).
+
 ## [0.20.41] - 2026-07-24
 
 **Views: the Fields control — one field set per view, now editable in place (PR C of the views

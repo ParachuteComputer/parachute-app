@@ -11,7 +11,11 @@ import type { Note } from "@/lib/vault/types";
 // 2026-07-17); this module never decodes that shape. `src/lib/saved-views/`
 // stays untouched as dead code for now (a follow-up deletes it outright).
 
-export const VIEW_KINDS = ["list", "board", "calendar", "gallery"] as const;
+// "table" (views train D) is additive on the wire: any decoder that predates
+// it — old app versions included — hits the unknown-kind branch below and
+// renders the view as a list. No breakage, by the same §1 rule that makes
+// every unknown kind safe.
+export const VIEW_KINDS = ["list", "board", "calendar", "gallery", "table"] as const;
 export type ViewKind = (typeof VIEW_KINDS)[number];
 
 function isViewKind(x: unknown): x is ViewKind {

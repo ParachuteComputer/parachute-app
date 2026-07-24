@@ -1,5 +1,5 @@
 import { HueDot } from "@/components/HueDot";
-import { IconCalendar, IconColumns, IconGrid, IconNotes } from "@/components/NavIcons";
+import { IconCalendar, IconColumns, IconGrid, IconNotes, IconTable } from "@/components/NavIcons";
 import type { ViewKind } from "@/lib/views/schema";
 
 // The Rail band / ViewSurface header's combined mark (VIEWS-RENDER-SPEC §9):
@@ -24,6 +24,8 @@ function KindGlyph({ kind }: { kind: ViewKind }) {
       return <IconCalendar width={16} height={16} />;
     case "gallery":
       return <IconGrid width={16} height={16} />;
+    case "table":
+      return <IconTable width={16} height={16} />;
     default:
       return <IconNotes width={16} height={16} />;
   }

@@ -61,7 +61,9 @@ describe("config draft URL round-trip", () => {
   });
 
   it("drops an unknown kind and empty/whitespace fields segments", () => {
-    const params = new URLSearchParams("kind=table&fields=,%20,");
+    // ("table" graduated from unknown to a real kind in train D — "timeline"
+    // stands in as the exemplar unknown now.)
+    const params = new URLSearchParams("kind=timeline&fields=,%20,");
     expect(searchParamsToConfigDraft(params)).toEqual({});
   });
 

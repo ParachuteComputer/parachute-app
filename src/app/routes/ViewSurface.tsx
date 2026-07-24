@@ -9,6 +9,7 @@ import { FieldsControl } from "@/components/views/FieldsControl";
 import { GalleryView } from "@/components/views/GalleryView";
 import { DateFieldControl, GroupByControl, LensSwitcher } from "@/components/views/LensSwitcher";
 import { NoteFieldChips } from "@/components/views/NoteFieldChips";
+import { TableView } from "@/components/views/TableView";
 import { useToastStore } from "@/lib/toast/store";
 import { useCreateNote, useUpdateNote, useVaultStore } from "@/lib/vault";
 import { useTagRoles } from "@/lib/vault/settings";
@@ -310,8 +311,8 @@ function ProblemsBanner({ problems }: { problems: ViewProblem[] }) {
 
 // ---------------------------------------------------------------------------
 // Results — shared state guards (§3), then dispatch on the view's KIND
-// (Views Wave 2b). list is byte-identical to before; board/gallery/calendar
-// each render the SAME fetched results a different way. An unknown kind — or a
+// (Views Wave 2b). list is byte-identical to before; board/gallery/calendar/
+// table each render the SAME fetched results a different way. An unknown kind — or a
 // board/calendar missing its lane/date config — falls through to the list, the
 // one shape a view is never wrong to render as (§1).
 // ---------------------------------------------------------------------------
@@ -395,6 +396,12 @@ function ViewResults({
     case "gallery":
       return (
         <GalleryView notes={all} roles={roles} viewResultsKey={viewResultsKey} fields={fields} />
+      );
+    case "table":
+      // No required config (unlike board's group-by / calendar's date field):
+      // zero resolved fields is still a coherent table — the title column.
+      return (
+        <TableView notes={all} roles={roles} viewResultsKey={viewResultsKey} fields={fields} />
       );
     case "calendar":
       if (def.dateField) {

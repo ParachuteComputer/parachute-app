@@ -387,6 +387,44 @@ describe("ViewSurface", () => {
     expect(screen.queryByText("Undated chat")).toBeNull();
   });
 
+  it("table kind (train D): columns from the view's field set, cells editable, title links out", async () => {
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Grid",
+        tags: ["view"],
+        metadata: {
+          kind: "table",
+          fields: JSON.stringify(["status"]),
+          query: JSON.stringify({ tag: "project" }),
+        },
+      },
+      results: [
+        {
+          id: "n1",
+          path: "Alpha",
+          metadata: { status: "active" },
+          createdAt: "2026-07-01T00:00:00Z",
+        },
+      ],
+    });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Grid" });
+
+    await screen.findByRole("table");
+    // Title column first, then the resolved field set in view order.
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Note",
+      "status",
+    ]);
+    // The title cell navigates; the field cell is the shared click-to-edit control.
+    expect(screen.getByRole("link", { name: /Alpha/ })).toHaveAttribute("href", "/n/n1");
+    expect(screen.getByRole("button", { name: "Edit status" }).textContent).toBe("active");
+    // Table, not list — no Results partition band.
+    expect(screen.queryByRole("region", { name: "Results" })).toBeNull();
+  });
+
   it("unknown kind still degrades to the list renderer", async () => {
     installFetch({
       note: {
