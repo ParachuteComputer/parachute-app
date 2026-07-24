@@ -394,6 +394,90 @@ describe("ViewSurface config draft (views train B)", () => {
     expect(captured.patches).toHaveLength(0);
   });
 
+  // --- The Fields control (views train C) — the field-set axis of the same
+  // draft: edits write the ordered list into the URL, the one bar governs
+  // Save/Revert, Save writes `fields` as a JSON-string array (the decoder's
+  // wire shape).
+
+  it("Fields control: unchecking a schema field writes the ordered draft, raises the bar, and Save patches `fields` as a JSON-string array", async () => {
+    const sub = "user-1";
+    seedStore(fakeJwt(sub));
+    const { captured } = installFetch({
+      note: listViewNote({ createdBy: sub }),
+      results: PROJECT_RESULTS,
+      tag: PROJECT_TAG_SCHEMA,
+    });
+    renderViewSurface();
+    await awaitReady();
+
+    fireEvent.click(screen.getByRole("button", { name: /^fields/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Fields" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "title" }));
+
+    // The draft is live: the bar raises, and the unchecked field drops to
+    // the hidden (uncheckable-back) section of the still-open panel.
+    expect(await screen.findByText("View modified")).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        (within(dialog).getByRole("checkbox", { name: "title" }) as HTMLInputElement).checked,
+      ).toBe(false),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const sheet = await screen.findByRole("dialog", { name: /save this view/i });
+    fireEvent.click(within(sheet).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(captured.patches).toHaveLength(1));
+    // Ordered, schema-order-preserving, JSON-string wire shape — and ONLY
+    // the fields key overridden beyond the kind+query baseline.
+    expect(captured.patches[0].body.metadata).toEqual({
+      kind: "list",
+      query: JSON.stringify({ tag: "project" }),
+      fields: JSON.stringify(["status", "due"]),
+    });
+  });
+
+  it("Fields control: up/down reorder round-trips through the URL draft into the saved order", async () => {
+    const sub = "user-1";
+    seedStore(fakeJwt(sub));
+    const { captured } = installFetch({
+      note: listViewNote({ createdBy: sub }),
+      results: PROJECT_RESULTS,
+      tag: PROJECT_TAG_SCHEMA,
+    });
+    renderViewSurface();
+    await awaitReady();
+
+    fireEvent.click(screen.getByRole("button", { name: /^fields/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Fields" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move status up" }));
+    expect(await screen.findByText("View modified")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const sheet = await screen.findByRole("dialog", { name: /save this view/i });
+    fireEvent.click(within(sheet).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(captured.patches).toHaveLength(1));
+    const metadata = captured.patches[0].body.metadata as Record<string, string>;
+    expect(JSON.parse(metadata.fields)).toEqual(["status", "title", "due"]);
+  });
+
+  it("the Fields control rides the config row for every lens kind", async () => {
+    installFetch({ note: listViewNote(), results: PROJECT_RESULTS, tag: PROJECT_TAG_SCHEMA });
+    renderViewSurface();
+    await awaitReady();
+
+    expect(screen.getByRole("button", { name: /^fields/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    await screen.findByRole("region", { name: "active" });
+    expect(screen.getByRole("button", { name: /^fields/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    await screen.findByLabelText(/date field/i);
+    expect(screen.getByRole("button", { name: /^fields/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Gallery" }));
+    expect(screen.getByRole("button", { name: /^fields/i })).toBeTruthy();
+  });
+
   it("calendar lens exposes the date-field control; board's group control lists the schema fields", async () => {
     installFetch({ note: listViewNote(), results: PROJECT_RESULTS, tag: PROJECT_TAG_SCHEMA });
     renderViewSurface();
