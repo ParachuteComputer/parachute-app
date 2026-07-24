@@ -411,7 +411,7 @@ function ViewResults({
       return (
         <CalendarView
           notes={all}
-          dateField={def.dateField ?? null}
+          dateField={def.dateField || null}
           roles={roles}
           viewResultsKey={viewResultsKey}
           fields={fields}
