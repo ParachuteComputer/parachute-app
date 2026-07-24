@@ -1,5 +1,30 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.39] - 2026-07-24
+
+**Views: immediate field writes now confirm themselves — shared write hook + microconfirmation
+(PR A of the views train).** Data writes through a view (edit a field chip, tap-to-move a card)
+are immediate — they never wait for a "Save" — so the write now confirms itself the moment it
+resolves.
+
+- **`useViewFieldWrite(note, viewResultsKey)`** (`src/lib/views/write.ts`) — the shared write
+  hook every lens consumes (chips + board move today; table cells + drag next). Wraps the shipped
+  `useViewFieldMutation` (optimistic view-cache paint, rollback, server-`updatedAt` patch-back —
+  unchanged) and adds the microconfirmation on RESOLVE — not optimistically: offline writes
+  resolve instantly via the durable queue, so resolve-time is both instant and honest, while a
+  rejected write confirms nothing.
+- **The microconfirmation** — a short success toast naming what changed ("✓ status → done";
+  booleans read Yes/No, a cleared field reads "✓ status cleared", the board echoes the tapped
+  lane's label) + a brief coral-outline flash on the affected card/row. Toasts gained an optional
+  per-toast `durationMs` (`src/lib/toast/store.ts`, `Toaster`) — microconfirmations run ~1800ms
+  so a burst of quick edits reads as pulses, not a toast wall; every existing toast keeps the 4s
+  default. The flash keyframe lives inside the app's single reduced-motion gate
+  (`src/styles/index.css`) — reduced-motion users still get the toast; `NoteCard` and `NoteRow`
+  carry `data-note-id` so the flash can target them.
+- **Both existing call sites migrated** — the field chips (`NoteFieldChips`) and the board's
+  tap-to-move (`BoardView`) now write through the hook. Behavior is identical (same optimistic
+  paint, same rollback, same error-toast phrasings) plus the new confirmation.
+
 ## [0.20.38] - 2026-07-22
 
 **Views become one system: a shared foundation + tag-schema-driven fields + inline field chips.**

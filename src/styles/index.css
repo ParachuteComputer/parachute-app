@@ -1379,6 +1379,30 @@ body {
     animation: enter-fade 180ms var(--ease-out) both;
   }
 
+  /* --- Field-write flash (views train A) --- the visual half of the
+     microconfirmation: the card whose field just wrote pulses a brief coral
+     outline, so the eye lands on WHERE the change landed while the toast
+     names it. Applied imperatively by `flashNoteCard` (src/lib/views/write.ts)
+     to the `[data-note-id]` element and removed ~700ms later (CARD_FLASH_MS).
+     Outline, not box-shadow, so it never collides with .card's resting shadow
+     or the focus ring. Bakes its duration (a confirm pulse, not an entrance
+     consuming --dur-enter), so it's listed explicitly in the reduced-motion
+     gate below — reduced-motion users still get the toast confirmation. */
+  @keyframes field-write-flash {
+    0%,
+    100% {
+      outline-color: transparent;
+    }
+    20% {
+      outline-color: color-mix(in srgb, var(--color-accent) 75%, transparent);
+    }
+  }
+  .field-write-flash {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    animation: field-write-flash 600ms var(--ease-out);
+  }
+
   /* --- ONE reduced-motion gate --- previously honored ad hoc: 8 individual
      `motion-reduce:` sprinkles per callsite plus 2 hand-rolled CSS blocks.
      Zeroing --dur-move/--dur-enter at the token layer means every transform,
@@ -1401,6 +1425,7 @@ body {
     .enter-rise,
     .enter-fade,
     .qs-scrim-fade,
+    .field-write-flash,
     .dialog-overlay,
     .dialog-panel,
     .cm-format-toolbar-docked {

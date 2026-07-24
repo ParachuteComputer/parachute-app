@@ -54,7 +54,10 @@ export function NoteRow({
   const isArchived = (note.tags ?? []).includes(archivedTag);
   return (
     <li className={isArchived ? "opacity-60 italic" : undefined}>
-      <div className="note-row items-stretch">
+      {/* data-note-id: the field-write microconfirmation flash's target
+          (views train A) — a view row's chip band writes a field and
+          `flashNoteCard` pulses this row. */}
+      <div className="note-row items-stretch" data-note-id={note.id}>
         <span aria-hidden="true" className="note-dot" />
         <Link
           to={`/n/${encodeURIComponent(note.id)}`}

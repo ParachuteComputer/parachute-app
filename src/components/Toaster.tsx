@@ -9,7 +9,9 @@ export function Toaster() {
 
   useEffect(() => {
     if (toasts.length === 0) return;
-    const timers = toasts.map((t) => window.setTimeout(() => dismiss(t.id), AUTO_DISMISS_MS));
+    const timers = toasts.map((t) =>
+      window.setTimeout(() => dismiss(t.id), t.durationMs ?? AUTO_DISMISS_MS),
+    );
     return () => {
       for (const t of timers) window.clearTimeout(t);
     };
