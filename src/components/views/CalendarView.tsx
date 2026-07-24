@@ -5,10 +5,17 @@ import { formatLongDate, formatLongMonth, monthGrid, shiftMonth, todayKey } from
 import { displayTitle } from "@/lib/note-title";
 import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
+import {
+  type DropHandlerRegistry,
+  useDropHandlerRegistry,
+  useNoteDragSource,
+  useNoteDropTarget,
+} from "@/lib/views/dnd";
 import type { ResolvedField } from "@/lib/views/fields";
 import { defaultMonth, placeOnCalendar } from "@/lib/views/grouping";
+import { useViewFieldWrite } from "@/lib/views/write";
 import type { QueryKey } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Note titles shown inside a day cell before collapsing to "+N more".
@@ -22,6 +29,16 @@ const MAX_CHIPS_PER_DAY = 2;
 // missing/unparseable date are omitted and counted in a footnote. The grid
 // mechanics (Sunday-started `monthGrid`, local `YYYY-MM-DD` keys) are shared
 // with the /calendar route via `@/lib/dates`.
+//
+// Desktop drag (views train E): on fine-pointer devices each day chip is a
+// drag source and each IN-MONTH cell a drop zone — dropping writes the note's
+// `dateField` as a bare `YYYY-MM-DD`, exactly the value the field chip's date
+// picker commits, through the same `useViewFieldWrite`. Same-day drops are a
+// no-op; out-month cells take no drops (navigate months first); there's no
+// "unschedule" zone — the chip's Clear already covers it. The view only
+// mounts with a real `dateField` (ViewSurface falls back to list without
+// one), so every cell's drop zone has a field to write. Touch devices see
+// none of this — the tap path is unchanged.
 export function CalendarView({
   notes,
   dateField,
@@ -46,6 +63,9 @@ export function CalendarView({
 
   const days = useMemo(() => monthGrid(ym.year, ym.month), [ym]);
   const today = todayKey();
+
+  // Routes a drop (landing on a DAY CELL) to the dragged chip's write hook.
+  const dropRegistry = useDropHandlerRegistry<string>();
 
   // No dated notes at all — an empty grid with month nav would be busywork.
   if (placement.byDay.size === 0) {
@@ -124,6 +144,9 @@ export function CalendarView({
                 isSelected={isSelected}
                 notes={dayNotes}
                 onSelect={() => setSelected(key)}
+                dateField={dateField}
+                viewResultsKey={viewResultsKey}
+                dropRegistry={dropRegistry}
               />
             );
           })}
@@ -173,6 +196,9 @@ function DayCell({
   isSelected,
   notes,
   onSelect,
+  dateField,
+  viewResultsKey,
+  dropRegistry,
 }: {
   dayKey: string;
   dayNumber: number;
@@ -181,8 +207,23 @@ function DayCell({
   isSelected: boolean;
   notes: Note[];
   onSelect: () => void;
+  dateField: string;
+  viewResultsKey: QueryKey;
+  dropRegistry: DropHandlerRegistry<string>;
 }) {
   const hasNotes = notes.length > 0;
+
+  // Drop zone (train E) — the cell receives note drags; only IN-MONTH cells
+  // attach the props, so an out-month drop falls through to the browser
+  // default (nothing). The handler passes this cell's day to the dragged
+  // chip's registered writer.
+  const onDropNote = useCallback(
+    (noteId: string) => dropRegistry.dispatch(noteId, dayKey),
+    [dropRegistry, dayKey],
+  );
+  const { isOver, targetProps } = useNoteDropTarget(onDropNote);
+  const dropProps = inMonth ? targetProps : {};
+
   const numberBadge = (
     <span
       className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full tabular-nums ${
@@ -196,12 +237,14 @@ function DayCell({
   const chips = (
     <span className="flex flex-col gap-0.5">
       {notes.slice(0, MAX_CHIPS_PER_DAY).map((note) => (
-        <span
+        <DayChip
           key={note.id}
-          className="truncate rounded bg-accent/10 px-1 py-0.5 text-[10px] leading-tight text-accent"
-        >
-          {displayTitle(note).text}
-        </span>
+          note={note}
+          dayKey={dayKey}
+          dateField={dateField}
+          viewResultsKey={viewResultsKey}
+          dropRegistry={dropRegistry}
+        />
       ))}
       {notes.length > MAX_CHIPS_PER_DAY ? (
         <span className="text-[10px] text-fg-dim">+{notes.length - MAX_CHIPS_PER_DAY} more</span>
@@ -211,11 +254,15 @@ function DayCell({
 
   const cellClass = `flex min-h-24 flex-col border-b border-r border-border p-1.5 text-left text-xs ${
     inMonth ? "" : "opacity-40"
-  } ${isSelected ? "bg-accent/5" : ""}`;
+  } ${isSelected ? "bg-accent/5" : ""} ${
+    // The drop affordance: a subtle coral inset outline + tint on the hovered
+    // cell. A state change, not motion — nothing for the reduced-motion gate.
+    inMonth && isOver ? "bg-accent/5 outline-2 -outline-offset-2 outline-accent/60" : ""
+  }`;
 
   if (!hasNotes) {
     return (
-      <div className={cellClass}>
+      <div className={cellClass} data-day={dayKey} {...dropProps}>
         {numberBadge}
         <span className="sr-only">no notes</span>
       </div>
@@ -227,10 +274,67 @@ function DayCell({
       onClick={onSelect}
       aria-label={`${formatLongDate(dayKey)} — ${notes.length} notes`}
       className={`${cellClass} hover:bg-bg/60 focus:bg-bg/60 focus:outline-none`}
+      data-day={dayKey}
+      {...dropProps}
     >
       {numberBadge}
       {chips}
     </button>
+  );
+}
+
+// A note's chip on its day cell — and, on fine-pointer devices, the calendar's
+// drag source. Rendered once per (visible) note, so it can own the note-bound
+// `useViewFieldWrite`; a drop anywhere on the grid dispatches back here. The
+// written value is the target cell's bare `YYYY-MM-DD` day key — identical to
+// what the field chip's date picker commits — with the same-day drop a
+// deliberate no-op (no write, no toast). Chips aren't links, but they live
+// inside the day-panel button: the drag source's click-capture also stops the
+// post-dragend residue click from toggling the panel.
+function DayChip({
+  note,
+  dayKey,
+  dateField,
+  viewResultsKey,
+  dropRegistry,
+}: {
+  note: Note;
+  dayKey: string;
+  dateField: string;
+  viewResultsKey: QueryKey;
+  dropRegistry: DropHandlerRegistry<string>;
+}) {
+  const { write, isPending } = useViewFieldWrite(note, viewResultsKey);
+  const drag = useNoteDragSource(note.id);
+
+  const receiveDayDrop = useCallback(
+    (targetDay: string) => {
+      if (isPending || targetDay === dayKey) return;
+      void write(dateField, targetDay, {
+        errorPrefix: `Couldn't move "${displayTitle(note).text}"`,
+      });
+    },
+    [isPending, dayKey, dateField, write, note],
+  );
+  useEffect(
+    () => dropRegistry.register(note.id, receiveDayDrop),
+    [dropRegistry, note.id, receiveDayDrop],
+  );
+
+  return (
+    <span
+      // The microconfirmation flash's target (views train A): after the drop's
+      // write resolves, `flashNoteCard` pulses the chip on its NEW day.
+      data-note-id={note.id}
+      className={
+        drag.canDrag
+          ? "truncate rounded bg-accent/10 px-1 py-0.5 text-[10px] leading-tight text-accent cursor-grab"
+          : "truncate rounded bg-accent/10 px-1 py-0.5 text-[10px] leading-tight text-accent"
+      }
+      {...drag.sourceProps}
+    >
+      {displayTitle(note).text}
+    </span>
   );
 }
 
