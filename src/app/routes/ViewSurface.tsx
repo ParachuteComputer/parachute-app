@@ -6,19 +6,30 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { BoardView } from "@/components/views/BoardView";
 import { CalendarView } from "@/components/views/CalendarView";
 import { GalleryView } from "@/components/views/GalleryView";
+import { DateFieldControl, GroupByControl, LensSwitcher } from "@/components/views/LensSwitcher";
 import { NoteFieldChips } from "@/components/views/NoteFieldChips";
 import { useToastStore } from "@/lib/toast/store";
 import { useCreateNote, useUpdateNote, useVaultStore } from "@/lib/vault";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
+import {
+  type ViewConfigDraft,
+  applyConfig,
+  configDraftToSearchParams,
+  draftPatchMetadata,
+  fullConfigMetadata,
+  hasConfigDraft,
+  normalizeConfigDraft,
+  searchParamsToConfigDraft,
+  withLens,
+} from "@/lib/views/config";
 import { viewPathForName } from "@/lib/views/defaults";
 import { type ResolvedField, useResolvedViewFields } from "@/lib/views/fields";
 import { partitionPinned } from "@/lib/views/partition";
 import { defaultSaveMode, useMySub, useViewNote, useViewResults } from "@/lib/views/queries";
 import {
   type BaseChip,
-  EMPTY_REFINEMENTS,
   type ViewRefinements,
   composeViewQuery,
   describeBaseQuery,
@@ -97,38 +108,79 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   const { roles } = useTagRoles(vault?.id ?? null);
   const def = useMemo(() => decodeViewDef(note), [note]);
 
+  // One URL, two explore-then-save axes (train B): the QUERY refinements
+  // (§5 — `tag`/`noExclude`/`search`/`sort`) and the CONFIG draft
+  // (`kind`/`group`/`date`/`fields`). Disjoint param names; every write
+  // re-emits BOTH so changing one axis never drops the other. `replace:
+  // true` throughout — exploration never spams history; leaving discards
+  // silently, back restores, a shared link carries it.
   const [searchParams, setSearchParams] = useSearchParams();
   const refinements = useMemo(() => searchParamsToRefinements(searchParams), [searchParams]);
-  const setRefinements = (next: ViewRefinements) => {
-    setSearchParams(refinementsToSearchParams(next), { replace: true });
+  const draft = useMemo(() => searchParamsToConfigDraft(searchParams), [searchParams]);
+  const writeParams = (nextDraft: ViewConfigDraft, nextRefinements: ViewRefinements) => {
+    const params = configDraftToSearchParams(nextDraft);
+    for (const [k, v] of refinementsToSearchParams(nextRefinements)) params.append(k, v);
+    setSearchParams(params, { replace: true });
+  };
+  const setRefinements = (next: ViewRefinements) => writeParams(draft, next);
+  // Normalize on write: a control set back to the saved value clears its key,
+  // so the modified bar disappears exactly when the config matches the note.
+  const setDraft = (next: ViewConfigDraft) => {
+    writeParams(normalizeConfigDraft(def, next), refinements);
   };
 
-  const results = useViewResults(def, refinements);
+  // The EFFECTIVE def this render explores — saved note + draft overlay.
+  // Lossless lens switching by construction: `useViewResults`' cache key is
+  // built from the composed QUERY only (kind/group/date/fields never enter
+  // it), so `effDef` re-renders the same cached result set without a refetch.
+  const effDef = useMemo(() => applyConfig(def, draft), [def, draft]);
+
+  const results = useViewResults(effDef, refinements);
   // The view's shown/editable fields (Part B) — the tag-schema default or the
   // view's `fields` override — resolved once and threaded to every kind, so a
   // card/row can show + edit them through the shared mutation primitive.
-  const fields = useResolvedViewFields(def);
-  const problems: ViewProblem[] = [...def.problems, ...results.problems];
+  const fields = useResolvedViewFields(effDef);
+  const problems: ViewProblem[] = [...effDef.problems, ...results.problems];
 
   const partition = useMemo(() => {
     if (!results.data) return { pinned: [], rest: [] };
-    return partitionPinned(results.data, roles.pinned, queryTags(def.query));
-  }, [results.data, roles.pinned, def.query]);
+    return partitionPinned(results.data, roles.pinned, queryTags(effDef.query));
+  }, [results.data, roles.pinned, effDef.query]);
+
+  // ONE bar covers both axes — query edits are config too (decision 1).
+  const modified = hasConfigDraft(draft) || hasRefinements(refinements);
+  const [showSave, setShowSave] = useState(false);
+  // Revert discards the exploration — clear the URL, write nothing.
+  const revert = () => setSearchParams(new URLSearchParams(), { replace: true });
 
   return (
-    <article>
-      <ViewHeader def={def} />
-      <RefinementBar
-        note={note}
-        def={def}
-        refinements={refinements}
-        onChange={setRefinements}
-        roles={roles}
-      />
+    <article className={modified ? "pb-20" : undefined}>
+      <ViewHeader def={effDef} />
+      <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-2 py-1">
+        <LensSwitcher
+          kind={effDef.kind}
+          onSwitch={(kind) => setDraft(withLens(def, draft, kind, fields))}
+        />
+        {effDef.kind === "board" ? (
+          <GroupByControl
+            value={effDef.groupBy}
+            fields={fields}
+            onChange={(name) => setDraft({ ...draft, groupBy: name })}
+          />
+        ) : null}
+        {effDef.kind === "calendar" ? (
+          <DateFieldControl
+            value={effDef.dateField}
+            fields={fields}
+            onChange={(name) => setDraft({ ...draft, dateField: name })}
+          />
+        ) : null}
+      </div>
+      <RefinementBar def={def} refinements={refinements} onChange={setRefinements} />
       {problems.length > 0 ? <ProblemsBanner problems={problems} /> : null}
       <div className="mt-6">
         <ViewResults
-          def={def}
+          def={effDef}
           data={results.data}
           isPending={results.isPending}
           isError={results.isError}
@@ -141,7 +193,48 @@ function ViewSurfaceBody({ note }: { note: Note }) {
           roles={roles}
         />
       </div>
+      {modified ? <ViewModifiedBar onSave={() => setShowSave(true)} onRevert={revert} /> : null}
+      {showSave ? (
+        <SaveSheet
+          note={note}
+          def={def}
+          draft={draft}
+          refinements={refinements}
+          roles={roles}
+          onClose={() => setShowSave(false)}
+          onSaved={revert}
+        />
+      ) : null}
     </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The modified bar — the explore-then-save affordance for CONFIG + QUERY
+// divergence (train B). Distinct from DATA writes (chips, board moves),
+// which stay immediate and never wait here. A bottom-anchored strip: above
+// the BottomTabBar below lg (which is `bottom-0 z-20`, content padded
+// `pb-16`), at the screen bottom on desktop where the tab bar is hidden.
+// ---------------------------------------------------------------------------
+
+function ViewModifiedBar({ onSave, onRevert }: { onSave: () => void; onRevert: () => void }) {
+  return (
+    <div
+      aria-label="View modified"
+      className="glass-panel fixed inset-x-0 bottom-16 z-20 border-t border-border lg:bottom-0 lg:pb-[env(safe-area-inset-bottom)]"
+    >
+      <div className="mx-auto flex w-full max-w-(--w-page) items-center justify-between gap-3 px-5 py-2.5 md:px-10">
+        <p className="text-sm text-fg-muted">View modified</p>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onRevert} className="btn btn-secondary btn-touch">
+            Revert
+          </button>
+          <button type="button" onClick={onSave} className="btn btn-primary btn-touch">
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -357,25 +450,21 @@ function ListResults({
 
 // ---------------------------------------------------------------------------
 // Refinement bar — base chips (readable, quiet) + refinement chips
-// (dismissable) + the add-filter controls + Save (§5).
+// (dismissable) + the add-filter controls (§5). Saving moved to the
+// ViewModifiedBar (train B) — one Save/Revert affordance covers query
+// refinements AND the config draft.
 // ---------------------------------------------------------------------------
 
 function RefinementBar({
-  note,
   def,
   refinements,
   onChange,
-  roles,
 }: {
-  note: Note;
   def: ViewDef;
   refinements: ViewRefinements;
   onChange: (next: ViewRefinements) => void;
-  roles: TagRoles;
 }) {
-  const [showSave, setShowSave] = useState(false);
   const baseChips = useMemo(() => describeBaseQuery(def.query), [def.query]);
-  const active = hasRefinements(refinements);
 
   const toggleExclude = (tag: string) => {
     const on = refinements.removeExcludes.includes(tag);
@@ -437,27 +526,6 @@ function RefinementBar({
         value={refinements.sort}
         onChange={(sort) => onChange({ ...refinements, sort })}
       />
-
-      {active ? (
-        <button
-          type="button"
-          onClick={() => setShowSave(true)}
-          className="btn btn-primary btn-touch ml-auto"
-        >
-          Save
-        </button>
-      ) : null}
-
-      {showSave ? (
-        <SaveSheet
-          note={note}
-          def={def}
-          refinements={refinements}
-          roles={roles}
-          onClose={() => setShowSave(false)}
-          onSaved={() => onChange(EMPTY_REFINEMENTS)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -571,12 +639,14 @@ function SortControl({
 }
 
 // ---------------------------------------------------------------------------
-// Save sheet — mutate-when-you-own / fork-when-you-don't (§5).
+// Save sheet — mutate-when-you-own / fork-when-you-don't (§5), now saving
+// BOTH axes (train B): the merged query AND the config draft.
 // ---------------------------------------------------------------------------
 
 function SaveSheet({
   note,
   def,
+  draft,
   refinements,
   roles,
   onClose,
@@ -584,6 +654,7 @@ function SaveSheet({
 }: {
   note: Note;
   def: ViewDef;
+  draft: ViewConfigDraft;
   refinements: ViewRefinements;
   roles: TagRoles;
   onClose: () => void;
@@ -606,8 +677,11 @@ function SaveSheet({
       // exclude_tags the base carried — never a surface-side default.
       const merged = composeViewQuery(def.query, refinements) ?? {};
       if (mode === "update") {
+        // Partial patch: kind + query, plus EXACTLY the config keys the
+        // draft overrides (vault merges metadata key-level, so untouched
+        // config keys on the note survive).
         await updateNote.mutateAsync({
-          metadata: { kind: def.kind, query: JSON.stringify(merged) },
+          metadata: draftPatchMetadata(def, draft, merged),
           ...(note.updatedAt ? { if_updated_at: note.updatedAt } : { force: true }),
         });
         pushToast(`Updated "${def.title}".`, "success");
@@ -616,8 +690,10 @@ function SaveSheet({
           content: "",
           path: viewPathForName(name),
           tags: [roles.view],
-          // kind inherited from the source view (§5).
-          metadata: { kind: def.kind, query: JSON.stringify(merged) },
+          // The FULL effective config, not just kind+query — forking a
+          // board keeps its lanes (train-B fix: group_by/date_field/fields
+          // used to be silently dropped).
+          metadata: fullConfigMetadata(applyConfig(def, draft), merged),
         });
         pushToast(`Saved "${name}".`, "success");
       }
