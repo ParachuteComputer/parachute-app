@@ -119,11 +119,11 @@ function resultFetchCount(fetchImpl: ReturnType<typeof vi.fn>): number {
   }).length;
 }
 
-function Wrapper({ children }: { children: ReactNode }) {
+function Wrapper({ children, entry }: { children: ReactNode; entry: string }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return (
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/views/v1"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/views/:id" element={children} />
         </Routes>
@@ -132,9 +132,9 @@ function Wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-function renderViewSurface() {
+function renderViewSurface(entry = "/views/v1") {
   return render(<ViewSurface />, {
-    wrapper: ({ children }) => (<Wrapper>{children}</Wrapper>) as never,
+    wrapper: ({ children }) => (<Wrapper entry={entry}>{children}</Wrapper>) as never,
   });
 }
 
@@ -233,6 +233,40 @@ describe("ViewSurface config draft (views train B)", () => {
     expect(screen.getByText("View modified")).toBeTruthy();
     // …and the switch was lossless: zero new result fetches.
     expect(resultFetchCount(fetchImpl)).toBe(before);
+  });
+
+  // Review must-fix regression: Board auto-adds a group-by; switching back
+  // to List must shed it too, or the bar stays up forever with zero visual
+  // divergence (the Gallery variant below never trips this — gallery
+  // auto-adds nothing — so BOTH lens paths are pinned).
+  it("peek at Board and back to List leaves no residue — the bar disappears", async () => {
+    const { captured } = installFetch({
+      note: listViewNote(),
+      results: PROJECT_RESULTS,
+      tag: PROJECT_TAG_SCHEMA,
+    });
+    renderViewSurface();
+    await awaitReady();
+
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    await screen.findByRole("region", { name: "active" });
+    expect(screen.getByText("View modified")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    await screen.findByRole("region", { name: "Results" });
+    await waitFor(() => expect(screen.queryByText("View modified")).toBeNull());
+    // And nothing was written by the round trip.
+    expect(captured.patches).toHaveLength(0);
+    expect(captured.creates).toHaveLength(0);
+  });
+
+  // Review should-fix: the draft is normalized on READ too — a shared link
+  // whose params equal the saved config is no divergence.
+  it("a shared link carrying config equal to the saved view raises no bar", async () => {
+    installFetch({ note: listViewNote(), results: PROJECT_RESULTS, tag: PROJECT_TAG_SCHEMA });
+    renderViewSurface("/views/v1?kind=list");
+    await awaitReady();
+    expect(screen.queryByText("View modified")).toBeNull();
   });
 
   it("switching back to the saved lens clears the draft — the bar disappears (normalization)", async () => {

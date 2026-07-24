@@ -129,6 +129,14 @@ export function firstDateField(fields: ResolvedField[]): string | undefined {
  * candidate default (schema still loading, or none declared) keeps the
  * existing fall-through behavior (board/calendar without config render as
  * the list).
+ *
+ * The symmetric half (review must-fix): when the TARGET kind doesn't use a
+ * draft key (`groupBy` off-board, `dateField` off-calendar) AND the saved
+ * def never had it, the key is DROPPED — a peek at Board and back to List
+ * leaves no residue (no stuck "View modified" bar, no stray `group_by`
+ * written on Save). Nothing legitimate is lost: the Group/Date controls are
+ * only reachable on board/calendar. A draft override of a key the SAVED def
+ * carries survives the switch — that divergence is real.
  */
 export function withLens(
   def: ViewDef,
@@ -137,13 +145,24 @@ export function withLens(
   resolved: ResolvedField[],
 ): ViewConfigDraft {
   const next: ViewConfigDraft = { ...draft, kind };
-  if (kind === "board" && !(draft.groupBy ?? def.groupBy)) {
-    const name = firstEnumField(resolved);
-    if (name) next.groupBy = name;
+  if (kind === "board") {
+    if (!(draft.groupBy ?? def.groupBy)) {
+      const name = firstEnumField(resolved);
+      if (name) next.groupBy = name;
+    }
+  } else if (def.groupBy === undefined) {
+    // (Assignment, not `delete` — lint/performance/noDelete. Every consumer
+    // treats an undefined-valued key as absent: the `!== undefined` guards
+    // in hasConfigDraft/normalizeConfigDraft, truthiness in the URL writer.)
+    next.groupBy = undefined;
   }
-  if (kind === "calendar" && !(draft.dateField ?? def.dateField)) {
-    const name = firstDateField(resolved);
-    if (name) next.dateField = name;
+  if (kind === "calendar") {
+    if (!(draft.dateField ?? def.dateField)) {
+      const name = firstDateField(resolved);
+      if (name) next.dateField = name;
+    }
+  } else if (def.dateField === undefined) {
+    next.dateField = undefined;
   }
   return next;
 }
@@ -155,18 +174,22 @@ export function withLens(
 // string, `fields` a JSON-string array, `query` a JSON string.
 
 /**
- * Update-mode PATCH metadata: `kind` + `query` always (the shipped
- * baseline), plus EXACTLY the config keys the draft overrides. Vault's
- * metadata PATCH merges key-level, so config keys the draft never touched
- * survive on the note untouched.
+ * Update-mode PATCH metadata: `kind` + `query` (the shipped baseline), plus
+ * EXACTLY the config keys the draft overrides. Vault's metadata PATCH merges
+ * key-level, so config keys the draft never touched survive on the note
+ * untouched. A `null` mergedQuery (the §3 unparseable-query posture) OMITS
+ * the `query` key entirely — writing `"{}"` there would silently promote
+ * "run nothing" into match-everything; omitting preserves the note's own
+ * (still-malformed, still-bannered) query string.
  */
 export function draftPatchMetadata(
   def: ViewDef,
   draft: ViewConfigDraft,
-  mergedQuery: Record<string, unknown>,
+  mergedQuery: Record<string, unknown> | null,
 ): Record<string, string> {
   const eff = applyConfig(def, draft);
-  const metadata: Record<string, string> = { kind: eff.kind, query: JSON.stringify(mergedQuery) };
+  const metadata: Record<string, string> = { kind: eff.kind };
+  if (mergedQuery !== null) metadata.query = JSON.stringify(mergedQuery);
   if (draft.groupBy !== undefined) metadata.group_by = draft.groupBy;
   if (draft.dateField !== undefined) metadata.date_field = draft.dateField;
   if (draft.fields !== undefined) metadata.fields = JSON.stringify(draft.fields);
@@ -177,13 +200,15 @@ export function draftPatchMetadata(
  * Fork-mode metadata: the FULL effective config, not just kind+query — a
  * forked board keeps its lanes, a forked calendar its date field, a forked
  * field-set its columns (the train-B fix: fork used to silently drop
- * `group_by`/`date_field`/`fields`).
+ * `group_by`/`date_field`/`fields`). Same `null`-query rule as
+ * `draftPatchMetadata`.
  */
 export function fullConfigMetadata(
   eff: ViewDef,
-  mergedQuery: Record<string, unknown>,
+  mergedQuery: Record<string, unknown> | null,
 ): Record<string, string> {
-  const metadata: Record<string, string> = { kind: eff.kind, query: JSON.stringify(mergedQuery) };
+  const metadata: Record<string, string> = { kind: eff.kind };
+  if (mergedQuery !== null) metadata.query = JSON.stringify(mergedQuery);
   if (eff.groupBy !== undefined) metadata.group_by = eff.groupBy;
   if (eff.dateField !== undefined) metadata.date_field = eff.dateField;
   if (eff.fields !== undefined) metadata.fields = JSON.stringify(eff.fields);

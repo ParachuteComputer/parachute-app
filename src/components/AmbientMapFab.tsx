@@ -2,6 +2,7 @@ import { IconMap } from "@/components/NavIcons";
 import { MAP_TO } from "@/lib/nav/model";
 import { useMapEarned } from "@/lib/vault/map-earned";
 import { useVaultStore } from "@/lib/vault/store";
+import { useViewModifiedBar } from "@/lib/views/modified-bar";
 import { Link, useLocation } from "react-router";
 
 // The Map's ambient home (SYNTHESIS D5). Until the Map earns a nav slot
@@ -18,11 +19,17 @@ import { Link, useLocation } from "react-router";
 export function AmbientMapFab() {
   const hasVault = useVaultStore((s) => s.activeVaultId !== null);
   const earned = useMapEarned();
+  const modifiedBarShown = useViewModifiedBar((s) => s.shown);
   const { pathname } = useLocation();
 
   if (!hasVault) return null;
   if (earned) return null;
   if (pathname === MAP_TO) return null;
+  // A view's "View modified — Save / Revert" bar docks in this same corner
+  // at the same z (views train B) — the FAB would paint over / steal taps
+  // from Save on phones and ~1024-1250px desktops, so it yields while the
+  // bar is up and returns the moment the exploration ends.
+  if (modifiedBarShown) return null;
 
   return (
     <Link

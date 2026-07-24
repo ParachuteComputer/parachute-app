@@ -21,8 +21,8 @@ moves) stay immediate, as PR A shipped them; the two affordances never blur.
   the first date-typed one. Board-only Group and calendar-only Date-field selects ride alongside.
 - **The "View modified — Save / Revert" bar** — ONE bar covers both axes (config draft + query
   refinements), absorbing the refinement bar's standalone Save button. A bottom-anchored strip
-  (above the tab bar on phones). Save runs the existing update-or-fork sheet; Revert clears the
-  URL and writes nothing.
+  (above the tab bar on phones, safe-area aware; the ambient Map button yields while the bar is
+  up). Save runs the existing update-or-fork sheet; Revert clears the URL and writes nothing.
 - **Save writes a partial metadata patch** — kind + merged query plus exactly the config keys the
   draft overrides (`group_by` canonical, `fields` as a JSON-string array), guarded by
   `if_updated_at`. **Fork fix rides along**: forking used to write only kind+query, silently

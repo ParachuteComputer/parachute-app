@@ -159,6 +159,34 @@ describe("withLens", () => {
     expect(withLens(makeDef(), {}, "calendar", [])).toEqual({ kind: "calendar" });
   });
 
+  // Review must-fix: a peek at Board and back must leave NO residue — the
+  // auto-added group-by would otherwise keep the bar up forever (and Save
+  // would write a stray group_by onto a list view).
+  it("switching AWAY drops a draft group-by/date-field the saved def never had", () => {
+    expect(withLens(makeDef(), { kind: "board", groupBy: "status" }, "list", FIELDS)).toEqual({
+      kind: "list",
+    });
+    expect(withLens(makeDef(), { kind: "calendar", dateField: "due" }, "gallery", FIELDS)).toEqual({
+      kind: "gallery",
+    });
+    // Cross-switch: board → calendar sheds the orphan group AND defaults the date.
+    expect(withLens(makeDef(), { kind: "board", groupBy: "status" }, "calendar", FIELDS)).toEqual({
+      kind: "calendar",
+      dateField: "due",
+    });
+  });
+
+  it("a draft override of a key the SAVED def carries survives switching away", () => {
+    expect(
+      withLens(
+        makeDef({ groupBy: "status" }),
+        { kind: "board", groupBy: "priority" },
+        "list",
+        FIELDS,
+      ),
+    ).toEqual({ kind: "list", groupBy: "priority" });
+  });
+
   it("field pickers: first enum / first date", () => {
     expect(firstEnumField(FIELDS)).toBe("status");
     expect(firstDateField(FIELDS)).toBe("due");
@@ -197,5 +225,19 @@ describe("save payload builders", () => {
     });
     // A bare list view forks to a bare list view — no undefined-key noise.
     expect(fullConfigMetadata(makeDef(), {})).toEqual({ kind: "list", query: "{}" });
+  });
+
+  // Review should-fix: a null base query (§3 "run nothing") must never be
+  // written as "{}" — that would silently promote a malformed view into
+  // match-everything. Both builders omit the key instead.
+  it("a null merged query omits the query key from both payloads", () => {
+    const broken = makeDef({ query: null });
+    expect(draftPatchMetadata(broken, { kind: "board", groupBy: "status" }, null)).toEqual({
+      kind: "board",
+      group_by: "status",
+    });
+    expect(fullConfigMetadata(applyConfig(broken, { kind: "board" }), null)).toEqual({
+      kind: "board",
+    });
   });
 });

@@ -26,6 +26,7 @@ import {
 } from "@/lib/views/config";
 import { viewPathForName } from "@/lib/views/defaults";
 import { type ResolvedField, useResolvedViewFields } from "@/lib/views/fields";
+import { useViewModifiedBar } from "@/lib/views/modified-bar";
 import { partitionPinned } from "@/lib/views/partition";
 import { defaultSaveMode, useMySub, useViewNote, useViewResults } from "@/lib/views/queries";
 import {
@@ -41,7 +42,7 @@ import {
 } from "@/lib/views/query";
 import { type ViewDef, type ViewProblem, decodeViewDef } from "@/lib/views/schema";
 import type { QueryKey } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router";
 
 // The rendering pipeline (VIEWS-RENDER-SPEC §2):
@@ -116,7 +117,13 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   // silently, back restores, a shared link carries it.
   const [searchParams, setSearchParams] = useSearchParams();
   const refinements = useMemo(() => searchParamsToRefinements(searchParams), [searchParams]);
-  const draft = useMemo(() => searchParamsToConfigDraft(searchParams), [searchParams]);
+  // Normalized on READ as well as write (review should-fix): a shared link
+  // carrying params equal to the saved config (`?kind=list` on a list view)
+  // is no divergence — no bar over a view that looks exactly like itself.
+  const draft = useMemo(
+    () => normalizeConfigDraft(def, searchParamsToConfigDraft(searchParams)),
+    [def, searchParams],
+  );
   const writeParams = (nextDraft: ViewConfigDraft, nextRefinements: ViewRefinements) => {
     const params = configDraftToSearchParams(nextDraft);
     for (const [k, v] of refinementsToSearchParams(nextRefinements)) params.append(k, v);
@@ -218,10 +225,22 @@ function ViewSurfaceBody({ note }: { note: Note }) {
 // ---------------------------------------------------------------------------
 
 function ViewModifiedBar({ onSave, onRevert }: { onSave: () => void; onRevert: () => void }) {
+  // While the bar is on screen the AmbientMapFab (same corner, same z) hides
+  // — mount/unmount IS the signal (Revert, Save, and leaving all unmount).
+  const setShown = useViewModifiedBar((s) => s.setShown);
+  useEffect(() => {
+    setShown(true);
+    return () => setShown(false);
+  }, [setShown]);
+
   return (
     <div
       aria-label="View modified"
-      className="glass-panel fixed inset-x-0 bottom-16 z-20 border-t border-border lg:bottom-0 lg:pb-[env(safe-area-inset-bottom)]"
+      // Below lg the strip rests on the BottomTabBar: h-14 of content plus
+      // its own env(safe-area-inset-bottom) padding — so the offset must be
+      // 3.5rem + the inset, not a hardcoded 4rem, or a notched phone's tab
+      // bar covers the bottom of Save/Revert (review must-fix).
+      className="glass-panel fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-border lg:bottom-0 lg:pb-[env(safe-area-inset-bottom)]"
     >
       <div className="mx-auto flex w-full max-w-(--w-page) items-center justify-between gap-3 px-5 py-2.5 md:px-10">
         <p className="text-sm text-fg-muted">View modified</p>
@@ -674,8 +693,11 @@ function SaveSheet({
     setPending(true);
     try {
       // §5: the merged query is written EXPLICITLY — including any
-      // exclude_tags the base carried — never a surface-side default.
-      const merged = composeViewQuery(def.query, refinements) ?? {};
+      // exclude_tags the base carried — never a surface-side default. A
+      // `null` base (unparseable, §3) stays null: the builders then OMIT
+      // the query key rather than writing "{}" (which would promote "run
+      // nothing" into match-everything — review should-fix).
+      const merged = composeViewQuery(def.query, refinements);
       if (mode === "update") {
         // Partial patch: kind + query, plus EXACTLY the config keys the
         // draft overrides (vault merges metadata key-level, so untouched
