@@ -312,9 +312,10 @@ function ProblemsBanner({ problems }: { problems: ViewProblem[] }) {
 // ---------------------------------------------------------------------------
 // Results — shared state guards (§3), then dispatch on the view's KIND
 // (Views Wave 2b). list is byte-identical to before; board/gallery/calendar/
-// table each render the SAME fetched results a different way. An unknown kind — or a
-// board/calendar missing its lane/date config — falls through to the list, the
-// one shape a view is never wrong to render as (§1).
+// table each render the SAME fetched results a different way. An unknown kind —
+// or a board missing its lane config — falls through to the list, the one
+// shape a view is never wrong to render as (§1). Calendar never falls through
+// (train F): without a date field it mounts read-only, plotting by createdAt.
 // ---------------------------------------------------------------------------
 
 function ViewResults({
@@ -404,18 +405,18 @@ function ViewResults({
         <TableView notes={all} roles={roles} viewResultsKey={viewResultsKey} fields={fields} />
       );
     case "calendar":
-      if (def.dateField) {
-        return (
-          <CalendarView
-            notes={all}
-            dateField={def.dateField}
-            roles={roles}
-            viewResultsKey={viewResultsKey}
-            fields={fields}
-          />
-        );
-      }
-      break;
+      // ALWAYS the calendar (train F, D8) — with no date field it plots by
+      // createdAt in read-only mode (the hint points at the Date-field
+      // control above, still rendered, as the graduation path).
+      return (
+        <CalendarView
+          notes={all}
+          dateField={def.dateField ?? null}
+          roles={roles}
+          viewResultsKey={viewResultsKey}
+          fields={fields}
+        />
+      );
   }
   return (
     <ListResults

@@ -126,9 +126,9 @@ export function firstDateField(fields: ResolvedField[]): string | undefined {
  * draft — board with no group-by takes the first enum-typed resolved field;
  * calendar with no date-field takes the first date-typed one — so the URL
  * carries the full exploration and Save writes exactly what's rendered. No
- * candidate default (schema still loading, or none declared) keeps the
- * existing fall-through behavior (board/calendar without config render as
- * the list).
+ * candidate default (schema still loading, or none declared) adds nothing:
+ * a board without a group-by falls through to the list; a calendar without
+ * a date field renders read-only by createdAt (train F).
  *
  * The symmetric half (review must-fix): when the TARGET kind doesn't use a
  * draft key (`groupBy` off-board, `dateField` off-calendar) AND the saved

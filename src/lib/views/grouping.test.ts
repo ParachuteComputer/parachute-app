@@ -4,6 +4,7 @@ import {
   defaultMonth,
   groupIntoLanes,
   parseNoteDate,
+  placeByCreatedAt,
   placeOnCalendar,
   resolveLaneOrder,
 } from "./grouping";
@@ -157,6 +158,35 @@ describe("placeOnCalendar", () => {
     expect(byDay.get("2026-07-20")?.map((n) => n.id)).toEqual(["c"]);
     expect(undated.map((n) => n.id)).toEqual(["d", "e"]);
     expect(dates.size).toBe(3);
+  });
+});
+
+describe("placeByCreatedAt", () => {
+  it("buckets notes by the LOCAL day of their createdAt instant (train F fallback)", () => {
+    // Local-time constructions, so the expected keys hold in any test TZ —
+    // the placement's contract is the viewer-local day, not the UTC date.
+    const at = (id: string, d: Date): Note => ({ id, createdAt: d.toISOString() });
+    const notes = [
+      at("a", new Date(2026, 6, 14, 9, 30)),
+      at("b", new Date(2026, 6, 14, 22, 0)),
+      at("c", new Date(2026, 6, 20, 0, 5)),
+    ];
+    const { byDay, undated, dates } = placeByCreatedAt(notes);
+    expect(byDay.get("2026-07-14")?.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(byDay.get("2026-07-20")?.map((n) => n.id)).toEqual(["c"]);
+    expect(undated).toEqual([]);
+    expect(dates.size).toBe(3);
+  });
+
+  it("keeps a missing/unparseable createdAt off the grid (defensive)", () => {
+    const notes = [
+      { id: "a", createdAt: "garbage" } as Note,
+      { id: "b" } as Note, // absent despite the wire type — defensive
+      { id: "c", createdAt: new Date(2026, 6, 14, 12, 0).toISOString() } as Note,
+    ];
+    const { byDay, undated } = placeByCreatedAt(notes);
+    expect(undated.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(byDay.get("2026-07-14")?.map((n) => n.id)).toEqual(["c"]);
   });
 });
 

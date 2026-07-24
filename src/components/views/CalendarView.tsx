@@ -12,7 +12,7 @@ import {
   useNoteDropTarget,
 } from "@/lib/views/dnd";
 import type { ResolvedField } from "@/lib/views/fields";
-import { defaultMonth, placeOnCalendar } from "@/lib/views/grouping";
+import { defaultMonth, placeByCreatedAt, placeOnCalendar } from "@/lib/views/grouping";
 import { useViewFieldWrite } from "@/lib/views/write";
 import type { QueryKey } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -35,10 +35,20 @@ const MAX_CHIPS_PER_DAY = 2;
 // `dateField` as a bare `YYYY-MM-DD`, exactly the value the field chip's date
 // picker commits, through the same `useViewFieldWrite`. Same-day drops are a
 // no-op; out-month cells take no drops (navigate months first); there's no
-// "unschedule" zone — the chip's Clear already covers it. The view only
-// mounts with a real `dateField` (ViewSurface falls back to list without
-// one), so every cell's drop zone has a field to write. Touch devices see
+// "unschedule" zone — the chip's Clear already covers it. Touch devices see
 // none of this — the tap path is unchanged.
+//
+// The createdAt fallback (views train F, D8): a `null` dateField plots notes
+// by the local day of their `createdAt` instead of falling back to a list —
+// a READ-ONLY calendar. There is no date field to write, so the entire date-
+// write surface is gated off: no drop zones on cells (no props, no hover
+// affordance), no drag sources on chips, no `useViewFieldWrite` bound for a
+// day drop — the read-only chip is a plain span. The day panel still opens,
+// and its FIELD chips stay editable (they write other fields through the
+// shared hook — ratified). A quiet hint replaces the undated footnote (every
+// note has a createdAt). Explicitly rejected: per-note fallback (undated
+// notes plotting on createdAt inside a date-field calendar) — it blurs
+// scheduled-vs-unscheduled and makes drag ambiguous.
 export function CalendarView({
   notes,
   dateField,
@@ -47,14 +57,18 @@ export function CalendarView({
   fields = [],
 }: {
   notes: Note[];
-  dateField: string;
+  /** The date-typed field to plot by — `null` mounts the read-only createdAt fallback. */
+  dateField: string | null;
   roles: TagRoles;
   /** The `useViewResults` cache key — the optimistic write target for the chips. */
   viewResultsKey: QueryKey;
   /** The view's resolved fields (Part B) — an editable chip band on the day panel. */
   fields?: ResolvedField[];
 }) {
-  const placement = useMemo(() => placeOnCalendar(notes, dateField), [notes, dateField]);
+  const placement = useMemo(
+    () => (dateField === null ? placeByCreatedAt(notes) : placeOnCalendar(notes, dateField)),
+    [notes, dateField],
+  );
   // First-render default: the month of the most recent dated note. A lazy
   // initializer runs once (the results are already loaded when this mounts),
   // so user navigation wins after that — nothing yanks the month back.
@@ -68,14 +82,20 @@ export function CalendarView({
   const dropRegistry = useDropHandlerRegistry<string>();
 
   // No dated notes at all — an empty grid with month nav would be busywork.
+  // (Near-unreachable in createdAt mode — every wire note carries createdAt —
+  // but degrade honestly if none parse.)
   if (placement.byDay.size === 0) {
     return (
       <div className="space-y-3">
         <EmptyState
           title="Nothing to place on the calendar yet"
-          description={`None of these notes carry a ${dateField} date.`}
+          description={
+            dateField === null ? undefined : `None of these notes carry a ${dateField} date.`
+          }
         />
-        <UndatedFootnote count={placement.undated.length} dateField={dateField} />
+        {dateField === null ? null : (
+          <UndatedFootnote count={placement.undated.length} dateField={dateField} />
+        )}
       </div>
     );
   }
@@ -183,7 +203,15 @@ export function CalendarView({
         </section>
       ) : null}
 
-      <UndatedFootnote count={placement.undated.length} dateField={dateField} />
+      {dateField === null ? (
+        // The read-only mode's quiet hint — same register as the footnote it
+        // replaces. The Date-field control above is the graduation path.
+        <p className="text-xs text-fg-dim">
+          Showing by created date — set a date field to schedule.
+        </p>
+      ) : (
+        <UndatedFootnote count={placement.undated.length} dateField={dateField} />
+      )}
     </div>
   );
 }
@@ -207,22 +235,26 @@ function DayCell({
   isSelected: boolean;
   notes: Note[];
   onSelect: () => void;
-  dateField: string;
+  /** `null` = read-only createdAt mode — this cell is NOT a drop zone. */
+  dateField: string | null;
   viewResultsKey: QueryKey;
   dropRegistry: DropHandlerRegistry<string>;
 }) {
   const hasNotes = notes.length > 0;
+  // The editability gate (train F): a `null` dateField means there is nothing
+  // a drop could write — no drop props, no hover affordance, static chips.
+  const canEdit = dateField !== null;
 
   // Drop zone (train E) — the cell receives note drags; only IN-MONTH cells
-  // attach the props, so an out-month drop falls through to the browser
-  // default (nothing). The handler passes this cell's day to the dragged
-  // chip's registered writer.
+  // in an EDITABLE calendar attach the props, so an out-month or read-only
+  // drop falls through to the browser default (nothing). The handler passes
+  // this cell's day to the dragged chip's registered writer.
   const onDropNote = useCallback(
     (noteId: string) => dropRegistry.dispatch(noteId, dayKey),
     [dropRegistry, dayKey],
   );
   const { isOver, targetProps } = useNoteDropTarget(onDropNote);
-  const dropProps = inMonth ? targetProps : {};
+  const dropProps = canEdit && inMonth ? targetProps : {};
 
   const numberBadge = (
     <span
@@ -236,16 +268,22 @@ function DayCell({
 
   const chips = (
     <span className="flex flex-col gap-0.5">
-      {notes.slice(0, MAX_CHIPS_PER_DAY).map((note) => (
-        <DayChip
-          key={note.id}
-          note={note}
-          dayKey={dayKey}
-          dateField={dateField}
-          viewResultsKey={viewResultsKey}
-          dropRegistry={dropRegistry}
-        />
-      ))}
+      {notes
+        .slice(0, MAX_CHIPS_PER_DAY)
+        .map((note) =>
+          dateField === null ? (
+            <StaticDayChip key={note.id} note={note} />
+          ) : (
+            <DayChip
+              key={note.id}
+              note={note}
+              dayKey={dayKey}
+              dateField={dateField}
+              viewResultsKey={viewResultsKey}
+              dropRegistry={dropRegistry}
+            />
+          ),
+        )}
       {notes.length > MAX_CHIPS_PER_DAY ? (
         <span className="text-[10px] text-fg-dim">+{notes.length - MAX_CHIPS_PER_DAY} more</span>
       ) : null}
@@ -257,7 +295,9 @@ function DayCell({
   } ${isSelected ? "bg-accent/5" : ""} ${
     // The drop affordance: a subtle coral inset outline + tint on the hovered
     // cell. A state change, not motion — nothing for the reduced-motion gate.
-    inMonth && isOver ? "bg-accent/5 outline-2 -outline-offset-2 outline-accent/60" : ""
+    // Gated on `canEdit` alongside the props themselves — a read-only calendar
+    // shows no drop affordance under any event sequence.
+    canEdit && inMonth && isOver ? "bg-accent/5 outline-2 -outline-offset-2 outline-accent/60" : ""
   }`;
 
   if (!hasNotes) {
@@ -283,6 +323,21 @@ function DayCell({
   );
 }
 
+const DAY_CHIP_CLASS =
+  "truncate rounded bg-accent/10 px-1 py-0.5 text-[10px] leading-tight text-accent";
+
+// The read-only calendar's chip (train F) — a plain span, deliberately
+// hook-free: no `useViewFieldWrite`, no drag source, no registry entry. The
+// `data-note-id` stays for markup parity with the editable chip (and the
+// flash helper's selector), but nothing here can reach a write.
+function StaticDayChip({ note }: { note: Note }) {
+  return (
+    <span data-note-id={note.id} className={DAY_CHIP_CLASS}>
+      {displayTitle(note).text}
+    </span>
+  );
+}
+
 // A note's chip on its day cell — and, on fine-pointer devices, the calendar's
 // drag source. Rendered once per (visible) note, so it can own the note-bound
 // `useViewFieldWrite`; a drop anywhere on the grid dispatches back here. The
@@ -290,7 +345,9 @@ function DayCell({
 // what the field chip's date picker commits — with the same-day drop a
 // deliberate no-op (no write, no toast). Chips aren't links, but they live
 // inside the day-panel button: the drag source's click-capture also stops the
-// post-dragend residue click from toggling the panel.
+// post-dragend residue click from toggling the panel. Only mounted in the
+// EDITABLE mode (a real `dateField`); the read-only mode renders
+// `StaticDayChip` instead.
 function DayChip({
   note,
   dayKey,
@@ -326,11 +383,7 @@ function DayChip({
       // The microconfirmation flash's target (views train A): after the drop's
       // write resolves, `flashNoteCard` pulses the chip on its NEW day.
       data-note-id={note.id}
-      className={
-        drag.canDrag
-          ? "truncate rounded bg-accent/10 px-1 py-0.5 text-[10px] leading-tight text-accent cursor-grab"
-          : "truncate rounded bg-accent/10 px-1 py-0.5 text-[10px] leading-tight text-accent"
-      }
+      className={drag.canDrag ? `${DAY_CHIP_CLASS} cursor-grab` : DAY_CHIP_CLASS}
       {...drag.sourceProps}
     >
       {displayTitle(note).text}
