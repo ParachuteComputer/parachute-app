@@ -2,13 +2,13 @@ import { type FieldControlOption, FieldValueControl } from "@/components/views/F
 import { NoteCard } from "@/components/views/NoteCard";
 import { NoteFieldChips } from "@/components/views/NoteFieldChips";
 import { displayTitle } from "@/lib/note-title";
-import { useToastStore } from "@/lib/toast/store";
 import { useTag } from "@/lib/vault/queries";
 import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
 import type { ResolvedField } from "@/lib/views/fields";
 import { type Lane, groupIntoLanes, resolveLaneOrder } from "@/lib/views/grouping";
-import { type ViewFieldValue, useViewFieldMutation } from "@/lib/views/mutate";
+import type { ViewFieldValue } from "@/lib/views/mutate";
+import { useViewFieldWrite } from "@/lib/views/write";
 import type { QueryKey } from "@tanstack/react-query";
 import { useMemo } from "react";
 
@@ -24,8 +24,10 @@ import { useMemo } from "react";
 // lane's value onto the note and re-lanes the card optimistically. It's the
 // ENUM case of the shared `FieldValueControl` (view-experience wave, Part A.2)
 // — the board passes its target lanes as the control's options; the write goes
-// through the same `useViewFieldMutation` primitive every kind shares. Below the
-// card body, `NoteFieldChips` shows + edits the tag's OTHER fields (Part C; the
+// through the shared `useViewFieldWrite` hook every kind shares (views train
+// A: the `useViewFieldMutation` primitive + the microconfirmation — success
+// toast echoing the tapped lane + card flash on resolve). Below the card
+// body, `NoteFieldChips` shows + edits the tag's OTHER fields (Part C; the
 // lane field itself is omitted, the Move control already owns it).
 //
 // Pinning surfaces WITHIN a lane (the card keeps its star) rather than as a
@@ -109,7 +111,7 @@ const MOVE_TRIGGER_CLASS =
   "focus-ring rounded-full border border-border bg-bg-soft/90 px-2 py-0.5 text-[0.6875rem] font-medium text-fg-dim backdrop-blur transition-colors hover:text-accent disabled:opacity-50";
 
 // A board card + its tap-to-move control + the field-chips band. Rendered once
-// per note, so it can own a note-bound `useViewFieldMutation` (a per-note hook
+// per note, so it can own a note-bound `useViewFieldWrite` (a per-note hook
 // can't live in BoardView's lane×note loop).
 function BoardNoteCard({
   note,
@@ -128,8 +130,7 @@ function BoardNoteCard({
   viewResultsKey: QueryKey;
   fields: ResolvedField[];
 }) {
-  const pushToast = useToastStore((s) => s.push);
-  const { move, isPending } = useViewFieldMutation(note.id, viewResultsKey);
+  const { write, isPending } = useViewFieldWrite(note, viewResultsKey);
 
   // Every lane except the one the card is already in (moving there is a no-op).
   const targets = useMemo(
@@ -151,16 +152,15 @@ function BoardNoteCard({
   );
 
   const handleMove = async (value: ViewFieldValue) => {
-    try {
-      await move(laneBy, value, note.updatedAt);
-    } catch (err) {
-      pushToast(
-        `Couldn't move "${displayTitle(note).text}": ${
-          err instanceof Error ? err.message : "unknown error"
-        }`,
-        "error",
-      );
-    }
+    // The tapped lane's label rides into the success toast ("✓ status → Done")
+    // so the confirmation echoes exactly what was tapped — including the
+    // muted "No {field}" lane. The error phrasing stays the shipped
+    // `Couldn't move "{title}"`.
+    const target = moveOptions.find((o) => o.value === value);
+    await write(laneBy, value, {
+      valueLabel: target?.label,
+      errorPrefix: `Couldn't move "${displayTitle(note).text}"`,
+    });
   };
 
   return (

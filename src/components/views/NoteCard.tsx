@@ -70,6 +70,9 @@ export function NoteCard({
   const card = (
     <Link
       to={`/n/${encodeURIComponent(note.id)}`}
+      // The microconfirmation flash's target (views train A): `flashNoteCard`
+      // pulses the tile whose field just wrote via this attribute.
+      data-note-id={note.id}
       className={`focus-ring card group flex flex-col overflow-hidden transition-colors hover:border-accent ${
         isArchived ? "opacity-60 italic" : ""
       }`}

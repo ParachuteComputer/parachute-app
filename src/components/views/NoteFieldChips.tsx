@@ -1,9 +1,8 @@
 import { FieldValueControl } from "@/components/views/FieldValueControl";
-import { displayTitle } from "@/lib/note-title";
-import { useToastStore } from "@/lib/toast/store";
 import type { Note } from "@/lib/vault/types";
 import type { ResolvedField } from "@/lib/views/fields";
-import { type ViewFieldValue, useViewFieldMutation } from "@/lib/views/mutate";
+import type { ViewFieldValue } from "@/lib/views/mutate";
+import { useViewFieldWrite } from "@/lib/views/write";
 import type { QueryKey } from "@tanstack/react-query";
 
 /** A note's field value narrowed to what a control can show/edit — a non-scalar
@@ -18,9 +17,11 @@ function scalarValue(value: unknown): ViewFieldValue {
 // slice of tag-schema-driven fields. On a card it renders the view's resolved
 // fields (Part B) as small chips, each showing the note's current value;
 // tapping a chip opens `FieldValueControl` to edit that field IN PLACE. Every
-// write goes through the shared `useViewFieldMutation` primitive (optimistic
-// against the view's result cache, offline-capable, rolls back on error,
-// preserves the value's type). One mutation per note serves every chip.
+// write goes through the shared `useViewFieldWrite` hook (views train A) —
+// the `useViewFieldMutation` primitive (optimistic against the view's result
+// cache, offline-capable, rolls back on error, preserves the value's type)
+// plus the microconfirmation (success toast + card flash on resolve, error
+// toast on reject). One write hook per note serves every chip.
 //
 // The band lives OUTSIDE the card's navigating anchor (a button can't nest in
 // an `<a>`), passed to `NoteCard`'s `footer` slot. It renders nothing when no
@@ -38,24 +39,10 @@ export function NoteFieldChips({
   /** Field names to leave out (e.g. a board omits its own lane field). */
   omit?: string[];
 }) {
-  const pushToast = useToastStore((s) => s.push);
-  const { move, isPending } = useViewFieldMutation(note.id, viewResultsKey);
+  const { write, isPending } = useViewFieldWrite(note, viewResultsKey);
 
   const shown = omit && omit.length > 0 ? fields.filter((f) => !omit.includes(f.name)) : fields;
   if (shown.length === 0) return null;
-
-  const commit = async (field: string, value: ViewFieldValue) => {
-    try {
-      await move(field, value, note.updatedAt);
-    } catch (err) {
-      pushToast(
-        `Couldn't update ${field} on "${displayTitle(note).text}": ${
-          err instanceof Error ? err.message : "unknown error"
-        }`,
-        "error",
-      );
-    }
-  };
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pt-0.5">
@@ -71,7 +58,7 @@ export function NoteFieldChips({
             value={scalarValue(note.metadata?.[f.name])}
             disabled={isPending}
             includeClear
-            onCommit={(value) => void commit(f.name, value)}
+            onCommit={(value) => void write(f.name, value)}
           />
         </span>
       ))}
