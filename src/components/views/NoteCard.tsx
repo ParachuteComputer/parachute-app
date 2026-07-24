@@ -2,6 +2,7 @@ import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import { displayTitle } from "@/lib/note-title";
 import { relativeTime } from "@/lib/time";
 import type { Note } from "@/lib/vault/types";
+import type { NoteDragSource } from "@/lib/views/dnd";
 import { type ReactNode, useState } from "react";
 import { Link } from "react-router";
 
@@ -39,6 +40,7 @@ export function NoteCard({
   variant = "compact",
   overlay,
   footer,
+  drag,
 }: {
   note: Note;
   pinnedTag: string;
@@ -58,6 +60,15 @@ export function NoteCard({
    * Absent → the card is byte-identical to before.
    */
   footer?: ReactNode;
+  /**
+   * Desktop drag (views train E): a `useNoteDragSource` for this note. The
+   * WRAPPER div carries the drag — the anchor trap: an `<a>` natively drags
+   * its href, so the Link gets `draggable={false}` and the wrapper's
+   * click-capture swallows the residue click after dragend (a drop must never
+   * navigate). Absent — or on a touch device, where the hook hands back empty
+   * props — the card renders byte-identical to before.
+   */
+  drag?: NoteDragSource;
 }) {
   const title = displayTitle(note);
   const stamp = note.updatedAt ?? note.createdAt;
@@ -66,10 +77,16 @@ export function NoteCard({
   const cover = variant === "gallery" ? firstImageUrl(note) : null;
   const [coverBroken, setCoverBroken] = useState(false);
   const showCover = cover && !coverBroken;
+  const draggable = drag?.canDrag ?? false;
 
   const card = (
     <Link
       to={`/n/${encodeURIComponent(note.id)}`}
+      // The anchor trap (views train E): an `<a>` natively drags its href, so
+      // when the wrapper is the drag source the anchor must opt out — else
+      // grabbing a card starts a LINK drag with the wrong payload. Undefined
+      // (attribute omitted) whenever drag is off, keeping markup identical.
+      draggable={draggable ? false : undefined}
       // The microconfirmation flash's target (views train A): `flashNoteCard`
       // pulses the tile whose field just wrote via this attribute.
       data-note-id={note.id}
@@ -130,12 +147,19 @@ export function NoteCard({
     </Link>
   );
 
-  // No overlay AND no footer → identical markup to before (list/gallery/every
-  // plain card).
-  if (!overlay && !footer) return card;
+  // No overlay, footer, or active drag → identical markup to before
+  // (list/gallery/every plain card, and every card on a touch device).
+  if (!overlay && !footer && !draggable) return card;
 
   return (
-    <div className="relative flex flex-col">
+    <div
+      className={draggable ? "relative flex flex-col cursor-grab" : "relative flex flex-col"}
+      // Drag lives on the wrapper (empty props when drag is off/touch): the
+      // whole tile — card, overlay slot, chips band — is one grab surface,
+      // and the wrapper's click-capture guards the Link inside against the
+      // post-dragend residue click.
+      {...(drag?.sourceProps ?? {})}
+    >
       {card}
       {/* No z-index here: an equal stacking context per card would let a later
           card's overlay paint over an earlier card's open Move menu. Absolute

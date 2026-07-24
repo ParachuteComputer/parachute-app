@@ -5,12 +5,18 @@ import { displayTitle } from "@/lib/note-title";
 import { useTag } from "@/lib/vault/queries";
 import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
+import {
+  type DropHandlerRegistry,
+  useDropHandlerRegistry,
+  useNoteDragSource,
+  useNoteDropTarget,
+} from "@/lib/views/dnd";
 import type { ResolvedField } from "@/lib/views/fields";
 import { type Lane, groupIntoLanes, resolveLaneOrder } from "@/lib/views/grouping";
 import type { ViewFieldValue } from "@/lib/views/mutate";
 import { useViewFieldWrite } from "@/lib/views/write";
 import type { QueryKey } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 
 // The board kind (Views Wave 2b, made EDITABLE in the view-experience wave) —
 // Aaron's flagship: Projects laned by status. Result notes become COLUMNS keyed
@@ -29,6 +35,14 @@ import { useMemo } from "react";
 // toast echoing the tapped lane + card flash on resolve). Below the card
 // body, `NoteFieldChips` shows + edits the tag's OTHER fields (Part C; the
 // lane field itself is omitted, the Move control already owns it).
+//
+// Desktop drag (views train E): on fine-pointer devices every card is ALSO a
+// drag source and every lane a drop zone — the same move, as a gesture. A
+// drop routes through the registry (`src/lib/views/dnd.ts`) back to the
+// dragged card's own `useViewFieldWrite`, so drag and the Move menu are one
+// write path: same typed lane value / null-for-uncategorized contract, same
+// toast + flash. Dropping a card on its own lane is a no-op (no write, no
+// toast); touch devices see none of this — tap-to-move is unchanged.
 //
 // Pinning surfaces WITHIN a lane (the card keeps its star) rather than as a
 // separate band — a board's value is the columns, so the caller hands us the
@@ -59,43 +73,78 @@ export function BoardView({
     [notes, laneBy, tag.data],
   );
 
+  // Routes a drop (landing on a LANE) to the dragged card's own write hook.
+  const dropRegistry = useDropHandlerRegistry<Lane>();
+
   return (
     <div className="overflow-x-auto pb-2">
       <div className="flex items-start gap-4">
         {lanes.map((lane) => (
-          <section
+          <BoardLane
             key={lane.uncategorized ? "__uncategorized__" : lane.key}
-            aria-label={lane.label}
-            className="flex w-72 shrink-0 flex-col gap-2"
+            lane={lane}
+            dropRegistry={dropRegistry}
           >
-            <header className="flex items-baseline justify-between gap-2 border-b border-border pb-2">
-              <span
-                className={`min-w-0 truncate text-sm font-medium ${
-                  lane.uncategorized ? "text-fg-dim" : "text-fg"
-                }`}
-              >
-                {lane.label}
-              </span>
-              <span className="shrink-0 text-xs tabular-nums text-fg-dim">{lane.notes.length}</span>
-            </header>
-            <div className="flex flex-col gap-2">
-              {lane.notes.map((note) => (
-                <BoardNoteCard
-                  key={note.id}
-                  note={note}
-                  laneBy={laneBy}
-                  lanes={lanes}
-                  currentLane={lane}
-                  roles={roles}
-                  viewResultsKey={viewResultsKey}
-                  fields={fields}
-                />
-              ))}
-            </div>
-          </section>
+            {lane.notes.map((note) => (
+              <BoardNoteCard
+                key={note.id}
+                note={note}
+                laneBy={laneBy}
+                lanes={lanes}
+                currentLane={lane}
+                roles={roles}
+                viewResultsKey={viewResultsKey}
+                fields={fields}
+                dropRegistry={dropRegistry}
+              />
+            ))}
+          </BoardLane>
         ))}
       </div>
     </div>
+  );
+}
+
+// A lane column — and, on fine-pointer devices, a drop zone for card drags.
+// The drop handler only knows the dragged note's ID; the registry routes it to
+// that card's own receive-drop handler (which owns the note-bound write).
+function BoardLane({
+  lane,
+  dropRegistry,
+  children,
+}: {
+  lane: Lane;
+  dropRegistry: DropHandlerRegistry<Lane>;
+  children: ReactNode;
+}) {
+  const onDropNote = useCallback(
+    (noteId: string) => dropRegistry.dispatch(noteId, lane),
+    [dropRegistry, lane],
+  );
+  const { isOver, targetProps } = useNoteDropTarget(onDropNote);
+
+  return (
+    <section
+      aria-label={lane.label}
+      className={`flex w-72 shrink-0 flex-col gap-2 ${
+        // The drop affordance: a subtle coral outline around the hovered lane.
+        // A state change, not motion — nothing for the reduced-motion gate.
+        isOver ? "rounded-md outline-2 outline-offset-2 outline-accent/50" : ""
+      }`}
+      {...targetProps}
+    >
+      <header className="flex items-baseline justify-between gap-2 border-b border-border pb-2">
+        <span
+          className={`min-w-0 truncate text-sm font-medium ${
+            lane.uncategorized ? "text-fg-dim" : "text-fg"
+          }`}
+        >
+          {lane.label}
+        </span>
+        <span className="shrink-0 text-xs tabular-nums text-fg-dim">{lane.notes.length}</span>
+      </header>
+      <div className="flex flex-col gap-2">{children}</div>
+    </section>
   );
 }
 
@@ -121,6 +170,7 @@ function BoardNoteCard({
   roles,
   viewResultsKey,
   fields,
+  dropRegistry,
 }: {
   note: Note;
   laneBy: string;
@@ -129,6 +179,7 @@ function BoardNoteCard({
   roles: TagRoles;
   viewResultsKey: QueryKey;
   fields: ResolvedField[];
+  dropRegistry: DropHandlerRegistry<Lane>;
 }) {
   const { write, isPending } = useViewFieldWrite(note, viewResultsKey);
 
@@ -151,23 +202,47 @@ function BoardNoteCard({
     [targets],
   );
 
+  // The one write both gestures share — the lane's label rides into the
+  // success toast ("✓ status → Done") so the confirmation echoes exactly what
+  // was tapped/dropped, including the muted "No {field}" lane. The error
+  // phrasing stays the shipped `Couldn't move "{title}"`.
+  const moveTo = useCallback(
+    async (value: ViewFieldValue, label: string | undefined) => {
+      await write(laneBy, value, {
+        valueLabel: label,
+        errorPrefix: `Couldn't move "${displayTitle(note).text}"`,
+      });
+    },
+    [write, laneBy, note],
+  );
+
   const handleMove = async (value: ViewFieldValue) => {
-    // The tapped lane's label rides into the success toast ("✓ status → Done")
-    // so the confirmation echoes exactly what was tapped — including the
-    // muted "No {field}" lane. The error phrasing stays the shipped
-    // `Couldn't move "{title}"`.
     const target = moveOptions.find((o) => o.value === value);
-    await write(laneBy, value, {
-      valueLabel: target?.label,
-      errorPrefix: `Couldn't move "${displayTitle(note).text}"`,
-    });
+    await moveTo(value, target?.label);
   };
+
+  // Desktop drag (train E): the card is a drag source; a drop on some lane
+  // dispatches back here, where the note-bound write lives. Same-lane drops
+  // are a deliberate no-op (no write, no toast) — nothing moved.
+  const drag = useNoteDragSource(note.id);
+  const receiveLaneDrop = useCallback(
+    (lane: Lane) => {
+      if (isPending || sameLane(lane, currentLane)) return;
+      void moveTo(lane.value as ViewFieldValue, lane.label);
+    },
+    [isPending, currentLane, moveTo],
+  );
+  useEffect(
+    () => dropRegistry.register(note.id, receiveLaneDrop),
+    [dropRegistry, note.id, receiveLaneDrop],
+  );
 
   return (
     <NoteCard
       note={note}
       pinnedTag={roles.pinned}
       archivedTag={roles.archived}
+      drag={drag}
       overlay={
         // Nowhere to move to (the only lane on the board) — no affordance.
         targets.length > 0 ? (

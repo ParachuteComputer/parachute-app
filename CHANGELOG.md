@@ -1,5 +1,36 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.43] - 2026-07-24
+
+**Views: desktop drag — board lanes + calendar days (PR E of the views train).** Real pointer
+drag as an additional affordance over the same write tap-to-move makes: drag a board card
+between lanes (writes the group-by field), drag a calendar chip to another in-month day
+(writes the date field as a bare `YYYY-MM-DD`, exactly what the date chip commits). Native
+HTML5 DnD, no library — the touch path stays tap-to-move (the shipped Move menu, unchanged),
+the keyboard/SR path stays the Move `role="menu"`, so drag only serves desktop pointers.
+
+- **`src/lib/views/dnd.ts`** (new) — the shared drag machinery: a custom MIME type
+  (`application/x-parachute-note`) carries the note id so foreign drags (files, text) are
+  ignored entirely; `useNoteDragSource` (pointer-gated at mount — on touch it returns empty
+  props, markup byte-identical); `useNoteDropTarget` (depth-counted hover state for the drop
+  affordance); `useDropHandlerRegistry` (drops land on a LANE/DAY but the write lives with the
+  note-bound `useViewFieldWrite` in the card/chip — the registry routes between them, keeping
+  drag and tap ONE write path).
+- **Board** — cards are drag sources (the wrapper, with `cursor-grab`), lanes are drop zones
+  with a subtle coral outline while hovered. A drop writes the lane's ORIGINAL typed value
+  (number stays number; the uncategorized lane writes `null`), same toast + card flash as
+  tap-to-move; dropping on the card's own lane is a no-op (no write, no toast).
+- **Calendar** — day chips are drag sources, in-month cells are drop zones (inset coral
+  outline + tint). Same-day drops no-op; out-month cells take no drops; no "unschedule" zone
+  (the field chip's Clear covers it — deliberate). Chips now carry `data-note-id`, so the
+  microconfirmation flash pulses the chip on its new day.
+- **The anchor trap** — `NoteCard`'s face is a `<Link>`, and anchors natively drag their href:
+  with drag active the Link gets `draggable={false}`, the wrapper owns the drag, and a
+  click-capture swallows the residue click after dragend — a drop never navigates (and a
+  calendar drop never toggles the day panel).
+- Touch is untouched: the drag hooks are gated on `(pointer: fine)` and hand back empty props
+  otherwise — the Move-menu suites run unmodified.
+
 ## [0.20.42] - 2026-07-24
 
 **Views: the table lens — the field set as columns, click-to-edit cells (PR D of the views
