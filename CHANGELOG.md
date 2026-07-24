@@ -1,5 +1,29 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.41] - 2026-07-24
+
+**Views: the Fields control — one field set per view, now editable in place (PR C of the views
+train).** Every lens renders the same resolved field set (`resolveViewFields`: view override →
+primary-tag schema → none); until now editing that set meant hand-writing JSON on the view note.
+A "Fields" control now rides the config row beside the lens switcher, for every lens kind.
+
+- **`src/components/views/FieldsControl.tsx`** — checkboxes over the UNION of the primary tag's
+  declared schema fields and the current effective set (an override field the schema never
+  declared is still listed, so it can be unchecked). Shown fields first in view order with
+  up/down reorder buttons; hidden schema fields follow; checking one appends it to the end.
+  Minimum ONE field enforced with a hint — the wire format can't express "show none" (an empty
+  `fields` list decodes to the schema default), so the control never drafts a state Save
+  couldn't persist. At phone widths the panel docks as a bottom sheet over a scrim; sm+ it
+  anchors as a popover under the trigger.
+- **Edits ride PR B's config draft** — every change writes the full ordered list into the URL
+  (`fields`, comma-joined); the one "View modified" bar governs Save/Revert; Save persists
+  `fields` as a JSON-string array via the existing partial-patch/fork builders. No new save
+  machinery.
+- **`useSchemaFieldNames`** (`src/lib/views/fields.ts`) — the union's schema half, fetch-deduped
+  with the existing tag-schema read.
+- Rider: repo `CLAUDE.md` stub (purpose + gotchas — vitest-only tests, dev-branch flow, the
+  cloud source pin, the bun-linked dogfood ring).
+
 ## [0.20.40] - 2026-07-24
 
 **Views: explore-then-save — switch lens / adjust the query / change fields in place, Save or

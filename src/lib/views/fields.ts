@@ -84,3 +84,16 @@ export function useResolvedViewFields(def: ViewDef | null): ResolvedField[] {
 function tagFieldsOf(tag: TagRecord | null | undefined): Record<string, TagFieldSchema> | null {
   return tag?.fields ?? null;
 }
+
+/**
+ * The primary tag's declared schema field NAMES, in schema order — the other
+ * half of the Fields control's union (schema ∪ current effective set), so a
+ * field the view currently hides can still be offered for checking. `[]` when
+ * the query has no single tag or the tag has no schema (yet). Fetch-deduped
+ * with `useResolvedViewFields` (same `useTag` query key).
+ */
+export function useSchemaFieldNames(def: ViewDef | null): string[] {
+  const single = def ? singleQueryTag(def.query) : null;
+  const tag = useTag(single);
+  return useMemo(() => Object.keys(tagFieldsOf(tag.data) ?? {}), [tag.data]);
+}

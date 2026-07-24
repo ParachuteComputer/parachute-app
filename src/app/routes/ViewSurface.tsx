@@ -5,6 +5,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BoardView } from "@/components/views/BoardView";
 import { CalendarView } from "@/components/views/CalendarView";
+import { FieldsControl } from "@/components/views/FieldsControl";
 import { GalleryView } from "@/components/views/GalleryView";
 import { DateFieldControl, GroupByControl, LensSwitcher } from "@/components/views/LensSwitcher";
 import { NoteFieldChips } from "@/components/views/NoteFieldChips";
@@ -25,7 +26,7 @@ import {
   withLens,
 } from "@/lib/views/config";
 import { viewPathForName } from "@/lib/views/defaults";
-import { type ResolvedField, useResolvedViewFields } from "@/lib/views/fields";
+import { type ResolvedField, useResolvedViewFields, useSchemaFieldNames } from "@/lib/views/fields";
 import { useViewModifiedBar } from "@/lib/views/modified-bar";
 import { partitionPinned } from "@/lib/views/partition";
 import { defaultSaveMode, useMySub, useViewNote, useViewResults } from "@/lib/views/queries";
@@ -147,6 +148,9 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   // view's `fields` override — resolved once and threaded to every kind, so a
   // card/row can show + edit them through the shared mutation primitive.
   const fields = useResolvedViewFields(effDef);
+  // The Fields control's union source — the primary tag's declared schema
+  // field names (a hidden schema field must still be offered for checking).
+  const schemaFieldNames = useSchemaFieldNames(effDef);
   const problems: ViewProblem[] = [...effDef.problems, ...results.problems];
 
   const partition = useMemo(() => {
@@ -182,6 +186,13 @@ function ViewSurfaceBody({ note }: { note: Note }) {
             onChange={(name) => setDraft({ ...draft, dateField: name })}
           />
         ) : null}
+        {/* Fields matter to EVERY lens — chips, cards, and calendar entries
+            all render the one resolved set — so this control is unconditional. */}
+        <FieldsControl
+          fields={fields}
+          schemaFieldNames={schemaFieldNames}
+          onChange={(names) => setDraft({ ...draft, fields: names })}
+        />
       </div>
       <RefinementBar def={def} refinements={refinements} onChange={setRefinements} />
       {problems.length > 0 ? <ProblemsBanner problems={problems} /> : null}
