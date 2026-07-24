@@ -197,6 +197,35 @@ export function placeOnCalendar(notes: Note[], dateField: string): CalendarPlace
 }
 
 /**
+ * Bucket `notes` by the LOCAL calendar day of their `createdAt` instant —
+ * the calendar's fallback placement when the view has no date field (views
+ * train F, D8). `createdAt` is a wire timestamp (an instant), not an
+ * authored wall-clock date like a metadata date field, so the honest day is
+ * the viewer's local one — the same reading the /calendar route plots with
+ * (`toDateKey(createdAt)`). A missing/unparseable `createdAt` (defensive;
+ * the wire type requires it) lands in `undated` and stays off the grid.
+ */
+export function placeByCreatedAt(notes: Note[]): CalendarPlacement {
+  const byDay = new Map<string, Note[]>();
+  const undated: Note[] = [];
+  const dates = new Map<string, Date>();
+
+  for (const note of notes) {
+    const d = note.createdAt ? new Date(note.createdAt) : null;
+    if (!d || Number.isNaN(d.getTime())) {
+      undated.push(note);
+      continue;
+    }
+    dates.set(note.id, d);
+    const key = todayKey(d);
+    const bucket = byDay.get(key);
+    if (bucket) bucket.push(note);
+    else byDay.set(key, [note]);
+  }
+  return { byDay, undated, dates };
+}
+
+/**
  * The month to open the calendar on (1-based month, matching `@/lib/dates`):
  * the month of the most RECENT dated note (so a meetings calendar lands where
  * the meetings are), or `fallback`'s month when nothing is dated.

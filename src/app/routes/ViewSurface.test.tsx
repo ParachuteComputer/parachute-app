@@ -387,6 +387,40 @@ describe("ViewSurface", () => {
     expect(screen.queryByText("Undated chat")).toBeNull();
   });
 
+  it("calendar kind with NO date field mounts the read-only createdAt calendar, never the list (train F)", async () => {
+    // Local-time construction — the expected day (July 14) holds in any TZ.
+    const createdAt = new Date(2026, 6, 14, 12, 0).toISOString();
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Meetings",
+        tags: ["view"],
+        metadata: {
+          kind: "calendar",
+          // No date_field — pre-train-F this fell through to the list.
+          query: JSON.stringify({ tag: "meeting" }),
+        },
+      },
+      results: [{ id: "n1", path: "Weekly sync", metadata: {}, createdAt }],
+    });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Meetings" });
+
+    // The read-only calendar mounted: the hint is its signature.
+    await screen.findByText(/showing by created date — set a date field to schedule/i);
+
+    // The note is plotted on its createdAt day (the cell carries the day
+    // number and the chip).
+    const cell = screen.getAllByRole("button").find((b) => b.textContent?.includes("Weekly sync"));
+    expect(cell).toBeTruthy();
+    expect(cell?.textContent).toContain("14");
+
+    // Not the list — no Results partition band, no undated footnote.
+    expect(screen.queryByRole("region", { name: "Results" })).toBeNull();
+    expect(screen.queryByText(/aren't shown|isn't shown/)).toBeNull();
+  });
+
   it("table kind (train D): columns from the view's field set, cells editable, title links out", async () => {
     installFetch({
       note: {

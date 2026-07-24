@@ -1,5 +1,30 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.44] - 2026-07-24
+
+**Views: calendar createdAt fallback (PR F of the views train — the finale).** Calendar
+without a date field now shows your notes by created date (read-only) instead of falling
+back to a list. A `kind: "calendar"` view with no `date_field` used to render as a list;
+now it always mounts the calendar, plotting each note on the local day of its `createdAt`
+(the same reading the /calendar route uses), with a quiet hint — "Showing by created date —
+set a date field to schedule." — and the Date-field control still on the config row as the
+graduation path to the editable calendar.
+
+- **Read-only means read-only** (the PR-E advisory, pinned by tests): with no date field
+  there is nothing a drop could write, so the entire date-write surface is gated off — day
+  cells attach NO drop props (no hover affordance under any event sequence, a note-payload
+  drag is never accepted), chips are plain spans (no drag source, no `useViewFieldWrite`
+  bound). Field CHIPS on the day panel stay editable — they write other fields through the
+  shared hook, exactly as ratified.
+- The undated footnote is suppressed in fallback mode (every note has a createdAt); a
+  missing/unparseable `createdAt` (defensive — the wire type requires it) stays off the grid.
+- Explicitly rejected (D8): per-note fallback — undated notes plotting on their createdAt
+  inside a date-field calendar would blur scheduled-vs-unscheduled and make drag ambiguous;
+  the undated footnote remains the honest state there.
+- Render-mode only: no new kind, no new wire semantics, nothing written to the view note.
+- `placeByCreatedAt` joins `placeOnCalendar` in `src/lib/views/grouping.ts`; the dispatch in
+  ViewSurface drops the calendar→list fall-through (board without a group-by still lists).
+
 ## [0.20.43] - 2026-07-24
 
 **Views: desktop drag — board lanes + calendar days (PR E of the views train).** Real pointer
