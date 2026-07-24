@@ -84,6 +84,21 @@ describe("decodeViewDef", () => {
     ).toBeUndefined();
   });
 
+  it("decodes the table kind (views train D) without recording a problem", () => {
+    const def = decodeViewDef(
+      note({
+        path: "Views/Tbl",
+        metadata: { kind: "table", query: "{}", fields: '["status","due"]' },
+      }),
+    );
+    expect(def.kind).toBe("table");
+    expect(def.fields).toEqual(["status", "due"]);
+    expect(def.problems).toEqual([]);
+  });
+
+  // The wire-compat guarantee that makes adding "table" additive: a decoder
+  // that does NOT know a kind (an old app decoding a table view, this app
+  // decoding some future kind) renders it as a list — silently, no problem.
   it("degrades an unknown kind to list with no problem — a view is never wrong to render as a list", () => {
     const def = decodeViewDef(
       note({ path: "Views/X", metadata: { kind: "timeline", query: "{}" } }),

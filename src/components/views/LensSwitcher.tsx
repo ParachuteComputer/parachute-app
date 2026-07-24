@@ -1,9 +1,9 @@
-import { IconCalendar, IconColumns, IconGrid, IconNotes } from "@/components/NavIcons";
+import { IconCalendar, IconColumns, IconGrid, IconNotes, IconTable } from "@/components/NavIcons";
 import type { ResolvedField } from "@/lib/views/fields";
 import { VIEW_KINDS, type ViewKind } from "@/lib/views/schema";
 
 // The in-place lens switcher (views train B) — switch how the SAME result
-// set renders (list/board/calendar/gallery; table arrives in train D).
+// set renders (list/board/calendar/gallery/table).
 // Writing `kind` into the URL config draft is lossless by construction:
 // `useViewResults`' cache key excludes `kind`, so switching lens re-renders
 // the one cached result set without a refetch. Board-only Group and
@@ -14,6 +14,7 @@ const KIND_LABELS: Record<ViewKind, string> = {
   board: "Board",
   calendar: "Calendar",
   gallery: "Gallery",
+  table: "Table",
 };
 
 function KindGlyph({ kind }: { kind: ViewKind }) {
@@ -24,6 +25,8 @@ function KindGlyph({ kind }: { kind: ViewKind }) {
       return <IconCalendar width={14} height={14} />;
     case "gallery":
       return <IconGrid width={14} height={14} />;
+    case "table":
+      return <IconTable width={14} height={14} />;
     default:
       return <IconNotes width={14} height={14} />;
   }

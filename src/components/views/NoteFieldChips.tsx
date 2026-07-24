@@ -6,8 +6,9 @@ import { useViewFieldWrite } from "@/lib/views/write";
 import type { QueryKey } from "@tanstack/react-query";
 
 /** A note's field value narrowed to what a control can show/edit — a non-scalar
- * (array/object) reads as "not set" rather than "[object Object]". */
-function scalarValue(value: unknown): ViewFieldValue {
+ * (array/object) reads as "not set" rather than "[object Object]". Shared with
+ * the table lens's cells (train D), which read note metadata the same way. */
+export function scalarValue(value: unknown): ViewFieldValue {
   if (value === null || value === undefined) return null;
   const t = typeof value;
   return t === "string" || t === "number" || t === "boolean" ? (value as ViewFieldValue) : null;
