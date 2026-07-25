@@ -241,8 +241,11 @@ describe("ViewSurface config draft (views train B)", () => {
     expect(activeLane.textContent).toContain("Alpha");
     expect(screen.getByRole("region", { name: "done" }).textContent).toContain("Beta");
 
-    // One bar covers the divergence…
+    // One bar covers the divergence — wearing its V6 voice (state + what Save
+    // does, not just that state exists) and the pulse dot…
     expect(screen.getByText("View modified")).toBeTruthy();
+    expect(screen.getByText(/you're exploring\. Save to keep this layout\./)).toBeTruthy();
+    expect(document.querySelector(".view-modified-pulse")).not.toBeNull();
     // …and the switch was lossless: zero new result fetches.
     expect(resultFetchCount(fetchImpl)).toBe(before);
   });

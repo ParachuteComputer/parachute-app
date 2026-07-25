@@ -1,5 +1,23 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.50] - 2026-07-25
+
+**Views polish wave complete: calendar chips + the save bar's voice (V6).**
+The last of the five-lens polish PRs.
+
+- **Calendar** — the weekday header takes the V5 table-header band register
+  (`bg-bg-soft` + 11px `text-2xs` micro-labels); day numbers set in the
+  display serif (the accent-filled today circle stays); and day chips trade
+  the flat coral `bg-accent/10 text-accent` tint — which made every note read
+  as a link — for a raised neutral mini (`rounded-md border bg-card shadow-sm
+  text-fg`, the prototype's `.mini`). Class-only through the one shared chip
+  constant; the drag/read-only gating and StaticDayChip/DayChip split are
+  untouched.
+- **Save bar** — the "View modified" strip gains a gently pulsing accent dot
+  and says what it means: "View modified — you're exploring. Save to keep
+  this layout." The pulse keyframe lives in the consolidated reduced-motion
+  gate (stilled, dot still shown); position/glass/safe-area untouched.
+
 ## [0.20.49] - 2026-07-25
 
 **Views: contained table (polish V5).** The table lens sits in a raised card
