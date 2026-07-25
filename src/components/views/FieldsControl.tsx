@@ -1,3 +1,4 @@
+import { PillTrigger } from "@/components/views/ControlPill";
 import type { ResolvedField } from "@/lib/views/fields";
 import { useEffect, useState } from "react";
 
@@ -30,6 +31,7 @@ export function FieldsControl({
   fields,
   schemaFieldNames,
   onChange,
+  dirty = false,
 }: {
   /** The EFFECTIVE resolved set (saved def + draft overlay) — checked, in order. */
   fields: ResolvedField[];
@@ -37,6 +39,8 @@ export function FieldsControl({
   schemaFieldNames: string[];
   /** Receives the full ordered list of shown fields after every edit. */
   onChange: (next: string[]) => void;
+  /** The field set diverges from the saved view — tint the pill border. */
+  dirty?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -75,15 +79,16 @@ export function FieldsControl({
 
   return (
     <div className="relative">
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
+      {/* The shared pill shape (polish V3): [FIELDS  4 ▾], count = shown
+          fields. The panel below stays as-is — only the trigger changed. */}
+      <PillTrigger
+        label="Fields"
+        value={String(shown.length)}
+        haspopup="dialog"
+        open={open}
+        dirty={dirty}
         onClick={() => setOpen((o) => !o)}
-        className="chip focus-ring min-h-8 hover:border-accent hover:text-fg"
-      >
-        Fields{shown.length > 0 ? ` · ${shown.length}` : ""}
-      </button>
+      />
       {open ? (
         <>
           {/* Outside-tap backdrop — a visible scrim under the phone sheet,

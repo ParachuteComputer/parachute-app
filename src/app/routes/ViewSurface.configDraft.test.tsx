@@ -182,6 +182,12 @@ async function awaitReady() {
   await waitFor(() => expect(screen.getAllByText("status").length).toBeGreaterThan(0));
 }
 
+/** V3: the lens is a dropdown — open the pill, pick the kind from its menu. */
+async function switchLens(kind: string) {
+  fireEvent.click(screen.getByRole("button", { name: /^lens:/i }));
+  fireEvent.click(await screen.findByRole("menuitemradio", { name: kind }));
+}
+
 describe("ViewSurface config draft (views train B)", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -201,10 +207,16 @@ describe("ViewSurface config draft (views train B)", () => {
     await awaitReady();
 
     expect(screen.queryByText("View modified")).toBeNull();
-    const switcher = screen.getByRole("group", { name: "Lens" });
-    expect(within(switcher).getByRole("button", { name: "List" })).toHaveAttribute(
-      "aria-pressed",
+    // The lens pill wears the saved kind on its face…
+    fireEvent.click(screen.getByRole("button", { name: "Lens: List" }));
+    // …and its menu marks it current.
+    expect(await screen.findByRole("menuitemradio", { name: "List" })).toHaveAttribute(
+      "aria-checked",
       "true",
+    );
+    expect(screen.getByRole("menuitemradio", { name: "Board" })).toHaveAttribute(
+      "aria-checked",
+      "false",
     );
   });
 
@@ -221,7 +233,7 @@ describe("ViewSurface config draft (views train B)", () => {
     // Positive control: the count filter provably sees the initial fetch —
     // otherwise "no new fetches" would pass vacuously.
     expect(before).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    await switchLens("Board");
 
     // The SAME cached result set re-renders as lanes — grouped by `status`
     // (the first enum-typed field; `title` has no enum), uncategorized none.
@@ -248,11 +260,11 @@ describe("ViewSurface config draft (views train B)", () => {
     renderViewSurface();
     await awaitReady();
 
-    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    await switchLens("Board");
     await screen.findByRole("region", { name: "active" });
     expect(screen.getByText("View modified")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    await switchLens("List");
     await screen.findByRole("region", { name: "Results" });
     await waitFor(() => expect(screen.queryByText("View modified")).toBeNull());
     // And nothing was written by the round trip.
@@ -274,10 +286,10 @@ describe("ViewSurface config draft (views train B)", () => {
     renderViewSurface();
     await awaitReady();
 
-    fireEvent.click(screen.getByRole("button", { name: "Gallery" }));
+    await switchLens("Gallery");
     expect(await screen.findByText("View modified")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    await switchLens("List");
     await waitFor(() => expect(screen.queryByText("View modified")).toBeNull());
   });
 
@@ -304,7 +316,7 @@ describe("ViewSurface config draft (views train B)", () => {
     renderViewSurface();
     await awaitReady();
 
-    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    await switchLens("Board");
     await screen.findByRole("region", { name: "active" });
 
     fireEvent.click(screen.getByRole("button", { name: "Revert" }));
@@ -327,7 +339,7 @@ describe("ViewSurface config draft (views train B)", () => {
     renderViewSurface();
     await awaitReady();
 
-    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    await switchLens("Board");
     await screen.findByRole("region", { name: "active" });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -468,33 +480,125 @@ describe("ViewSurface config draft (views train B)", () => {
     await awaitReady();
 
     expect(screen.getByRole("button", { name: /^fields/i })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    await switchLens("Board");
     await screen.findByRole("region", { name: "active" });
     expect(screen.getByRole("button", { name: /^fields/i })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
-    await screen.findByLabelText(/date field/i);
+    await switchLens("Calendar");
+    await screen.findByRole("button", { name: /^by date/i });
     expect(screen.getByRole("button", { name: /^fields/i })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Gallery" }));
+    await switchLens("Gallery");
     expect(screen.getByRole("button", { name: /^fields/i })).toBeTruthy();
   });
 
-  it("calendar lens exposes the date-field control; board's group control lists the schema fields", async () => {
+  it("calendar lens exposes the By-date pill; board's Group-by pill lists the schema fields", async () => {
     installFetch({ note: listViewNote(), results: PROJECT_RESULTS, tag: PROJECT_TAG_SCHEMA });
     renderViewSurface();
     await awaitReady();
 
-    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
-    const dateSelect = await screen.findByLabelText(/date field/i);
-    // Defaulted to the first date-typed field.
-    expect((dateSelect as HTMLSelectElement).value).toBe("due");
-    expect(screen.queryByLabelText(/group by/i)).toBeNull();
+    await switchLens("Calendar");
+    // Defaulted to the first date-typed field — worn on the pill's face.
+    await screen.findByRole("button", { name: "By date due" });
+    expect(screen.queryByRole("button", { name: /^group by/i })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Board" }));
-    const groupSelect = await screen.findByLabelText(/group by/i);
-    expect((groupSelect as HTMLSelectElement).value).toBe("status");
-    const options = within(groupSelect)
-      .getAllByRole("option")
-      .map((o) => o.textContent);
-    expect(options).toEqual(["title", "status", "due"]);
+    await switchLens("Board");
+    const groupPill = await screen.findByRole("button", { name: "Group by status" });
+    expect(screen.queryByRole("button", { name: /^by date/i })).toBeNull();
+    fireEvent.click(groupPill);
+    const menu = await screen.findByRole("menu", { name: "Group by" });
+    expect(
+      within(menu)
+        .getAllByRole("menuitemradio")
+        .map((o) => o.textContent?.replace("✓", "")),
+    ).toEqual(["title", "status", "due"]);
+    expect(within(menu).getByRole("menuitemradio", { name: "status" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
+  // --- The organize-by axis as a first-class control (polish V3): the pill
+  // writes groupBy/dateField into the SAME draft, and the two empty states
+  // must render — a vanished control can't explain what organizes the view.
+
+  it("Group-by pill: picking a field writes the draft, raises the bar, and Save patches group_by", async () => {
+    seedStore(fakeJwt("user-1"));
+    const { captured } = installFetch({
+      note: listViewNote({
+        createdBy: "user-1",
+        metadata: {
+          kind: "board",
+          group_by: "status",
+          query: JSON.stringify({ tag: "project" }),
+        },
+      }),
+      results: PROJECT_RESULTS,
+      tag: PROJECT_TAG_SCHEMA,
+    });
+    renderViewSurface();
+    await screen.findByRole("region", { name: "active" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Group by status" }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "title" }));
+    // The draft is live: the pill re-faces, the one bar raises.
+    await screen.findByRole("button", { name: "Group by title" });
+    expect(await screen.findByText("View modified")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const sheet = await screen.findByRole("dialog", { name: /save this view/i });
+    fireEvent.click(within(sheet).getByRole("button", { name: /^save$/i }));
+    await waitFor(() => expect(captured.patches).toHaveLength(1));
+    expect((captured.patches[0].body.metadata as Record<string, string>).group_by).toBe("title");
+  });
+
+  it("EMPTY STATE (calendar): no date field saved → the By-date pill reads 'created'; picking a date field graduates through the draft", async () => {
+    installFetch({
+      note: listViewNote({
+        metadata: { kind: "calendar", query: JSON.stringify({ tag: "project" }) },
+      }),
+      results: PROJECT_RESULTS,
+      tag: PROJECT_TAG_SCHEMA,
+    });
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Projects" });
+
+    // The read-only createdAt mode: the pill wears the honest axis…
+    const pill = await screen.findByRole("button", { name: "By date created" });
+    fireEvent.click(pill);
+    // …its menu explains, and lists the schema's date-typed fields.
+    expect(await screen.findByText("Showing by created date")).toBeTruthy();
+    const menu = screen.getByRole("menu", { name: "By date" });
+    expect(
+      within(menu)
+        .getAllByRole("menuitemradio")
+        .map((o) => o.textContent?.replace("✓", "")),
+    ).toEqual(["due"]);
+
+    // Picking one graduates to editable: the draft carries it, the bar raises,
+    // and the calendar's own read-only hint stands down.
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name: "due" }));
+    await screen.findByRole("button", { name: "By date due" });
+    expect(screen.getByText("View modified")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.queryByText(/showing by created date — set a date field/i)).toBeNull(),
+    );
+  });
+
+  it("EMPTY STATE (board): a schema-less tag still renders [GROUP BY —] with the explanatory line", async () => {
+    installFetch({
+      note: listViewNote({
+        metadata: { kind: "board", query: JSON.stringify({ tag: "project" }) },
+      }),
+      results: PROJECT_RESULTS,
+      tag: { name: "project" }, // no schema fields
+    });
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Projects" });
+
+    const pill = await screen.findByRole("button", { name: "Group by —" });
+    fireEvent.click(pill);
+    expect(
+      await screen.findByText("No fields to group by — this view's tag has no schema fields."),
+    ).toBeTruthy();
+    expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
   });
 });
