@@ -94,11 +94,15 @@ export function FieldValueControl({
 
   // boolean — a direct toggle, no popover (unset/false → true → false).
   if (kind === "boolean") {
+    // Fold the state into the accessible name — the aria-label shadows the
+    // glyph content, so without this a screen reader hears no state at all.
+    const boolAria =
+      trigger?.ariaLabel ?? `Edit ${field} (${value === true ? "checked" : "unchecked"})`;
     return (
       <button
         type="button"
         disabled={disabled}
-        aria-label={ariaLabel}
+        aria-label={boolAria}
         onClick={() => onCommit(!(value === true))}
         className={triggerClass}
       >
