@@ -218,6 +218,56 @@ describe("TableView", () => {
     expect(table.parentElement?.className).toContain("overflow-x-auto");
   });
 
+  // Containment (polish V5) — the card around the scroll container, the soft
+  // header band, and the sticky column's OPAQUE card-matched backgrounds.
+
+  it("the scroll container sits inside a rounded card wrapper (border + bg-card + shadow)", () => {
+    installFetch();
+    renderTable(NOTES, [STATUS_FIELD]);
+
+    const card = screen.getByRole("table").parentElement?.parentElement;
+    for (const cls of ["rounded-xl", "border-border", "bg-card", "shadow-sm", "overflow-hidden"]) {
+      expect(card?.className).toContain(cls);
+    }
+  });
+
+  it("header cells read as the soft band — bg-bg-soft, uppercase micro-labels", () => {
+    installFetch();
+    renderTable(NOTES, [STATUS_FIELD]);
+
+    for (const header of screen.getAllByRole("columnheader")) {
+      for (const cls of ["bg-bg-soft", "text-2xs", "uppercase"]) {
+        expect(header.className).toContain(cls);
+      }
+    }
+  });
+
+  it("sticky title cells carry backgrounds matching their surface — bg-bg-soft header, bg-card body (no bg-bg seam under horizontal scroll)", () => {
+    installFetch();
+    renderTable(NOTES, [STATUS_FIELD]);
+
+    const noteHeader = screen.getByRole("columnheader", { name: "Note" });
+    expect(noteHeader.className).toContain("sticky");
+    expect(noteHeader.className).toContain("bg-bg-soft");
+
+    const titleCell = within(rowFor("proj-a")).getByRole("rowheader");
+    expect(titleCell.className).toContain("sticky");
+    expect(titleCell.className).toContain("bg-card");
+    // The old page background would seam against the card when rows slide
+    // under the sticky column.
+    expect(titleCell.className).not.toMatch(/(?:^|\s)bg-bg(?:\s|$)/);
+  });
+
+  it("rows separate with light hairlines, hover-tint, and the last row runs borderless into the card edge", () => {
+    installFetch();
+    renderTable(NOTES, [STATUS_FIELD]);
+
+    const row = rowFor("proj-a");
+    for (const cls of ["border-border-light", "hover:bg-bg-soft/60", "last:border-b-0"]) {
+      expect(row.className).toContain(cls);
+    }
+  });
+
   it("rows carry data-note-id — the microconfirmation flash target", () => {
     installFetch();
     renderTable(NOTES, [STATUS_FIELD]);
