@@ -1,4 +1,4 @@
-import { Landing } from "@/app/routes/Landing";
+import { Landing, trialLine } from "@/app/routes/Landing";
 import { getSession, requestMagicLink } from "@/lib/account/client";
 import { getDoorDescriptor, peekDoorDescriptor } from "@/lib/account/descriptor";
 import { openHostedVault } from "@/lib/account/hosted-vault";
@@ -87,7 +87,7 @@ describe("Landing — the front door (confirmed cloud)", () => {
     expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /email me a sign-in link/i })).toBeInTheDocument();
     expect(screen.getByText(/one link does both/i)).toBeInTheDocument();
-    expect(screen.getByText(/free for 30 days/i)).toBeInTheDocument();
+    expect(screen.getByText(/three months free, no card/i)).toBeInTheDocument();
     // naming is gone from the door
     expect(screen.queryByText(/what should we call your vault/i)).not.toBeInTheDocument();
   });
@@ -244,7 +244,7 @@ describe("Landing — front door, door descriptor fork", () => {
     const signIn = await screen.findByRole("link", { name: /^sign in/i });
     expect(signIn).toHaveAttribute("href", "/add");
     expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/free for 30 days/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/free, no card/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/plans from/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/sign in or create your account/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /create your account/i })).not.toBeInTheDocument();
@@ -290,7 +290,7 @@ describe("Landing — front door, door descriptor fork", () => {
     const primary = await screen.findByRole("button", { name: /open your parachute/i });
     // No cloud onboarding on the hub card.
     expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/free for 30 days/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/free, no card/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/plans from/i)).not.toBeInTheDocument();
     // Names the box.
     expect(screen.getByText(/hub\.example\.com/)).toBeInTheDocument();
@@ -388,5 +388,87 @@ describe("Landing — front door, door descriptor fork", () => {
     fireEvent.click(primary);
     // Hands off to the full connect form (stubbed route content).
     await waitFor(() => expect(screen.getByText("Add form")).toBeInTheDocument());
+  });
+});
+
+// The trial claim — the sentence a real visitor reads. `GET /signup` on the
+// cloud door 302s to this SPA, so the landing page (not the worker's marketing
+// HTML) is the promise the product actually makes. It used to be a hardcoded
+// "Free for 30 days" here while the backend granted its own number, which is
+// exactly the drift these tests exist to stop.
+describe("Landing — the trial claim", () => {
+  describe("trialLine (pure)", () => {
+    it("renders the door's published length verbatim", () => {
+      expect(trialLine("3 months")).toBe("3 months free, no card.");
+    });
+
+    it("falls back to the ratified campaign phrase when the door says nothing", () => {
+      // Pre-fetch, offline, or a door that predates the field.
+      expect(trialLine(undefined)).toBe("Three months free, no card.");
+      expect(trialLine("")).toBe("Three months free, no card.");
+      expect(trialLine("   ")).toBe("Three months free, no card.");
+    });
+
+    it("falls back rather than trusting a non-string from an untrusted door", () => {
+      // A door serving an object here would throw "Objects are not valid as a
+      // React child" — a white screen, since the app has no ErrorBoundary.
+      expect(trialLine({} as unknown)).toBe("Three months free, no card.");
+      expect(trialLine(90 as unknown)).toBe("Three months free, no card.");
+      expect(trialLine(null as unknown)).toBe("Three months free, no card.");
+    });
+
+    it("falls back rather than letting a door blow out the layout", () => {
+      expect(trialLine("x".repeat(41))).toBe("Three months free, no card.");
+      // Right at the cap still renders — the guard is a layout bound, not a
+      // value allowlist.
+      expect(trialLine("x".repeat(40))).toBe(`${"x".repeat(40)} free, no card.`);
+    });
+
+    it("trims the door's label so a stray space can't double up", () => {
+      expect(trialLine("  3 months  ")).toBe("3 months free, no card.");
+    });
+  });
+
+  describe("rendered on the cloud front door", () => {
+    beforeEach(() => {
+      localStorage.clear();
+      vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
+      vi.mocked(requestMagicLink).mockReset().mockResolvedValue(undefined);
+      vi.mocked(peekDoorDescriptor).mockReset().mockReturnValue(null);
+      vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
+    });
+
+    it("renders the descriptor's trial length when the door publishes one", async () => {
+      vi.mocked(getDoorDescriptor).mockResolvedValue({
+        door: "cloud",
+        auth: { methods: ["magic_link"], signin_path: "/login" },
+        trial_length_label: "3 months",
+      });
+      renderLanding();
+      expect(await screen.findByText(/3 months free, no card/i)).toBeInTheDocument();
+      expect(screen.queryByText(/30 days/i)).not.toBeInTheDocument();
+    });
+
+    it("renders the honest fallback on a cloud door that publishes no length", async () => {
+      vi.mocked(getDoorDescriptor).mockResolvedValue({
+        door: "cloud",
+        auth: { methods: ["magic_link"], signin_path: "/login" },
+      });
+      renderLanding();
+      expect(await screen.findByText(/three months free, no card/i)).toBeInTheDocument();
+    });
+
+    it("never claims a trial on a hub door, even one that published a length", async () => {
+      // A hub grants no trial; the claim lives only on the confirmed cloud
+      // branch, so a stray field can't leak cloud marketing onto a box.
+      vi.mocked(getDoorDescriptor).mockResolvedValue({
+        door: "hub",
+        auth: { methods: ["password"], signin_path: "/login" },
+        trial_length_label: "3 months",
+      });
+      renderLanding();
+      await screen.findByRole("button", { name: /open your parachute/i });
+      expect(screen.queryByText(/free, no card/i)).not.toBeInTheDocument();
+    });
   });
 });

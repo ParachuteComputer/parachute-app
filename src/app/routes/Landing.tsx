@@ -128,6 +128,37 @@ export function pricingLine(plans?: DoorPlan[]): string | null {
   return null;
 }
 
+/** The claim we make when the door hasn't told us its trial length — the
+ *  ratified campaign phrase (three months free, 2026-07-25). Kept honest by
+ *  being the SAME number the door grants; when a door publishes
+ *  `trial_length_label` that wins, and this is only the pre-fetch / offline /
+ *  older-door path. */
+const FALLBACK_TRIAL_LENGTH = "Three months";
+
+/**
+ * The trial claim — the sentence a real visitor reads at the front door, and
+ * the one that has to match what the backend actually grants. `GET /signup`
+ * 302s here, so THIS is the promise, not the worker's marketing page.
+ *
+ * Descriptor-driven for the same reason `pricingLine` is: the length is a
+ * campaign number that moves, and hardcoding it in two repos is how the app
+ * ended up promising 30 days over a backend granting 90. The door publishes
+ * `trial_length_label` ("3 months"); we render it verbatim.
+ *
+ * UNTRUSTED INPUT — the guard is here rather than in `normalizeDescriptor`
+ * because this is a single top-level scalar with exactly one consumer, and the
+ * value goes straight into JSX: a door serving `trial_length_label: {}` would
+ * throw "Objects are not valid as a React child" (white screen — the app has
+ * no ErrorBoundary), and one serving a paragraph would blow out the layout.
+ * Anything that isn't a short, non-empty string falls back to the literal,
+ * which is honest on its own.
+ */
+export function trialLine(trialLengthLabel?: unknown): string {
+  const label = typeof trialLengthLabel === "string" ? trialLengthLabel.trim() : "";
+  const length = label && label.length <= 40 ? label : FALLBACK_TRIAL_LENGTH;
+  return `${length} free, no card.`;
+}
+
 // HUB-PARITY P4 — the ONE door-conditional piece of UI the portability
 // principle permits (SYNTHESIS "PORTABILITY"). Loads the door descriptor
 // (`/.well-known/parachute-account`, same-origin, public) and forks into the
@@ -165,7 +196,12 @@ function FrontDoor() {
     return <HubFrontDoor auth={descriptor.auth} signupPath={descriptor.signup_path} />;
   }
   if (kind === "cloud") {
-    return <MagicLinkFrontDoor plans={descriptor?.plans} />;
+    return (
+      <MagicLinkFrontDoor
+        plans={descriptor?.plans}
+        trialLengthLabel={descriptor?.trial_length_label}
+      />
+    );
   }
   return <NeutralFrontDoor />;
 }
@@ -199,9 +235,16 @@ function NeutralFrontDoor() {
 // The magic-link front door (`/`, signed-out, cloud today) — SYNTHESIS #1.
 // One email field that does BOTH (sign in OR create), because magic-link
 // resolves new-vs-returning without asking. Only rendered for a CONFIRMED
-// cloud/magic-link door now (never as the unresolved default), and its price
-// line is descriptor-driven so the copy travels with the door.
-function MagicLinkFrontDoor({ plans }: { plans?: DoorPlan[] }) {
+// cloud/magic-link door now (never as the unresolved default), and both its
+// price line AND its trial claim are descriptor-driven so the copy travels
+// with the door instead of drifting from it.
+function MagicLinkFrontDoor({
+  plans,
+  trialLengthLabel,
+}: {
+  plans?: DoorPlan[];
+  trialLengthLabel?: string;
+}) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const expired = params.get("link") === "expired";
@@ -211,6 +254,7 @@ function MagicLinkFrontDoor({ plans }: { plans?: DoorPlan[] }) {
 
   const looksLikeEmail = /.+@.+\..+/.test(email.trim());
   const plansLine = pricingLine(plans);
+  const trialClaim = trialLine(trialLengthLabel);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -284,7 +328,8 @@ function MagicLinkFrontDoor({ plans }: { plans?: DoorPlan[] }) {
         password.
       </p>
       <p className="mx-auto mt-3 max-w-sm font-round text-xs text-fg-dim">
-        Free for 30 days, no card.{plansLine ? ` ${plansLine}` : ""}
+        {trialClaim}
+        {plansLine ? ` ${plansLine}` : ""}
       </p>
 
       {error ? (
