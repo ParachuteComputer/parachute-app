@@ -90,7 +90,11 @@ export function NoteCard({
       // The microconfirmation flash's target (views train A): `flashNoteCard`
       // pulses the tile whose field just wrote via this attribute.
       data-note-id={note.id}
-      className={`focus-ring card group flex flex-col overflow-hidden transition-colors hover:border-accent ${
+      // Card rhythm (polish V4): `.card`'s 24px radius is balloon-y at tile
+      // width, so both variants tighten to rounded-xl (16px); a resting
+      // shadow-sm lifts to shadow-md on hover. `transition` (not -colors)
+      // so border-color AND box-shadow both ease.
+      className={`focus-ring card group flex flex-col overflow-hidden rounded-xl shadow-sm transition hover:border-accent hover:shadow-md ${
         isArchived ? "opacity-60 italic" : ""
       }`}
     >

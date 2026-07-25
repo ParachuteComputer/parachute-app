@@ -1,5 +1,23 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.48] - 2026-07-25
+
+**Views: recessed board lanes + card rhythm (polish V4).** The board reads as
+columns now: each lane is a soft recessed well (`rounded-2xl bg-bg-soft` +
+light border) the `bg-card` tiles pop out of. Lane heads drop their underline
+for the prototype's composition — tint dot + semibold name + a pill count
+(`rounded-full bg-bg`, tabular). Cards tighten from `.card`'s 24px radius to
+16px at tile width (both variants) and gain a resting `shadow-sm` that lifts
+to `shadow-md` on hover; `hover:border-accent` stays.
+
+- **Schema-declared lanes render even when empty** — a schema authoring
+  `status: [todo, doing, done]` shows all three columns, the empty ones
+  carrying a centered affordance ("Drop here" on fine pointers, "No notes" on
+  touch). Before, an emptied column vanished — an invisible drop target you
+  could never drag a card back into. Only the tag schema's authored enum earns
+  empty columns; the built-in fallback order stays presence-only.
+- Card change is class-only: drag/flash/anchor machinery untouched.
+
 ## [0.20.47] - 2026-07-24
 
 **Views: a calm controls row — lens dropdown, labeled Group-by/By-date, Fields count
