@@ -56,3 +56,48 @@ export function hueForTag(tag: string | null | undefined): HueName | null {
   if (assigned) return assigned;
   return HUE_NAMES[djb2(bare) % HUE_NAMES.length];
 }
+
+// ---------------------------------------------------------------------------
+// Enum VALUE hues (views polish V2) — the same machinery, pointed at a field's
+// enum values instead of tag names. A handful of universal state words get a
+// considered semantic hue; everything else hashes into the garden palette.
+// Deliberately keyed by the normalized value ONLY — not salted with the field
+// name — so "High" is the same hue on every priority-ish field across every
+// view, forever, with zero storage.
+
+/** "In Progress", "in-progress", "in_progress" → "in progress". */
+function normalizeEnumValue(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[-_\s]+/g, " ");
+}
+
+// Hand-assigned state semantics: done-ish → grass (the app's success green),
+// active-ish → sun (work in motion), stuck-ish → the semantic danger token
+// (not a garden hue — it must read as the app's one alarm color).
+const ENUM_HAND_ASSIGNED: Record<string, HueName | "danger"> = {
+  done: "grass",
+  complete: "grass",
+  completed: "grass",
+  shipped: "grass",
+  closed: "grass",
+  "in progress": "sun",
+  active: "sun",
+  doing: "sun",
+  blocked: "danger",
+  urgent: "danger",
+  critical: "danger",
+};
+
+/**
+ * Resolve an enum value to its stable hue — `"danger"` for the blocked-ish
+ * states (rendered via `--color-danger`, not a garden hue), a `HueName` for
+ * everything else. Same value → same hue everywhere, every render, no storage.
+ */
+export function hueForEnumValue(value: string): HueName | "danger" {
+  const norm = normalizeEnumValue(value);
+  const assigned = ENUM_HAND_ASSIGNED[norm];
+  if (assigned) return assigned;
+  return HUE_NAMES[djb2(norm) % HUE_NAMES.length];
+}

@@ -119,6 +119,42 @@ describe("FieldValueControl", () => {
     expect(onCommit).toHaveBeenCalledWith(3);
     expect(typeof onCommit.mock.calls[0][0]).toBe("number");
   });
+
+  it("enum menu options carry their value's stable hue dot (polish V2)", () => {
+    renderControl({
+      schema: { type: "string", enum: ["active", "done", "blocked"] },
+      value: "active",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /edit status/i }));
+    // Hand-assigned semantics: active → sun, done → grass, blocked → danger.
+    const dotOf = (name: string) =>
+      screen.getByRole("menuitem", { name }).querySelector(".tint-dot");
+    expect(dotOf("active")).toHaveClass("tint-sun");
+    expect(dotOf("done")).toHaveClass("tint-grass");
+    expect(dotOf("blocked")).toHaveClass("tint-danger");
+  });
+
+  it("the empty-value menu options stay dotless — no hue for 'no value'", () => {
+    renderControl({
+      schema: { type: "string", enum: ["active", "done"] },
+      value: "active",
+      options: [
+        { value: "done", label: "done" },
+        { value: null, label: "No status", muted: true },
+      ],
+      includeClear: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /edit status/i }));
+    // The board's muted uncategorized option (value null) has no dot…
+    expect(
+      screen.getByRole("menuitem", { name: "No status" }).querySelector(".tint-dot"),
+    ).toBeNull();
+    // …and neither does Clear; the real value keeps its dot.
+    expect(screen.getByRole("menuitem", { name: "Clear" }).querySelector(".tint-dot")).toBeNull();
+    expect(
+      screen.getByRole("menuitem", { name: "done" }).querySelector(".tint-dot"),
+    ).not.toBeNull();
+  });
 });
 
 // Typed rendering in the trigger (polish V1) — the trigger IS FieldDisplay,

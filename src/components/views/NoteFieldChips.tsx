@@ -1,4 +1,5 @@
-import { FieldValueControl } from "@/components/views/FieldValueControl";
+import { FieldValueControl, resolveControlKind } from "@/components/views/FieldValueControl";
+import { hueForEnumValue } from "@/lib/hue/hue";
 import type { Note } from "@/lib/vault/types";
 import type { ResolvedField } from "@/lib/views/fields";
 import type { ViewFieldValue } from "@/lib/views/mutate";
@@ -47,22 +48,37 @@ export function NoteFieldChips({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pt-0.5">
-      {shown.map((f) => (
-        <span
-          key={f.name}
-          className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-soft/60 py-0.5 pl-2 pr-1 text-[0.6875rem] leading-none"
-        >
-          <span className="text-fg-dim">{f.name}</span>
-          <FieldValueControl
-            field={f.name}
-            schema={f.schema}
-            value={scalarValue(note.metadata?.[f.name])}
-            disabled={isPending}
-            includeClear
-            onCommit={(value) => void write(f.name, value)}
-          />
-        </span>
-      ))}
+      {shown.map((f) => {
+        const value = scalarValue(note.metadata?.[f.name]);
+        // Enum tinting (polish V2): a set enum value washes its chip with the
+        // value's stable hue + a leading swatch dot. The tinted chip drops the
+        // neutral bg/border utilities — `.chip-tinted` owns those (utilities
+        // would win the cascade over the components-layer tint otherwise).
+        // Text stays fg/fg-dim; the hue never carries the meaning alone.
+        const tint =
+          resolveControlKind(f.schema) === "enum" && value !== null && value !== ""
+            ? hueForEnumValue(String(value))
+            : null;
+        return (
+          <span
+            key={f.name}
+            className={`inline-flex items-center gap-1 rounded-full border py-0.5 pl-2 pr-1 text-[0.6875rem] leading-none ${
+              tint ? `chip-tinted tint-${tint}` : "border-border bg-bg-soft/60"
+            }`}
+          >
+            {tint ? <span aria-hidden="true" className="tint-dot" /> : null}
+            <span className="text-fg-dim">{f.name}</span>
+            <FieldValueControl
+              field={f.name}
+              schema={f.schema}
+              value={value}
+              disabled={isPending}
+              includeClear
+              onCommit={(value) => void write(f.name, value)}
+            />
+          </span>
+        );
+      })}
     </div>
   );
 }
