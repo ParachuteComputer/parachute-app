@@ -263,7 +263,19 @@ function ViewModifiedBar({ onSave, onRevert }: { onSave: () => void; onRevert: (
       className="glass-panel fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-border lg:bottom-0 lg:pb-[env(safe-area-inset-bottom)]"
     >
       <div className="mx-auto flex w-full max-w-(--w-page) items-center justify-between gap-3 px-5 py-2.5 md:px-10">
-        <p className="text-sm text-fg-muted">View modified</p>
+        {/* The bar's voice (polish V6): a live accent dot (stilled under
+            reduced motion — the gate in index.css) + copy that says what
+            state you're in and what Save does, not just that state exists. */}
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            aria-hidden="true"
+            className="view-modified-pulse h-2 w-2 shrink-0 rounded-full bg-accent"
+          />
+          <p className="min-w-0 text-sm text-fg-muted">
+            <span className="font-medium text-fg">View modified</span> — you're exploring. Save to
+            keep this layout.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={onRevert} className="btn btn-secondary btn-touch">
             Revert

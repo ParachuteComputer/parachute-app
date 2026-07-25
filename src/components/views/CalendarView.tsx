@@ -140,7 +140,7 @@ export function CalendarView({
       </header>
 
       <div className="overflow-hidden rounded-md border border-border bg-card">
-        <div className="grid grid-cols-7 border-b border-border text-xs uppercase tracking-wider text-fg-dim">
+        <div className="grid grid-cols-7 border-b border-border bg-bg-soft text-2xs uppercase tracking-wider text-fg-dim">
           {WEEKDAYS.map((w) => (
             <div key={w} className="px-2 py-2 text-center">
               {w}
@@ -258,7 +258,7 @@ function DayCell({
 
   const numberBadge = (
     <span
-      className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full tabular-nums ${
+      className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full font-serif tabular-nums ${
         isToday ? "bg-accent text-(--color-on-accent)" : "text-fg"
       }`}
     >
@@ -323,8 +323,13 @@ function DayCell({
   );
 }
 
+// The chip's register (polish V6): a raised neutral mini — the prototype's
+// `.mini` — not a coral tint. Every note on the grid used to wear
+// `bg-accent/10 text-accent`, which made each one read as a link; neutral
+// card-on-card keeps coral for what it means everywhere else (today, drop
+// affordance, selection). Class-only: both chip variants share this constant.
 const DAY_CHIP_CLASS =
-  "truncate rounded bg-accent/10 px-1 py-0.5 text-[10px] leading-tight text-accent";
+  "truncate rounded-md border border-border bg-card px-1.5 py-0.5 text-[10px] leading-tight text-fg shadow-sm";
 
 // The read-only calendar's chip (train F) — a plain span, deliberately
 // hook-free: no `useViewFieldWrite`, no drag source, no registry entry. The

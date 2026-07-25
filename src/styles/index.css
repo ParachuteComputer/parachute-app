@@ -1452,6 +1452,26 @@ body {
     animation: field-write-flash 600ms var(--ease-out);
   }
 
+  /* --- Save-bar pulse (views polish V6) --- the ViewModifiedBar's live dot:
+     a slow accent breath saying "this layout is exploring, unsaved" while the
+     bar is up. Bakes its duration (an ambient status pulse, not an entrance
+     consuming --dur-enter), so it's listed explicitly in the reduced-motion
+     gate below — the dot still shows there, just stilled. */
+  @keyframes view-modified-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.4;
+      transform: scale(0.75);
+    }
+  }
+  .view-modified-pulse {
+    animation: view-modified-pulse 2s ease-in-out infinite;
+  }
+
   /* --- ONE reduced-motion gate --- previously honored ad hoc: 8 individual
      `motion-reduce:` sprinkles per callsite plus 2 hand-rolled CSS blocks.
      Zeroing --dur-move/--dur-enter at the token layer means every transform,
@@ -1475,6 +1495,7 @@ body {
     .enter-fade,
     .qs-scrim-fade,
     .field-write-flash,
+    .view-modified-pulse,
     .dialog-overlay,
     .dialog-panel,
     .cm-format-toolbar-docked {
