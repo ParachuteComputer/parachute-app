@@ -1,5 +1,29 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.52] - 2026-07-25
+
+**Three months free — the claim visitors actually read.**
+
+- **The front door said 30 days while the backend granted 90.** Aaron ratified
+  a free-for-three-months campaign; the cloud worker's copy moved with it, but
+  `GET /signup` 302s to this SPA, so the promise a real visitor reads is the
+  landing page — and it still said "Free for 30 days, no card." The product was
+  advertising one trial and granting another. Now: "Three months free, no card."
+
+- **And the number stopped being a literal.** The drift wasn't a typo, it was
+  structural: the trial length was hardcoded in two repos, so it was always
+  going to skew the next time the campaign moved. The landing claim now renders
+  `trial_length_label` from the door descriptor
+  (`GET /.well-known/parachute-account`) — the same descriptor-driven treatment
+  the price line already got — with the campaign phrase as the fallback when the
+  door publishes nothing (pre-fetch, offline, or an older door). The door owns
+  the number; the app renders what it's told. A hub, which grants no trial at
+  all, never renders the claim: it lives only on the confirmed-cloud branch.
+
+- **The label is untrusted input.** A door serving an object there would white-
+  screen the app (no ErrorBoundary); a door serving a paragraph would blow out
+  the layout. Anything that isn't a short, non-empty string falls back.
+
 ## [0.20.51] - 2026-07-25
 
 **Gauntlet fixes 1 — Aaron's three live dogfood complaints (7/24).**

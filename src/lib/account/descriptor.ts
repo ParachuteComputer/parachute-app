@@ -52,6 +52,21 @@ export interface DoorDescriptor {
   /** The upgrade-tier ladder for the Account surface's Billing section (see
    *  `Account.tsx`'s plan cards) — omitted on a door with no billing. */
   plans?: DoorPlan[];
+  /**
+   * How long this door's no-card trial runs, as a rendered PHRASE — e.g.
+   * `"3 months"`. The front door's trial claim (`Landing.tsx`'s `trialLine`)
+   * is the only consumer: the length is a CAMPAIGN number that moves, and it
+   * used to be hardcoded in both this app and the cloud worker, so the two
+   * drifted the moment one changed (a landing page promising 30 days over a
+   * backend granting 90). The door owns the number; the app renders whatever
+   * it's told.
+   *
+   * Absent on a door that hasn't published it yet, and on any door with no
+   * trial at all (a hub) — `trialLine` falls back to a literal, and the claim
+   * only ever renders on a CONFIRMED cloud door anyway. Untrusted: `trialLine`
+   * type-guards it at the read site rather than trusting this annotation.
+   */
+  trial_length_label?: string;
 }
 
 type Fetch = typeof fetch;
