@@ -3,6 +3,7 @@ import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { DEFAULT_TAG_ROLES } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
+import { stubPointer } from "@/test/dnd";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { BrowserRouter } from "react-router";
@@ -40,8 +41,10 @@ function seedStore() {
 }
 
 // A PATCH stub echoing the merged note (ok), or a failing PATCH (throws in the
-// client → the move rolls back). Any GET returns [] so no stray fetch 500s.
-function installFetch(patchOk: boolean) {
+// client → the move rolls back). A GET for a tag-identity row serves
+// `tagRecord` when provided (the declared-enum path, polish V4); any other
+// GET returns [] so no stray fetch 500s.
+function installFetch(patchOk: boolean, tagRecord?: Record<string, unknown>) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     const method = (init?.method ?? "GET").toUpperCase();
@@ -59,6 +62,14 @@ function installFetch(patchOk: boolean) {
         text: async () => "",
       } as Response;
     }
+    if (tagRecord && url.includes("/tags/")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => tagRecord,
+        text: async () => "",
+      } as Response;
+    }
     return { ok: true, status: 200, json: async () => [], text: async () => "" } as Response;
   });
   vi.stubGlobal("fetch", fetchImpl);
@@ -67,7 +78,15 @@ function installFetch(patchOk: boolean) {
 
 // A board that reads its notes from the SAME cache key the move writes — the
 // production wiring (ViewSurface → useViewResults → BoardView), in miniature.
-function Board({ initial, laneBy }: { initial: Note[]; laneBy: string }) {
+function Board({
+  initial,
+  laneBy,
+  subjectTag,
+}: {
+  initial: Note[];
+  laneBy: string;
+  subjectTag?: string;
+}) {
   const { data } = useQuery<Note[]>({
     queryKey: VIEW_KEY as unknown as string[],
     queryFn: async () => initial,
@@ -78,18 +97,19 @@ function Board({ initial, laneBy }: { initial: Note[]; laneBy: string }) {
     <BoardView
       notes={data ?? []}
       laneBy={laneBy}
+      subjectTag={subjectTag}
       roles={DEFAULT_TAG_ROLES}
       viewResultsKey={VIEW_KEY as unknown as string[]}
     />
   );
 }
 
-function renderBoard(initial: Note[], laneBy: string) {
+function renderBoard(initial: Note[], laneBy: string, subjectTag?: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   render(
     <QueryClientProvider client={qc}>
       <BrowserRouter>
-        <Board initial={initial} laneBy={laneBy} />
+        <Board initial={initial} laneBy={laneBy} subjectTag={subjectTag} />
       </BrowserRouter>
     </QueryClientProvider>,
   );
@@ -310,5 +330,67 @@ describe("BoardView tap-to-move", () => {
       const toasts = useToastStore.getState().toasts;
       expect(toasts.some((t) => t.tone === "error" && /couldn't move/i.test(t.message))).toBe(true);
     });
+  });
+});
+
+// Polish V4: a schema-declared enum value renders a lane even with ZERO notes
+// — the visible drop target an emptied column used to lose — and the empty
+// body's affordance text follows the pointer class ("Drop here" invites a
+// drag on desktop; touch has no drag, so it just states "No notes").
+describe("BoardView empty declared lanes (polish V4)", () => {
+  const TASK_TAG = {
+    name: "task",
+    fields: { status: { type: "string", enum: ["todo", "doing", "done"] } },
+  };
+  const NOTES: Note[] = [
+    {
+      id: "a",
+      path: "task-a",
+      createdAt: "2026-07-01T00:00:00Z",
+      updatedAt: "2026-07-10T00:00:00Z",
+      metadata: { status: "todo" },
+    },
+  ];
+
+  let restorePointer: (() => void) | null = null;
+
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.getState().clear();
+    seedStore();
+    window.history.replaceState({}, "", "/");
+  });
+  afterEach(() => {
+    restorePointer?.();
+    restorePointer = null;
+    vi.unstubAllGlobals();
+  });
+
+  it("renders declared-but-empty lanes, count 0, reading 'Drop here' on a fine pointer", async () => {
+    restorePointer = stubPointer("fine");
+    installFetch(true, TASK_TAG);
+    renderBoard(NOTES, "status", "task");
+
+    // The declared lanes appear once the tag schema resolves — including the
+    // two values no note carries, in the authored enum order.
+    const doing = await screen.findByRole("region", { name: "doing" });
+    const done = laneSection("done");
+    expect(within(doing).getByText("Drop here")).toBeInTheDocument();
+    expect(within(done).getByText("Drop here")).toBeInTheDocument();
+    expect(within(doing).getByText("0")).toBeInTheDocument();
+    // The populated lane keeps its card — no affordance text.
+    expect(within(laneSection("todo")).getByText("task-a")).toBeInTheDocument();
+    expect(within(laneSection("todo")).queryByText("Drop here")).toBeNull();
+  });
+
+  it("reads 'No notes' on a coarse pointer (no drag there — just the fact)", async () => {
+    restorePointer = stubPointer("coarse");
+    installFetch(true, TASK_TAG);
+    renderBoard(NOTES, "status", "task");
+
+    const done = await screen.findByRole("region", { name: "done" });
+    expect(within(done).getByText("No notes")).toBeInTheDocument();
+    expect(within(done).queryByText("Drop here")).toBeNull();
   });
 });

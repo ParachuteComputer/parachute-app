@@ -8,6 +8,7 @@ import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
 import {
   type DropHandlerRegistry,
+  isFinePointer,
   useDropHandlerRegistry,
   useNoteDragSource,
   useNoteDropTarget,
@@ -69,10 +70,26 @@ export function BoardView({
   // Only mounts for board kind, so the schema fetch is board-scoped; a missing
   // tag/schema just falls the order back to the built-in/alphabetical path.
   const tag = useTag(subjectTag ?? null);
-  const lanes = useMemo(
-    () => groupIntoLanes(notes, laneBy, resolveLaneOrder(laneBy, tag.data?.fields)),
-    [notes, laneBy, tag.data],
-  );
+  const lanes = useMemo(() => {
+    const grouped = groupIntoLanes(notes, laneBy, resolveLaneOrder(laneBy, tag.data?.fields));
+    // Schema-declared lanes render even when EMPTY (polish V4): a schema that
+    // authors `status: [todo, doing, done]` means all three columns exist.
+    // Without this, dragging the last card out of a lane vanishes the column —
+    // an invisible drop target you can never drag a card back into. Only the
+    // tag schema's authored enum earns empty columns; the built-in
+    // KNOWN_LANE_ORDER fallback stays presence-only (it would conjure eight
+    // ghost lanes on every schema-less status board). The empty lane's typed
+    // write value is the enum string itself — declared enums are strings.
+    const declared = tag.data?.fields?.[laneBy]?.enum ?? [];
+    if (declared.length === 0) return grouped;
+    const byKey = new Map(grouped.filter((l) => !l.uncategorized).map((l) => [l.key, l]));
+    const declaredLanes: Lane[] = declared.map(
+      (v) => byKey.get(v) ?? { key: v, label: v, notes: [], uncategorized: false, value: v },
+    );
+    const declaredSet = new Set(declared);
+    const rest = grouped.filter((l) => l.uncategorized || !declaredSet.has(l.key));
+    return [...declaredLanes, ...rest];
+  }, [notes, laneBy, tag.data]);
 
   // Routes a drop (landing on a LANE) to the dragged card's own write hook.
   const dropRegistry = useDropHandlerRegistry<Lane>();
@@ -127,14 +144,16 @@ function BoardLane({
   return (
     <section
       aria-label={lane.label}
-      className={`flex w-72 shrink-0 flex-col gap-2 ${
+      // The recessed lane (polish V4): a soft well the bg-card tiles pop out
+      // of — the prototype's raised-column move, in app tokens.
+      className={`flex w-72 shrink-0 flex-col gap-2 rounded-2xl border border-border-light bg-bg-soft p-2 ${
         // The drop affordance: a subtle coral outline around the hovered lane.
         // A state change, not motion — nothing for the reduced-motion gate.
-        isOver ? "rounded-md outline-2 outline-offset-2 outline-accent/50" : ""
+        isOver ? "outline-2 outline-offset-2 outline-accent/50" : ""
       }`}
       {...targetProps}
     >
-      <header className="flex items-baseline justify-between gap-2 border-b border-border pb-2">
+      <header className="flex items-baseline justify-between gap-2 px-1.5 pt-1">
         <span className="flex min-w-0 items-center gap-1.5">
           {/* Enum tinting (polish V2): the lane value's stable hue as a small
               swatch — the uncategorized lane has no value, so no dot. */}
@@ -142,16 +161,29 @@ function BoardLane({
             <span aria-hidden="true" className={`tint-dot tint-${hueForEnumValue(lane.key)}`} />
           )}
           <span
-            className={`min-w-0 truncate text-sm font-medium ${
+            className={`min-w-0 truncate text-sm font-semibold ${
               lane.uncategorized ? "text-fg-dim" : "text-fg"
             }`}
           >
             {lane.label}
           </span>
         </span>
-        <span className="shrink-0 text-xs tabular-nums text-fg-dim">{lane.notes.length}</span>
+        <span className="shrink-0 rounded-full bg-bg px-2 text-xs tabular-nums text-fg-dim">
+          {lane.notes.length}
+        </span>
       </header>
-      <div className="flex flex-col gap-2">{children}</div>
+      <div className="flex flex-col gap-2">
+        {lane.notes.length === 0 ? (
+          // The empty lane's VISIBLE drop affordance (polish V4) — before,
+          // an empty column was an invisible drop target. Fine pointers get
+          // the drag invitation; touch (no drag there) just states the fact.
+          <p className="py-4 text-center text-xs italic text-fg-dim">
+            {isFinePointer() ? "Drop here" : "No notes"}
+          </p>
+        ) : (
+          children
+        )}
+      </div>
     </section>
   );
 }
