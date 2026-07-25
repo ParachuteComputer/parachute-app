@@ -1,5 +1,31 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.47] - 2026-07-24
+
+**Views: a calm controls row — lens dropdown, labeled Group-by/By-date, Fields count
+(polish V3).** The view header's controls now share one pill primitive
+(`ControlPill`): `[icon?] [LABEL] [value] ▾`, opening as an anchored popover on
+sm+ and as the established bottom sheet on phones (z-30 scrim / z-40 panel —
+clear of the save bar and tab bar by construction).
+
+- **Lens is a dropdown** — the five-way segmented switcher becomes one pill,
+  `[glyph] Board ▾` (no written label: the lens is the view's identity). The menu
+  lists the five kinds, glyph + name, ✓ on the current one. Same `onSwitch` seam,
+  same lossless draft path — switching never refetches.
+- **Organize-by is first-class** — the bare native selects become labeled pills:
+  Board `[GROUP BY  status ▾]` (every resolved field, each option wearing its V2
+  stable-hue dot), Calendar `[BY DATE  meeting_date ▾]` (date-typed fields only).
+  Both RENDER EVEN EMPTY: a calendar with no date field honestly reads
+  `[BY DATE  created ▾]` (that IS the read-only axis) with a "Showing by created
+  date" line and the graduation menu; a board over a schema-less tag reads
+  `[GROUP BY  — ▾]` with one explanatory line.
+- **Fields trigger joins the family** — `[FIELDS  4 ▾]` (count = shown fields);
+  its checkbox panel is unchanged.
+- Each pill tints its border toward accent when ITS key diverges from the saved
+  view — a per-control echo of the View-modified bar.
+- Render-only: draft semantics (`withLens`/normalize/save/revert), writes, and
+  wire shapes untouched.
+
 ## [0.20.46] - 2026-07-24
 
 **Views: enum values carry a stable color — tinted chips, menu dots, lane swatches

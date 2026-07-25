@@ -34,8 +34,8 @@ describe("FieldsControl", () => {
       ["title", false],
       ["due", false],
     ]);
-    // The trigger counts the shown set.
-    expect(screen.getByRole("button", { name: "Fields · 2" })).toBeTruthy();
+    // The trigger counts the shown set — the V3 pill face reads [FIELDS 2 ▾].
+    expect(screen.getByRole("button", { name: "Fields 2" })).toBeTruthy();
   });
 
   it("checking a hidden field appends it to the END of the ordered shown set", () => {

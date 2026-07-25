@@ -168,16 +168,22 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   return (
     <article className={modified ? "pb-20" : undefined}>
       <ViewHeader def={effDef} />
-      <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-2 py-1">
+      {/* The controls row (polish V3): lens pill first (the view's identity),
+          the organize-by pill second (board/calendar only — and it renders
+          even with nothing to offer), Fields third. Each pill tints its
+          border when ITS key diverges from the saved def. */}
+      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-2 py-1">
         <LensSwitcher
           kind={effDef.kind}
           onSwitch={(kind) => setDraft(withLens(def, draft, kind, fields))}
+          dirty={def.kind !== effDef.kind}
         />
         {effDef.kind === "board" ? (
           <GroupByControl
             value={effDef.groupBy}
             fields={fields}
             onChange={(name) => setDraft({ ...draft, groupBy: name })}
+            dirty={def.groupBy !== effDef.groupBy}
           />
         ) : null}
         {effDef.kind === "calendar" ? (
@@ -185,6 +191,7 @@ function ViewSurfaceBody({ note }: { note: Note }) {
             value={effDef.dateField}
             fields={fields}
             onChange={(name) => setDraft({ ...draft, dateField: name })}
+            dirty={def.dateField !== effDef.dateField}
           />
         ) : null}
         {/* Fields matter to EVERY lens — chips, cards, and calendar entries
@@ -193,6 +200,7 @@ function ViewSurfaceBody({ note }: { note: Note }) {
           fields={fields}
           schemaFieldNames={schemaFieldNames}
           onChange={(names) => setDraft({ ...draft, fields: names })}
+          dirty={def.fields !== effDef.fields}
         />
       </div>
       <RefinementBar def={def} refinements={refinements} onChange={setRefinements} />
