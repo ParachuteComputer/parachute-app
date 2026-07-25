@@ -1,5 +1,41 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.21.0] - 2026-07-25
+
+**The app becomes installable.** Until now `@openparachute/parachute-app` was
+`private: true` and had never been published, so `parachute install app` 404'd
+at the registry and the only way onto a self-hosted box was building from a git
+checkout — which meant everything shipped through 0.20.x (the views, the polish
+wave) was unreachable for self-hosters. Minor bump rather than patch: the
+package gains a real capability (it is now public and installable), even though
+no app code changed.
+
+- **Public package** — dropped `private: true`; added
+  `publishConfig.access: "public"`, `homepage`, `bugs`, `keywords`, and the
+  npm-canonical `git+https://` form of the `repository` URL.
+- **The tarball always carries a built `dist/`** — the build hook moved from
+  `prepublishOnly` to `prepack`, so `npm pack` and `bun pm pack` produce the
+  same bytes `npm publish` would. This package ships a PREBUILT bundle:
+  consumers never build it. `parachute start app` runs hub's static-serve shim
+  (`parachute-hub` `src/notes-serve.ts --package @openparachute/parachute-app`),
+  which resolves `<package root>/dist` and serves files straight out of it —
+  and hard-errors if `dist/` is absent.
+- **CI, for the first time** — this repo had no `.github/` at all, so every
+  gate verdict in a PR body was a builder self-report. `ci.yml` now runs lint →
+  typecheck → vitest → build → dist smoke → pack-and-verify on every PR.
+  (Making it a required check is a branch-protection step in repo settings.)
+- **Release workflow** — `release.yml` publishes on a `v*` tag with
+  `--provenance` via npm Trusted Publishing (OIDC, no NPM_TOKEN), dist-tag `rc`
+  for `-rc.N` tags and `latest` otherwise, gated on a tag-vs-package.json
+  version match and on the tarball actually containing `dist/index.html` +
+  `dist/assets/*`.
+- **`test:smoke` does something now** — it pointed at `vitest run dist-smoke`,
+  a filter matching no file, so it had only ever exited 1. It now runs
+  `scripts/verify-dist.ts`, which asserts the built bundle is the shape hub's
+  server expects: an `index.html` that references real, present hashed assets,
+  a non-empty `assets/`, the service worker + PWA manifest, and a
+  `.parachute/info` whose version matches `package.json` (that last check
+  caught a stale `dist/` during this very change).
 ## [0.20.52] - 2026-07-25
 
 **Three months free — the claim visitors actually read.**

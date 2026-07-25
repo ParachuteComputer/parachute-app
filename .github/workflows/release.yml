@@ -1,0 +1,163 @@
+# Release workflow — triggered by pushing a semver tag.
+#
+# Publishes ONE package: @openparachute/parachute-app — the super-surface
+# SPA. Unlike the library packages in the ecosystem, what ships here is a
+# PREBUILT BUNDLE: the tarball carries `dist/` (index.html + hashed assets +
+# service worker + PWA manifest) and consumers never run a build.
+#
+# Who consumes it, and how:
+#   `parachute install app` → `bun add -g @openparachute/parachute-app`
+#   `parachute start app`   → hub spawns its static-serve shim
+#                             (parachute-hub `src/notes-serve.ts`) as
+#                             `--package @openparachute/parachute-app`, which
+#                             resolves `<package root>/dist` via
+#                             `Bun.resolveSync("<pkg>/package.json", …)` and
+#                             serves files straight out of it at port 1944,
+#                             mount `/app`.
+# That resolver hard-errors if the published package has no `dist/`, with the
+# message "ask the maintainer to add a prepublishOnly build step". Hence
+# `prepack: bun run build` in package.json (prepack, not prepublishOnly, so
+# `npm pack` produces the same tarball `npm publish` would) plus the explicit
+# verification steps below.
+#
+# Tag conventions (governance rule 2):
+#   - rc:     v<X>.<Y>.<Z>-rc.<N>   (e.g. v0.21.0-rc.1)  → dist-tag `rc`
+#   - stable: v<X>.<Y>.<Z>          (e.g. v0.21.0)       → dist-tag `latest`
+#
+# Release flow:
+#   1. Bump `version` in package.json on main.
+#   2. git tag v$(bun -e "console.log(require('./package.json').version)")
+#      && git push --tags
+#   3. CI runs the gates, then publishes.
+#
+# OPERATOR SETUP (one-time, and REQUIRED before the first publish can
+# succeed): an npm Trusted Publisher rule for @openparachute/parachute-app —
+# org=ParachuteComputer, repo=parachute-app, workflow=release.yml, env blank.
+# Without it the publish step fails (a sibling package 404'd on its first CI
+# publish for exactly this reason). No NPM_TOKEN secret is involved; the
+# `id-token: write` permission below is what npm verifies against the rule.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+
+concurrency:
+  # Don't let two releases race on the same tag.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3
+      - name: install deps
+        run: bun install --frozen-lockfile
+      - name: lint (biome)
+        run: bun run lint
+      - name: typecheck
+        run: bun run typecheck
+      - name: test (vitest)
+        run: bun run test
+
+  publish-npm:
+    name: publish to npm
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for npm provenance attestation + Trusted Publishing OIDC.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3
+      - uses: actions/setup-node@v6
+        with:
+          # Node 24 ships npm 11.5+ which has Trusted Publishing OIDC support
+          # built in. Node 20 LTS only has npm 10 and would silently fall back
+          # to token auth (failing without NPM_TOKEN).
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: install deps
+        run: bun install --frozen-lockfile
+
+      - name: verify package.json version matches tag
+        # Defense against tag-vs-package.json drift. If they don't match, we'd
+        # publish under the wrong version.
+        run: |
+          PKG_VERSION=$(bun -e "console.log(require('./package.json').version)")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::package.json version ($PKG_VERSION) doesn't match tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: build the SPA bundle
+        # `prepack` would do this during `npm publish` anyway; running it
+        # explicitly means the dist smoke + pack verification below gate the
+        # exact bytes we're about to ship, and a build failure surfaces as a
+        # build failure rather than a publish failure.
+        run: bun run build
+
+      - name: dist smoke
+        run: bun run test:smoke
+
+      - name: pack + verify the tarball carries dist/
+        # The published tarball IS the product here. Prove `dist/` survived
+        # the `files` allowlist (dist/ is gitignored) before publishing —
+        # a dist-less tarball installs fine and then hard-errors in hub's
+        # resolver on the operator's box.
+        run: |
+          npm pack --silent >/dev/null
+          # Derive the name rather than globbing: deterministic, and it also
+          # asserts npm produced the filename we expect for this version.
+          TARBALL="openparachute-parachute-app-${GITHUB_REF_NAME#v}.tgz"
+          echo "tarball: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
+          CONTENTS=$(tar -tzf "$TARBALL")
+          for required in \
+            package/package.json \
+            package/dist/index.html \
+            package/dist/manifest.webmanifest \
+            package/dist/sw.js
+          do
+            if ! echo "$CONTENTS" | grep -qx "$required"; then
+              echo "::error::tarball is missing $required — refusing to publish"
+              echo "$CONTENTS" | head -50
+              exit 1
+            fi
+          done
+          ASSETS=$(echo "$CONTENTS" | grep -c '^package/dist/assets/' || true)
+          if [ "$ASSETS" -lt 1 ]; then
+            echo "::error::tarball has no dist/assets/* entries — refusing to publish"
+            exit 1
+          fi
+          echo "tarball carries dist/index.html + $ASSETS asset files"
+          rm -f "$TARBALL"
+
+      - name: publish
+        # Trusted Publishing: npm verifies the OIDC token from this workflow
+        # against the package's configured trusted publisher rule
+        # (org=ParachuteComputer, repo=parachute-app, workflow=release.yml).
+        run: |
+          # Detect rc vs stable from tag name. The tag pattern in `on:` above
+          # enforces the shape, so this is just disambiguation.
+          if [[ "$GITHUB_REF_NAME" =~ -rc\. ]]; then
+            DIST_TAG=rc
+          else
+            DIST_TAG=latest
+          fi
+          echo "publishing @openparachute/parachute-app with dist-tag=$DIST_TAG"
+          npm publish --tag "$DIST_TAG" --access public --provenance

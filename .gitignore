@@ -8,3 +8,5 @@ dev-dist/
 .env.local
 .wrangler/
 app-audit/
+# `npm pack` / `bun pm pack` output — the publish tarball is built in CI, never committed.
+*.tgz
