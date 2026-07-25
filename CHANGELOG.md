@@ -1,5 +1,37 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.51] - 2026-07-25
+
+**Gauntlet fixes 1 — Aaron's three live dogfood complaints (7/24).**
+
+- **Quiet offline banner** — "Saving your vault for offline" no longer shows
+  on every open of an already-synced vault. Root cause: the mirror engine
+  persisted `phase: "hydrating"` into IndexedDB at the start of EVERY drain
+  (warm catch-up polls included) while only the in-memory callbacks were
+  cold-gated — so the provider's mount-time persisted-state read repainted the
+  one-time hydration banner on each app open (and a poll killed mid-drain
+  stranded "hydrating" there until the next completed drain). Warm drains now
+  leave the persisted "live" phase untouched; "hydrating" is persisted +
+  announced only while the vault's FIRST fill is incomplete (including
+  resuming an interrupted first fill). Belt: the chrome line renders only
+  while cold-hydration progress is actually ticking, so the mount-time flash
+  (state not yet read from IDB ⇒ derived "hydrating") stays invisible too.
+  First hydration still announces with its `n of ~total` progress line.
+- **The editor's path recedes** — the edit header's note-path input dropped
+  its title-scale serif treatment (`text-xl md:text-2xl`, unchanged since
+  PR #1 and predating first-line-as-title, which made it a duplicate
+  headline; #59 quieted only the READ header) for a quiet single mono
+  `text-xs text-fg-dim` line at the header card's foot, after the tags —
+  mirroring NoteView's HeaderPath voice. Still directly editable (focus
+  brightens it; the rename-moves-the-note hint is unchanged).
+- **A visible Sign out** — Settings' Manage card now shows the door session:
+  a "Signed in as {email}" row with a Sign out button whenever
+  `GET /account/session` reports one (both doors serve it; both serve
+  `POST /logout` — cloud console session / hub admin session). Sign-out
+  best-effort-POSTs `/logout`, drops the cached account bearer, and lands
+  home — honest about scope: vaults already connected on the device keep
+  their own tokens until removed. `/account`'s own sign-out is unchanged.
+
 ## [0.20.50] - 2026-07-25
 
 **Views polish wave complete: calendar chips + the save bar's voice (V6).**

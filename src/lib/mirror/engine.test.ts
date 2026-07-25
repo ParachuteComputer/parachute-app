@@ -156,6 +156,62 @@ describe("MirrorEngine — hydration loop", () => {
     expect(await getMirrorState(db, "v1")).toEqual({ phase: "live" });
   });
 
+  it("never persists the hydrating phase on a WARM poll — mid-drain the stored state stays live", async () => {
+    // The every-open "Saving your vault for offline" regression: the provider
+    // re-reads the PERSISTED phase on each app open, so a warm catch-up poll
+    // that stamps "hydrating" into IDB repaints the one-time hydration banner
+    // on every launch of an already-synced vault (and a poll killed mid-drain
+    // strands "hydrating" there until the next completed drain). Warm drains
+    // must leave the stored "live" phase untouched for their whole duration.
+    await setMirrorLastSweepAt(db, "v1", Date.now());
+    const { client } = cursorClient((cursor) => {
+      if (cursor === "") return { items: [note("a")], nextCursor: "c1" };
+      return { items: [], nextCursor: "c1" };
+    });
+    await engineFor(db, client).syncOnce(); // cold run → persisted phase "live"
+
+    const phasesSeenMidDrain: Array<string | undefined> = [];
+    const warmClient = {
+      queryNotesCursor: vi.fn(async (): Promise<Page> => {
+        phasesSeenMidDrain.push((await getMirrorState(db, "v1"))?.phase);
+        return { items: [], nextCursor: "c1" };
+      }),
+    } as unknown as Pick<VaultClient, "queryNotesCursor">;
+    await engineFor(db, warmClient).syncOnce();
+
+    expect(phasesSeenMidDrain.length).toBeGreaterThan(0);
+    expect(phasesSeenMidDrain).not.toContain("hydrating");
+    expect(await getMirrorState(db, "v1")).toEqual({ phase: "live" });
+  });
+
+  it("treats a RESUMED interrupted first fill (cursor present, no watermark) as cold — announces hydrating", async () => {
+    // A first fill killed mid-walk left a cursor but no completion watermark.
+    // The mirror is still incomplete, so the resume IS the first hydration
+    // continuing: persist + announce "hydrating" and tick progress.
+    await setMirrorCursor(db, "v1", "resume-here");
+    await setMirrorLastSweepAt(db, "v1", Date.now());
+    const { client } = cursorClient((cursor) => {
+      if (cursor === "resume-here") return { items: [note("z")], nextCursor: "next" };
+      return { items: [], nextCursor: "next" };
+    });
+    const phases: string[] = [];
+    const progress: number[] = [];
+    const engine = new MirrorEngine({
+      db,
+      resolveContext: () => ({ client, vaultId: "v1" }),
+      tickIntervalMs: 10 * 60_000,
+      pageLimit: 50,
+      onStateChange: (_v, s) => phases.push(s.phase),
+      onProgress: (_v, done) => progress.push(done),
+    });
+    await engine.syncOnce();
+
+    expect(phases[0]).toBe("hydrating");
+    expect(phases[phases.length - 1]).toBe("live");
+    expect(progress).toContain(0);
+    expect(progress).toContain(1);
+  });
+
   it("resumes from the persisted cursor rather than re-walking from empty", async () => {
     await setMirrorCursor(db, "v1", "resume-here");
     const { client, calls } = cursorClient((cursor) => {

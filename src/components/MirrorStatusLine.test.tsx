@@ -89,6 +89,17 @@ describe("MirrorStatusLine", () => {
     expect(screen.getByText(/showing your saved vault/i)).not.toHaveAttribute("aria-live");
   });
 
+  it("renders NOTHING for a hydrating state without progress — the every-open quiet gate", () => {
+    // "hydrating" without a progress tick is one of the not-actually-first-fill
+    // shapes: the mount-time flash before the provider's persisted-state read
+    // resolves, or a stale persisted phase. Aaron's 7/24 complaint — an
+    // already-synced vault must open QUIET, so no progress ⇒ no line.
+    holder.mirror = slice({ state: "hydrating" });
+    holder.stats = { totalNotes: 10 };
+    const { container } = render(<MirrorStatusLine />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("renders nothing when the mirror is off (flag-off inert) or synced", () => {
     holder.mirror = slice({ enabled: false, state: "off" });
     const { container, rerender } = render(<MirrorStatusLine />);

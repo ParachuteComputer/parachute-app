@@ -1,3 +1,5 @@
+import { getSession, logout } from "@/lib/account/client";
+import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import { useTranscribeDefault } from "@/lib/capture/transcribe-default";
 import { readStoredLivePreview, writeStoredLivePreview } from "@/lib/editor-mode";
 import { MIRROR_CEILING_BYTES, measureMirrorBytes } from "@/lib/mirror/evict";
@@ -32,7 +34,7 @@ import { useTranscriptionCapability } from "@/lib/vault/queries";
 import type { AudioRetention } from "@/lib/vault/types";
 import { useSync } from "@/providers/SyncProvider";
 import { type ReactNode, useCallback, useEffect, useId, useMemo, useState } from "react";
-import { Link, Navigate } from "react-router";
+import { Link, Navigate, useNavigate } from "react-router";
 
 // Per-vault settings UI. A calm, sectioned nav-and-panels page (SYNTHESIS
 // Scene 8) — not a dense form. Sections stack top-to-bottom with generous
@@ -88,6 +90,7 @@ function ManageSection() {
           title="Account"
           description="Your plan, billing, hosted vaults, and sign-in — managed in the app."
         />
+        <AccountSessionRow />
         <ManageRow
           to="/connect"
           title="Connections"
@@ -100,6 +103,80 @@ function ManageSection() {
         />
       </div>
     </section>
+  );
+}
+
+// The visible sign-out (gauntlet fix 3 — Aaron mid-demo: "I don't even know if
+// I have a sign out"). /account's IdentityCard has one, but only a navigation
+// away; Settings is where people LOOK for session state, so the door session
+// shows itself here too. Renders only when a door session actually exists —
+// both doors serve `GET /account/session` and `POST /logout` (cloud console
+// session / hub admin session); a device with no door, or signed out, renders
+// nothing. Honest about scope: sign-out ends the ACCOUNT session on this
+// device and drops the cached account bearer — vaults already connected on
+// this device keep their own tokens until removed under Vaults.
+function AccountSessionRow() {
+  const navigate = useNavigate();
+  // Re-resolve if another tab flips the identity while this page is open —
+  // same trigger pattern as Account.tsx's boot effect (AUTH-W2 move 2).
+  const identityEpoch = useAccountSessionStore((s) => s.identityEpoch);
+  const [session, setSession] = useState<{ identity: string | null; csrf: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identityEpoch is the trigger, not a value read in the body — see the comment on its declaration above.
+  useEffect(() => {
+    let live = true;
+    getSession()
+      .then((s) => {
+        if (!live) return;
+        setSession(s.signed_in ? { identity: s.email ?? s.username ?? null, csrf: s.csrf } : null);
+      })
+      .catch(() => {
+        // No door to ask (a static origin without the session API / offline).
+        if (live) setSession(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [identityEpoch]);
+
+  if (!session) return null;
+  const { identity, csrf } = session;
+
+  async function signOut() {
+    setBusy(true);
+    try {
+      // Best-effort server-side (logout() swallows transport failures); local
+      // state clears regardless so the device honestly forgets the session.
+      await logout(csrf);
+    } finally {
+      clearAccountToken();
+      // NAVIGATION.md: "Sign out → /" — replace; the session context is gone,
+      // so Back into a signed-in page would lie.
+      navigate("/", { replace: true });
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-4 px-5 py-4">
+      <span className="min-w-0">
+        <span className="block font-medium text-fg">
+          Signed in{identity ? ` as ${identity}` : ""}
+        </span>
+        <span className="mt-0.5 block text-sm text-fg-muted">
+          Signing out ends your account session on this device. Vaults already connected here stay
+          until you remove them.
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={signOut}
+        disabled={busy}
+        className="btn btn-secondary btn-touch shrink-0"
+      >
+        {busy ? "Signing out…" : "Sign out"}
+      </button>
+    </div>
   );
 }
 

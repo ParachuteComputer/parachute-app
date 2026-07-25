@@ -93,13 +93,14 @@ export interface MirrorEngineOptions {
   // eviction drops the oldest note bodies. Defaults to MIRROR_CEILING_BYTES.
   ceilingBytes?: number;
   // Fired on terminal transitions (live / error) and, on a COLD hydration only
-  // (first-ever sync of this vault), on entering "hydrating" — so a status
-  // consumer learns the first-hydration progress without being spammed by the
-  // transient hydrating→live a warm poll passes through every tick.
+  // (this vault's first fill hasn't completed yet — includes resuming an
+  // interrupted first fill), on entering "hydrating" — so a status consumer
+  // learns the first-hydration progress without being spammed by the warm
+  // catch-up poll every tick runs.
   onStateChange?: (vaultId: string, state: MirrorState) => void;
-  // Cumulative notes written so far during a COLD hydration (first-ever sync),
-  // emitted after each page so a one-time "Saving your vault for offline · {n}"
-  // progress line can tick. Not emitted on warm polls.
+  // Cumulative notes written so far during a COLD hydration, emitted after
+  // each page so a one-time "Saving your vault for offline · {n}" progress
+  // line can tick. Not emitted on warm polls.
   onProgress?: (vaultId: string, done: number) => void;
 }
 
@@ -287,16 +288,22 @@ export class MirrorEngine {
     client: MirrorContext["client"],
     vaultId: string,
   ): Promise<MirrorSyncResult> {
-    // Persisted always. A COLD hydration (no stored cursor AND no prior
-    // successful sync) is the first-ever fill — emit the hydrating transition +
-    // progress so the one-time "Saving your vault for offline" line can tick. A
-    // warm poll passes through hydrating→live silently (no emit) so the status
-    // line stays "synced".
+    // A COLD hydration is one whose first fill has never COMPLETED (no
+    // completion watermark yet) — including a resumed interrupted first fill
+    // (cursor present, watermark absent). Only then do we persist AND announce
+    // the "hydrating" phase, so the one-time "Saving your vault for offline"
+    // line can tick. A warm catch-up poll leaves the persisted "live" phase
+    // untouched: the callbacks were always cold-gated, but persisting
+    // "hydrating" here on EVERY drain let the provider's mount-time
+    // persisted-state read repaint the hydration banner on each app open of an
+    // already-synced vault (and a poll killed mid-drain left "hydrating"
+    // stranded in IDB until the next completed drain). The mirror being
+    // complete-but-revalidating IS "live", so the persisted phase now says so.
     let cursor = (await getMirrorCursor(this.db, vaultId)) ?? "";
-    const cold = cursor === "" && (await getMirrorLastSyncedAt(this.db, vaultId)) === undefined;
-    const hydrating: MirrorState = { phase: "hydrating" };
-    await setMirrorState(this.db, vaultId, hydrating);
+    const cold = (await getMirrorLastSyncedAt(this.db, vaultId)) === undefined;
     if (cold) {
+      const hydrating: MirrorState = { phase: "hydrating" };
+      await setMirrorState(this.db, vaultId, hydrating);
       this.opts.onStateChange?.(vaultId, hydrating);
       this.opts.onProgress?.(vaultId, 0);
     }

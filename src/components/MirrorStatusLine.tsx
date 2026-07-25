@@ -20,7 +20,15 @@ import { useSync } from "@/providers/SyncProvider";
 export function MirrorStatusLine() {
   const { mirror } = useSync();
 
-  if (mirror.state === "hydrating") return <HydrationLine done={mirror.progress?.done ?? 0} />;
+  // The hydration line renders ONLY while a first fill is genuinely ticking:
+  // `progress` is emitted exclusively during a cold hydration (the engine
+  // gates it), so gating on its presence keeps every other "hydrating"-shaped
+  // moment quiet — chiefly the mount-time flash before the provider's
+  // persisted-state read resolves (phase still unknown ⇒ derived "hydrating").
+  // A routine open of an already-synced vault shows NOTHING here.
+  if (mirror.state === "hydrating" && mirror.progress) {
+    return <HydrationLine done={mirror.progress.done} />;
+  }
   if (mirror.state === "offline" && mirror.lastSyncedAt !== null) {
     return (
       <StatusStrip>
