@@ -354,18 +354,6 @@ function EditorSurface({ note }: { note: Note }) {
             </div>
           </div>
 
-          <input
-            type="text"
-            value={draft.path}
-            onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
-            className="mt-4 w-full border-0 bg-transparent font-serif text-xl text-fg outline-none placeholder:text-fg-dim md:text-2xl"
-            aria-label="Note path"
-            placeholder="(no path)"
-          />
-          {pathChanged ? (
-            <p className="mt-1 text-xs text-accent">Renaming moves the note — its id may change.</p>
-          ) : null}
-
           <div className="mt-4">
             <TagEditor
               tags={draft.tags}
@@ -375,6 +363,32 @@ function EditorSurface({ note }: { note: Note }) {
               onRemove={removeTag}
             />
           </div>
+
+          {/* The path recedes to a quiet single-line meta affordance at the
+              header's foot — the editor's echo of NoteView's HeaderPath
+              (0.20.14 / #59 quieted the READ header's path; this input kept
+              its title-scale serif treatment from PR #1, which predates
+              first-line-as-title, so it read as a big duplicate headline —
+              Aaron's 7/24 "the path is really big again"). Still directly
+              editable (renaming moves the note); it just no longer competes
+              with the note's own first-line title in the pane below. */}
+          <div className="mt-4 flex items-center gap-2 text-fg-dim">
+            <span aria-hidden="true" className="shrink-0 text-xs">
+              Path
+            </span>
+            <input
+              type="text"
+              value={draft.path}
+              onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
+              className="focus-ring w-full min-w-0 truncate rounded border-0 bg-transparent font-mono text-xs text-fg-dim outline-none transition-colors hover:text-fg-muted focus:text-fg placeholder:text-fg-dim"
+              aria-label="Note path"
+              placeholder="(no path)"
+              title={draft.path || undefined}
+            />
+          </div>
+          {pathChanged ? (
+            <p className="mt-1 text-xs text-accent">Renaming moves the note — its id may change.</p>
+          ) : null}
         </header>
       )}
 

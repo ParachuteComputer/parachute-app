@@ -26,6 +26,26 @@ vi.mock("@/providers/SyncProvider", () => ({
   useSync: () => ({ db: null, mirror: syncHolder.mirror }),
 }));
 
+// AccountSessionRow (gauntlet fix 3) reads the door session on mount. Default
+// SIGNED OUT so every existing test renders without the row (and without a
+// stray network read); the sign-out tests flip `accountHolder.session` on.
+const { accountHolder } = vi.hoisted(() => ({
+  accountHolder: {
+    session: { signed_in: false } as {
+      signed_in: boolean;
+      email?: string;
+      username?: string;
+      csrf?: string;
+    },
+    logout: vi.fn(async (_csrf: string) => {}),
+  },
+}));
+vi.mock("@/lib/account/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/account/client")>()),
+  getSession: () => Promise.resolve(accountHolder.session),
+  logout: (csrf: string) => accountHolder.logout(csrf),
+}));
+
 function mirrorOn(over: Partial<MirrorSlice> = {}): void {
   syncHolder.mirror = {
     enabled: true,
@@ -86,6 +106,9 @@ describe("Settings route", () => {
       syncNow: vi.fn(async () => {}),
       clearOffline: vi.fn(async () => {}),
     };
+    accountHolder.session = { signed_in: false };
+    accountHolder.logout.mockClear();
+    sessionStorage.clear();
   });
 
   it("redirects to / when no active vault", () => {
@@ -212,6 +235,38 @@ describe("Settings route", () => {
     expect((within(section).getByLabelText(/pinned tag role/i) as HTMLInputElement).value).toBe(
       "pinned",
     );
+  });
+
+  // Gauntlet fix 3 — the visible sign-out. The row exists only when a door
+  // session does; signing out best-effort-logs-out server-side, drops the
+  // cached account bearer, and lands home.
+  it("shows no session row when signed out / no door", async () => {
+    renderSettings();
+    // The Manage card is present…
+    expect(screen.getByText("Account")).toBeInTheDocument();
+    // …but the session row never appears (getSession resolved signed-out).
+    await act(async () => {});
+    expect(screen.queryByText(/signed in/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /sign out/i })).not.toBeInTheDocument();
+  });
+
+  it("shows 'Signed in as …' + Sign out for a live door session; signing out clears and lands home", async () => {
+    accountHolder.session = { signed_in: true, email: "ag@unforced.org", csrf: "csrf-1" };
+    sessionStorage.setItem(
+      "lens:account_token",
+      JSON.stringify({ token: "bearer-1", identity: "ag@unforced.org" }),
+    );
+    renderSettings();
+
+    expect(await screen.findByText(/signed in as ag@unforced\.org/i)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    });
+
+    await waitFor(() => expect(screen.getByText("HomePage")).toBeInTheDocument());
+    expect(accountHolder.logout).toHaveBeenCalledWith("csrf-1");
+    // The cached account bearer is gone — the device honestly forgot the session.
+    expect(sessionStorage.getItem("lens:account_token")).toBeNull();
   });
 });
 
