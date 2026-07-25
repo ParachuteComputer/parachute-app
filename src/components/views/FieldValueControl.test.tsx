@@ -120,3 +120,36 @@ describe("FieldValueControl", () => {
     expect(typeof onCommit.mock.calls[0][0]).toBe("number");
   });
 });
+
+// Typed rendering in the trigger (polish V1) — the trigger IS FieldDisplay,
+// so the control shows a boolean as a check and keeps URLs one-door.
+describe("FieldValueControl typed display", () => {
+  it("boolean trigger reads ✓/✕, not Yes/No (toasts keep Yes/No)", () => {
+    renderControl({ schema: { type: "boolean" }, value: true });
+    expect(screen.getByRole("button", { name: /edit status/i })).toHaveTextContent("✓");
+  });
+
+  it("a URL value renders link-styled but the trigger stays ONE-DOOR: tap opens the editor, and the popover offers the Open ↗ anchor", () => {
+    renderControl({ schema: { type: "string" }, value: "https://example.com/docs" });
+    const trigger = screen.getByRole("button", { name: /edit status/i });
+    expect(trigger).toHaveTextContent("example.com");
+    // No anchor nested in the trigger button.
+    expect(screen.queryByRole("link")).toBeNull();
+
+    fireEvent.click(trigger);
+    // Tap opened the EDITOR (one door)…
+    expect(screen.getByRole("dialog", { name: /edit status/i })).toBeInTheDocument();
+    // …and the real "open" lives beside the commit, on the committed value.
+    const open = screen.getByRole("link", { name: "Open link" });
+    expect(open).toHaveAttribute("href", "https://example.com/docs");
+    expect(open).toHaveAttribute("target", "_blank");
+    expect(open.getAttribute("rel")).toContain("noopener");
+  });
+
+  it("the Open ↗ anchor appears ONLY for URL values", () => {
+    renderControl({ schema: { type: "string" }, value: "not a url" });
+    fireEvent.click(screen.getByRole("button", { name: /edit status/i }));
+    expect(screen.getByRole("dialog", { name: /edit status/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open link" })).toBeNull();
+  });
+});

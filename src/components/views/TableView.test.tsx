@@ -223,4 +223,47 @@ describe("TableView", () => {
     renderTable(NOTES, [STATUS_FIELD]);
     expect(rowFor("proj-a").getAttribute("data-note-id")).toBe("a");
   });
+
+  // Typed rendering (polish V1) — the cells funnel through FieldDisplay.
+
+  it("number columns right-align (header + cells) and read tabular, unreformatted digits", () => {
+    installFetch();
+    const priorityField: ResolvedField = { name: "priority", schema: { type: "number" } };
+    renderTable(
+      [{ ...NOTES[0], metadata: { status: "active", priority: 1234.5 } }],
+      [STATUS_FIELD, priorityField],
+    );
+
+    expect(screen.getByRole("columnheader", { name: "priority" }).className).toContain(
+      "text-right",
+    );
+    expect(screen.getByRole("columnheader", { name: "status" }).className).not.toContain(
+      "text-right",
+    );
+
+    const row = rowFor("proj-a");
+    const trigger = within(row).getByRole("button", { name: "Edit priority" });
+    expect(trigger.textContent).toBe("1234.5"); // no locale comma
+    expect(trigger.querySelector(".tabular-nums")).not.toBeNull();
+    expect(trigger.closest("td")?.className).toContain("text-right");
+    // Non-number cells stay left-aligned.
+    expect(
+      within(row).getByRole("button", { name: "Edit status" }).closest("td")?.className,
+    ).not.toContain("text-right");
+  });
+
+  it("date cells read human — the due date renders month-day, not the raw key", () => {
+    // Fake only Date so formatFieldDate's default `now` is deterministic.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 6, 24, 12, 0, 0)); // local Jul 24, 2026
+    try {
+      installFetch();
+      renderTable(NOTES, [DUE_FIELD]);
+      const trigger = within(rowFor("proj-a")).getByRole("button", { name: "Edit due" });
+      expect(trigger.textContent).toMatch(/Aug/i); // due 2026-08-01, same year
+      expect(trigger.textContent).not.toContain("2026-08-01");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
