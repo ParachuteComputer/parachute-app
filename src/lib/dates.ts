@@ -72,6 +72,32 @@ export function monthGrid(year: number, month: number): Date[] {
   return days;
 }
 
+// How a date FIELD value reads in views (chips, table cells — polish V1):
+// relative names for the near days, month-day within the current year, the
+// full date otherwise. Accepts a bare "YYYY-MM-DD" key or anything with that
+// prefix (a stored ISO timestamp); anything else returns the RAW string —
+// honest over pretty. No overdue coloring by design: the tag schema carries
+// no done-semantics, so "past" is not "late".
+export function formatFieldDate(value: string, now: Date = new Date()): string {
+  const key = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
+  const d = parseDateKey(key);
+  if (!d) return value;
+  const todayMidnight = parseDateKey(todayKey(now));
+  if (!todayMidnight) return value;
+  // Calendar-day distance from local midnight to local midnight — rounded so
+  // a DST-shortened/lengthened day still counts as exactly one.
+  const diffDays = Math.round((d.getTime() - todayMidnight.getTime()) / 86_400_000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === -1) return "Yesterday";
+  if (diffDays === 1) return "Tomorrow";
+  return d.toLocaleDateString(
+    undefined,
+    d.getFullYear() === now.getFullYear()
+      ? { month: "short", day: "numeric" }
+      : { month: "short", day: "numeric", year: "numeric" },
+  );
+}
+
 export function formatLongDate(key: string): string {
   const d = parseDateKey(key);
   if (!d) return key;

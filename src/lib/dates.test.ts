@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   currentMonthKey,
+  formatFieldDate,
   formatLongMonth,
   monthGrid,
   pad2,
@@ -112,6 +113,58 @@ describe("monthGrid", () => {
     const last = grid[grid.length - 1]!;
     // 29 + 41 days after Mar 29 lands in early May.
     expect(last.getMonth()).toBe(4);
+  });
+});
+
+describe("formatFieldDate", () => {
+  // All fixtures are LOCAL-constructed (new Date(y, m, d)) against local
+  // "YYYY-MM-DD" keys, so the assertions hold in any host timezone.
+  const now = new Date(2026, 6, 24, 12, 0, 0); // local Jul 24, 2026, noon
+
+  it("names the near days: today / yesterday / tomorrow", () => {
+    expect(formatFieldDate("2026-07-24", now)).toBe("Today");
+    expect(formatFieldDate("2026-07-23", now)).toBe("Yesterday");
+    expect(formatFieldDate("2026-07-25", now)).toBe("Tomorrow");
+  });
+
+  it("names near days across a year boundary", () => {
+    const newYear = new Date(2026, 0, 1);
+    expect(formatFieldDate("2025-12-31", newYear)).toBe("Yesterday");
+    const newYearsEve = new Date(2025, 11, 31);
+    expect(formatFieldDate("2026-01-01", newYearsEve)).toBe("Tomorrow");
+  });
+
+  it("is boundary-exact: ±2 days is NOT a named day", () => {
+    expect(formatFieldDate("2026-07-22", now)).not.toBe("Yesterday");
+    expect(formatFieldDate("2026-07-26", now)).not.toBe("Tomorrow");
+  });
+
+  it("same calendar year → month + day, no year", () => {
+    const s = formatFieldDate("2026-08-01", now);
+    expect(s).toMatch(/Aug/i);
+    expect(s).toMatch(/1/);
+    expect(s).not.toMatch(/2026/);
+  });
+
+  it("another year → month + day + year", () => {
+    const s = formatFieldDate("2025-08-01", now);
+    expect(s).toMatch(/Aug/i);
+    expect(s).toMatch(/2025/);
+  });
+
+  it("reads the date-key prefix of a stored ISO timestamp", () => {
+    expect(formatFieldDate("2026-07-24T15:30:00Z", now)).toBe("Today");
+  });
+
+  it("late-evening 'now' still names tomorrow correctly (local-midnight math)", () => {
+    const lateEvening = new Date(2026, 6, 24, 23, 59, 0);
+    expect(formatFieldDate("2026-07-25", lateEvening)).toBe("Tomorrow");
+  });
+
+  it("returns unparseable input raw — honest over pretty", () => {
+    expect(formatFieldDate("soon", now)).toBe("soon");
+    expect(formatFieldDate("07/24/2026", now)).toBe("07/24/2026");
+    expect(formatFieldDate("", now)).toBe("");
   });
 });
 

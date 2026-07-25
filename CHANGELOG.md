@@ -1,5 +1,26 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.45] - 2026-07-24
+
+**Views: fields now render by type — human dates, boolean checks, aligned numbers,
+link-styled URLs (polish V1).** Every field value a view shows (chips, table cells, the
+boolean toggle) now funnels through one pure display seam, `FieldDisplay`, rendered inside
+`FieldValueControl`'s trigger — so a date field reads "Today" / "Tomorrow" / "Jul 24"
+instead of the raw key.
+
+- **Dates** — `formatFieldDate` (in `lib/dates.ts`, beside `formatLongDate`): "Today" /
+  "Yesterday" / "Tomorrow" within ±1 day; "Jul 24" in the current year; "Jul 24, 2025"
+  otherwise. Unparseable values stay raw — honest over pretty. No overdue coloring by
+  design: the tag schema carries no done-semantics, so "past" is not "late".
+- **Booleans** — ✓ (grass) / ✕ (dim) / the quiet "—" when unset. Toasts keep Yes/No.
+- **Numbers** — table columns typed `number` right-align (header + cells); digits render
+  `tabular-nums`, never locale-reformatted.
+- **URLs** — an `https?://` value renders link-styled (hostname + truncated path, accent),
+  but the trigger stays one-door: tap opens the editor, no nested anchor. The editor
+  popover gains an "Open ↗" anchor beside the ✓ commit when the current value is a URL.
+- Enum values stay plain text (tinting is V2); strings render as-is under the existing
+  width clamps. Render-layer only — writes, toasts, and wire shapes untouched.
+
 ## [0.20.44] - 2026-07-24
 
 **Views: calendar createdAt fallback (PR F of the views train — the finale).** Calendar

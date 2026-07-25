@@ -59,7 +59,11 @@ export function TableView({
               <th
                 key={f.name}
                 scope="col"
-                className="whitespace-nowrap py-2 pr-4 text-xs font-medium text-fg-dim"
+                // Number columns read right-aligned (digits line up down the
+                // column — polish V1); the header follows its cells.
+                className={`whitespace-nowrap py-2 pr-4 text-xs font-medium text-fg-dim ${
+                  f.schema.type === "number" ? "text-right" : ""
+                }`}
               >
                 {f.name}
               </th>
@@ -129,7 +133,10 @@ function TableRow({
         </Link>
       </th>
       {fields.map((f) => (
-        <td key={f.name} className="py-1 pr-4 align-middle">
+        <td
+          key={f.name}
+          className={`py-1 pr-4 align-middle ${f.schema.type === "number" ? "text-right" : ""}`}
+        >
           <FieldValueControl
             field={f.name}
             schema={f.schema}

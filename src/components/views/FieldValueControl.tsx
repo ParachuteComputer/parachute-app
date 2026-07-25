@@ -1,6 +1,7 @@
+import { FieldDisplay, isUrlValue } from "@/components/views/FieldDisplay";
 import type { TagFieldSchema } from "@/lib/vault/types";
 import type { ViewFieldValue } from "@/lib/views/mutate";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 // The shared field editor (view-experience wave, Part A.2) — the general
 // case of the board's tap-to-move menu. One control drives every field write
@@ -50,21 +51,11 @@ export function resolveControlKind(
 const DEFAULT_TRIGGER_CLASS =
   "focus-ring inline-flex max-w-[9rem] items-center rounded px-1 py-0.5 text-[0.6875rem] hover:text-accent disabled:opacity-50";
 
-const PLACEHOLDER = "—";
-
 /** The date portion (`YYYY-MM-DD`) of a stored value, for a native date input. */
 function dateInputValue(value: ViewFieldValue): string {
   if (typeof value !== "string") return "";
   const m = value.match(/^\d{4}-\d{2}-\d{2}/);
   return m ? m[0] : "";
-}
-
-/** How the current value reads in the trigger when no label override is given. */
-function displayValue(value: ViewFieldValue, kind: FieldControlKind): string {
-  if (value === null || value === undefined || value === "") return PLACEHOLDER;
-  if (kind === "boolean") return value ? "Yes" : "No";
-  if (kind === "date") return dateInputValue(value) || String(value);
-  return String(value);
 }
 
 export function FieldValueControl({
@@ -87,13 +78,15 @@ export function FieldValueControl({
   /** Add a muted "Clear" option (writes null) when the field currently has a value. */
   includeClear?: boolean;
   /** Customize the opener — the board overrides it to a "Move" button. */
-  trigger?: { label?: string; ariaLabel?: string; className?: string };
+  trigger?: { label?: ReactNode; ariaLabel?: string; className?: string };
 }) {
   const kind = resolveControlKind(schema, options);
   const [open, setOpen] = useState(false);
 
   const isEmpty = value === null || value === undefined || value === "";
-  const triggerLabel = trigger?.label ?? displayValue(value, kind);
+  // Typed rendering (polish V1): the trigger IS the field's display — every
+  // read of a field value in a view funnels through here.
+  const triggerLabel = trigger?.label ?? <FieldDisplay value={value} schema={schema} />;
   const ariaLabel = trigger?.ariaLabel ?? `Edit ${field}`;
   const triggerClass =
     trigger?.className ??
@@ -101,11 +94,15 @@ export function FieldValueControl({
 
   // boolean — a direct toggle, no popover (unset/false → true → false).
   if (kind === "boolean") {
+    // Fold the state into the accessible name — the aria-label shadows the
+    // glyph content, so without this a screen reader hears no state at all.
+    const boolAria =
+      trigger?.ariaLabel ?? `Edit ${field} (${value === true ? "checked" : "unchecked"})`;
     return (
       <button
         type="button"
         disabled={disabled}
-        aria-label={ariaLabel}
+        aria-label={boolAria}
         onClick={() => onCommit(!(value === true))}
         className={triggerClass}
       >
@@ -260,6 +257,20 @@ function InputPopover({
       >
         ✓
       </button>
+      {isUrlValue(value) ? (
+        // The trigger stays one-door (tap = edit); THIS is where a URL value
+        // actually opens — beside the commit, on the committed value.
+        <a
+          href={value}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open link"
+          title="Open link"
+          className="focus-ring rounded px-1.5 py-1 text-xs text-accent hover:bg-bg-soft"
+        >
+          ↗
+        </a>
+      ) : null}
     </div>
   );
 }
