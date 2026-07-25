@@ -1,4 +1,5 @@
 import { FieldDisplay, isUrlValue } from "@/components/views/FieldDisplay";
+import { hueForEnumValue } from "@/lib/hue/hue";
 import type { TagFieldSchema } from "@/lib/vault/types";
 import type { ViewFieldValue } from "@/lib/views/mutate";
 import { type ReactNode, useState } from "react";
@@ -156,10 +157,19 @@ export function FieldValueControl({
                   type="button"
                   role="menuitem"
                   onClick={() => commit(opt.value)}
-                  className={`focus-ring rounded px-2 py-1.5 text-left text-sm hover:bg-bg-soft ${
+                  className={`focus-ring flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm hover:bg-bg-soft ${
                     opt.muted ? "text-fg-dim" : "text-fg"
                   }`}
                 >
+                  {/* Enum tinting (polish V2): each real value carries its
+                      stable hue as a leading swatch — the muted "none" option
+                      stays dotless (no value, no hue). */}
+                  {opt.value === null || opt.value === undefined || opt.value === "" ? null : (
+                    <span
+                      aria-hidden="true"
+                      className={`tint-dot tint-${hueForEnumValue(String(opt.value))}`}
+                    />
+                  )}
                   {opt.label}
                 </button>
               ))}

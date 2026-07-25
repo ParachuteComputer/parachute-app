@@ -1279,6 +1279,55 @@ body {
     background-color: var(--color-plum);
   }
 
+  /* Enum-value tinting (views polish V2, `hueForEnumValue` in hue.ts) — one
+     anatomy class + per-hue setters. A `.tint-*` class sets `--sc` (the
+     swatch color); `.chip-tinted` washes the chip's field with it over the
+     card/border tokens via color-mix, so dark mode flips for free. TEXT
+     stays --color-fg — hue lives only in the dot, wash, and border (AA by
+     construction; meaning is carried by the label, never color alone).
+     `.tint-danger` maps to the semantic danger token (blocked/urgent states);
+     `.tint-coral` follows `.hue-dot-coral` onto the coral ink. */
+  .chip-tinted {
+    background: color-mix(in srgb, var(--sc) 10%, var(--color-card));
+    border-color: color-mix(in srgb, var(--sc) 30%, var(--color-border));
+  }
+  /* The value's swatch — a small round dot like `.hue-dot`, reading `--sc`
+     from itself (lane heads) or the enclosing `.chip-tinted` wrapper. */
+  .tint-dot {
+    height: 0.4375rem; /* 7px */
+    width: 0.4375rem;
+    flex: none;
+    border-radius: var(--radius-full);
+    background: var(--sc);
+  }
+  .tint-sage {
+    --sc: var(--color-sage);
+  }
+  .tint-sky {
+    --sc: var(--color-sky);
+  }
+  .tint-sun {
+    --sc: var(--color-sun);
+  }
+  .tint-coral {
+    --sc: var(--color-coral-ink);
+  }
+  .tint-grass {
+    --sc: var(--color-grass);
+  }
+  .tint-clay {
+    --sc: var(--color-clay);
+  }
+  .tint-ochre {
+    --sc: var(--color-ochre);
+  }
+  .tint-plum {
+    --sc: var(--color-plum);
+  }
+  .tint-danger {
+    --sc: var(--color-danger);
+  }
+
   /* A large soft quick-action tile for the arrival + home quick doors. */
   .tile {
     border-radius: var(--radius-xl);

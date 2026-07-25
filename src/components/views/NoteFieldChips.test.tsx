@@ -185,6 +185,45 @@ describe("NoteFieldChips", () => {
     expect(screen.getByText("priority")).toBeInTheDocument();
   });
 
+  it("tints a set enum value's chip with its stable hue + a leading swatch dot (polish V2)", () => {
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NoteFieldChips
+          note={NOTE}
+          fields={FIELDS}
+          viewResultsKey={VIEW_KEY as unknown as string[]}
+        />
+      </QueryClientProvider>,
+    );
+    // status: "active" resolves enum → hand-assigned sun.
+    const tinted = container.querySelector(".chip-tinted");
+    expect(tinted).not.toBeNull();
+    expect(tinted).toHaveTextContent("status");
+    expect(tinted).toHaveClass("tint-sun");
+    expect(tinted?.querySelector(".tint-dot")).not.toBeNull();
+    // Exactly one tinted chip — priority (number, no enum) stays neutral.
+    expect(container.querySelectorAll(".chip-tinted")).toHaveLength(1);
+    const priorityChip = screen.getByText("priority").closest("span.inline-flex");
+    expect(priorityChip).not.toHaveClass("chip-tinted");
+    expect(priorityChip?.querySelector(".tint-dot")).toBeNull();
+  });
+
+  it("does not tint an enum chip whose value is unset — no hue for 'no value'", () => {
+    const empty: Note = { ...NOTE, metadata: { priority: 2 } };
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NoteFieldChips
+          note={empty}
+          fields={FIELDS}
+          viewResultsKey={VIEW_KEY as unknown as string[]}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("status")).toBeInTheDocument();
+    expect(container.querySelector(".chip-tinted")).toBeNull();
+    expect(container.querySelector(".tint-dot")).toBeNull();
+  });
+
   it("tapping a chip edits the field in place — optimistic repaint + one-field PATCH", async () => {
     const fetchImpl = installFetch(true);
     const qc = renderBand([NOTE], FIELDS);

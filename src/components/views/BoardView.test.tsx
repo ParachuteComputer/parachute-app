@@ -240,6 +240,42 @@ describe("BoardView tap-to-move", () => {
     expect(body.metadata).toEqual({ status: null });
   });
 
+  it("lane heads carry the lane value's stable hue swatch; the uncategorized lane stays dotless (polish V2)", () => {
+    installFetch(true);
+    renderBoard(
+      [
+        {
+          id: "a",
+          path: "proj-a",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { status: "active" },
+        },
+        {
+          id: "b",
+          path: "proj-b",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: { status: "done" },
+        },
+        {
+          id: "c",
+          path: "proj-c",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-10T00:00:00Z",
+          metadata: {},
+        },
+      ],
+      "status",
+    );
+
+    // Hand-assigned hues ride the lane heads: active → sun, done → grass.
+    expect(laneSection("active").querySelector("header .tint-dot")).toHaveClass("tint-sun");
+    expect(laneSection("done").querySelector("header .tint-dot")).toHaveClass("tint-grass");
+    // The uncategorized lane has no value — no swatch.
+    expect(laneSection("No status").querySelector("header .tint-dot")).toBeNull();
+  });
+
   it("rolls back to the original lane and toasts when the write fails", async () => {
     installFetch(false); // PATCH → 500 → client throws
     renderBoard(

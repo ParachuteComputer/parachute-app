@@ -1,5 +1,26 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.46] - 2026-07-24
+
+**Views: enum values carry a stable color — tinted chips, menu dots, lane swatches
+(polish V2).** Every enum value now resolves to a stable hue via the app's own hue
+machinery (`hueForEnumValue` beside `hueForTag`): normalize (case/hyphen/underscore),
+then hand-assigned state semantics — done/complete/completed/shipped/closed → grass,
+in progress/active/doing → sun, blocked/urgent/critical → the semantic danger token —
+else the existing djb2 hash into the 8-hue garden palette. Deliberately unsalted by the
+field name, so "High" is the same hue on every priority-ish field, everywhere, forever,
+with zero storage.
+
+- **Chips** (`NoteFieldChips`) — a set enum value tints its chip: a `color-mix` wash +
+  border over the card/border tokens (dark mode flips for free) and a small leading
+  swatch dot. Text stays `--color-fg` — hue never carries the meaning alone.
+- **Menus** (`FieldValueControl`) — each enum option carries its value's dot; the muted
+  "No {field}" / Clear options stay dotless.
+- **Boards** (`BoardView`) — lane heads get the lane value's swatch before the name;
+  the uncategorized lane stays dotless. Just the swatch — lane containers unchanged.
+- Render/CSS only — writes, toasts, and wire shapes untouched. New `.chip-tinted` /
+  `.tint-*` classes live beside `.hue-dot-*` in `styles/index.css`.
+
 ## [0.20.45] - 2026-07-24
 
 **Views: fields now render by type — human dates, boolean checks, aligned numbers,

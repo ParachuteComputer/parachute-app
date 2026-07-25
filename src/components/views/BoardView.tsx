@@ -1,6 +1,7 @@
 import { type FieldControlOption, FieldValueControl } from "@/components/views/FieldValueControl";
 import { NoteCard } from "@/components/views/NoteCard";
 import { NoteFieldChips } from "@/components/views/NoteFieldChips";
+import { hueForEnumValue } from "@/lib/hue/hue";
 import { displayTitle } from "@/lib/note-title";
 import { useTag } from "@/lib/vault/queries";
 import type { TagRoles } from "@/lib/vault/tag-roles";
@@ -134,12 +135,19 @@ function BoardLane({
       {...targetProps}
     >
       <header className="flex items-baseline justify-between gap-2 border-b border-border pb-2">
-        <span
-          className={`min-w-0 truncate text-sm font-medium ${
-            lane.uncategorized ? "text-fg-dim" : "text-fg"
-          }`}
-        >
-          {lane.label}
+        <span className="flex min-w-0 items-center gap-1.5">
+          {/* Enum tinting (polish V2): the lane value's stable hue as a small
+              swatch — the uncategorized lane has no value, so no dot. */}
+          {lane.uncategorized ? null : (
+            <span aria-hidden="true" className={`tint-dot tint-${hueForEnumValue(lane.key)}`} />
+          )}
+          <span
+            className={`min-w-0 truncate text-sm font-medium ${
+              lane.uncategorized ? "text-fg-dim" : "text-fg"
+            }`}
+          >
+            {lane.label}
+          </span>
         </span>
         <span className="shrink-0 text-xs tabular-nums text-fg-dim">{lane.notes.length}</span>
       </header>
