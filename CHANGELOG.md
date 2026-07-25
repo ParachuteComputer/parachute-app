@@ -1,5 +1,24 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.20.49] - 2026-07-25
+
+**Views: contained table (polish V5).** The table lens sits in a raised card
+now — `rounded-xl border bg-card shadow-sm` around the horizontal-scroll
+container (the prototype's `.tbl-wrap`), with a soft `bg-bg-soft` header band
+(uppercase 11px micro-labels, `tracking-[0.08em]`), light `border-border-light`
+row hairlines, a `bg-bg-soft/60` row hover, and the last row running borderless
+into the card's own edge.
+
+- **The sticky title column's backgrounds now match the card** — `bg-card` in
+  the body and `bg-bg-soft` in the header (they carried the page's `bg-bg`
+  before, which would seam visibly against the new card when rows slide under
+  the sticky column on horizontal scroll). The row-hover tint is mirrored onto
+  the sticky cell by an opaque-composited overlay, so hover reads uniformly
+  across the row in both themes without the cell going transparent under the
+  scroll.
+- Class-only containment: number-column right-alignment, V1 typed rendering,
+  click-to-edit cells, and the write/flash machinery are untouched.
+
 ## [0.20.48] - 2026-07-25
 
 **Views: recessed board lanes + card rhythm (polish V4).** The board reads as
