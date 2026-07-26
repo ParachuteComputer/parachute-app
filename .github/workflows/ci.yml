@@ -87,7 +87,7 @@ jobs:
           # Derive the name rather than globbing: deterministic, and it also
           # asserts npm produced the filename we expect.
           VERSION=$(bun -e "console.log(require('./package.json').version)")
-          TARBALL="openparachute-parachute-app-${VERSION}.tgz"
+          TARBALL="openparachute-app-${VERSION}.tgz"
           echo "tarball: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
           CONTENTS=$(tar -tzf "$TARBALL")
           for required in \

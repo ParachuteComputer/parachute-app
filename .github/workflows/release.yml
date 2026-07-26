@@ -1,15 +1,15 @@
 # Release workflow — triggered by pushing a semver tag.
 #
-# Publishes ONE package: @openparachute/parachute-app — the super-surface
+# Publishes ONE package: @openparachute/app — the super-surface
 # SPA. Unlike the library packages in the ecosystem, what ships here is a
 # PREBUILT BUNDLE: the tarball carries `dist/` (index.html + hashed assets +
 # service worker + PWA manifest) and consumers never run a build.
 #
 # Who consumes it, and how:
-#   `parachute install app` → `bun add -g @openparachute/parachute-app`
+#   `parachute install app` → `bun add -g @openparachute/app`
 #   `parachute start app`   → hub spawns its static-serve shim
 #                             (parachute-hub `src/notes-serve.ts`) as
-#                             `--package @openparachute/parachute-app`, which
+#                             `--package @openparachute/app`, which
 #                             resolves `<package root>/dist` via
 #                             `Bun.resolveSync("<pkg>/package.json", …)` and
 #                             serves files straight out of it at port 1944,
@@ -31,7 +31,7 @@
 #   3. CI runs the gates, then publishes.
 #
 # OPERATOR SETUP (one-time, and REQUIRED before the first publish can
-# succeed): an npm Trusted Publisher rule for @openparachute/parachute-app —
+# succeed): an npm Trusted Publisher rule for @openparachute/app —
 # org=ParachuteComputer, repo=parachute-app, workflow=release.yml, env blank.
 # Without it the publish step fails (a sibling package 404'd on its first CI
 # publish for exactly this reason). No NPM_TOKEN secret is involved; the
@@ -124,7 +124,7 @@ jobs:
           npm pack --silent >/dev/null
           # Derive the name rather than globbing: deterministic, and it also
           # asserts npm produced the filename we expect for this version.
-          TARBALL="openparachute-parachute-app-${GITHUB_REF_NAME#v}.tgz"
+          TARBALL="openparachute-app-${GITHUB_REF_NAME#v}.tgz"
           echo "tarball: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
           CONTENTS=$(tar -tzf "$TARBALL")
           for required in \
@@ -159,5 +159,5 @@ jobs:
           else
             DIST_TAG=latest
           fi
-          echo "publishing @openparachute/parachute-app with dist-tag=$DIST_TAG"
+          echo "publishing @openparachute/app with dist-tag=$DIST_TAG"
           npm publish --tag "$DIST_TAG" --access public --provenance

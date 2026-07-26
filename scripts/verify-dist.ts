@@ -4,10 +4,10 @@
  * Dist smoke test — asserts the built `dist/` is the shape the hub's static
  * server expects before we ship it to npm.
  *
- * Why this exists: `@openparachute/parachute-app` publishes a PREBUILT SPA.
+ * Why this exists: `@openparachute/app` publishes a PREBUILT SPA.
  * Consumers do not build it — `parachute install app` runs `bun add -g
- * @openparachute/parachute-app`, then `parachute start app` spawns hub's
- * `src/notes-serve.ts --package @openparachute/parachute-app`, which resolves
+ * @openparachute/app`, then `parachute start app` spawns hub's
+ * `src/notes-serve.ts --package @openparachute/app`, which resolves
  * `<package root>/dist` via `Bun.resolveSync("<pkg>/package.json", …)` and
  * serves files straight out of it. A tarball with a missing or truncated
  * `dist/` is therefore a broken install with no build step to save it, and

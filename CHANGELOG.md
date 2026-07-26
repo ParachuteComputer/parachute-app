@@ -1,4 +1,26 @@
-# Changelog — @openparachute/parachute-app
+# Changelog — @openparachute/app
+
+## [0.22.0] - 2026-07-25
+
+**Renamed the npm package: `@openparachute/parachute-app` → `@openparachute/app`.**
+Every other package in the `@openparachute` scope is a bare noun (`hub`, `vault`,
+`surface`); `parachute-app` inside the `@openparachute` scope stuttered, and `app`
+is the durable name as this package grows toward a full native (Tauri) shell.
+Minor bump rather than patch: the published package identity changes — a fresh
+name on the registry — even though no app code moved.
+
+- **Only the npm package name moves.** The GitHub repo stays `parachute-app`, the
+  module's short name stays `app`, and the `dist/.parachute/info` service
+  identity stays `parachute-app` (hub's `manifestName` discovery key) — so hub's
+  well-known discovery is untouched.
+- **Transparent to self-hosters.** They reach the package through
+  `parachute install app` (hub resolves the concrete package name), not by typing
+  the scoped name, so the rename is invisible on a current hub. The old
+  `@openparachute/parachute-app` stays published (deprecated) so any existing
+  install keeps resolving.
+- **Tarball-name derivation bumped** in `ci.yml` and `release.yml` from
+  `openparachute-parachute-app-*.tgz` to `openparachute-app-*.tgz` — npm derives
+  the pack filename from the package name, and the pack-verify step asserts it.
 
 ## [0.21.2] - 2026-07-26
 

@@ -26,7 +26,7 @@ does not touch that production path. Cut-over is a later decision.
 ## Install (self-host)
 
 ```sh
-parachute install app     # bun add -g @openparachute/parachute-app
+parachute install app     # bun add -g @openparachute/app
 parachute start app       # served at <origin>/app, port 1944
 ```
 
@@ -34,7 +34,7 @@ The published package is a **prebuilt bundle**: the tarball carries `dist/`
 (the SPA shell, hashed assets, service worker, PWA manifest) and nothing is
 built on the operator's machine. `parachute start app` runs the hub's
 static-serve shim (`parachute-hub` `src/notes-serve.ts --package
-@openparachute/parachute-app`), which resolves the installed package's `dist/`
+@openparachute/app`), which resolves the installed package's `dist/`
 and serves it directly.
 
 Because the shipped artifact *is* `dist/`, the `prepack` hook rebuilds it for
