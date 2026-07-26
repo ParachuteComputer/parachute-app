@@ -1,4 +1,5 @@
 import { VaultSurface } from "@/app/routes/VaultSurface";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -64,9 +65,11 @@ function renderRecent() {
   return render(
     <MemoryRouter initialEntries={["/"]}>
       <QueryClientProvider client={qc}>
-        <Routes>
-          <Route path="/" element={<VaultSurface lens="recent" />} />
-        </Routes>
+        <NavBandsProvider>
+          <Routes>
+            <Route path="/" element={<VaultSurface lens="recent" />} />
+          </Routes>
+        </NavBandsProvider>
       </QueryClientProvider>
     </MemoryRouter>,
   );

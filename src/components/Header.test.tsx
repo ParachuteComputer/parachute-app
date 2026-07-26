@@ -1,4 +1,5 @@
 import { Header } from "@/components/Header";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -36,7 +37,11 @@ function renderHeader() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <Header />
+        {/* The ☰ opens the NavSheet, which reads the nav model from
+            context (app#110). */}
+        <NavBandsProvider>
+          <Header />
+        </NavBandsProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -146,7 +151,9 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={["/add"]}>
-          <Header />
+          <NavBandsProvider>
+            <Header />
+          </NavBandsProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -220,7 +227,9 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={["/"]}>
-          <Header />
+          <NavBandsProvider>
+            <Header />
+          </NavBandsProvider>
           <GoElsewhere to="/tags" />
         </MemoryRouter>
       </QueryClientProvider>,

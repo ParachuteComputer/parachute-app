@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { VaultSurface } from "@/app/routes/VaultSurface";
 import { RecentTimeline } from "@/components/RecentTimeline";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -106,7 +107,14 @@ describe("NoteRow parity — Recent and /notes render the same anatomy", () => {
     installFetch({ notes: [FULL_NOTE], tags: [] });
 
     // /notes — the one surface (VaultSurface since LZ-3), All lens.
-    const notesRender = render(<VaultSurface />, { wrapper: Wrapper });
+    const notesRender = render(
+      // VaultSurface renders LensStrip, which reads the nav model from
+      // context (app#110) — scoped to this render, not the shared Wrapper.
+      <NavBandsProvider>
+        <VaultSurface />
+      </NavBandsProvider>,
+      { wrapper: Wrapper },
+    );
     const notesList = await screen.findByRole("list", { name: "Notes" });
     const notesRow = rowFor(notesList as HTMLElement, "README");
     const notesRowHtml = notesRow.outerHTML;

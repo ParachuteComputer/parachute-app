@@ -1,4 +1,5 @@
 import { VaultSurface } from "@/app/routes/VaultSurface";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { saveToken } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
@@ -125,9 +126,11 @@ function renderAllNotes() {
   return render(
     <MemoryRouter initialEntries={["/notes"]}>
       <QueryClientProvider client={qc}>
-        <Routes>
-          <Route path="/notes" element={<VaultSurface />} />
-        </Routes>
+        <NavBandsProvider>
+          <Routes>
+            <Route path="/notes" element={<VaultSurface />} />
+          </Routes>
+        </NavBandsProvider>
       </QueryClientProvider>
     </MemoryRouter>,
   );

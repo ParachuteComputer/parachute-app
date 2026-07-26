@@ -1,4 +1,5 @@
 import { NavSheet } from "@/components/NavSheet";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -39,7 +40,9 @@ async function renderSheet(
     result = render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[path]}>
-          <NavSheet open onClose={() => {}} {...props} />
+          <NavBandsProvider>
+            <NavSheet open onClose={() => {}} {...props} />
+          </NavBandsProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -73,7 +76,9 @@ describe("NavSheet (mobile projection, W2-5)", () => {
     const { container } = render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <NavSheet open={false} onClose={() => {}} />
+          <NavBandsProvider>
+            <NavSheet open={false} onClose={() => {}} />
+          </NavBandsProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );

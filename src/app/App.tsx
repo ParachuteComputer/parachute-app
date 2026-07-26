@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
 import { isFocusablePath, useFocusMode } from "@/lib/focus-mode";
-import { isCeremonyPath } from "@/lib/nav/model";
+import { NavBandsProvider, isCeremonyPath } from "@/lib/nav/model";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useVaultStore } from "@/lib/vault";
 import { useCrossTabVaultSync } from "@/lib/vault/cross-tab-sync";
@@ -657,7 +657,21 @@ export function App() {
             for the detector + the design rationale.
           */}
           <BrowserRouter basename={detectMountBase()}>
-            <AppShell />
+            {/*
+              The ONE nav-model derivation (app#110 Finding A): Rail, LensStrip
+              and NavSheet all read `useNavBands()` from this provider instead
+              of deriving it themselves — the breakpoint contract hides
+              projections in CSS without unmounting them, so per-consumer
+              derivation meant the full-vault dateviews subscription opened
+              once per projection (×2 every route, ×3 with the mobile sheet).
+              Mounted unconditionally (not behind the focus-mode gate): focus
+              mode is a transient overlay, and keeping the model alive through
+              it avoids tearing down and reopening the live layer on every
+              focus toggle.
+            */}
+            <NavBandsProvider>
+              <AppShell />
+            </NavBandsProvider>
           </BrowserRouter>
         </SyncProvider>
       </QueryProvider>

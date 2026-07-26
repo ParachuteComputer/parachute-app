@@ -1,4 +1,5 @@
 import { VaultSurface } from "@/app/routes/VaultSurface";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { Note } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -89,7 +90,9 @@ function renderNotes() {
   return render(
     <QueryClientProvider client={client}>
       <BrowserRouter>
-        <VaultSurface />
+        <NavBandsProvider>
+          <VaultSurface />
+        </NavBandsProvider>
       </BrowserRouter>
     </QueryClientProvider>,
   );

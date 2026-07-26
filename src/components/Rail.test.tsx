@@ -1,4 +1,5 @@
 import { Rail } from "@/components/Rail";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -27,7 +28,9 @@ async function renderRail(path = "/"): Promise<RenderResult> {
     result = render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[path]}>
-          <Rail />
+          <NavBandsProvider>
+            <Rail />
+          </NavBandsProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );

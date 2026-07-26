@@ -1,4 +1,5 @@
 import { VaultSurface } from "@/app/routes/VaultSurface";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -74,7 +75,9 @@ function Wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return (
     <QueryClientProvider client={client}>
-      <BrowserRouter>{children}</BrowserRouter>
+      <BrowserRouter>
+        <NavBandsProvider>{children}</NavBandsProvider>
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }

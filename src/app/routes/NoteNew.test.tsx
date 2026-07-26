@@ -1,6 +1,7 @@
 import { NoteNew } from "@/app/routes/NoteNew";
 import { VaultSurface } from "@/app/routes/VaultSurface";
 import { loadDraft, saveDraft } from "@/lib/drafts/store";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { type LensDB, openLensDB } from "@/lib/sync/db";
 import { listPending } from "@/lib/sync/queue";
 import { useToastStore } from "@/lib/toast/store";
@@ -1981,10 +1982,15 @@ describe("W2-10 — one shared draft: the Recent lens's composer ↔ /new", () =
     installFetch({ "/api/notes?": { body: [] } });
     render(
       <MemoryRouter initialEntries={["/"]}>
-        <Routes>
-          <Route path="/" element={<VaultSurface lens="recent" />} />
-          <Route path="/new" element={<NoteNew />} />
-        </Routes>
+        {/* VaultSurface renders LensStrip, which reads the nav model from
+            context (app#110) — scoped here, not in Wrapper, so the file's
+            other tests don't gain the model's queries. */}
+        <NavBandsProvider>
+          <Routes>
+            <Route path="/" element={<VaultSurface lens="recent" />} />
+            <Route path="/new" element={<NoteNew />} />
+          </Routes>
+        </NavBandsProvider>
       </MemoryRouter>,
       { wrapper: Wrapper },
     );
