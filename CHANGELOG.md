@@ -1,6 +1,6 @@
 # Changelog — @openparachute/app
 
-## [0.22.0] - 2026-07-25
+## [0.22.0] - 2026-07-26
 
 **Renamed the npm package: `@openparachute/parachute-app` → `@openparachute/app`.**
 Every other package in the `@openparachute` scope is a bare noun (`hub`, `vault`,
