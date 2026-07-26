@@ -443,12 +443,17 @@ function UndatedNotes({
     name: dateField,
     schema: { type: "date" },
   };
+  // "no {field} date" reads well for `due`/`scheduled`, but doubles for a field
+  // the user already named with "date" in it (`meeting date` → "no meeting date
+  // date"). Since we celebrate arbitrary date-field names, append " date" only
+  // when the name doesn't already carry it.
+  const dateLabel = /date/i.test(dateField) ? dateField : `${dateField} date`;
   return (
-    <section aria-label={`Not on the calendar — no ${dateField} date`} className="space-y-2">
+    <section aria-label={`Not on the calendar — no ${dateLabel}`} className="space-y-2">
       <p className="eyebrow">Not on the calendar yet</p>
       <p className="text-xs text-fg-dim">
-        {notes.length} {notes.length === 1 ? "note has" : "notes have"} no {dateField} date — set
-        one to place {notes.length === 1 ? "it" : "them"}.
+        {notes.length} {notes.length === 1 ? "note has" : "notes have"} no {dateLabel} — set one to
+        place {notes.length === 1 ? "it" : "them"}.
       </p>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))] gap-2">
         {notes.map((note) => (

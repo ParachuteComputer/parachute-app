@@ -51,7 +51,9 @@ to the view — is a path nobody discovers.
   used to state a bare count and offer nothing. Those notes now render below the
   grid as cards with an in-place date picker — the calendar's answer to the
   board's uncategorized lane: set a date and the note lands on its day, no
-  refetch.
+  refetch. The section's copy reads well for any field name now: "no `meeting
+  date`" instead of the doubled "no `meeting date` date" (append " date" only
+  when the user's field name doesn't already carry it).
 - **A board is not prose — it gets room to breathe.** A `status`-style board
   mints four lanes (three declared values plus the uncategorized lane, which on
   a fresh vault holds every note), and four `w-72` lanes overflow the reading-

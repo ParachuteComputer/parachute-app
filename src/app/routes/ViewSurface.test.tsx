@@ -409,8 +409,9 @@ describe("ViewSurface", () => {
     renderViewSurface();
     await screen.findByRole("heading", { name: "Meetings" });
     // Wait for the results to fetch + the calendar to render (the footnote only
-    // exists once CalendarView has mounted with data).
-    await screen.findByText(/no meeting_date date/i);
+    // exists once CalendarView has mounted with data). The field is named
+    // `meeting_date` — already carries "date", so the copy doesn't double it.
+    await screen.findByText(/no meeting_date —/i);
 
     // The dated note appears on the July-14 cell (the cell's button carries
     // both the day number and the note's title chip).
