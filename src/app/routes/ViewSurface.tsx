@@ -165,8 +165,11 @@ export function ViewCanvas({
    */
   pageSize?: number;
   /**
-   * Total notes carrying this page's tag — the "624 notes" size shown by the
-   * header, and the pager's ceiling for deciding whether a next page exists.
+   * Total notes carrying this page's tag (`tag.count`) — the "N notes" size the
+   * header shows while nothing has narrowed the view. It is NOT the pager's
+   * next-page oracle: the archived exclusion and live refinements narrow the
+   * rendered set below it, so the pager rides a one-row peek instead (see the
+   * fetch below) and only ever shows "of N" once that peek has proven the end.
    */
   total?: number;
 }) {
@@ -221,17 +224,44 @@ export function ViewCanvas({
     setOffset(0);
   }, [resetKey]);
 
-  // The FETCHED def carries the page window (offset) on top of the def's own
-  // `limit`. Unpaged callers fetch the def unchanged.
+  // The FETCHED def carries the page window (offset) AND a one-row peek on top
+  // of the page size. Fetching `pageSize + 1` and rendering `pageSize` answers
+  // "is there a next page?" as a FACT — does row 51 exist? — the same window
+  // mechanism the All-notes list uses (app#109). Inferring it from a `total`
+  // instead left the archived exclusion and any live refinement — both of which
+  // narrow the set below the tag's own count — able to leave Next enabled into
+  // empty trailing pages. Unpaged callers fetch the def unchanged.
   const fetchDef = useMemo(() => {
     if (!paginated || !effDef.query) return effDef;
-    return { ...effDef, query: { ...effDef.query, offset } };
-  }, [paginated, effDef, offset]);
+    return { ...effDef, query: { ...effDef.query, offset, limit: pageSize! + 1 } };
+  }, [paginated, effDef, offset, pageSize]);
 
   // Paged surfaces poll (no live subscription): a live snapshot is always the
   // complete matching set, which would clobber the page window (see
   // `useViewResults`' `live` option).
   const results = useViewResults(fetchDef, refinements, { live: !paginated });
+  // The page renders `pageSize` rows; the (pageSize+1)-th, when present, is the
+  // peek — proof a next page exists, never itself shown. Unpaged callers render
+  // the whole set.
+  const pageData = useMemo(
+    () => (paginated && results.data ? results.data.slice(0, pageSize) : results.data),
+    [paginated, results.data, pageSize],
+  );
+  const shownCount = pageData?.length ?? 0;
+  const hasNextPage = paginated ? (results.data?.length ?? 0) > pageSize! : false;
+  // Two totals, two meanings. The PAGER may only ever show one it can PROVE:
+  // the peek makes the exact count a fact once there is no next page
+  // (`offset + shown`); before that the true result total is unknowable — the
+  // archived exclusion and any refinement both narrow it below the tag's own
+  // count, and no count endpoint exists until vault#626 — so the pager shows
+  // "of N" only at that proven end and a bare range otherwise. The HEADER's
+  // "N notes" is a different quantity: the tag's own membership size
+  // (`tag.count`), a stable, true tag-level fact worth keeping while the viewer
+  // hasn't narrowed the view with a refinement (a refinement makes it read as
+  // the result count, which it isn't, so it's dropped then).
+  const narrowed = hasRefinements(refinements);
+  const provenTotal = paginated && !hasNextPage ? offset + shownCount : undefined;
+  const headerCount = narrowed ? undefined : total;
   // The view's shown/editable fields (Part B) — the tag-schema default or the
   // view's `fields` override — resolved once and threaded to every kind, so a
   // card/row can show + edit them through the shared mutation primitive.
@@ -242,9 +272,9 @@ export function ViewCanvas({
   const problems: ViewProblem[] = [...effDef.problems, ...results.problems];
 
   const partition = useMemo(() => {
-    if (!results.data) return { pinned: [], rest: [] };
-    return partitionPinned(results.data, roles.pinned, queryTags(effDef.query));
-  }, [results.data, roles.pinned, effDef.query]);
+    if (!pageData) return { pinned: [], rest: [] };
+    return partitionPinned(pageData, roles.pinned, queryTags(effDef.query));
+  }, [pageData, roles.pinned, effDef.query]);
 
   // ONE bar covers both axes — query edits are config too (decision 1). Save
   // only exists with a real note behind the view: a derived tag page
@@ -311,7 +341,7 @@ export function ViewCanvas({
     <div className={wide ? "page page-wide" : "page"}>
       {nav}
       <article className={showModifiedBar ? "pb-20" : undefined}>
-        <ViewHeader def={effDef} backingNote={backingNote} count={paginated ? total : undefined} />
+        <ViewHeader def={effDef} backingNote={backingNote} count={headerCount} />
         {/* The controls row (polish V3): lens pill first (the view's identity),
           the organize-by pill second (board/calendar only — and it renders
           even with nothing to offer), Fields third. Each pill tints its
@@ -358,7 +388,7 @@ export function ViewCanvas({
         <div className="mt-6">
           <ViewResults
             def={effDef}
-            data={results.data}
+            data={pageData}
             isPending={results.isPending}
             isError={results.isError}
             error={results.error}
@@ -373,9 +403,10 @@ export function ViewCanvas({
         {paginated ? (
           <ViewPager
             offset={offset}
-            pageSize={pageSize!}
-            shown={results.data?.length ?? 0}
-            total={total}
+            shown={shownCount}
+            total={provenTotal}
+            hasPrev={offset > 0}
+            hasNext={hasNextPage}
             onPrev={() => setOffset((o) => Math.max(0, o - pageSize!))}
             onNext={() => setOffset((o) => o + pageSize!)}
           />
@@ -509,32 +540,36 @@ function ViewHeader({
 
 // ---------------------------------------------------------------------------
 // Pager — the SAME offset window the Notes list uses (`VaultSurface`): a
-// "Showing m–n of total" line + Previous/Next, page size from the def's
-// `limit`. Only the derived tag page mounts it (via `pageSize`); a saved
-// `#view` renders unpaged as before. The count leans on the known `total`
-// (the tag's size) to decide whether a next page exists, falling back to a
-// full-page heuristic when it's unknown.
+// "Showing m–n" line (+ "of total" once the total is a proven fact) and
+// Previous/Next. Only the derived tag page mounts it (via `pageSize`); a saved
+// `#view` renders unpaged as before. `hasNext`/`hasPrev` arrive as FACTS the
+// canvas derives from the one-row peek and the offset — never inferred from
+// `total`, so Next can't run into empty trailing pages when the archived
+// exclusion or a refinement has narrowed the set below the tag's own count.
+// `total` is passed only when proven (the peek showed no next page); otherwise
+// the line is a bare range.
 // ---------------------------------------------------------------------------
 
 function ViewPager({
   offset,
-  pageSize,
   shown,
   total,
+  hasPrev,
+  hasNext,
   onPrev,
   onNext,
 }: {
   offset: number;
-  pageSize: number;
   shown: number;
+  /** The result total — passed ONLY when proven (end reached); else undefined. */
   total: number | undefined;
+  hasPrev: boolean;
+  hasNext: boolean;
   onPrev: () => void;
   onNext: () => void;
 }) {
   const first = shown > 0 ? offset + 1 : 0;
   const last = offset + shown;
-  const hasPrev = offset > 0;
-  const hasNext = typeof total === "number" ? last < total : shown === pageSize;
   // Nothing to page and nowhere paged from — render nothing (a small tag).
   if (!hasPrev && !hasNext) return null;
   return (

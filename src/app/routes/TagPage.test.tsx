@@ -200,13 +200,18 @@ describe("TagPage", () => {
 
     renderTagPage(`/tags/${encodeURIComponent("capture/voice")}`);
 
-    // The size of the tag is on the page…
+    // The size of the tag is on the page (the header's stable membership count)…
     await screen.findByRole("heading", { name: "capture/voice" });
     await screen.findByText("620 notes");
-    // …and only ONE page renders — the 50th note is present, the 51st is not.
+    // …and only ONE page renders — the 50th note is present, the 51st (the peek
+    // row that proves a next page exists) is fetched but never shown.
     await screen.findByText("Note 050");
     expect(screen.queryByText("Note 051")).toBeNull();
-    await screen.findByText((t) => t.includes("Showing 1") && t.includes("of 620"));
+    // Mid-walk the pager shows a BARE range — no "of 620". The archived
+    // exclusion means the true result total isn't knowable until the peek proves
+    // the end; the tag's own 620 lives in the header, a different quantity.
+    await screen.findByText(/^Showing 1[–-]50$/);
+    expect(screen.queryByText(/of 620/)).toBeNull();
 
     // The floor rode the wire: a bounded, newest-first page.
     const firstNotesUrl =
@@ -214,7 +219,8 @@ describe("TagPage", () => {
         .map(([u]) => String(u))
         .find((u) => u.includes("/api/notes") && !u.includes("settings")) ?? "";
     const p = new URL(firstNotesUrl).searchParams;
-    expect(p.get("limit")).toBe("50");
+    // 50 for the page + 1 for the peek row that decides `hasNext` as a fact.
+    expect(p.get("limit")).toBe("51");
     expect(p.get("sort")).toBe("desc");
 
     // Previous is disabled on page 1; Next advances to the next window.
@@ -223,13 +229,68 @@ describe("TagPage", () => {
 
     await screen.findByText("Note 051");
     expect(screen.queryByText("Note 001")).toBeNull();
-    await screen.findByText((t) => t.includes("Showing 51") && t.includes("of 620"));
+    // Still mid-walk (100 < 620) → still a bare range, still no "of 620".
+    await screen.findByText(/^Showing 51[–-]100$/);
+    expect(screen.queryByText(/of 620/)).toBeNull();
     // The next page fetched the next offset.
     const offsets = fetchImpl.mock.calls
       .map(([u]) => String(u))
       .filter((u) => u.includes("/api/notes") && !u.includes("settings"))
       .map((u) => new URL(u).searchParams.get("offset"));
     expect(offsets).toContain("50");
+  });
+
+  it("Next stops at the true end when tag.count overstates the result — the peek decides, not the count", async () => {
+    // The #106/#108 merge review's one fold, and the same shape #109 hit on
+    // All-notes: `hasNext` must be a FACT (does a peek row exist?), never
+    // `lastRow < tag.count`. The tag's own count includes archived notes (and a
+    // live refinement narrows further), so a count-based ceiling leaves Next
+    // enabled into empty trailing pages. Here the tag reports 120 but only 60
+    // notes survive the archived exclusion — the pager must stop at 60.
+    const FILTERED = Array.from({ length: 60 }, (_, i) => ({
+      id: `n${i + 1}`,
+      path: `Note ${String(i + 1).padStart(3, "0")}`,
+      tags: ["log"],
+      createdAt: "2026-07-01T00:00:00Z",
+    }));
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/tags/")) {
+        // tag.count = 120 (membership incl. archived) — deliberately larger than
+        // the 60 the filtered query actually returns.
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ name: "log", count: 120 }),
+          text: async () => "",
+        } as Response;
+      }
+      if (url.includes("settings")) {
+        return { ok: true, status: 200, json: async () => [], text: async () => "" } as Response;
+      }
+      const params = new URL(url).searchParams;
+      const limit = Number(params.get("limit") ?? "50");
+      const offset = Number(params.get("offset") ?? "0");
+      const slice = FILTERED.slice(offset, offset + limit);
+      return { ok: true, status: 200, json: async () => slice, text: async () => "" } as Response;
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    renderTagPage("/tags/log");
+    await screen.findByRole("heading", { name: "log" });
+    // The header keeps the tag's membership size; the pager does NOT inherit it.
+    await screen.findByText("120 notes");
+    await screen.findByText(/^Showing 1[–-]50$/);
+    expect(screen.queryByText(/of 120/)).toBeNull();
+
+    // Page 2 is the true end: 51–60, ten rows. `tag.count` (120) would keep Next
+    // enabled (60 < 120) — the OLD bug. The peek (row 61 absent) disables it, and
+    // now that the end is proven the pager shows the exact total.
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    await screen.findByText("Note 060");
+    await screen.findByText(/^Showing 51[–-]60 of 60$/);
+    expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /previous/i })).toBeEnabled();
   });
 
   it("exploring (a refinement) never surfaces a Save — there is no note to PATCH", async () => {
