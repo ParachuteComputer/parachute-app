@@ -1,3 +1,30 @@
+## [0.22.5] - 2026-07-26
+
+**A `%` in a name no longer breaks the page — and a subtler bug that nobody
+could see is gone with it.**
+
+Route params were decoded twice: the router decodes `:name` / `:id`, then the
+component decoded again. For every name we actually see — spaces, unicode,
+slashes like `capture/voice` — the second decode was a harmless no-op, which is
+why it survived. Two names it did not survive:
+
+- **A literal `%`** threw `URIError` and crashed the page. A tag called `100%`
+  had no page at all.
+- **A name merely *containing* a valid escape sequence** was silently rewritten
+  — `50%20off` became `50 off`, quietly loading the wrong page with no error at
+  all. Nobody filed that one, because nobody could see it happen.
+
+Fixed at four route components together — `/tags/:name`, `/views/:id`, `/n/:id`
+and `/n/:id/edit` — rather than one at a time, so none of them becomes the odd
+one out. They now receive an already-decoded value and trust it, which is the
+pattern `NoteIdRedirect` was already following. The two remaining
+`decodeURIComponent` calls in `src/` are correct boundaries (each decodes once
+from a still-encoded source) and are left alone.
+
+Every test was written and watched failing before the fix. The slash and
+unicode pins were green on both sides — they survived the double decode by
+accident and survive the single one by design.
+
 # Changelog — @openparachute/app
 
 ## [0.22.4] - 2026-07-26

@@ -36,8 +36,10 @@ import { type SVGProps, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
 
 export function NoteView() {
-  const { id } = useParams<{ id: string }>();
-  const decodedId = id ? decodeURIComponent(id) : undefined;
+  // `:id` arrives ALREADY decoded (the router decodes params); a second
+  // decodeURIComponent threw on ids with a literal `%` — see TagPage.tsx
+  // for the full framing. Decode once, at the boundary. (app#113)
+  const { id: decodedId } = useParams<{ id: string }>();
   const activeVault = useVaultStore((s) => s.getActiveVault());
   const note = useNote(decodedId);
   // Voice Wave 1: hold ONE live subscription for the open note so a transcript

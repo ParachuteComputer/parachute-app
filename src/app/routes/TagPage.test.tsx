@@ -377,3 +377,48 @@ describe("TagPage", () => {
     expect(container.querySelector('[data-testid="home"]')).not.toBeNull();
   });
 });
+
+// app#113 — the single-decode contract. `useParams` values arrive ALREADY
+// decoded (react-router decodes route params at the boundary); the component
+// must trust that and never `decodeURIComponent` again. A second decode threw
+// on any name with a literal `%` and silently rewrote names containing a
+// valid escape sequence. The same pin exists in NoteView.test.tsx,
+// NoteEditor.test.tsx, and ViewSurface.test.tsx — all four param routes were
+// fixed together so none drifts back to being the odd one out.
+describe("TagPage route-param decoding (app#113)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    seedStore();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("a tag named `100%` gets its page — a literal % used to throw in render", async () => {
+    installFetch({ tag: null, results: [] });
+    renderTagPage("/tags/100%25");
+    await screen.findByRole("heading", { name: "100%" });
+  });
+
+  it("a slash in a tag name still round-trips (`capture/voice`)", async () => {
+    installFetch({ tag: null, results: [] });
+    renderTagPage("/tags/capture%2Fvoice");
+    await screen.findByRole("heading", { name: "capture/voice" });
+  });
+
+  it("unicode and spaces still round-trip (`café notes`)", async () => {
+    installFetch({ tag: null, results: [] });
+    renderTagPage("/tags/caf%C3%A9%20notes");
+    await screen.findByRole("heading", { name: "café notes" });
+  });
+
+  it("a name that merely LOOKS like an escape is not rewritten (`50%20off` stays itself, not `50 off`)", async () => {
+    installFetch({ tag: null, results: [] });
+    renderTagPage("/tags/50%2520off");
+    await screen.findByRole("heading", { name: "50%20off" });
+  });
+});

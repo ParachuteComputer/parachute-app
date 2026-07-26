@@ -541,3 +541,61 @@ describe("ViewSurface", () => {
     expect(results.textContent).toContain("Alpha");
   });
 });
+
+// app#113 — the single-decode contract (see TagPage.test.tsx for the full
+// framing; this is the `/views/:id` pin). The file's shared harness hardcodes
+// `/views/v1`, so this block carries its own param-aware render + fetch stub;
+// the stub keys on the DECODED id via searchParams, so a double encode
+// (`id=q%2525`) misses it and fails the heading assertion.
+describe("route-param decoding (app#113)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    seedStore();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function renderViewSurfaceAt(path: string) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/views/:id" element={<ViewSurface />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("a view id containing a literal % renders the view instead of crashing", async () => {
+    const viewNote = {
+      id: "q%",
+      path: "Views/Loud goals",
+      tags: ["view"],
+      metadata: { kind: "list", query: JSON.stringify({ tag: "project" }) },
+    };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("include_content=true") && new URL(url).searchParams.get("id") === "q%") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [viewNote],
+          text: async () => "",
+        } as Response;
+      }
+      return { ok: true, status: 200, json: async () => [], text: async () => "" } as Response;
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    renderViewSurfaceAt("/views/q%25");
+
+    await screen.findByRole("heading", { name: "Loud goals" });
+  });
+});

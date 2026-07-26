@@ -32,8 +32,12 @@ function TagsBackNav() {
 }
 
 export function TagPage() {
-  const { name } = useParams<{ name: string }>();
-  const decodedName = name ? decodeURIComponent(name) : undefined;
+  // `:name` arrives ALREADY decoded — react-router decodes route params
+  // before `useParams` returns them. Decoding again threw on a literal `%`
+  // (`#100%` crashed instead of rendering) and silently rewrote names that
+  // merely contain a valid escape (`50%20off` → `50 off`). Decode once, at
+  // the boundary: the router is the boundary. (app#113)
+  const { name: decodedName } = useParams<{ name: string }>();
   const activeVault = useVaultStore((s) => s.getActiveVault());
   // The tag-identity row (schema fields drive table-vs-list). A plain tag with
   // no schema row — or one that doesn't exist — resolves to `null` (vault 404

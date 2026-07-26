@@ -791,3 +791,30 @@ describe("NoteEditor — focus mode (EDITOR-STUDY §3.3)", () => {
     expect(screen.getByLabelText(/unsaved changes/i)).toBeInTheDocument();
   });
 });
+
+// app#113 — the single-decode contract (see TagPage.test.tsx for the full
+// framing; this is the `/n/:id/edit` pin — the fourth site, not listed in the
+// issue's three but sharing the identical double decode).
+describe("route-param decoding (app#113)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    useFocusMode.setState({ on: false });
+    seedStore();
+    vi.spyOn(window, "confirm").mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("editing a note whose id contains a literal % opens the editor instead of crashing", async () => {
+    installFetch({ "id=100%25": { body: { ...baseNote, id: "100%" } } });
+    renderAt("/n/100%25/edit");
+
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+    expect(cm.value).toBe(baseNote.content);
+  });
+});
