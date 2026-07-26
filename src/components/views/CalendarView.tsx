@@ -83,18 +83,30 @@ export function CalendarView({
 
   // No dated notes at all — an empty grid with month nav would be busywork.
   // (Near-unreachable in createdAt mode — every wire note carries createdAt —
-  // but degrade honestly if none parse.)
+  // but degrade honestly if none parse.) This is where a JUST-created date
+  // field lands (the on-ramp's `due`): the grid is empty because nothing
+  // carries the field yet, so instead of a bare footnote we hand back the
+  // notes themselves with an in-place date picker — the calendar's answer to
+  // the board's uncategorized lane, where the first value gets set.
   if (placement.byDay.size === 0) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         <EmptyState
-          title="Nothing to place on the calendar yet"
+          title="Nothing on the calendar yet"
           description={
-            dateField === null ? undefined : `None of these notes carry a ${dateField} date.`
+            dateField === null
+              ? undefined
+              : `Give a note a ${dateField} date below and it lands on the grid.`
           }
         />
         {dateField === null ? null : (
-          <UndatedFootnote count={placement.undated.length} dateField={dateField} />
+          <UndatedNotes
+            notes={placement.undated}
+            dateField={dateField}
+            roles={roles}
+            viewResultsKey={viewResultsKey}
+            fields={fields}
+          />
         )}
       </div>
     );
@@ -210,7 +222,15 @@ export function CalendarView({
           Showing by created date — set a date field to schedule.
         </p>
       ) : (
-        <UndatedFootnote count={placement.undated.length} dateField={dateField} />
+        // The undated notes stay ACTIONABLE below the grid — a date picker per
+        // note, so an undated note is one tap from a day, not just a count.
+        <UndatedNotes
+          notes={placement.undated}
+          dateField={dateField}
+          roles={roles}
+          viewResultsKey={viewResultsKey}
+          fields={fields}
+        />
       )}
     </div>
   );
@@ -396,11 +416,62 @@ function DayChip({
   );
 }
 
-function UndatedFootnote({ count, dateField }: { count: number; dateField: string }) {
-  if (count === 0) return null;
+// The undated notes, kept ACTIONABLE — the calendar's counterpart to the
+// board's uncategorized lane. Each note is a card with a chip band scoped to
+// the ONE date field it's missing; setting a date writes through the shared
+// `useViewFieldWrite` (optimistic against the view's result cache), so the note
+// re-places onto the grid without a refetch. Nothing when there are none.
+function UndatedNotes({
+  notes,
+  dateField,
+  roles,
+  viewResultsKey,
+  fields,
+}: {
+  notes: Note[];
+  dateField: string;
+  roles: TagRoles;
+  viewResultsKey: QueryKey;
+  fields: ResolvedField[];
+}) {
+  if (notes.length === 0) return null;
+  // Scope the chip band to just the date field — the one thing keeping these
+  // notes off the grid. Prefer the view's resolved field (its real schema);
+  // synthesize a plain date field only if a `fields` override hides it, so the
+  // picker is always the right control.
+  const dateFieldEntry: ResolvedField = fields.find((f) => f.name === dateField) ?? {
+    name: dateField,
+    schema: { type: "date" },
+  };
+  // "no {field} date" reads well for `due`/`scheduled`, but doubles for a field
+  // the user already named with "date" in it (`meeting date` → "no meeting date
+  // date"). Since we celebrate arbitrary date-field names, append " date" only
+  // when the name doesn't already carry it.
+  const dateLabel = /date/i.test(dateField) ? dateField : `${dateField} date`;
   return (
-    <p className="text-xs text-fg-dim">
-      {count} {count === 1 ? "note isn't" : "notes aren't"} shown — no {dateField} date.
-    </p>
+    <section aria-label={`Not on the calendar — no ${dateLabel}`} className="space-y-2">
+      <p className="eyebrow">Not on the calendar yet</p>
+      <p className="text-xs text-fg-dim">
+        {notes.length} {notes.length === 1 ? "note has" : "notes have"} no {dateLabel} — set one to
+        place {notes.length === 1 ? "it" : "them"}.
+      </p>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))] gap-2">
+        {notes.map((note) => (
+          <NoteCard
+            key={note.id}
+            note={note}
+            pinnedTag={roles.pinned}
+            archivedTag={roles.archived}
+            footer={
+              <NoteFieldChips
+                note={note}
+                fields={[dateFieldEntry]}
+                viewResultsKey={viewResultsKey}
+              />
+            }
+          />
+        ))}
+      </div>
+    </section>
   );
 }

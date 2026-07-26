@@ -1,5 +1,89 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.21.1] - 2026-07-25
+
+**Field on-ramp — a board or calendar on a field-less tag helps you make your
+own field instead of dead-ending.**
+
+The worst onboarding dead-end in views. A fresh vault seeds exactly two tags
+(`capture` + `guide`) and NEITHER carries a field schema — the schema-carrying
+`starter-ontology` pack is deliberately opt-in. View fields resolve from tag
+schemas alone, so for almost every real user a Board's Group-by pill had
+nothing to offer and could only explain the absence ("No fields to group by —
+this view's tag has no schema fields"), while a Calendar had no date field to
+plot by. The only recovery — Tags → filter → +Schema → add field → Save → back
+to the view — is a path nobody discovers.
+
+- **The empty control NOTICES the absence and hands you the editor.** No
+  hardcoded field vocabulary: the app doesn't propose `status`, `priority`, or
+  `due` (Aaron, 2026-07-25 — "we don't really need to be opinionated on this").
+  Calendars in the wild key off `date`, `meeting date`, `published`, `when`;
+  shipping `due` as _the_ offer would bake a vocabulary into a product that
+  shouldn't have one. The empty Group-by / By-date pill now carries a single
+  invitation — "Add a field to group by…" / "Add a date field…" — that opens
+  the shipped tag-schema editor in place, oriented for the job, where **you**
+  name the field. On save the view organizes by it automatically.
+- **The app already reads any field by TYPE, not by name.** A tag that declares
+  `meeting date` (or any date-typed field) already gets a working calendar;
+  any field with declared values already lanes a board. The presets only ever
+  answered the _zero-fields_ case — and answering it with Parachute's own
+  vocabulary was the mistake. Removed `GROUP_BY_PRESETS` / `DATE_PRESETS`
+  entirely.
+- **The editor is a decent place to land cold.** Opened from a board, it lands
+  on a ready-to-name string row with a values input — because a board needs
+  declared values (an `enum`) or the columns won't render, and that's now stated
+  in the editor rather than discovered on an empty board. Opened from a
+  calendar, it lands on a date row. The schema editor gained enum-value
+  declaration (comma-separated → the board's columns) for exactly this.
+- **A whole bug class dissolved.** The name-collision hazard existed only
+  because _we_ proposed a name that might already be taken; a merge-on-write tag
+  PUT would then silently REPLACE the user's own `due` (string) with a date.
+  Now the app proposes no name — there is nothing to clobber — and the user
+  names the field in an editor that shows the existing fields, so any collision
+  is visible, not silent. The old `existingFieldNames` suppression + write-
+  boundary guard are gone with the presets that made them necessary; the same
+  reasoning closed the schema-still-loading hole (the invitation writes nothing;
+  it opens an editor that reads the live schema itself). The empty controls also
+  wait for the tag schema to actually answer before inviting, so they never cry
+  "no fields yet" on a tag mid-fetch.
+- **The calendar's undated notes stay actionable.** After adding a date field to
+  a fresh vault the grid is empty (nothing carries the field yet) — where it
+  used to state a bare count and offer nothing. Those notes now render below the
+  grid as cards with an in-place date picker — the calendar's answer to the
+  board's uncategorized lane: set a date and the note lands on its day, no
+  refetch. The section's copy reads well for any field name now: "no `meeting
+  date`" instead of the doubled "no `meeting date` date" (append " date" only
+  when the user's field name doesn't already carry it).
+- **A board is not prose — it gets room to breathe.** A `status`-style board
+  mints four lanes (three declared values plus the uncategorized lane, which on
+  a fresh vault holds every note), and four `w-72` lanes overflow the reading-
+  width page cap — clipping the uncategorized lane. Board and table now use a
+  wider ceiling (`--w-board`) than the reading column list/calendar/note keep;
+  the board's own overflow-x still handles the genuinely-many-lane case. (Honest
+  limit: on a 1280–1440 laptop with the rail expanded a wide board still scrolls
+  horizontally — a kanban convention, and no lane width that keeps cards
+  readable fits there.)
+- **The field the user made rides the DRAFT, not the note.** The schema write is
+  immediate and permanent (it's the thing you asked for); the view's
+  `group_by`/`date_field` goes into the URL DRAFT, so the board lanes up
+  instantly but the view note itself changes only on Save — consistent with the
+  explore-then-save model every other config control follows. Reverting keeps
+  the field and leaves the view untouched. The editor writes through
+  `useUpdateTag` (`PUT /api/tags/:name`, merge-on-write) — no second schema
+  writer, and a tag that already declares other fields keeps every one of them.
+- **An honest message where the invitation can't apply.** A view whose query
+  isn't scoped to a single tag has no one schema to write to; that control now
+  says so AND says what to do ("add a single tag to the query, or open a tag's
+  view") instead of implying the view is broken.
+- **Companion fix — the lane field's chip.** A board omits its lane field from
+  the card's chip band because the Move control already owns it. But Move
+  renders only when there's somewhere to move TO, so a lane field with no
+  declared enum, on a board where no note carries a value yet, produced a
+  single uncategorized column with neither Move nor chip — no way to set the
+  first value from the board at all. The chip now stays whenever Move is
+  absent. (Reachable through the on-ramp: its "add a field" invitation can mint
+  a plain string lane field with no declared values.)
+
 ## [0.21.0] - 2026-07-25
 
 **The app becomes installable.** Until now `@openparachute/parachute-app` was

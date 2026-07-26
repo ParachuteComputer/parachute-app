@@ -257,6 +257,13 @@
   --w-page: 72rem;
   --w-narrow: 32rem;
   --w-surface: 52rem;
+  /* Grid surfaces (board / table) are not prose — they read across, not down,
+     and a status board's lanes (each w-72) blow past the reading-width page cap
+     the moment there are four of them (the on-ramp's status board is exactly
+     that: To do / In progress / Done + the uncategorized lane). They earn a
+     wider ceiling than --w-page so those lanes are seen, not clipped, while the
+     board's own overflow-x still handles the genuinely-many-lane case. */
+  --w-board: 96rem;
 
   /* View-level text-size knob (lib/text-size.ts). Defaults below; the
      `:root[data-text-size="…"]` blocks override for the two larger
@@ -1123,6 +1130,13 @@ body {
       padding-inline: 2.5rem;
       padding-block: 2.75rem;
     }
+  }
+  /* The board/table breakout (views): same centered gutters, a wider ceiling.
+     Compound selector so it beats `.page`'s own max-width regardless of source
+     order. The page still shrinks to the content column on narrow screens — a
+     max, not a fixed width — so nothing regresses below the reading width. */
+  .page.page-wide {
+    max-width: var(--w-board);
   }
   /* The one-surface width (LZ-3): VaultSurface's wrapper — the lens body
      breathes wider than prose (a filterable list, not a reading column) but

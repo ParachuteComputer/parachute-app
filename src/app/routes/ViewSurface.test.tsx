@@ -1,7 +1,7 @@
 import { ViewSurface } from "@/app/routes/ViewSurface";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -139,7 +139,7 @@ describe("ViewSurface", () => {
       ],
     });
 
-    renderViewSurface();
+    const { container } = renderViewSurface();
 
     await screen.findByRole("heading", { name: "Active projects" });
     const pinnedSection = await screen.findByRole("region", { name: "Pinned" });
@@ -147,6 +147,41 @@ describe("ViewSurface", () => {
     const resultsSection = screen.getByRole("region", { name: "Results" });
     expect(resultsSection.textContent).toContain("Alpha");
     expect(resultsSection.textContent).not.toContain("Beta");
+    // A list reads DOWN — it keeps the reading-width page, never the board's
+    // wider breakout (finding 5).
+    expect(container.querySelector(".page")).toBeTruthy();
+    expect(container.querySelector(".page-wide")).toBeNull();
+  });
+
+  it("board kind breaks out to the wider `.page-wide` surface so a multi-lane board isn't clipped (finding 5)", async () => {
+    installFetch({
+      note: {
+        id: "v1",
+        path: "Views/Project board",
+        tags: ["view"],
+        metadata: {
+          kind: "board",
+          group_by: "status",
+          query: JSON.stringify({ tag: "project" }),
+        },
+      },
+      results: [
+        {
+          id: "n1",
+          path: "Alpha",
+          tags: ["project"],
+          metadata: { status: "To do" },
+          createdAt: "2026-07-01T00:00:00Z",
+        },
+      ],
+    });
+
+    const { container } = renderViewSurface();
+    await screen.findByRole("heading", { name: "Project board" });
+    // The board (and table) earn the wider ceiling; the reading-width page cap
+    // clipped a four-lane status board (To do / In progress / Done + the
+    // uncategorized lane).
+    expect(container.querySelector(".page.page-wide")).toBeTruthy();
   });
 
   it("malformed query: shows the problems banner and never fetches results", async () => {
@@ -343,7 +378,7 @@ describe("ViewSurface", () => {
     expect(screen.queryByRole("region", { name: "Results" })).toBeNull();
   });
 
-  it("calendar kind: places a dated note on its day and omits undated notes with a footnote", async () => {
+  it("calendar kind: places a dated note on its day and keeps undated notes actionable below the grid", async () => {
     installFetch({
       note: {
         id: "v1",
@@ -374,8 +409,9 @@ describe("ViewSurface", () => {
     renderViewSurface();
     await screen.findByRole("heading", { name: "Meetings" });
     // Wait for the results to fetch + the calendar to render (the footnote only
-    // exists once CalendarView has mounted with data).
-    await screen.findByText(/no meeting_date date/i);
+    // exists once CalendarView has mounted with data). The field is named
+    // `meeting_date` — already carries "date", so the copy doesn't double it.
+    await screen.findByText(/no meeting_date —/i);
 
     // The dated note appears on the July-14 cell (the cell's button carries
     // both the day number and the note's title chip).
@@ -383,8 +419,19 @@ describe("ViewSurface", () => {
     expect(cell).toBeTruthy();
     expect(cell?.textContent).toContain("14");
 
-    // The undated note is not plotted onto the grid.
-    expect(screen.queryByText("Undated chat")).toBeNull();
+    // The undated note isn't plotted onto any day cell (no grid button carries
+    // its title)...
+    const undatedOnGrid = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent?.includes("Undated chat"));
+    expect(undatedOnGrid).toBeUndefined();
+
+    // ...but it stays ACTIONABLE below the grid: the "Not on the calendar yet"
+    // section lists it with a date picker, so an undated note is one tap from a
+    // day rather than a silent count (finding 4 — the calendar's answer to the
+    // board's uncategorized lane).
+    const undatedSection = screen.getByRole("region", { name: /not on the calendar/i });
+    expect(within(undatedSection).getByText("Undated chat")).toBeTruthy();
   });
 
   it("calendar kind with NO date field mounts the read-only createdAt calendar, never the list (train F)", async () => {

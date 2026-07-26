@@ -28,6 +28,24 @@ export interface ControlPillOption<V extends string = string> {
 }
 
 /**
+ * A COMMAND row — a menu item that DOES something rather than selecting an
+ * existing value (the one-click field on-ramp's "add a `status` field"). Kept
+ * distinct from `options` in both data and semantics: `menuitem`, not
+ * `menuitemradio`, because nothing about it is checked-or-not. Rendered below
+ * the options + note, so the pill still reads "here's what you can pick"
+ * before "here's what you can make."
+ */
+export interface ControlPillAction {
+  /** React key + stable test handle. */
+  key: string;
+  label: string;
+  /** A dim second line — the preview of what the action produces. */
+  hint?: string;
+  glyph?: ReactNode;
+  onSelect: () => void;
+}
+
+/**
  * The dirty border tint — accent folded into the border, a quiet "this
  * control diverges from the saved view" alongside the View-modified bar.
  */
@@ -98,6 +116,8 @@ export function ControlPill<V extends string>({
   current,
   onSelect,
   note,
+  actions,
+  busy = false,
   dirty = false,
 }: {
   /** The eyebrow-register trigger label; omit for identity pills (the lens). */
@@ -115,6 +135,10 @@ export function ControlPill<V extends string>({
   onSelect: (value: V) => void;
   /** A non-interactive dim line under the options — the empty states' explanation. */
   note?: string;
+  /** Command rows under the note — offers to CREATE what the options lack. */
+  actions?: ControlPillAction[];
+  /** An action is in flight — every command row disables until it resolves. */
+  busy?: boolean;
   dirty?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -133,6 +157,14 @@ export function ControlPill<V extends string>({
   const pick = (v: V) => {
     setOpen(false);
     onSelect(v);
+  };
+
+  // Command rows close the menu the same way picking a value does — the
+  // result (new lanes, a re-faced pill) is the confirmation, not a menu that
+  // lingers over the thing it just changed.
+  const run = (action: ControlPillAction) => {
+    setOpen(false);
+    action.onSelect();
   };
 
   return (
@@ -194,6 +226,38 @@ export function ControlPill<V extends string>({
               );
             })}
             {note ? <p className="px-2 pt-1.5 pb-1 text-xs text-fg-dim">{note}</p> : null}
+            {actions && actions.length > 0 ? (
+              <div
+                className={
+                  // A hairline only when real options sit above — the empty
+                  // state's note already separates them.
+                  options.length > 0 ? "mt-1 border-t border-border-light pt-1" : undefined
+                }
+              >
+                {actions.map((action) => (
+                  <button
+                    key={action.key}
+                    type="button"
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => run(action)}
+                    className="focus-ring flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-fg-muted hover:bg-bg-soft disabled:opacity-50"
+                  >
+                    {action.glyph ? (
+                      <span aria-hidden="true" className="flex-none">
+                        {action.glyph}
+                      </span>
+                    ) : null}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-fg">{action.label}</span>
+                      {action.hint ? (
+                        <span className="block truncate text-2xs text-fg-dim">{action.hint}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         </>
       ) : null}

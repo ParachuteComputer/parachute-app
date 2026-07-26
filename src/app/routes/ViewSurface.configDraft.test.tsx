@@ -54,16 +54,36 @@ interface FetchState {
 interface Captured {
   patches: { body: Record<string, unknown> }[];
   creates: { body: Record<string, unknown> }[];
+  /** `PUT /api/tags/:name` — the field on-ramp's schema writes. */
+  tagPuts: { name: string; body: Record<string, unknown> }[];
 }
 
 function installFetch(state: FetchState): {
   fetchImpl: ReturnType<typeof vi.fn>;
   captured: Captured;
 } {
-  const captured: Captured = { patches: [], creates: [] };
+  const captured: Captured = { patches: [], creates: [], tagPuts: [] };
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     const method = (init?.method ?? "GET").toUpperCase();
+    // The tag-schema upsert. Mirrors vault's PUT /api/tags/:name semantics
+    // that matter here: `fields` is MERGE-on-write (prior keys preserved), and
+    // the response is the resulting TagRecord — which `useUpdateTag` writes
+    // straight into the ["tag", …] cache, so the view re-resolves its fields
+    // without a refetch. Verified against parachute-vault src/routes.ts and
+    // parachute-cloud workers/vault/src/rest/tags.ts (identical on both doors).
+    if (method === "PUT" && url.includes("/api/tags/")) {
+      const body = JSON.parse((init?.body as string) ?? "{}");
+      const name = decodeURIComponent(url.split("/api/tags/")[1] ?? "");
+      captured.tagPuts.push({ name, body });
+      const prior = (state.tag?.fields ?? {}) as Record<string, unknown>;
+      state.tag = {
+        ...(state.tag ?? { name }),
+        fields: { ...prior, ...((body.fields ?? {}) as Record<string, unknown>) },
+      };
+      const record = state.tag;
+      return { ok: true, status: 200, json: async () => record, text: async () => "" } as Response;
+    }
     if (method === "PATCH") {
       const body = JSON.parse((init?.body as string) ?? "{}");
       captured.patches.push({ body });
@@ -173,6 +193,16 @@ const PROJECT_RESULTS = [
     metadata: { status: "done" },
     createdAt: "2026-07-02T00:00:00Z",
   },
+];
+
+/**
+ * The on-ramp's starting condition — the shape a REAL new vault is in: notes
+ * carrying the tag, but no field values, because the tag has no schema to
+ * declare any.
+ */
+const SCHEMALESS_RESULTS = [
+  { id: "n1", path: "Alpha", tags: ["project"], createdAt: "2026-07-01T00:00:00Z" },
+  { id: "n2", path: "Beta", tags: ["project"], createdAt: "2026-07-02T00:00:00Z" },
 ];
 
 /** Mounted + tag schema resolved (the field chips name the schema's fields). */
@@ -586,22 +616,194 @@ describe("ViewSurface config draft (views train B)", () => {
     );
   });
 
-  it("EMPTY STATE (board): a schema-less tag still renders [GROUP BY —] with the explanatory line", async () => {
-    installFetch({
+  // --- The field on-ramp: the fix for views' worst onboarding dead-end. A
+  // fresh vault seeds `capture` + `guide` and NEITHER carries a field schema,
+  // so a board over any real tag used to reach "this view's tag has no schema
+  // fields" and stop there. Now the empty control INVITES the user to add a
+  // field — opening the tag-schema editor, where THEY name it (the app
+  // proposes no field vocabulary of its own, Aaron 2026-07-25). On save the
+  // view organizes by what they made.
+
+  it("ON-RAMP (board): the empty Group-by invites adding a field; the user names it in the editor, and the board lanes by it on save", async () => {
+    const { captured } = installFetch({
       note: listViewNote({
         metadata: { kind: "board", query: JSON.stringify({ tag: "project" }) },
       }),
-      results: PROJECT_RESULTS,
-      tag: { name: "project" }, // no schema fields
+      results: SCHEMALESS_RESULTS,
+      tag: { name: "project" }, // an identity row with NO schema fields
     });
     renderViewSurface();
     await screen.findByRole("heading", { name: "Projects" });
 
-    const pill = await screen.findByRole("button", { name: "Group by —" });
-    fireEvent.click(pill);
+    // Before: no group-by, so the board falls through to the list, and the
+    // pill wears the empty face — now an invitation, not a dead end.
+    await screen.findByRole("region", { name: "Results" });
+    fireEvent.click(await screen.findByRole("button", { name: "Group by —" }));
     expect(
-      await screen.findByText("No fields to group by — this view's tag has no schema fields."),
+      await screen.findByText(
+        "#project has no fields yet — add one to give this board its columns:",
+      ),
     ).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: /add a field to group by/i }));
+
+    // The shipped tag editor, mounted over the view — oriented to the job, on a
+    // ready-to-name string starter row. The USER names the field + its values.
+    await screen.findByRole("dialog", { name: "Edit schema for #project" });
+    fireEvent.change(screen.getByLabelText("Values for new field"), {
+      target: { value: "To do, In progress, Done" },
+    });
+    fireEvent.change(screen.getByLabelText("Field name"), { target: { value: "status" } });
+    fireEvent.click(screen.getByRole("button", { name: /save schema/i }));
+
+    // The write is exactly what the user declared — one field, the enum in the
+    // order they typed. No `default`: a `default` doesn't touch the existing
+    // corpus, but it WOULD stamp every FUTURE note that gains the tag, which is
+    // what makes `exists:false` meaningless ("never set" and "set to the
+    // default" stop being distinguishable — vault#553 Decision B).
+    await waitFor(() => expect(captured.tagPuts).toHaveLength(1));
+    expect(captured.tagPuts[0].name).toBe("project");
+    expect(captured.tagPuts[0].body).toEqual({
+      description: null,
+      parent_names: null,
+      fields: { status: { type: "string", enum: ["To do", "In progress", "Done"] } },
+    });
+
+    // …and the view organizes by it on the spot: the three declared lanes
+    // render (the empty ones included — they're the drop targets), with every
+    // existing note in the uncategorized lane, values still unset.
+    const todo = await screen.findByRole("region", { name: "To do" });
+    // Empty, but PRESENT — the polish-V4 empty-lane affordance (jsdom reports
+    // a coarse pointer, so it reads "No notes" rather than "Drop here").
+    expect(todo.textContent).toContain("No notes");
+    expect(screen.getByRole("region", { name: "In progress" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Done" })).toBeTruthy();
+    const uncategorized = screen.getByRole("region", { name: "No status" });
+    expect(uncategorized.textContent).toContain("Alpha");
+    expect(uncategorized.textContent).toContain("Beta");
+
+    // The board config rode the DRAFT, not the note (train B's explore-then-
+    // save model): the bar is up and the view note is untouched.
+    expect(screen.getByText("View modified")).toBeTruthy();
+    expect(captured.patches).toHaveLength(0);
+  });
+
+  it("ON-RAMP (board): a field the user made in the editor lands in the Save patch as `group_by` when they keep it", async () => {
+    seedStore(fakeJwt("user-1"));
+    const { captured } = installFetch({
+      note: listViewNote({
+        createdBy: "user-1",
+        metadata: { kind: "board", query: JSON.stringify({ tag: "project" }) },
+      }),
+      results: SCHEMALESS_RESULTS,
+      tag: { name: "project" },
+    });
+    renderViewSurface();
+    fireEvent.click(await screen.findByRole("button", { name: "Group by —" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /add a field to group by/i }));
+    await screen.findByRole("dialog", { name: "Edit schema for #project" });
+    fireEvent.change(screen.getByLabelText("Values for new field"), {
+      target: { value: "To do, In progress, Done" },
+    });
+    fireEvent.change(screen.getByLabelText("Field name"), { target: { value: "status" } });
+    fireEvent.click(screen.getByRole("button", { name: /save schema/i }));
+    await screen.findByRole("region", { name: "To do" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const sheet = await screen.findByRole("dialog", { name: /save this view/i });
+    fireEvent.click(within(sheet).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(captured.patches).toHaveLength(1));
+    expect(captured.patches[0].body.metadata).toEqual({
+      kind: "board",
+      query: JSON.stringify({ tag: "project" }),
+      group_by: "status",
+    });
+  });
+
+  it("ON-RAMP (board): NO primary tag → the honest message and no invitation (nothing to add to)", async () => {
+    const { captured } = installFetch({
+      note: listViewNote({
+        // Two tags: `singleQueryTag` is null, so there's no one schema to
+        // write a field into.
+        metadata: {
+          kind: "board",
+          query: JSON.stringify({ tag: ["project", "urgent"], tag_match: "all" }),
+        },
+      }),
+      results: SCHEMALESS_RESULTS,
+      tag: { name: "project" },
+    });
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Projects" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Group by —" }));
+    expect(
+      await screen.findByText(
+        "This view isn't scoped to one tag, so there's no schema to add a field to — add a single tag to the query, or open a tag's view.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
     expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+    expect(captured.tagPuts).toHaveLength(0);
+  });
+
+  it("ON-RAMP (calendar): the empty By-date invites adding a date field; the calendar plots by it on save, keeping the tag's other fields", async () => {
+    const { captured } = installFetch({
+      note: listViewNote({
+        metadata: { kind: "calendar", query: JSON.stringify({ tag: "project" }) },
+      }),
+      results: SCHEMALESS_RESULTS,
+      // A tag WITH a schema, just no date-typed field.
+      tag: { name: "project", fields: { owner: { type: "string" } } },
+    });
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Projects" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "By date created" }));
+    expect(
+      await screen.findByText(
+        "Showing by created date. #project has no date field — add one to plot and drag by it:",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: /add a date field/i }));
+
+    // The editor opens oriented to a DATE field — a starter date row appended
+    // after the tag's existing `owner`, ready to name.
+    await screen.findByRole("dialog", { name: "Edit schema for #project" });
+    const starter = (screen.getAllByLabelText("Field name") as HTMLInputElement[]).find(
+      (el) => el.value === "",
+    )!;
+    fireEvent.change(starter, { target: { value: "due" } });
+    fireEvent.click(screen.getByRole("button", { name: /save schema/i }));
+
+    // The write keeps `owner` (the editor re-declares exactly what the user
+    // sees — no silent loss) and adds the date field they named.
+    await waitFor(() => expect(captured.tagPuts).toHaveLength(1));
+    expect(captured.tagPuts[0].body).toEqual({
+      description: null,
+      parent_names: null,
+      fields: { owner: { type: "string" }, due: { type: "date" } },
+    });
+
+    // The pill re-faces onto the new axis, and the read-only hint stands down.
+    await screen.findByRole("button", { name: "By date due" });
+    expect(screen.getByText("View modified")).toBeTruthy();
+  });
+
+  it("ON-RAMP: the invitation opens the shipped tag-schema editor in place; opening it writes nothing until you save", async () => {
+    const { captured } = installFetch({
+      note: listViewNote({
+        metadata: { kind: "board", query: JSON.stringify({ tag: "project" }) },
+      }),
+      results: SCHEMALESS_RESULTS,
+      tag: { name: "project" },
+    });
+    renderViewSurface();
+    fireEvent.click(await screen.findByRole("button", { name: "Group by —" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /add a field to group by/i }));
+
+    // The Tags-page editor, mounted over the view — no navigation, no write.
+    await screen.findByRole("dialog", { name: "Edit schema for #project" });
+    expect(captured.tagPuts).toHaveLength(0);
   });
 });

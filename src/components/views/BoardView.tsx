@@ -306,7 +306,16 @@ function BoardNoteCard({
             note={note}
             fields={fields}
             viewResultsKey={viewResultsKey}
-            omit={[laneBy]}
+            // The lane field's chip is redundant WHILE the Move control owns
+            // it — but only then. With no target lanes (a lane field whose
+            // schema declares no enum, on a board where no note carries a
+            // value yet: one uncategorized column, nothing to move to) the
+            // Move affordance isn't rendered, and omitting the chip too left
+            // the card with NO way to set that field's first value from the
+            // board. Reachable through the on-ramp, whose "add a field"
+            // invitation can mint a plain string lane field (no declared
+            // values). Omit only when something else already offers the field.
+            omit={targets.length > 0 ? [laneBy] : undefined}
           />
         ) : null
       }

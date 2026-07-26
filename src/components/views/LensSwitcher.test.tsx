@@ -8,6 +8,13 @@ import { describe, expect, it, vi } from "vitest";
 // organize-by pills carry first-class labels, the legacy-value unshift, and
 // the two MUST-RENDER empty states (a control that vanishes can't explain
 // what the view is organized by).
+//
+// The empty states carry the on-ramp: with a primary tag they INVITE the user
+// to add a field (opening the tag-schema editor, where the user names it —
+// the app proposes no vocabulary of its own); without a single tag to add to,
+// they keep an honest message that says what to do instead. The invitation
+// only appears once the tag schema has actually answered (`schemaReady`), so
+// it never cries "no fields yet" on a tag mid-fetch.
 
 const FIELDS: ResolvedField[] = [
   { name: "title", schema: { type: "string" } },
@@ -78,13 +85,79 @@ describe("GroupByControl", () => {
     expect(items[0]).toHaveAttribute("aria-checked", "true");
   });
 
-  it("EMPTY STATE: zero resolvable fields still renders [GROUP BY —] with the explanatory line", () => {
-    render(<GroupByControl value={undefined} fields={[]} onChange={vi.fn()} />);
+  // --- The on-ramp: an empty Group-by INVITES adding a field (the user names
+  // it in the tag editor), instead of dead-ending on "this tag has no fields."
+
+  it("EMPTY STATE with a primary tag: one invitation to add a field, no preset vocabulary; clicking routes to onAddField and writes nothing itself", () => {
+    const onAddField = vi.fn();
+    render(
+      <GroupByControl
+        value={undefined}
+        fields={[]}
+        onChange={vi.fn()}
+        createTag="project"
+        onAddField={onAddField}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Group by —" }));
+
+    // The pill still renders, still explains — names the tag, says what's next.
+    expect(
+      screen.getByText("#project has no fields yet — add one to give this board its columns:"),
+    ).toBeTruthy();
+    // No VALUES to pick, and exactly ONE command: the invitation (no `status`,
+    // no `priority` — the app names nothing).
+    expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+    const actions = screen.getAllByRole("menuitem");
+    expect(actions.map((a) => a.textContent)).toEqual([
+      "Add a field to group by…You name it; give it values to get columns.",
+    ]);
+
+    fireEvent.click(actions[0]);
+    expect(onAddField).toHaveBeenCalledTimes(1);
+  });
+
+  it("EMPTY STATE while the schema is still loading (schemaReady false): no invitation yet — don't cry 'no fields' on a tag mid-fetch", () => {
+    render(
+      <GroupByControl
+        value={undefined}
+        fields={[]}
+        onChange={vi.fn()}
+        createTag="project"
+        schemaReady={false}
+        onAddField={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Group by —" }));
+    expect(screen.queryByText(/has no fields yet/)).toBeNull();
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+
+  it("EMPTY STATE with NO primary tag: an honest message that says what to do — and no invitation to offer", () => {
+    render(<GroupByControl value={undefined} fields={[]} onChange={vi.fn()} createTag={null} />);
     fireEvent.click(screen.getByRole("button", { name: "Group by —" }));
     expect(
-      screen.getByText("No fields to group by — this view's tag has no schema fields."),
+      screen.getByText(
+        "This view isn't scoped to one tag, so there's no schema to add a field to — add a single tag to the query, or open a tag's view.",
+      ),
     ).toBeTruthy();
     expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+
+  it("fields already resolve → no invitation; the menu is values only", () => {
+    render(
+      <GroupByControl
+        value="status"
+        fields={FIELDS}
+        onChange={vi.fn()}
+        createTag="project"
+        onAddField={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Group by status" }));
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(3);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
   });
 });
 
@@ -114,12 +187,96 @@ describe("DateFieldControl", () => {
     expect(onChange).toHaveBeenCalledWith("due");
   });
 
-  it("EMPTY STATE with no date-typed fields at all: pill renders, menu is just the explanation", () => {
+  it("EMPTY STATE with no date-typed fields and no tag to add to: pill renders, menu is just the explanation", () => {
     render(
       <DateFieldControl value={undefined} fields={[FIELDS[0], FIELDS[1]]} onChange={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "By date created" }));
     expect(screen.getByText("Showing by created date")).toBeTruthy();
     expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+
+  it("ON-RAMP: no date-typed field but a primary tag → an invitation to add a date field", () => {
+    const onAddField = vi.fn();
+    render(
+      <DateFieldControl
+        value={undefined}
+        // A tag WITH a schema, just no date field — the on-ramp still applies.
+        fields={[FIELDS[0], FIELDS[1]]}
+        onChange={vi.fn()}
+        createTag="project"
+        onAddField={onAddField}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "By date created" }));
+    expect(
+      screen.getByText(
+        "Showing by created date. #project has no date field — add one to plot and drag by it:",
+      ),
+    ).toBeTruthy();
+
+    const actions = screen.getAllByRole("menuitem");
+    expect(actions.map((a) => a.textContent)).toEqual([
+      "Add a date field…You name it; it holds a date on each note.",
+    ]);
+    fireEvent.click(actions[0]);
+    expect(onAddField).toHaveBeenCalledTimes(1);
+  });
+
+  it("ON-RAMP: a tag that ALREADY declares a same-named non-date field still gets the invitation — we propose no name, so there's nothing to silently clobber (the collision is the editor's to surface)", () => {
+    const onAddField = vi.fn();
+    render(
+      <DateFieldControl
+        value={undefined}
+        // `due` exists on the tag, but declared as a STRING — not a date-typed
+        // OPTION. The old preset flow suppressed the `due` offer here to avoid
+        // a merge-clobber; now the app names nothing, so the invitation simply
+        // appears and any name collision surfaces in the editor.
+        fields={[{ name: "due", schema: { type: "string" } }]}
+        onChange={vi.fn()}
+        createTag="project"
+        onAddField={onAddField}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "By date created" }));
+    const actions = screen.getAllByRole("menuitem");
+    expect(actions.map((a) => a.textContent)).toEqual([
+      "Add a date field…You name it; it holds a date on each note.",
+    ]);
+    fireEvent.click(actions[0]);
+    expect(onAddField).toHaveBeenCalledTimes(1);
+  });
+
+  it("ON-RAMP while the schema is still loading (schemaReady false): no invitation yet", () => {
+    render(
+      <DateFieldControl
+        value={undefined}
+        fields={[]}
+        onChange={vi.fn()}
+        createTag="project"
+        schemaReady={false}
+        onAddField={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "By date created" }));
+    expect(screen.queryByText(/has no date field/)).toBeNull();
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+
+  it("ON-RAMP: a date field already resolves → no invitation, just the value list", () => {
+    render(
+      <DateFieldControl
+        value={undefined}
+        fields={FIELDS}
+        onChange={vi.fn()}
+        createTag="project"
+        onAddField={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "By date created" }));
+    expect(screen.getByText("Showing by created date")).toBeTruthy();
+    expect(screen.getAllByRole("menuitemradio").map((i) => i.textContent)).toEqual(["due"]);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
   });
 });

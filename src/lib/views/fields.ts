@@ -97,3 +97,23 @@ export function useSchemaFieldNames(def: ViewDef | null): string[] {
   const tag = useTag(single);
   return useMemo(() => Object.keys(tagFieldsOf(tag.data) ?? {}), [tag.data]);
 }
+
+/**
+ * Whether the primary tag's schema query has actually ANSWERED — the honest
+ * gate for the empty-state "add a field" invitation. `useResolvedViewFields`
+ * returns `[]` both while the schema is loading AND when it genuinely has no
+ * fields; the organize-by controls must not cry "#tag has no fields yet — add
+ * one" during the fetch window on a tag that in fact declares fields. This is
+ * `true` the instant there's no single tag to wait on (the "not scoped to one
+ * tag" message keys off the query, resolved synchronously — not off this
+ * fetch), and otherwise tracks the tag GET's success. A 404 (a tag with notes
+ * but no identity row — the on-ramp's core case) resolves to `null` data with
+ * `isSuccess === true` (`VaultClient` maps 404→null), so the invitation still
+ * fires for exactly the schema-less tag that needs it. Fetch-deduped with
+ * `useResolvedViewFields`/`useSchemaFieldNames` (same `useTag` query key).
+ */
+export function useSchemaReady(def: ViewDef | null): boolean {
+  const single = def ? singleQueryTag(def.query) : null;
+  const tag = useTag(single);
+  return single ? tag.isSuccess : true;
+}
