@@ -7,7 +7,7 @@ Hub and hosted Cloud). Real users on both — keep compatible.
 
 - **Tests are vitest** — `bun run test` (plus `bun run typecheck`, `bun run lint`). Bare
   `bun test` breaks: the `@/` alias only resolves through `vitest.config.ts`.
-- **Single dev branch `ag-unforced-dev`, one PR at a time** — workspace flow in `../CLAUDE.md`.
+- **Single dev branch `ag-unforced-dev`.** Concurrent PRs are fine when disjoint; serialize only when two branches heavily rewrite the same file. Workspace flow in `../CLAUDE.md`.
 - **Merging here does NOT deploy.** Cloud embeds the SPA from a source pin
   (`parachute-cloud/scripts/spa-source.env`); promoting the app to hosted = a cloud pin-bump PR.
 - **Aaron's box serves this app bun-linked at the hub origin root** — the dogfood ring runs the
