@@ -148,9 +148,9 @@ describe("NoteView route", () => {
     expect(await screen.findByText("Aaron Gabriel")).toBeInTheDocument();
     expect(screen.getByText("Teacher and builder.")).toBeInTheDocument();
     expect(screen.getByText("Canon note on Aaron.")).toBeInTheDocument();
-    // Tag chip links to the filtered list
+    // Tag chip links to the tag's own derived page
     const tagChip = screen.getByRole("link", { name: "#canon" });
-    expect(tagChip).toHaveAttribute("href", "/notes?tag=canon");
+    expect(tagChip).toHaveAttribute("href", "/tags/canon");
     // Back link to / is present
     expect(screen.getByRole("link", { name: /all notes/i })).toBeInTheDocument();
     // Edit placeholder routes to the edit route (PR #5)
