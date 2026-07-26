@@ -357,9 +357,18 @@ describe("useNavBands (hook)", () => {
     const { result } = renderHook(() => useNavBands(), { wrapper });
     await waitFor(() => expect(result.current.length).toBeGreaterThan(0));
     // Guard against a vacuous pass: "no setup band" is also what an
-    // UNRESOLVED probe renders, so first prove the probe actually ran and
-    // its answer had time to land.
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    // UNRESOLVED probe renders, so first prove THE PROBE ran — a fetch
+    // carrying the probe's own signature (`exclude_tag=guide`), not any
+    // fetch at all. The model fetches views/tag-roles too, so an any-fetch
+    // guard was itself vacuous: it held even with the probe stubbed to
+    // never fire (#117 review).
+    await waitFor(() =>
+      expect(
+        (global.fetch as ReturnType<typeof vi.fn>).mock.calls
+          .map((c) => String(c[0]))
+          .some((u) => u.includes("exclude_tag=guide")),
+      ).toBe(true),
+    );
     await new Promise((r) => setTimeout(r, 0));
     // No setup band at all — not "hidden", not "dismissed": state-derived
     // means it was never a candidate to show in the first place.

@@ -12,7 +12,11 @@
 import type { VaultClient } from "@/lib/vault";
 import type { Note } from "@/lib/vault/types";
 import { describe, expect, it, vi } from "vitest";
-import { HAS_USER_NOTE_PAGE, probeHasUserAuthoredNote } from "./use-has-user-note";
+import {
+  HAS_USER_NOTE_MAX_PAGES,
+  HAS_USER_NOTE_PAGE,
+  probeHasUserAuthoredNote,
+} from "./use-has-user-note";
 
 const at = new Date(Date.UTC(2026, 6, 26)).toISOString();
 const note = (id: string, path: string, tags: string[] = []): Note =>
@@ -78,5 +82,19 @@ describe("probeHasUserAuthoredNote", () => {
   it("an empty vault (guides excluded server-side) answers FALSE", async () => {
     const { client } = clientOf([]);
     await expect(probeHasUserAuthoredNote(client)).resolves.toBe(false);
+  });
+
+  it("a server that ignores `offset` cannot spin the walk forever — the cap throws (UNKNOWN, not a guess)", async () => {
+    // Every page full, every page pure system rows, regardless of offset:
+    // the walk can neither answer true nor see the set end. Without the cap
+    // this looped unboundedly; with it, the probe rejects — react-query
+    // reads a rejection as `data: undefined`, the three-valued UNKNOWN.
+    const systemPage = Array.from({ length: HAS_USER_NOTE_PAGE }, (_, i) =>
+      note(`sys${i}`, `.parachute/rows/${i}`),
+    );
+    const queryNotes = vi.fn(async (_params: URLSearchParams) => systemPage);
+    const client = { queryNotes } as unknown as VaultClient;
+    await expect(probeHasUserAuthoredNote(client)).rejects.toThrow(/offset paging appears broken/);
+    expect(queryNotes).toHaveBeenCalledTimes(HAS_USER_NOTE_MAX_PAGES);
   });
 });

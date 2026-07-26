@@ -13,7 +13,11 @@
  * half (`.parachute/` paths) CANNOT be pushed — the REST grammar has no path
  * exclusion (`path_prefix` is positive-only) — so each page is re-filtered
  * client-side through the same `hasUserAuthoredNote` the shelf has always
- * used. One predicate definition, two layers applying what they can.
+ * used. One predicate definition, two layers applying what they can. Because
+ * the client predicate re-runs on top of the server filter, the candidate
+ * set is a SUBSET of the old full stream's — the probe can only exclude
+ * more, never less, so it structurally cannot report "onboarded" for a
+ * genuine newcomer; any divergence is toward over-nagging, the safe side.
  *
  * Why not `limit=1`: the app's own settings note (`.parachute/notes/settings`,
  * rewritten by tag-roles on settings changes) is not a `#guide` note and is
@@ -44,13 +48,25 @@ import { SEED_GUIDE_TAG, hasUserAuthoredNote } from "./checklist";
  * case per page instead of the 1.25 MiB the stream cost. */
 export const HAS_USER_NOTE_PAGE = 25;
 
+/** Defensive bound on the walk (#117 review nit): a server that ignored
+ * `offset` and kept returning full pages would spin the loop forever. 40
+ * pages = 1,000 all-system rows before giving up — unreachable against a
+ * real vault, where page 1 decides. */
+export const HAS_USER_NOTE_MAX_PAGES = 40;
+
 /**
  * Walk `exclude_tag=guide` pages (newest first) until a page holds a note
  * passing the full client predicate (→ true) or a short page ends the set
  * (→ false). Exported for direct unit-testing with a stub client.
+ *
+ * Hitting the page cap means the server is misbehaving, so the probe THROWS
+ * rather than guesses — react-query leaves `data` undefined, which is the
+ * three-valued contract's UNKNOWN: the shelf stays quiet instead of nagging
+ * an established vault or green-lighting a fresh one.
  */
 export async function probeHasUserAuthoredNote(client: VaultClient): Promise<boolean> {
-  for (let offset = 0; ; offset += HAS_USER_NOTE_PAGE) {
+  for (let pageN = 0; pageN < HAS_USER_NOTE_MAX_PAGES; pageN++) {
+    const offset = pageN * HAS_USER_NOTE_PAGE;
     const p = new URLSearchParams();
     p.set("exclude_tag", SEED_GUIDE_TAG);
     p.set("sort", "desc");
@@ -61,6 +77,9 @@ export async function probeHasUserAuthoredNote(client: VaultClient): Promise<boo
     if (hasUserAuthoredNote(page)) return true;
     if (page.length < HAS_USER_NOTE_PAGE) return false;
   }
+  throw new Error(
+    `first-note probe: ${HAS_USER_NOTE_MAX_PAGES} full pages without ending the set — offset paging appears broken`,
+  );
 }
 
 /**
