@@ -224,7 +224,13 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
     [debouncedSearch, debouncedPrefix, effectiveTags, effectiveTagMatch, sort, offset, preset],
   );
 
-  const notes = useNotes(queryState);
+  // live:false — this list pages by limit/offset, and a live subscription's
+  // snapshot is always the COMPLETE matching set, which would clobber the
+  // bounded page the moment the socket delivers (app#109: 2,606 rows in a
+  // 330,339px page, pager dead). The server-side window stays authoritative;
+  // freshness comes from the polling floor (30s interval + refetch-on-focus)
+  // and from mutations invalidating the cache on our own writes.
+  const notes = useNotes(queryState, { live: false });
   const tags = useTags();
   const savedViews = useSavedViews(roles.view);
   const saveView = useSaveView(roles.view);
@@ -347,7 +353,20 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   const pageFirst = offset + 1;
   const pageLast = offset + (displayNotes?.length ?? 0);
   const hasPrev = offset > 0;
-  const hasNext = (notes.data?.length ?? 0) === DEFAULT_PAGE_SIZE;
+  // The server filled the window ⇒ there may be a further page. Sound only
+  // because the window is authoritative (`useNotes({ live: false })` above):
+  // `notes.data` is exactly the polled page, never a live snapshot of the
+  // whole set. (A final page of exactly DEFAULT_PAGE_SIZE yields one extra
+  // click onto an empty page — inherent to totalless pagination.)
+  const windowLen = notes.data?.length ?? 0;
+  const hasNext = windowLen >= DEFAULT_PAGE_SIZE;
+  // INTERIM total (vault#626 tracks the real one): list responses are a bare
+  // JSON array — no total exists anywhere in the poll. All we know is what
+  // the window shape implies: a short page ends the set (total = offset +
+  // windowLen), a full page only bounds it from below ("of N+"). Replace with
+  // the aggregate/count answer when the contract lands; do not build on this.
+  const knownTotal = hasNext ? null : offset + windowLen;
+  const totalLabel = knownTotal !== null ? ` of ${knownTotal}` : ` of ${offset + windowLen}+`;
   const filteringActive = isFiltersNonEmpty(currentFilters);
 
   // How many FOLDED filter dimensions are live — the Filters button wears
@@ -643,7 +662,7 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
         <div className="mt-6 flex items-center justify-between text-fg-dim text-sm">
           <span>
             {notes.data && notes.data.length > 0
-              ? `Showing ${pageFirst}–${pageLast}`
+              ? `Showing ${pageFirst}–${pageLast}${totalLabel}`
               : notes.isFetching
                 ? "Loading…"
                 : ""}

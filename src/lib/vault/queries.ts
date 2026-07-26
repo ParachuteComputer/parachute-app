@@ -310,11 +310,31 @@ export function useTranscriptionGate(): {
   };
 }
 
-export function useNotes(queryState: NoteQueryState) {
+/**
+ * Options for {@link useNotes}.
+ */
+export interface UseNotesOptions {
+  /**
+   * Open the live subscription (default true). A live subscription's snapshot
+   * is ALWAYS the complete matching set — vault streams every match and the
+   * SDK rejects `cursor` outright ("paging is meaningless for a live
+   * subscription"). So a `limit` in the query bounds only the REST poll, never
+   * the live stream: a paginated surface that leaves live on has its page
+   * clobbered by the full set the moment the socket delivers its snapshot
+   * (measured on All-notes at 2,606 notes: 2,606 rows in a 330,339px page,
+   * both pager buttons dead — app#109). A caller that pages by `offset`
+   * (VaultSurface) MUST pass `live: false` so the server-side `limit`/`offset`
+   * window is authoritative. Same contract as `useViewResults`' option.
+   */
+  live?: boolean;
+}
+
+export function useNotes(queryState: NoteQueryState, opts?: UseNotesOptions) {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
   const { db } = useSync();
   const mirrorOn = isMirrorEnabled();
+  const live = opts?.live ?? true;
 
   const queryKey = useMemo(() => ["notes", activeId, queryState], [activeId, queryState]);
   const params = useMemo(() => {
@@ -337,8 +357,9 @@ export function useNotes(queryState: NoteQueryState) {
   // we relax the aggressive 10s staleTime (the stream keeps the cache fresh);
   // on any non-open state we revert to the polling floor below. The hook is a
   // no-op for unsubscribable queries (e.g. `search`) — those stay on polling.
-  // See `live-query.ts` for the full fallback guarantee.
-  const { isLive } = useLiveNotesQuery({ queryKey, params, client });
+  // See `live-query.ts` for the full fallback guarantee, and `UseNotesOptions`
+  // for why a paginated caller must disable this entirely (app#109).
+  const { isLive } = useLiveNotesQuery({ queryKey, params, client, enabled: live });
   // Cold-launch seed (flag-gated): render the last-mirrored list instantly
   // while the network revalidates.
   const seed = useMirrorListSeed(db, activeId, params, mirrorOn);
