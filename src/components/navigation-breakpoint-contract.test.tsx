@@ -3,6 +3,7 @@ import { LensStrip } from "@/components/LensStrip";
 import { NavSheet } from "@/components/NavSheet";
 import { Rail } from "@/components/Rail";
 import { SpeedDial } from "@/components/SpeedDial";
+import { HAS_USER_NOTE_PAGE } from "@/lib/home/use-has-user-note";
 import { NavBandsProvider } from "@/lib/nav/model";
 import { saveToken } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
@@ -255,15 +256,19 @@ describe("Rail + BottomTabBar breakpoint contract (notes#147)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The OTHER half of the contract (app#110 Finding A): everything above is
-// CSS-only — `hidden lg:flex` / `lg:hidden` hide a projection without
-// unmounting it, so both projections (and the sheet, when open) are live
-// React trees at every viewport width. The nav model carries a full-vault
-// live subscription (`useNotesForDateViews`, limit=5000), so when each
-// projection derived the model itself, every route streamed the vault once
-// per projection — ×2 at boot, a third full stream on one ☰ tap (1.26 MiB
-// each at 2.6k notes). These tests pin the fix: the model derives in ONE
-// place (`NavBandsProvider`), however many projections mount.
+// The OTHER half of the contract (app#110): everything above is CSS-only —
+// `hidden lg:flex` / `lg:hidden` hide a projection without unmounting it, so
+// both projections (and the sheet, when open) are live React trees at every
+// viewport width. The nav model USED to carry a full-vault live subscription
+// (`useNotesForDateViews`, limit=5000, ~1.25 MiB per socket at 2.6k notes),
+// so per-projection derivation streamed the vault once per projection — ×2
+// at boot, a third full stream on one ☰ tap. Two fixes, both pinned here:
+//   - Finding A: the model derives in ONE place (`NavBandsProvider`);
+//     projections can only read the context, and read outside it THROWS.
+//   - Finding B piece 1: the model's only read of that stream was the
+//     `hasUserAuthoredNote` boolean, now a BOUNDED existence check
+//     (`use-has-user-note.ts`) — so the nav model opens ZERO full-vault
+//     subscriptions at all, on every route.
 // ---------------------------------------------------------------------------
 
 describe("one nav-model derivation, N projections (app#110)", () => {
@@ -304,6 +309,14 @@ describe("one nav-model derivation, N projections (app#110)", () => {
   // The dateviews stream is the expensive one — the full-vault window.
   const dateviewsSubs = () => openedSockets.filter((u) => u.includes("limit=5000"));
 
+  /** URLs the fetch mock served — the bounded probe shows up here, not as a socket. */
+  const fetchedUrls = () =>
+    (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+  const probeFetches = () =>
+    fetchedUrls().filter(
+      (u) => u.includes("exclude_tag=guide") && u.includes(`limit=${HAS_USER_NOTE_PAGE}`),
+    );
+
   beforeEach(() => {
     localStorage.clear();
     openedSockets = [];
@@ -327,7 +340,7 @@ describe("one nav-model derivation, N projections (app#110)", () => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
   });
 
-  it("Rail + LensStrip + an open NavSheet under one provider: ONE dateviews subscription", async () => {
+  it("Rail + LensStrip + an open NavSheet under one provider: ZERO dateviews subscriptions, ONE bounded probe", async () => {
     await renderWithClient(
       <>
         <Rail />
@@ -335,10 +348,15 @@ describe("one nav-model derivation, N projections (app#110)", () => {
         <NavSheet open onClose={() => {}} />
       </>,
     );
-    await waitFor(() => expect(dateviewsSubs().length).toBeGreaterThan(0));
+    // The first-note boolean arrives as a bounded fetch (tag half pushed
+    // server-side)…
+    await waitFor(() => expect(probeFetches().length).toBeGreaterThan(0));
     // Flush the microtask-queued snapshots so any late subscriber has fired.
     await new Promise((r) => setTimeout(r, 0));
-    expect(dateviewsSubs().length).toBe(1);
+    // …fired once for the whole tree, and the full-vault stream is GONE: no
+    // projection (nor the model itself) opens a limit=5000 subscription.
+    expect(probeFetches().length).toBe(1);
+    expect(dateviewsSubs().length).toBe(0);
   });
 
   it("opening the NavSheet later opens NO new subscription (one ☰ tap used to stream the whole vault)", async () => {
@@ -357,7 +375,9 @@ describe("one nav-model derivation, N projections (app#110)", () => {
     await act(async () => {
       view = render(ui(false));
     });
-    await waitFor(() => expect(dateviewsSubs().length).toBe(1));
+    // Settled = the model's bounded probe has fired (there is no dateviews
+    // socket to wait for anymore).
+    await waitFor(() => expect(probeFetches().length).toBeGreaterThan(0));
     const socketsBeforeOpen = openedSockets.length;
 
     await act(async () => {

@@ -54,7 +54,13 @@ export type HomeStepId = "write";
 // skill-file tag; see parachute-vault core/src/seed-packs.ts). System notes
 // (Notes' own settings) live under `.parachute/`. Neither counts as the user
 // authoring a note.
-const SEED_GUIDE_TAG = "guide";
+//
+// SEED_GUIDE_TAG is exported for `use-has-user-note.ts`, which pushes the tag
+// half of this predicate server-side (`exclude_tag=`). The path half stays
+// client-only — the vault's REST grammar has no path *exclusion* (only the
+// positive `path_prefix`), so the pages come back and `hasUserAuthoredNote`
+// applies the full predicate. One definition, applied in both places.
+export const SEED_GUIDE_TAG = "guide";
 const SYSTEM_PATH_PREFIX = ".parachute/";
 
 /**

@@ -86,19 +86,21 @@ function openFoldersAccordion() {
 
 function lastNotesUrl(fetchImpl: ReturnType<typeof installFetch>): string {
   // The saved-views sidebar also queries /api/notes (tag=view & views path
-  // prefix), and the capped 5000-row window queries (the nav model — now the
-  // NavBandsProvider, app#110 — reads notesForDateViews; the folders
-  // accordion reads the path tree) share the endpoint too. Filter those out
-  // so assertions target the primary list query. The bare `tag=view` list
-  // (the nav model's view band) is gated on tag-roles, so its fetch can land
-  // AFTER the list fetch — exclude it by URL, not by order.
+  // prefix), and the capped 5000-row path-tree window shares the endpoint
+  // too. Filter those out so assertions target the primary list query. The
+  // bare `tag=view` list (the nav model's view band) is gated on tag-roles,
+  // so its fetch can land AFTER the list fetch — exclude it by URL, not by
+  // order. Same for the nav model's bounded first-note probe
+  // (`exclude_tag=guide`, use-has-user-note.ts — the NavBandsProvider,
+  // app#110).
   const calls = fetchImpl.mock.calls.map((c) => String(c[0]));
   const noteCalls = calls.filter(
     (u) =>
       u.includes("/api/notes") &&
       !u.includes("path_prefix=UI%2FViews%2F") &&
       !u.includes("limit=5000") &&
-      !u.includes("tag=view&"),
+      !u.includes("tag=view&") &&
+      !u.includes("exclude_tag=guide"),
   );
   return noteCalls[noteCalls.length - 1] ?? "";
 }

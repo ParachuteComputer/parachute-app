@@ -680,8 +680,10 @@ export function App() {
               and NavSheet all read `useNavBands()` from this provider instead
               of deriving it themselves — the breakpoint contract hides
               projections in CSS without unmounting them, so per-consumer
-              derivation meant the full-vault dateviews subscription opened
-              once per projection (×2 every route, ×3 with the mobile sheet).
+              derivation paid the model's data layer once per projection
+              (historically the full-vault dateviews subscription, ×2 every
+              route and ×3 with the mobile sheet; today the view-list socket
+              and the bounded first-note probe — see useNavBandsModel).
               Mounted unconditionally (not behind the focus-mode gate): focus
               mode is a transient overlay, and keeping the model alive through
               it avoids tearing down and reopening the live layer on every
