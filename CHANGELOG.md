@@ -36,6 +36,7 @@ no app code changed.
   a non-empty `assets/`, the service worker + PWA manifest, and a
   `.parachute/info` whose version matches `package.json` (that last check
   caught a stale `dist/` during this very change).
+
 ## [0.20.52] - 2026-07-25
 
 **Three months free — the claim visitors actually read.**
