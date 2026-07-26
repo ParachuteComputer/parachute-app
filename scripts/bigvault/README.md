@@ -8,11 +8,16 @@ two real bugs shipped that toy vaults could never show:
   entirely off-screen — at 1440×900 zero result rows stayed visible, and on a
   phone the list vanished completely, so selecting a tag visibly changed
   nothing.
-- **The bottomless tag page.** `/tags/<busy-tag>` fetched all 620 matching
-  notes into one ~128,000px document — no cap, no pager, no count.
+- **The bottomless tag page.** `/tags/<busy-tag>` rendered all 622 matching
+  notes into a single 64,231px document — no cap, no pager, no count. (Row
+  count is the stable figure; pixel height varies with device scale factor.)
+- **All-notes pagination that doesn't paginate.** The same cause, worse:
+  2,606 rows in a 330,339px page with both pager buttons dead, because a live
+  subscription always delivers the complete matching set and overwrites the
+  bounded poll. A cold visit moved 8.8 MiB and crossed the vault seven times.
 
-Both shipped because every test vault was small enough to flatter the code.
-This tool makes the realistic vault a one-command fixture.
+All three shipped because every test vault was small enough to flatter the
+code. This tool makes the realistic vault a one-command fixture.
 
 ## One command
 

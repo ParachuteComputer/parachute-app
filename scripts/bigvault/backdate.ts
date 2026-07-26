@@ -28,7 +28,15 @@ export function backdateVault(homeArg: string, anchorMs: number): number {
       "UPDATE notes SET created_at = ?, updated_at = ?, updated_at_ms = ? WHERE id = ?",
     );
     for (const row of rows) {
-      const { createdAtMs, updatedAtMs } = backdateFor(row.path ?? row.id, anchorMs);
+      // Key off `path`, never insert order — that was the original
+      // non-determinism (rows come back in whatever order concurrent seeding
+      // wrote them). `id` is a legitimate fallback for a pathless row, but it
+      // is NOT stable across runs, so a vault containing one would stop being
+      // reproducible. Every note bigvault seeds carries a path; if that ever
+      // stops being true, this is where determinism quietly breaks.
+      if (!row.path)
+        throw new Error(`note ${row.id} has no path — backdating would not be reproducible`);
+      const { createdAtMs, updatedAtMs } = backdateFor(row.path, anchorMs);
       stmt.run(
         new Date(createdAtMs).toISOString(),
         new Date(updatedAtMs).toISOString(),

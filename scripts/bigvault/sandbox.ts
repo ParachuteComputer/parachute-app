@@ -18,7 +18,7 @@
  *   sandbox home comes from `--home` or the default, nothing else.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
@@ -58,7 +58,23 @@ export function assertSandboxHome(homeArg: string): string {
   const live = join(homedir(), ".parachute");
   if (home.split(sep).filter(Boolean).length < 2)
     throw new Error(`refusing sandbox home ${home} — too close to the filesystem root`);
-  if (home === homedir() || inside(home, live) || inside(live, home))
+  // Containment is checked on BOTH the lexical path and its canonical form.
+  // `resolve()` normalizes `..` and `.` but does not follow symlinks, so a
+  // symlink pointing at the real home would pass a lexical-only check. The
+  // marker file below is the true backstop (wiping the live home would need a
+  // marker planted inside it, which needs write access already) — this is the
+  // belt to that suspenders, and it costs one syscall on a path we're about to
+  // write to anyway. Canonicalize only what exists; a not-yet-created home has
+  // no symlink to follow.
+  const canonical = existsSync(home) ? realpathSync(home) : home;
+  const canonicalLive = existsSync(live) ? realpathSync(live) : live;
+  const contained = (a: string, b: string) => inside(a, b) || inside(b, a);
+  if (
+    home === homedir() ||
+    canonical === homedir() ||
+    contained(home, live) ||
+    contained(canonical, canonicalLive)
+  )
     throw new Error(
       `refusing sandbox home ${home} — it is, contains, or lives inside the real PARACHUTE_HOME (${live})`,
     );
