@@ -97,6 +97,24 @@ export interface UseViewResultsResult {
 }
 
 /**
+ * Options for {@link useViewResults}.
+ */
+export interface UseViewResultsOptions {
+  /**
+   * Open the live subscription (default true). A live subscription's snapshot
+   * is ALWAYS the complete matching set — vault streams every match and the
+   * SDK rejects `cursor` outright ("paging is meaningless for a live
+   * subscription"). So a `limit` in the query bounds only the REST poll, never
+   * the live stream: a paginated surface that left live on would have its page
+   * clobbered by the full set the moment the socket delivered its snapshot
+   * (this is exactly how the derived tag page rendered all 620 notes of a
+   * capture tag). A caller that pages by `offset` (the tag page) passes
+   * `live: false` so the server-side `limit`/`offset` window is authoritative.
+   */
+  live?: boolean;
+}
+
+/**
  * Execute a view's composed query (base + refinements, §5) against the
  * vault. `def === null` (still loading its note) and `def.query === null`
  * (unparseable, §3) both fetch nothing — the caller renders the loading /
@@ -105,9 +123,11 @@ export interface UseViewResultsResult {
 export function useViewResults(
   def: ViewDef | null,
   refinements: ViewRefinements,
+  opts?: UseViewResultsOptions,
 ): UseViewResultsResult {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
+  const live = opts?.live ?? true;
 
   const composed = useMemo(
     () => (def ? composeViewQuery(def.query, refinements) : null),
@@ -124,7 +144,7 @@ export function useViewResults(
     queryKey,
     params: mapped?.params ?? new URLSearchParams(),
     client: mapped ? client : null,
-    enabled: !!mapped,
+    enabled: !!mapped && live,
   });
 
   const query = useQuery({

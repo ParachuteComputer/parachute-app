@@ -57,6 +57,7 @@ function Wrap({ children }: { children: ReactNode }) {
       <QueryClientProvider client={qc}>
         <Routes>
           <Route path="/tags" element={children} />
+          <Route path="/tags/:name" element={<LocationSpy />} />
           <Route path="/" element={<LocationSpy />} />
           <Route path="/notes" element={<LocationSpy />} />
         </Routes>
@@ -137,7 +138,7 @@ describe("Tags route", () => {
     expect(links[0]).toHaveTextContent("apple");
   });
 
-  it("clicking a tag navigates to /notes?tag=<name> (W2-7 rename)", async () => {
+  it("clicking a tag navigates to its derived page /tags/<name>", async () => {
     installFetch({ tags: [{ name: "daily", count: 3 }] });
     render(
       <Wrap>
@@ -146,9 +147,7 @@ describe("Tags route", () => {
     );
     const link = await screen.findByRole("link", { name: /daily/i });
     fireEvent.click(link);
-    await waitFor(() =>
-      expect(screen.getByTestId("location").textContent).toBe("/notes?tag=daily"),
-    );
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/tags/daily"));
   });
 
   it("shows the empty state when there are no tags", async () => {

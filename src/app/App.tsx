@@ -82,6 +82,9 @@ const OAuthCallback = lazy(() =>
 );
 const Settings = lazy(() => import("./routes/Settings").then((m) => ({ default: m.Settings })));
 const Tags = lazy(() => import("./routes/Tags").then((m) => ({ default: m.Tags })));
+// The derived tag page (`/tags/:name`) — a view rendered from the tag's own
+// schema. Shares the ViewSurface chunk (imports its `ViewCanvas`).
+const TagPage = lazy(() => import("./routes/TagPage").then((m) => ({ default: m.TagPage })));
 const VaultGraph = lazy(() =>
   import("./routes/VaultGraph").then((m) => ({ default: m.VaultGraph })),
 );
@@ -400,6 +403,21 @@ function AppShell() {
                   element={
                     <RouteErrorBoundary>
                       <Tags />
+                    </RouteErrorBoundary>
+                  }
+                />
+                {/*
+                    The derived tag page (tag-page wave): `/tags/:name` renders
+                    a view derived from the tag's own schema — a typed tag opens
+                    as a table, a plain tag as a list. Two-segment, so it never
+                    collides with the single-segment `/:id` bare-path shim
+                    below; `/tags` stays the tag directory.
+                  */}
+                <Route
+                  path="/tags/:name"
+                  element={
+                    <RouteErrorBoundary>
+                      <TagPage />
                     </RouteErrorBoundary>
                   }
                 />

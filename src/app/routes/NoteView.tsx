@@ -317,13 +317,13 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 function HeaderTags({ tags }: { tags: string[] }) {
   // Compact, quieter chips (0.20.14): normal weight and tighter spacing so the
   // tag row reads as a light label strip under the title rather than a second
-  // headline — reweight only, every chip still links to its filtered list.
+  // headline — reweight only, every chip links to the tag's own page.
   return (
     <div className="mt-2 flex flex-wrap gap-1" aria-label="Tags">
       {tags.map((t) => (
         <Link
           key={t}
-          to={`/notes?tag=${encodeURIComponent(t)}`}
+          to={`/tags/${encodeURIComponent(t)}`}
           className="chip chip-tag focus-ring max-w-full break-all"
         >
           #{t}

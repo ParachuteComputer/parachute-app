@@ -51,7 +51,7 @@ import {
 } from "@/lib/views/query";
 import { type ViewDef, type ViewProblem, decodeViewDef } from "@/lib/views/schema";
 import type { QueryKey } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router";
 
 // The rendering pipeline (VIEWS-RENDER-SPEC §2):
@@ -124,9 +124,59 @@ function ViewSurfaceSkeleton() {
 // ---------------------------------------------------------------------------
 
 function ViewSurfaceBody({ note }: { note: Note }) {
+  const def = useMemo(() => decodeViewDef(note), [note]);
+  return <ViewCanvas def={def} backingNote={note} nav={<BackNav />} />;
+}
+
+// The shared view CANVAS — controls, refinement bar, problems, results, and
+// (only when there's a real note behind it) the explore-then-save affordance.
+// `ViewSurface` drives it from a decoded `#view` note; the `/tags/:name`
+// derived-view page (`TagPage.tsx`) drives it from `deriveTagViewDef`'s def
+// with `backingNote={null}`. A null backing note has NO id to fetch or PATCH,
+// so it gates off both the "Edit view note" header link and the whole Save
+// path — the real Save-as-view flow for a derived page is a later wave.
+export function ViewCanvas({
+  def,
+  backingNote,
+  pageSize,
+  total,
+  nav,
+}: {
+  def: ViewDef;
+  backingNote: Note | null;
+  /**
+   * The breadcrumb rendered inside this canvas's page wrapper (each route's own
+   * "← All notes" / "← Tags"). The canvas OWNS the wrapper because the wrapper's
+   * width is `wide` — board/table earn `.page-wide` — and `wide` is read from
+   * the draft-inclusive `effDef` that lives only here: switch a list view to a
+   * board and the page must widen, which a caller holding just `def` couldn't
+   * do. So the breadcrumb rides in as a node rather than the callers owning the
+   * wrapper.
+   */
+  nav?: ReactNode;
+  /**
+   * When set (> 0) the canvas PAGES its results at this size instead of
+   * rendering the whole set — the derived tag page passes it so a tag on
+   * hundreds of notes opens as one page (a header count, 50 rows, a pager),
+   * not a thousands-of-pixels-tall wall. Paging is poll-only (`live: false`
+   * below): a live snapshot is always the complete matching set, so it can't
+   * be windowed by a `limit`. Absent (a saved `#view`) → today's unpaged,
+   * live behavior, byte-identical.
+   */
+  pageSize?: number;
+  /**
+   * Total notes carrying this page's tag (`tag.count`) — the "N notes" size the
+   * header shows while nothing has narrowed the view. It is NOT the pager's
+   * next-page oracle: the archived exclusion and live refinements narrow the
+   * rendered set below it, so the pager rides a one-row peek instead (see the
+   * fetch below) and only ever shows "of N" once that peek has proven the end.
+   */
+  total?: number;
+}) {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(vault?.id ?? null);
-  const def = useMemo(() => decodeViewDef(note), [note]);
+  const paginated = typeof pageSize === "number" && pageSize > 0;
+  const [offset, setOffset] = useState(0);
 
   // One URL, two explore-then-save axes (train B): the QUERY refinements
   // (§5 — `tag`/`noExclude`/`search`/`sort`) and the CONFIG draft
@@ -161,7 +211,57 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   // it), so `effDef` re-renders the same cached result set without a refetch.
   const effDef = useMemo(() => applyConfig(def, draft), [def, draft]);
 
-  const results = useViewResults(effDef, refinements);
+  // Paging (tag page): jump back to the first page whenever the RESULT SET
+  // changes — a different tag, or a refinement that narrows it — so we never
+  // sit on an offset past the end. `applyConfig` leaves `query` untouched, so
+  // switching lens (list↔table) keeps your page.
+  const resetKey = useMemo(
+    () => JSON.stringify({ q: effDef.query, r: refinements }),
+    [effDef.query, refinements],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetKey is the trigger; setOffset is stable
+  useEffect(() => {
+    setOffset(0);
+  }, [resetKey]);
+
+  // The FETCHED def carries the page window (offset) AND a one-row peek on top
+  // of the page size. Fetching `pageSize + 1` and rendering `pageSize` answers
+  // "is there a next page?" as a FACT — does row 51 exist? — the same window
+  // mechanism the All-notes list uses (app#109). Inferring it from a `total`
+  // instead left the archived exclusion and any live refinement — both of which
+  // narrow the set below the tag's own count — able to leave Next enabled into
+  // empty trailing pages. Unpaged callers fetch the def unchanged.
+  const fetchDef = useMemo(() => {
+    if (!paginated || !effDef.query) return effDef;
+    return { ...effDef, query: { ...effDef.query, offset, limit: pageSize! + 1 } };
+  }, [paginated, effDef, offset, pageSize]);
+
+  // Paged surfaces poll (no live subscription): a live snapshot is always the
+  // complete matching set, which would clobber the page window (see
+  // `useViewResults`' `live` option).
+  const results = useViewResults(fetchDef, refinements, { live: !paginated });
+  // The page renders `pageSize` rows; the (pageSize+1)-th, when present, is the
+  // peek — proof a next page exists, never itself shown. Unpaged callers render
+  // the whole set.
+  const pageData = useMemo(
+    () => (paginated && results.data ? results.data.slice(0, pageSize) : results.data),
+    [paginated, results.data, pageSize],
+  );
+  const shownCount = pageData?.length ?? 0;
+  const hasNextPage = paginated ? (results.data?.length ?? 0) > pageSize! : false;
+  // Two totals, two meanings. The PAGER may only ever show one it can PROVE:
+  // the peek makes the exact count a fact once there is no next page
+  // (`offset + shown`); before that the true result total is unknowable — the
+  // archived exclusion and any refinement both narrow it below the tag's own
+  // count, and no count endpoint exists until vault#626 — so the pager shows
+  // "of N" only at that proven end and a bare range otherwise. The HEADER's
+  // "N notes" is a different quantity: the tag's own membership size
+  // (`tag.count`), a stable, true tag-level fact worth keeping while the viewer
+  // hasn't narrowed the view with a refinement (a refinement makes it read as
+  // the result count, which it isn't, so it's dropped then).
+  const narrowed = hasRefinements(refinements);
+  const provenTotal = paginated && !hasNextPage ? offset + shownCount : undefined;
+  const headerCount = narrowed ? undefined : total;
   // The view's shown/editable fields (Part B) — the tag-schema default or the
   // view's `fields` override — resolved once and threaded to every kind, so a
   // card/row can show + edit them through the shared mutation primitive.
@@ -172,12 +272,20 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   const problems: ViewProblem[] = [...effDef.problems, ...results.problems];
 
   const partition = useMemo(() => {
-    if (!results.data) return { pinned: [], rest: [] };
-    return partitionPinned(results.data, roles.pinned, queryTags(effDef.query));
-  }, [results.data, roles.pinned, effDef.query]);
+    if (!pageData) return { pinned: [], rest: [] };
+    return partitionPinned(pageData, roles.pinned, queryTags(effDef.query));
+  }, [pageData, roles.pinned, effDef.query]);
 
-  // ONE bar covers both axes — query edits are config too (decision 1).
+  // ONE bar covers both axes — query edits are config too (decision 1). Save
+  // only exists with a real note behind the view: a derived tag page
+  // (`backingNote === null`) has nothing to update, and its Save-as-view flow
+  // is a later wave — so we hide the bar rather than surface a Save that would
+  // PATCH the synthetic `derived:tag:<name>` id. Exploration stays fully
+  // reversible through the controls themselves (the lens switcher, the
+  // refinement chips' × removers).
+  const canSave = backingNote !== null;
   const modified = hasConfigDraft(draft) || hasRefinements(refinements);
+  const showModifiedBar = modified && canSave;
   const [showSave, setShowSave] = useState(false);
   // Revert discards the exploration — clear the URL, write nothing.
   const revert = () => setSearchParams(new URLSearchParams(), { replace: true });
@@ -231,9 +339,9 @@ function ViewSurfaceBody({ note }: { note: Note }) {
 
   return (
     <div className={wide ? "page page-wide" : "page"}>
-      <BackNav />
-      <article className={modified ? "pb-20" : undefined}>
-        <ViewHeader def={effDef} />
+      {nav}
+      <article className={showModifiedBar ? "pb-20" : undefined}>
+        <ViewHeader def={effDef} backingNote={backingNote} count={headerCount} />
         {/* The controls row (polish V3): lens pill first (the view's identity),
           the organize-by pill second (board/calendar only — and it renders
           even with nothing to offer), Fields third. Each pill tints its
@@ -280,7 +388,7 @@ function ViewSurfaceBody({ note }: { note: Note }) {
         <div className="mt-6">
           <ViewResults
             def={effDef}
-            data={results.data}
+            data={pageData}
             isPending={results.isPending}
             isError={results.isError}
             error={results.error}
@@ -292,10 +400,23 @@ function ViewSurfaceBody({ note }: { note: Note }) {
             roles={roles}
           />
         </div>
-        {modified ? <ViewModifiedBar onSave={() => setShowSave(true)} onRevert={revert} /> : null}
-        {showSave ? (
+        {paginated ? (
+          <ViewPager
+            offset={offset}
+            shown={shownCount}
+            total={provenTotal}
+            hasPrev={offset > 0}
+            hasNext={hasNextPage}
+            onPrev={() => setOffset((o) => Math.max(0, o - pageSize!))}
+            onNext={() => setOffset((o) => o + pageSize!)}
+          />
+        ) : null}
+        {showModifiedBar ? (
+          <ViewModifiedBar onSave={() => setShowSave(true)} onRevert={revert} />
+        ) : null}
+        {showSave && backingNote ? (
           <SaveSheet
-            note={note}
+            note={backingNote}
             def={def}
             draft={draft}
             refinements={refinements}
@@ -378,20 +499,107 @@ function ViewModifiedBar({ onSave, onRevert }: { onSave: () => void; onRevert: (
 // Header — hue+kind mark, title, "Edit view note" (the note-editor bridge).
 // ---------------------------------------------------------------------------
 
-function ViewHeader({ def }: { def: ViewDef }) {
+function ViewHeader({
+  def,
+  backingNote,
+  count,
+}: {
+  def: ViewDef;
+  backingNote: Note | null;
+  /** When set, the "size of what you're looking at" line under the title (a
+      paged derived tag page passes the tag's note count). */
+  count?: number;
+}) {
   return (
     <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-5">
       <div className="flex min-w-0 items-center gap-2.5">
         <ViewNavIcon kind={def.kind} hueTag={primaryQueryTag(def.query)} />
-        <h1 className="page-title truncate">{def.title}</h1>
+        <div className="min-w-0">
+          <h1 className="page-title truncate">{def.title}</h1>
+          {typeof count === "number" ? (
+            <p className="text-sm text-fg-dim">
+              {count === 1 ? "1 note" : `${count.toLocaleString()} notes`}
+            </p>
+          ) : null}
+        </div>
       </div>
-      <Link
-        to={`/n/${encodeURIComponent(def.noteId)}/edit`}
-        className="btn btn-secondary btn-touch"
-      >
-        Edit view note
-      </Link>
+      {/* The note-editor bridge exists only for a real `#view` note. A derived
+          tag page (`backingNote === null`) builds no edit link from its
+          synthetic id — there's nothing there to open. */}
+      {backingNote ? (
+        <Link
+          to={`/n/${encodeURIComponent(backingNote.id)}/edit`}
+          className="btn btn-secondary btn-touch"
+        >
+          Edit view note
+        </Link>
+      ) : null}
     </header>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pager — the SAME offset window the Notes list uses (`VaultSurface`): a
+// "Showing m–n" line (+ "of total" once the total is a proven fact) and
+// Previous/Next. Only the derived tag page mounts it (via `pageSize`); a saved
+// `#view` renders unpaged as before. `hasNext`/`hasPrev` arrive as FACTS the
+// canvas derives from the one-row peek and the offset — never inferred from
+// `total`, so Next can't run into empty trailing pages when the archived
+// exclusion or a refinement has narrowed the set below the tag's own count.
+// `total` is passed only when proven (the peek showed no next page); otherwise
+// the line is a bare range.
+// ---------------------------------------------------------------------------
+
+function ViewPager({
+  offset,
+  shown,
+  total,
+  hasPrev,
+  hasNext,
+  onPrev,
+  onNext,
+}: {
+  offset: number;
+  shown: number;
+  /** The result total — passed ONLY when proven (end reached); else undefined. */
+  total: number | undefined;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const first = shown > 0 ? offset + 1 : 0;
+  const last = offset + shown;
+  // Nothing to page and nowhere paged from — render nothing (a small tag).
+  if (!hasPrev && !hasNext) return null;
+  return (
+    <div className="mt-6 flex items-center justify-between text-fg-dim text-sm">
+      <span>
+        {shown > 0
+          ? typeof total === "number"
+            ? `Showing ${first}–${last} of ${total.toLocaleString()}`
+            : `Showing ${first}–${last}`
+          : ""}
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={!hasPrev}
+          onClick={onPrev}
+          className="btn btn-secondary btn-touch"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          disabled={!hasNext}
+          onClick={onNext}
+          className="btn btn-secondary btn-touch"
+        >
+          Next
+        </button>
+      </div>
+    </div>
   );
 }
 

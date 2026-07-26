@@ -1,5 +1,58 @@
 # Changelog — @openparachute/app
 
+## [0.22.3] - 2026-07-26
+
+**Every tag gets a page.** Clicking a tag used to drop into `/notes?tag=X` — a
+flat filter over the All-notes list that looked identical whether the tag
+carried a rich field schema or none. Now a tag opens its own page at
+`/tags/:name`, rendering a view **derived from the tag's own schema**: a typed
+tag (one that declares ≥1 field) opens as a **table** with its schema fields as
+columns; a plain tag opens as the familiar **list**. Tagging something now has a
+consequence — and that consequence costs no second act. Nothing is stored: the
+view is computed from the live tag record on every visit, so unlike a saved
+`#view` note it can never dangle or drift.
+
+- **New route `/tags/:name`** (`TagPage`) — reuses the exact `ViewSurface`
+  rendering machinery (extracted as the shared `ViewCanvas`), so a derived tag
+  page gets the lens switcher, refinement bar, problems banner, and configurable
+  fields for free. Deep-linkable and refresh-safe; handles names needing URL
+  encoding (spaces, slashes like `capture/voice`, unicode).
+- **`deriveTagViewDef`** (`src/lib/views/derive.ts`) — the pure def builder. Its
+  query excludes the archived role, except on the archived tag's own page (a
+  page must not exclude itself). Its `noteId` is a synthetic `derived:tag:<name>`
+  marker, following the `builtin:` convention `defaults.ts` already uses for the
+  Pinned/Archive built-ins — there is no backing note, so nothing fetches or
+  writes it.
+- **No backing note, no accidental writes.** `ViewCanvas` gates the "Edit view
+  note" link and the entire Save path off a real note. A derived page can be
+  explored (peek at Board/Table/Calendar, add refinement chips) but never
+  surfaces a Save that would PATCH the synthetic id — the real Save-as-view flow
+  for a derived page is a later wave. Exploration stays fully reversible through
+  the controls themselves.
+- **Tag chips point at the new page** — the Tags directory rows, a note's tag
+  chips (`NoteView`), and the quick-switch tag entries now open `/tags/:name`.
+  `/notes?tag=X` keeps working unchanged for anyone who lands there directly.
+- **A tag page is paged, never a wall.** A tag on hundreds of notes (a capture
+  stream, a journal) opens as ONE page — the tag's size on the header
+  ("622 notes"), the newest 50 in view, and the same offset pager the All-notes
+  list uses (Previous/Next). `deriveTagViewDef` pins the scale floor into the
+  def — `sort: "desc"` (newest-first) + a 50-row `limit` — so a page can never
+  inherit the vault's oldest-first, unbounded default. Paging is poll-only by
+  design: a live subscription's snapshot is always the *complete* matching set
+  (vault streams every match), so the tag page opts out of the live layer to
+  keep the server-side page window authoritative — the same reason a saved
+  `#view` (unpaged, live) is untouched.
+- **The pager tells the truth about how far you can go.** "Next" is a FACT, not
+  a guess: the canvas fetches one row beyond the page (a 51-row peek) and offers
+  a next page only when that row exists — so Next can never run into empty
+  trailing pages when the archived exclusion or a live refinement has narrowed
+  the set below the tag's own count (the same window mechanism the All-notes list
+  uses, app#109/#114). The pager shows "of N" only once the peek has proven the
+  end (`offset + shown`); before that it's a bare range ("Showing 1–50"), because
+  the true result total isn't knowable until a real count endpoint lands
+  (vault#626). The header keeps the tag's own size ("N notes") while nothing has
+  narrowed the view.
+
 ## [0.22.2] - 2026-07-26
 
 **Opening the menu no longer downloads the entire vault.**
