@@ -82,12 +82,13 @@ function stubNetwork(): void {
       let body: unknown = [];
       if (url.pathname.endsWith("/api/notes")) {
         // The vault's REST list honors limit/offset — the window is real on
-        // the poll. Only the LIST query (limit=PAGE) gets the fixture; the
-        // ambient windows (saved views tag=view, date views limit=5000) get
-        // empties so this suite isolates the list surface.
-        if (url.searchParams.get("limit") === String(PAGE)) {
+        // the poll. Only the LIST query (limit=PAGE+1: the page plus the
+        // hasNext peek row) gets the fixture; the ambient windows (saved
+        // views tag=view, date views limit=5000) get empties so this suite
+        // isolates the list surface.
+        if (url.searchParams.get("limit") === String(PAGE + 1)) {
           const offset = Number(url.searchParams.get("offset") ?? "0");
-          body = fixture.slice(offset, offset + PAGE);
+          body = fixture.slice(offset, offset + PAGE + 1);
         }
       }
       return Promise.resolve(
@@ -178,10 +179,14 @@ describe("All-notes window stays bounded regardless of vault size (app#109)", ()
     // Ambient surfaces (saved views, date views) may subscribe — their
     // windows are a separate finding (app#110). The LIST's window must not:
     // its subscription is exactly a subscribe URL carrying the list page
-    // size, which is what mirrored the full set into the page before the fix.
+    // size (PAGE+1 with the peek; PAGE matched the pre-peek shape), which is
+    // what mirrored the full set into the page before the fix.
     const listSubs = openedSockets.filter((u) => {
       const q = new URL(u).searchParams;
-      return u.includes("/api/subscribe") && q.get("limit") === String(PAGE);
+      return (
+        u.includes("/api/subscribe") &&
+        [String(PAGE), String(PAGE + 1)].includes(q.get("limit") ?? "")
+      );
     });
     expect(listSubs).toEqual([]);
   });
@@ -195,5 +200,21 @@ describe("All-notes window stays bounded regardless of vault size (app#109)", ()
     await new Promise((r) => setTimeout(r, 0));
     expect(listRows(container).length).toBe(23);
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
+  it(`a set of exactly ${PAGE} notes ends the set too — no empty-page overshoot`, async () => {
+    // The exact-multiple boundary: without the peek row, a full final page
+    // reads as "there may be more" and Next lands on an empty page wearing
+    // the empty-vault copy. The peek (limit=PAGE+1) asked for one row more
+    // and got none, so the end of the set is a FACT: exact total, Next dead.
+    fixture = makeFixture(PAGE);
+    const { container } = renderAllNotes();
+
+    await screen.findByText(new RegExp(`^Showing 1–${PAGE}`));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(listRows(container).length).toBe(PAGE);
+    expect(screen.getByText(`Showing 1–${PAGE} of ${PAGE}`)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
   });
 });

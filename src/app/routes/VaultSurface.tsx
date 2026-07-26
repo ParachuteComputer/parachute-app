@@ -218,6 +218,13 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
       tagMatch: effectiveTagMatch,
       sort,
       offset,
+      // The peek: ask for one row beyond the page. If a PAGE+1-th row comes
+      // back, a next page EXISTS — `hasNext` below is a fact, not an
+      // inference from "the page looks full" (which mis-fired on sets that
+      // are an exact multiple of the page: Next led to an empty page wearing
+      // the empty-vault copy). The peek row is trimmed before render
+      // (`displayNotes`) and never joins the pinned-first sort.
+      limit: DEFAULT_PAGE_SIZE + 1,
       ...(preset === "untagged" ? { hasTags: false } : {}),
       ...(preset === "orphaned" ? { hasLinks: false } : {}),
     }),
@@ -331,7 +338,9 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   // pinned-first stable sort on default list. Preset views skip both.
   const displayNotes = useMemo(() => {
     if (!notes.data) return notes.data;
-    let list = notes.data;
+    // Drop the peek row first (fetched only to prove a next page exists —
+    // see queryState) so it never renders and never joins the sort below.
+    let list = notes.data.slice(0, DEFAULT_PAGE_SIZE);
     if (!preset && !showArchived) {
       list = list.filter((n) => !(n.tags ?? []).includes(roles.archived));
     }
@@ -353,20 +362,26 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   const pageFirst = offset + 1;
   const pageLast = offset + (displayNotes?.length ?? 0);
   const hasPrev = offset > 0;
-  // The server filled the window ⇒ there may be a further page. Sound only
-  // because the window is authoritative (`useNotes({ live: false })` above):
-  // `notes.data` is exactly the polled page, never a live snapshot of the
-  // whole set. (A final page of exactly DEFAULT_PAGE_SIZE yields one extra
-  // click onto an empty page — inherent to totalless pagination.)
-  const windowLen = notes.data?.length ?? 0;
-  const hasNext = windowLen >= DEFAULT_PAGE_SIZE;
+  // The peek row (queryState asks for PAGE+1) makes this a FACT: a PAGE+1-th
+  // fetched row IS the next page's first row, so a set of exactly N×PAGE
+  // notes ends with Next disabled instead of one extra click onto an empty
+  // page. Sound only because the window is authoritative
+  // (`useNotes({ live: false })` above): `notes.data` is exactly the polled
+  // page, never a live snapshot of the whole set.
+  const fetchedLen = notes.data?.length ?? 0;
+  const hasNext = fetchedLen > DEFAULT_PAGE_SIZE;
   // INTERIM total (vault#626 tracks the real one): list responses are a bare
   // JSON array — no total exists anywhere in the poll. All we know is what
   // the window shape implies: a short page ends the set (total = offset +
-  // windowLen), a full page only bounds it from below ("of N+"). Replace with
-  // the aggregate/count answer when the contract lands; do not build on this.
-  const knownTotal = hasNext ? null : offset + windowLen;
-  const totalLabel = knownTotal !== null ? ` of ${knownTotal}` : ` of ${offset + windowLen}+`;
+  // fetchedLen), a full page only bounds it from below ("of N+"). Also
+  // provisional: this total counts SERVER rows while the visible range counts
+  // rows AFTER the client-side archived filter (`displayNotes`), so a short
+  // page can read "Showing 1–25 of 30" with archived hidden — honest to the
+  // server, odd to a person. Both quirks resolve together when the contract
+  // count lands (vault#626); do not build on this.
+  const knownTotal = hasNext ? null : offset + fetchedLen;
+  const totalLabel =
+    knownTotal !== null ? ` of ${knownTotal}` : ` of ${offset + DEFAULT_PAGE_SIZE}+`;
   const filteringActive = isFiltersNonEmpty(currentFilters);
 
   // How many FOLDED filter dimensions are live — the Filters button wears
