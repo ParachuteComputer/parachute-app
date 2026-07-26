@@ -1,5 +1,78 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.21.1] - 2026-07-25
+
+**One-click field on-ramp — boards and calendars work without hand-building a
+schema.**
+
+The worst onboarding dead-end in views. A fresh vault seeds exactly two tags
+(`capture` + `guide`) and NEITHER carries a field schema — the schema-carrying
+`starter-ontology` pack is deliberately opt-in. View fields resolve from tag
+schemas alone, so for almost every real user a Board's Group-by pill had
+nothing to offer and could only explain the absence ("No fields to group by —
+this view's tag has no schema fields"), while a Calendar had no date field to
+plot by. The only recovery — Tags → filter → +Schema → add field → Save → back
+to the view — is a path nobody discovers.
+
+- **The empty Group-by now offers to CREATE the field it needs.** One click,
+  no form, no wizard: `status` (`To do` · `In progress` · `Done`) or
+  `priority` (`Low` · `Medium` · `High`), plus a quiet "Something else…" that
+  opens the shipped tag-schema editor in place for a custom field. The
+  Calendar's By-date pill carries the same on-ramp with a `due` date field, so
+  a calendar is never permanently stuck in its read-only createdAt mode.
+- **Enum presets on purpose, and no `default` on any of them.** A declared
+  `enum` is what makes the board's lanes render while empty, so the very first
+  note can be dragged out of "No status" into a real lane. None declares a
+  `default` — and NOT because a `default` would touch the existing corpus (it
+  wouldn't: vault back-fills defaults only on note writes, never from the tag
+  PUT this on-ramp uses). The reason is the FUTURE: a `default` stamps its value
+  onto every note that later gains the tag, which makes `exists:false`
+  meaningless — "never set" and "set to the default" stop being distinguishable
+  (vault#553 Decision B). Keeping the field genuinely absent is what lands
+  existing notes in the board's uncategorized lane, where the Move/drag
+  affordances set the first value one note at a time. Nothing is seeded but the
+  one field asked for — the vault's shape stays the user's.
+- **The on-ramp only ADDS a field — never redefines one.** Both doors merge a
+  tag PUT at the field-KEY level (`{ ...existing.fields, ...body.fields }`), so
+  offering `due` on a tag that already declares `due` as a string would have
+  silently REPLACED that definition with a date. The presets are now suppressed
+  by NAME whenever the tag already declares that key, regardless of its type;
+  when the name is taken, "Something else…" is the honest path (rename or
+  retype deliberately in the tag editor). Guarded at the write boundary too, so
+  the invariant holds no matter what reaches it.
+- **The calendar's undated notes stay actionable.** After adding a `due` field
+  to a fresh vault the grid is empty (nothing carries the field yet) — where it
+  used to state a bare count and offer nothing. Those notes now render below the
+  grid as cards with an in-place date picker — the calendar's answer to the
+  board's uncategorized lane: set a date and the note lands on its day, no
+  refetch.
+- **A board is not prose — it gets room to breathe.** The `status` preset mints
+  a four-lane board (three values plus the uncategorized lane, which on a fresh
+  vault holds every note), and four `w-72` lanes overflow the reading-width page
+  cap — clipping the uncategorized lane. Board and table now use a wider ceiling
+  (`--w-board`) than the reading column list/calendar/note keep; the board's own
+  overflow-x still handles the genuinely-many-lane case.
+- **Two writes, two lifetimes.** The schema write is immediate and permanent
+  (it's the thing you asked for); the view's `group_by`/`date_field` goes into
+  the URL DRAFT, so the board lanes up instantly but the view note itself
+  changes only on Save — consistent with the explore-then-save model every
+  other config control follows. Reverting keeps the field and leaves the view
+  untouched. The write reuses `useUpdateTag` (`PUT /api/tags/:name`,
+  `fields`-only, merge-on-write) — no second schema writer, and a tag that
+  already declares other fields keeps every one of them.
+- **An honest message where the offer can't apply.** A view whose query isn't
+  scoped to a single tag has no one schema to write to; that control now says
+  so AND says what to do ("add a single tag to the query, or open a tag's
+  view") instead of implying the view is broken.
+- **Companion fix — the lane field's chip.** A board omits its lane field from
+  the card's chip band because the Move control already owns it. But Move
+  renders only when there's somewhere to move TO, so a lane field with no
+  declared enum, on a board where no note carries a value yet, produced a
+  single uncategorized column with neither Move nor chip — no way to set the
+  first value from the board at all. The chip now stays whenever Move is
+  absent. (Reachable through the on-ramp's "Something else…" escape, which can
+  mint a plain string lane field.)
+
 ## [0.21.0] - 2026-07-25
 
 **The app becomes installable.** Until now `@openparachute/parachute-app` was

@@ -3,6 +3,7 @@ import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { DEFAULT_TAG_ROLES } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
+import type { ResolvedField } from "@/lib/views/fields";
 import { stubPointer } from "@/test/dnd";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -82,10 +83,12 @@ function Board({
   initial,
   laneBy,
   subjectTag,
+  fields,
 }: {
   initial: Note[];
   laneBy: string;
   subjectTag?: string;
+  fields?: ResolvedField[];
 }) {
   const { data } = useQuery<Note[]>({
     queryKey: VIEW_KEY as unknown as string[],
@@ -100,16 +103,22 @@ function Board({
       subjectTag={subjectTag}
       roles={DEFAULT_TAG_ROLES}
       viewResultsKey={VIEW_KEY as unknown as string[]}
+      fields={fields}
     />
   );
 }
 
-function renderBoard(initial: Note[], laneBy: string, subjectTag?: string) {
+function renderBoard(
+  initial: Note[],
+  laneBy: string,
+  subjectTag?: string,
+  fields?: ResolvedField[],
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   render(
     <QueryClientProvider client={qc}>
       <BrowserRouter>
-        <Board initial={initial} laneBy={laneBy} subjectTag={subjectTag} />
+        <Board initial={initial} laneBy={laneBy} subjectTag={subjectTag} fields={fields} />
       </BrowserRouter>
     </QueryClientProvider>,
   );
@@ -392,5 +401,61 @@ describe("BoardView empty declared lanes (polish V4)", () => {
     const done = await screen.findByRole("region", { name: "done" });
     expect(within(done).getByText("No notes")).toBeInTheDocument();
     expect(within(done).queryByText("Drop here")).toBeNull();
+  });
+});
+
+// The lane field's own chip (the on-ramp's companion fix). A board normally
+// OMITS the lane field from the card's chip band because the Move control
+// already owns it — but Move renders only when there's somewhere to move TO.
+// With a lane field whose schema declares no enum, on a board where no note
+// carries a value yet, there is exactly one (uncategorized) lane: no Move, and
+// omitting the chip too left the card with no way to set that field's first
+// value from the board at all. Reachable through the on-ramp's "Something
+// else…" escape, which can mint a plain string lane field.
+describe("BoardView lane-field chip fallback", () => {
+  const LANE_FIELD: ResolvedField[] = [{ name: "stage", schema: { type: "string" } }];
+  const UNSET: Note[] = [
+    {
+      id: "a",
+      path: "task-a",
+      createdAt: "2026-07-01T00:00:00Z",
+      updatedAt: "2026-07-10T00:00:00Z",
+      metadata: {},
+    },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.getState().clear();
+    seedStore();
+    window.history.replaceState({}, "", "/");
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("nowhere to move to → the lane field keeps its chip, so the first value is still settable", async () => {
+    installFetch(true);
+    renderBoard(UNSET, "stage", "task", LANE_FIELD);
+
+    const card = cardFor("task-a");
+    // Positive control: the dead-end condition really is in force.
+    expect(within(card).queryByRole("button", { name: /move to another/i })).toBeNull();
+    // …so the chip is the affordance that remains.
+    expect(within(card).getByText("stage")).toBeInTheDocument();
+  });
+
+  it("with real lanes to move to, the chip stays omitted — Move owns the field (unchanged)", async () => {
+    installFetch(true, {
+      name: "task",
+      fields: { stage: { type: "string", enum: ["one", "two"] } },
+    });
+    renderBoard(UNSET, "stage", "task", LANE_FIELD);
+
+    await screen.findByRole("region", { name: "one" });
+    const card = cardFor("task-a");
+    expect(within(card).getByRole("button", { name: /move to another/i })).toBeInTheDocument();
+    expect(within(card).queryByText("stage")).toBeNull();
   });
 });

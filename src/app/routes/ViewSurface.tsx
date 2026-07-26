@@ -1,4 +1,5 @@
 import { NoteRow, NoteRowList } from "@/components/NoteRow";
+import { TagSchemaEditor } from "@/components/TagSchemaEditor";
 import { ViewNavIcon } from "@/components/ViewNavIcon";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -11,7 +12,7 @@ import { DateFieldControl, GroupByControl, LensSwitcher } from "@/components/vie
 import { NoteFieldChips } from "@/components/views/NoteFieldChips";
 import { TableView } from "@/components/views/TableView";
 import { useToastStore } from "@/lib/toast/store";
-import { useCreateNote, useUpdateNote, useVaultStore } from "@/lib/vault";
+import { useCreateNote, useUpdateNote, useUpdateTag, useVaultStore } from "@/lib/vault";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { TagRoles } from "@/lib/vault/tag-roles";
 import type { Note } from "@/lib/vault/types";
@@ -27,7 +28,13 @@ import {
   withLens,
 } from "@/lib/views/config";
 import { viewPathForName } from "@/lib/views/defaults";
-import { type ResolvedField, useResolvedViewFields, useSchemaFieldNames } from "@/lib/views/fields";
+import { type FieldPreset, fieldPresetPayload } from "@/lib/views/field-presets";
+import {
+  type ResolvedField,
+  singleQueryTag,
+  useResolvedViewFields,
+  useSchemaFieldNames,
+} from "@/lib/views/fields";
 import { useViewModifiedBar } from "@/lib/views/modified-bar";
 import { partitionPinned } from "@/lib/views/partition";
 import { defaultSaveMode, useMySub, useViewNote, useViewResults } from "@/lib/views/queries";
@@ -54,6 +61,18 @@ import { Link, Navigate, useParams, useSearchParams } from "react-router";
 //
 // Mounted at /views/:id — note ID, not path (ids survive renames).
 
+// The back link to /notes — shared by the loaded body and the loading/error
+// shells so every state of this route keeps the same escape hatch.
+function BackNav() {
+  return (
+    <nav className="mb-6 text-sm text-fg-dim">
+      <Link to="/notes" className="focus-ring hover:text-accent">
+        ← All notes
+      </Link>
+    </nav>
+  );
+}
+
 export function ViewSurface() {
   const { id } = useParams<{ id: string }>();
   const decodedId = id ? decodeURIComponent(id) : undefined;
@@ -63,18 +82,16 @@ export function ViewSurface() {
   // NAVIGATION.md: route guard, no active vault — replace.
   if (!activeVault) return <Navigate to="/" replace />;
 
+  // The loaded body owns its OWN page wrapper — a board/table earns a wider
+  // width than the reading-width shell, which only the resolved kind knows
+  // (below). Loading/error/not-found stay at the reading width.
+  if (note.data) return <ViewSurfaceBody note={note.data} />;
+
   return (
     <div className="page">
-      <nav className="mb-6 text-sm text-fg-dim">
-        <Link to="/notes" className="focus-ring hover:text-accent">
-          ← All notes
-        </Link>
-      </nav>
-
+      <BackNav />
       {note.isPending ? (
         <ViewSurfaceSkeleton />
-      ) : note.data ? (
-        <ViewSurfaceBody note={note.data} />
       ) : note.isError ? (
         <ErrorState
           title="Couldn't load this view"
@@ -165,74 +182,154 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   // Revert discards the exploration — clear the URL, write nothing.
   const revert = () => setSearchParams(new URLSearchParams(), { replace: true });
 
+  // --- The one-click field on-ramp -------------------------------------
+  //
+  // The view's SINGLE query tag — the same tag `resolveViewFields` reads its
+  // schema from, so the field we write is guaranteed to be the field the
+  // control then resolves. `null` for a multi-tag or tagless query: nothing
+  // to write to, and the pills say so rather than offering an impossible
+  // button (`NO_PRIMARY_TAG_NOTE`).
+  const primaryTag = useMemo(() => singleQueryTag(effDef.query), [effDef.query]);
+  const updateTag = useUpdateTag();
+  const pushToast = useToastStore((s) => s.push);
+  // "Something else…" opens the SHIPPED tag-schema editor in place — the full
+  // name/type/parents form, one modal, no navigation away from the view.
+  const [schemaEditorOpen, setSchemaEditorOpen] = useState(false);
+
+  /**
+   * Add one preset field to the primary tag's schema, then organize by it.
+   *
+   * Two writes with different lifetimes, deliberately: the SCHEMA write is
+   * immediate and permanent (it's the user's vault shape, the thing they
+   * asked for), while the view's `group_by`/`date_field` goes into the URL
+   * DRAFT — so the board lanes up instantly but the view note itself changes
+   * only on an explicit Save, exactly like every other config edit (train B's
+   * explore-then-save model). A user who was just curious reverts and keeps
+   * the field; the view is untouched.
+   */
+  const createField = async (preset: FieldPreset, axis: "groupBy" | "dateField") => {
+    if (!primaryTag) return;
+    // Never redefine an existing field. `fieldPresetPayload` is a merge-on-write
+    // tag PUT (`{ fields: { [name]: … } }`), which the vault merges at the
+    // field-KEY level — so writing a preset over a same-named field would
+    // silently REPLACE the user's declaration (e.g. their string `due` → a date
+    // `due`). The controls already suppress a taken-name preset (LensSwitcher's
+    // `existingFieldNames`); this is the matching guard on the write boundary,
+    // so the "only ever ADD" invariant holds no matter what reaches here.
+    if (schemaFieldNames.includes(preset.name)) {
+      pushToast(
+        `#${primaryTag} already has a ${preset.name} field — change its type in the tag editor.`,
+        "error",
+      );
+      return;
+    }
+    try {
+      await updateTag.mutateAsync({ name: primaryTag, payload: fieldPresetPayload(preset) });
+      // `useUpdateTag` writes the returned record into the ["tag", …] cache,
+      // so `useResolvedViewFields` re-resolves with the new field on this
+      // same tick — the draft below then has something to organize BY.
+      setDraft({ ...draft, [axis]: preset.name });
+      pushToast(`✓ ${preset.name} added to #${primaryTag}`, "success");
+    } catch (err) {
+      pushToast(
+        `Couldn't add ${preset.name}: ${err instanceof Error ? err.message : "unknown error"}`,
+        "error",
+      );
+    }
+  };
+
+  // Board and table read ACROSS — grids, not prose — so they get the wider
+  // `.page-wide` ceiling instead of the reading-width cap that would clip a
+  // multi-lane board (e.g. the on-ramp's To do / In progress / Done + the
+  // uncategorized lane). List / calendar / gallery keep the reading width.
+  const wide = effDef.kind === "board" || effDef.kind === "table";
+
   return (
-    <article className={modified ? "pb-20" : undefined}>
-      <ViewHeader def={effDef} />
-      {/* The controls row (polish V3): lens pill first (the view's identity),
+    <div className={wide ? "page page-wide" : "page"}>
+      <BackNav />
+      <article className={modified ? "pb-20" : undefined}>
+        <ViewHeader def={effDef} />
+        {/* The controls row (polish V3): lens pill first (the view's identity),
           the organize-by pill second (board/calendar only — and it renders
           even with nothing to offer), Fields third. Each pill tints its
           border when ITS key diverges from the saved def. */}
-      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-2 py-1">
-        <LensSwitcher
-          kind={effDef.kind}
-          onSwitch={(kind) => setDraft(withLens(def, draft, kind, fields))}
-          dirty={def.kind !== effDef.kind}
-        />
-        {effDef.kind === "board" ? (
-          <GroupByControl
-            value={effDef.groupBy}
-            fields={fields}
-            onChange={(name) => setDraft({ ...draft, groupBy: name })}
-            dirty={def.groupBy !== effDef.groupBy}
+        <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-2 py-1">
+          <LensSwitcher
+            kind={effDef.kind}
+            onSwitch={(kind) => setDraft(withLens(def, draft, kind, fields))}
+            dirty={def.kind !== effDef.kind}
           />
-        ) : null}
-        {effDef.kind === "calendar" ? (
-          <DateFieldControl
-            value={effDef.dateField}
-            fields={fields}
-            onChange={(name) => setDraft({ ...draft, dateField: name })}
-            dirty={def.dateField !== effDef.dateField}
-          />
-        ) : null}
-        {/* Fields matter to EVERY lens — chips, cards, and calendar entries
+          {effDef.kind === "board" ? (
+            <GroupByControl
+              value={effDef.groupBy}
+              fields={fields}
+              onChange={(name) => setDraft({ ...draft, groupBy: name })}
+              dirty={def.groupBy !== effDef.groupBy}
+              createTag={primaryTag}
+              existingFieldNames={schemaFieldNames}
+              onCreateField={(preset) => void createField(preset, "groupBy")}
+              onCustomField={() => setSchemaEditorOpen(true)}
+              creating={updateTag.isPending}
+            />
+          ) : null}
+          {effDef.kind === "calendar" ? (
+            <DateFieldControl
+              value={effDef.dateField}
+              fields={fields}
+              onChange={(name) => setDraft({ ...draft, dateField: name })}
+              dirty={def.dateField !== effDef.dateField}
+              createTag={primaryTag}
+              existingFieldNames={schemaFieldNames}
+              onCreateField={(preset) => void createField(preset, "dateField")}
+              onCustomField={() => setSchemaEditorOpen(true)}
+              creating={updateTag.isPending}
+            />
+          ) : null}
+          {/* Fields matter to EVERY lens — chips, cards, and calendar entries
             all render the one resolved set — so this control is unconditional. */}
-        <FieldsControl
-          fields={fields}
-          schemaFieldNames={schemaFieldNames}
-          onChange={(names) => setDraft({ ...draft, fields: names })}
-          dirty={def.fields !== effDef.fields}
-        />
-      </div>
-      <RefinementBar def={def} refinements={refinements} onChange={setRefinements} />
-      {problems.length > 0 ? <ProblemsBanner problems={problems} /> : null}
-      <div className="mt-6">
-        <ViewResults
-          def={effDef}
-          data={results.data}
-          isPending={results.isPending}
-          isError={results.isError}
-          error={results.error}
-          retry={results.refetch}
-          viewResultsKey={results.queryKey}
-          fields={fields}
-          pinned={partition.pinned}
-          rest={partition.rest}
-          roles={roles}
-        />
-      </div>
-      {modified ? <ViewModifiedBar onSave={() => setShowSave(true)} onRevert={revert} /> : null}
-      {showSave ? (
-        <SaveSheet
-          note={note}
-          def={def}
-          draft={draft}
-          refinements={refinements}
-          roles={roles}
-          onClose={() => setShowSave(false)}
-          onSaved={revert}
-        />
-      ) : null}
-    </article>
+          <FieldsControl
+            fields={fields}
+            schemaFieldNames={schemaFieldNames}
+            onChange={(names) => setDraft({ ...draft, fields: names })}
+            dirty={def.fields !== effDef.fields}
+          />
+        </div>
+        <RefinementBar def={def} refinements={refinements} onChange={setRefinements} />
+        {problems.length > 0 ? <ProblemsBanner problems={problems} /> : null}
+        <div className="mt-6">
+          <ViewResults
+            def={effDef}
+            data={results.data}
+            isPending={results.isPending}
+            isError={results.isError}
+            error={results.error}
+            retry={results.refetch}
+            viewResultsKey={results.queryKey}
+            fields={fields}
+            pinned={partition.pinned}
+            rest={partition.rest}
+            roles={roles}
+          />
+        </div>
+        {modified ? <ViewModifiedBar onSave={() => setShowSave(true)} onRevert={revert} /> : null}
+        {showSave ? (
+          <SaveSheet
+            note={note}
+            def={def}
+            draft={draft}
+            refinements={refinements}
+            roles={roles}
+            onClose={() => setShowSave(false)}
+            onSaved={revert}
+          />
+        ) : null}
+        {/* The "Something else…" escape — the shipped Tags-page schema editor,
+          mounted here so a custom field never costs a trip out of the view. */}
+        {schemaEditorOpen && primaryTag ? (
+          <TagSchemaEditor tagName={primaryTag} onClose={() => setSchemaEditorOpen(false)} />
+        ) : null}
+      </article>
+    </div>
   );
 }
 

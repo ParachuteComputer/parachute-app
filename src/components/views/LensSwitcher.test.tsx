@@ -8,6 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 // organize-by pills carry first-class labels, the legacy-value unshift, and
 // the two MUST-RENDER empty states (a control that vanishes can't explain
 // what the view is organized by).
+//
+// The empty states now also CARRY THE ON-RAMP (field-presets): with a primary
+// tag they offer to create the missing field in one click; without one they
+// keep an honest message that says what to do instead.
 
 const FIELDS: ResolvedField[] = [
   { name: "title", schema: { type: "string" } },
@@ -78,13 +82,112 @@ describe("GroupByControl", () => {
     expect(items[0]).toHaveAttribute("aria-checked", "true");
   });
 
-  it("EMPTY STATE: zero resolvable fields still renders [GROUP BY —] with the explanatory line", () => {
-    render(<GroupByControl value={undefined} fields={[]} onChange={vi.fn()} />);
+  // --- The one-click on-ramp: an empty Group-by offers to CREATE the field
+  // it needs, instead of dead-ending on "this tag has no schema fields."
+
+  it("EMPTY STATE with a primary tag: the menu offers the status/priority presets + the custom escape", () => {
+    const onCreateField = vi.fn();
+    const onCustomField = vi.fn();
+    render(
+      <GroupByControl
+        value={undefined}
+        fields={[]}
+        onChange={vi.fn()}
+        createTag="project"
+        onCreateField={onCreateField}
+        onCustomField={onCustomField}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Group by —" }));
+
+    // The pill still renders, still explains — but now names the tag it would
+    // write to and what happens next.
+    expect(
+      screen.getByText("#project has no fields yet. Add one and this board gets its lanes:"),
+    ).toBeTruthy();
+    // No VALUES to pick (nothing resolved), three COMMANDS to run.
+    expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+    const actions = screen.getAllByRole("menuitem");
+    expect(actions.map((a) => a.textContent)).toEqual([
+      "Add a status fieldTo do · In progress · Done",
+      "Add a priority fieldLow · Medium · High",
+      "Something else…Name it in the tag editor",
+    ]);
+
+    fireEvent.click(actions[0]);
+    expect(onCreateField).toHaveBeenCalledTimes(1);
+    expect(onCreateField.mock.calls[0][0]).toEqual({
+      name: "status",
+      label: "status",
+      hint: "To do · In progress · Done",
+      schema: { type: "string", enum: ["To do", "In progress", "Done"] },
+    });
+    expect(onCustomField).not.toHaveBeenCalled();
+  });
+
+  it("EMPTY STATE with a primary tag: 'Something else…' routes to the custom-field escape, creating nothing", () => {
+    const onCreateField = vi.fn();
+    const onCustomField = vi.fn();
+    render(
+      <GroupByControl
+        value={undefined}
+        fields={[]}
+        onChange={vi.fn()}
+        createTag="project"
+        onCreateField={onCreateField}
+        onCustomField={onCustomField}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Group by —" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /something else/i }));
+    expect(onCustomField).toHaveBeenCalledTimes(1);
+    expect(onCreateField).not.toHaveBeenCalled();
+  });
+
+  it("EMPTY STATE with NO primary tag: an honest message that says what to do — and no presets to offer", () => {
+    render(<GroupByControl value={undefined} fields={[]} onChange={vi.fn()} createTag={null} />);
     fireEvent.click(screen.getByRole("button", { name: "Group by —" }));
     expect(
-      screen.getByText("No fields to group by — this view's tag has no schema fields."),
+      screen.getByText(
+        "This view isn't scoped to one tag, so there's no schema to add a field to — add a single tag to the query, or open a tag's view.",
+      ),
     ).toBeTruthy();
     expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+
+  it("a creation in flight disables every command row (no double-write)", () => {
+    render(
+      <GroupByControl
+        value={undefined}
+        fields={[]}
+        onChange={vi.fn()}
+        createTag="project"
+        onCreateField={vi.fn()}
+        onCustomField={vi.fn()}
+        creating
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Group by —" }));
+    expect(screen.getAllByRole("menuitem").every((a) => (a as HTMLButtonElement).disabled)).toBe(
+      true,
+    );
+  });
+
+  it("fields already resolve → no on-ramp; the menu is values only", () => {
+    render(
+      <GroupByControl
+        value="status"
+        fields={FIELDS}
+        onChange={vi.fn()}
+        createTag="project"
+        onCreateField={vi.fn()}
+        onCustomField={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Group by status" }));
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(3);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
   });
 });
 
@@ -121,5 +224,86 @@ describe("DateFieldControl", () => {
     fireEvent.click(screen.getByRole("button", { name: "By date created" }));
     expect(screen.getByText("Showing by created date")).toBeTruthy();
     expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+  });
+
+  it("ON-RAMP: no date-typed field but a primary tag → one click adds `due`", () => {
+    const onCreateField = vi.fn();
+    render(
+      <DateFieldControl
+        value={undefined}
+        // A tag WITH a schema, just no date field — the on-ramp still applies,
+        // and the merge-on-write payload leaves `title`/`status` alone.
+        fields={[FIELDS[0], FIELDS[1]]}
+        onChange={vi.fn()}
+        createTag="project"
+        onCreateField={onCreateField}
+        onCustomField={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "By date created" }));
+    expect(
+      screen.getByText(
+        "Showing by created date. #project has no date field — add one to plot and drag by it:",
+      ),
+    ).toBeTruthy();
+
+    const actions = screen.getAllByRole("menuitem");
+    expect(actions.map((a) => a.textContent)).toEqual([
+      "Add a due fieldA date on each note",
+      "Something else…Name it in the tag editor",
+    ]);
+    fireEvent.click(actions[0]);
+    expect(onCreateField.mock.calls[0][0]).toEqual({
+      name: "due",
+      label: "due",
+      hint: "A date on each note",
+      schema: { type: "date" },
+    });
+  });
+
+  it("ON-RAMP: a tag that ALREADY declares `due` (as a non-date type) is never offered the `due` preset — only the custom escape (no silent redefine)", () => {
+    const onCreateField = vi.fn();
+    const onCustomField = vi.fn();
+    render(
+      <DateFieldControl
+        value={undefined}
+        // `due` exists on the tag, but declared as a STRING — so it's not a
+        // date-typed OPTION, yet the tag DOES own the `due` key. Offering the
+        // `due` preset here would merge-clobber that string field on write.
+        fields={[{ name: "due", schema: { type: "string" } }]}
+        onChange={vi.fn()}
+        createTag="project"
+        existingFieldNames={["due"]}
+        onCreateField={onCreateField}
+        onCustomField={onCustomField}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "By date created" }));
+    // The `due` preset is suppressed; only the honest "Something else…" path
+    // survives (rename/redefine deliberately in the tag editor).
+    const actions = screen.getAllByRole("menuitem");
+    expect(actions.map((a) => a.textContent)).toEqual(["Something else…Name it in the tag editor"]);
+    expect(screen.queryByText(/Add a due field/)).toBeNull();
+
+    fireEvent.click(actions[0]);
+    expect(onCustomField).toHaveBeenCalledTimes(1);
+    expect(onCreateField).not.toHaveBeenCalled();
+  });
+
+  it("ON-RAMP: a date field already resolves → no offer, just the value list", () => {
+    render(
+      <DateFieldControl
+        value={undefined}
+        fields={FIELDS}
+        onChange={vi.fn()}
+        createTag="project"
+        onCreateField={vi.fn()}
+        onCustomField={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "By date created" }));
+    expect(screen.getByText("Showing by created date")).toBeTruthy();
+    expect(screen.getAllByRole("menuitemradio").map((i) => i.textContent)).toEqual(["due"]);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
   });
 });
