@@ -187,11 +187,21 @@ describe("Golden flows — history-depth measurements (mirrors WALK-nav.md)", ()
     expect(window.history.length).toBe(baseline + 2);
 
     // Back returns to a REAL prior place — the picker — not out of the app.
+    //
+    // Both conditions have to be waited on TOGETHER (app#97). `history.back()`
+    // is asynchronous in jsdom, and the picker heading can still be mounted
+    // from before the click above — the `waitFor` on `/` at line 186 gates on
+    // the URL, not on Home having painted. So a heading-only wait is
+    // satisfiable on the very first tick by the STALE picker, before the
+    // popstate lands, and the pathname assertion then reads the pre-back URL.
+    // Under CPU contention (a loaded CI runner) that ordering is the common
+    // one, not the rare one. Waiting on the pair can't be satisfied by
+    // staleness: the URL has to have actually flipped.
     window.history.back();
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: /which vault today/i })).toBeInTheDocument(),
-    );
-    expect(window.location.pathname).toBe("/welcome");
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/welcome");
+      expect(screen.getByRole("heading", { name: /which vault today/i })).toBeInTheDocument();
+    });
 
     // Test hygiene (see the comment in the persona-1 test above).
     window.history.forward();

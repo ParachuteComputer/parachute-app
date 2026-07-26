@@ -1,0 +1,110 @@
+# CI on pull requests — the repo's manual pre-merge gate set, mechanized.
+#
+# parachute-app shipped for months with NO CI at all: every gate verdict in a
+# PR body was a builder self-report, and nothing mechanically checked a claim
+# of "tests pass" against the branch. This workflow runs exactly the gates the
+# repo's CLAUDE.md names, in the order a human runs them:
+#
+#   bun run lint        (biome)
+#   bun run typecheck   (tsc -b --noEmit)
+#   bun run test        (vitest — the `@/` alias only resolves through
+#                        vitest.config.ts, so bare `bun test` is wrong here)
+#   bun run build       (tsc -b && vite build)
+#   bun run test:smoke  (dist/ is the shape hub's static server expects)
+#
+# The last two matter more here than in a library repo: this package ships a
+# PREBUILT `dist/` to npm and consumers never build it, so "does the bundle
+# build, and is it complete?" is a release gate, not a dev convenience.
+#
+# Cost discipline: ONE job, sequential steps (a failure short-circuits the
+# rest), bun's install cache persisted across runs keyed on bun.lock, and
+# stale runs on the same PR cancelled by the concurrency group.
+#
+# OPERATOR STEP (not automatable from this repo's contents): making this a
+# REQUIRED check happens in branch protection for `main` — Settings →
+# Branches → require the `gates` job.
+
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  # One live run per PR — a new push cancels the stale run.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # Matches release.yml — keep the two in lockstep so CI exercises the
+          # same runtime the release gates run on.
+          bun-version: 1.3
+
+      - name: cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: install deps
+        run: bun install --frozen-lockfile
+
+      - name: lint (biome)
+        run: bun run lint
+
+      - name: typecheck
+        run: bun run typecheck
+
+      - name: test (vitest)
+        run: bun run test
+
+      - name: build (tsc + vite)
+        run: bun run build
+
+      - name: dist smoke (the shape hub's static server resolves)
+        run: bun run test:smoke
+
+      - name: pack + verify tarball contents
+        # The thing that actually breaks a self-hoster: a tarball whose
+        # `dist/` didn't make it in. `files` in package.json is an allowlist,
+        # but `dist/` is also in .gitignore — this proves, per PR, that the
+        # allowlist wins and the bundle ships. `npm pack` (not `bun pm pack`)
+        # because `npm publish` is what release.yml runs.
+        run: |
+          npm pack --silent >/dev/null
+          # Derive the name rather than globbing: deterministic, and it also
+          # asserts npm produced the filename we expect.
+          VERSION=$(bun -e "console.log(require('./package.json').version)")
+          TARBALL="openparachute-parachute-app-${VERSION}.tgz"
+          echo "tarball: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
+          CONTENTS=$(tar -tzf "$TARBALL")
+          for required in \
+            package/package.json \
+            package/dist/index.html \
+            package/dist/manifest.webmanifest \
+            package/dist/sw.js
+          do
+            if ! echo "$CONTENTS" | grep -qx "$required"; then
+              echo "::error::tarball is missing $required"
+              echo "$CONTENTS" | head -50
+              exit 1
+            fi
+          done
+          ASSETS=$(echo "$CONTENTS" | grep -c '^package/dist/assets/' || true)
+          if [ "$ASSETS" -lt 1 ]; then
+            echo "::error::tarball has no dist/assets/* entries"
+            exit 1
+          fi
+          echo "tarball carries dist/index.html + $ASSETS asset files"

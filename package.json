@@ -1,13 +1,20 @@
 {
   "name": "@openparachute/parachute-app",
-  "version": "0.20.52",
-  "private": true,
+  "version": "0.21.0",
   "type": "module",
   "description": "Parachute — the super-surface. A single-page app for interfacing with your Parachute: name a vault, capture and browse notes, connect your AI, and manage the cloud + hub via their APIs. Seeded from notes-ui; the calm centered arrival + warm home lead the experience.",
   "license": "AGPL-3.0-only",
+  "keywords": ["parachute", "surface", "spa", "pwa", "notes", "vault", "self-hosted"],
+  "homepage": "https://parachute.computer",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ParachuteComputer/parachute-app.git"
+    "url": "git+https://github.com/ParachuteComputer/parachute-app.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ParachuteComputer/parachute-app/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": ["dist", "meta.json", "README.md", "LICENSE", "CHANGELOG.md"],
   "scripts": {
@@ -16,12 +23,12 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:smoke": "vitest run dist-smoke",
+    "test:smoke": "bun scripts/verify-dist.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "typecheck": "tsc -b --noEmit",
-    "prepublishOnly": "bun run build"
+    "prepack": "bun run build"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

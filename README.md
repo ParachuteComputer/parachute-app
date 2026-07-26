@@ -23,6 +23,25 @@ warm home with a focused composer and quiet quick-actions.
 This app is developed **in parallel** with the currently-deployed notes-ui; it
 does not touch that production path. Cut-over is a later decision.
 
+## Install (self-host)
+
+```sh
+parachute install app     # bun add -g @openparachute/parachute-app
+parachute start app       # served at <origin>/app, port 1944
+```
+
+The published package is a **prebuilt bundle**: the tarball carries `dist/`
+(the SPA shell, hashed assets, service worker, PWA manifest) and nothing is
+built on the operator's machine. `parachute start app` runs the hub's
+static-serve shim (`parachute-hub` `src/notes-serve.ts --package
+@openparachute/parachute-app`), which resolves the installed package's `dist/`
+and serves it directly.
+
+Because the shipped artifact *is* `dist/`, the `prepack` hook rebuilds it for
+every `npm pack` / `npm publish`, and both CI and the release workflow refuse
+to proceed unless the tarball actually contains `dist/index.html` +
+`dist/assets/*`.
+
 ## Develop
 
 ```sh
@@ -30,7 +49,10 @@ bun install
 bun run dev        # http://localhost:1942
 bun run build      # tsc -b && vite build → dist/
 bun run typecheck
-bun test
+bun run lint
+bun run test       # vitest — bare `bun test` breaks (the `@/` alias only
+                   # resolves through vitest.config.ts)
+bun run test:smoke # assert a built dist/ is publishable (run after build)
 ```
 
 Root-hosted by default (`base: /`). The runtime mount detector
