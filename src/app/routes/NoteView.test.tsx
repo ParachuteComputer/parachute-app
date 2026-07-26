@@ -878,3 +878,48 @@ describe("NoteView — focus mode", () => {
     expect(useFocusMode.getState().on).toBe(false);
   });
 });
+
+// app#113 — the single-decode contract (see TagPage.test.tsx for the full
+// framing; this is the `/n/:id` pin). Beyond render-vs-crash, this asserts the
+// WIRE: the server must be asked for exactly the id in the URL — parsing the
+// request URL catches a double decode (crash) and a double encode (`100%2525`)
+// with one assertion.
+describe("route-param decoding (app#113)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    seedStore();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    syncState.mirrorState = "off";
+  });
+
+  it("a note id containing a literal % renders, and the server is asked for exactly that id", async () => {
+    const fetchImpl = installFetch({
+      "id=100%25": {
+        body: {
+          id: "100%",
+          path: "Goals/100%",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          content: "# All in\n\nNo half measures.",
+          metadata: {},
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+
+    renderAt("/n/100%25");
+
+    expect(await screen.findByText("All in")).toBeInTheDocument();
+    const noteUrl = fetchImpl.mock.calls
+      .map((c) => String(c[0]))
+      .find((u) => u.includes("include_content=true"));
+    expect(noteUrl).toBeDefined();
+    expect(new URL(noteUrl!).searchParams.get("id")).toBe("100%");
+  });
+});
