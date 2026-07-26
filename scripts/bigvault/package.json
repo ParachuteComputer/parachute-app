@@ -1,0 +1,8 @@
+{
+  "name": "bigvault-probe-deps",
+  "private": true,
+  "description": "Private install target for scripts/bigvault/probe.ts — keeps playwright out of the app's own dependency tree. `bun install` here, never in the repo root, pulls it.",
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

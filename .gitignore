@@ -10,3 +10,5 @@ dev-dist/
 app-audit/
 # `npm pack` / `bun pm pack` output — the publish tarball is built in CI, never committed.
 *.tgz
+# scripts/bigvault probe deps are a private install (playwright) — no lockfile churn.
+scripts/bigvault/bun.lock

@@ -1,5 +1,45 @@
 # Changelog — @openparachute/parachute-app
 
+## [0.21.2] - 2026-07-26
+
+**bigvault — a realistic-scale sandbox vault, one command.**
+
+Every test vault and walkthrough sandbox we build has ~15 notes and 3–4 tags.
+A real vault has dozens of tags and thousands of notes. Code that looks fine
+at the first scale falls apart at the second, and two bugs shipped in one
+night for exactly that reason:
+
+- The filter panel fills the whole viewport at 49 tags, so toggling a tag
+  changes nothing you can see — zero results visible at 1440×900, the note
+  list entirely off-screen on a phone.
+- A derived tag page on a 622-note tag rendered all 622 rows into a
+  64,231px page, because a live subscription always delivers the complete
+  matching set and silently overwrites the bounded poll.
+
+Neither was catchable against a vault small enough to flatter it.
+
+`bun run bigvault up` now stands up a sandboxed vault with ~47 tags and
+~2,600 notes — power-law distribution, slash-namespaced families, schemas
+from zero to nine fields, touches spread over two years. `--tags 500
+--notes 10000` goes looking for the next ceiling. `status` and
+`down [--wipe]` complete the lifecycle; `probe.ts` drives any running app and
+captures screenshots.
+
+Deterministic by construction: the same seed and anchor date produce a
+byte-identical vault, so a screenshot comparison means something. Getting
+there fixed two real bugs in the generator — a multiply that overflowed into
+float rounding, and backdating that keyed off database insert order, which is
+racy under parallel seeding.
+
+Sandboxed by construction rather than by convention: it only ever wipes a
+directory it created and marked, refuses anything that is, contains, or lives
+inside a real `PARACHUTE_HOME`, refuses the live stack's ports, binds
+127.0.0.1 only, and kills by pid rather than by port. Every refusal is
+exercised in tests.
+
+The standing expectation now lives in `CLAUDE.md`: UI work touching lists,
+filters, or tag surfaces gets checked at this scale before a PR.
+
 ## [0.21.1] - 2026-07-25
 
 **Field on-ramp — a board or calendar on a field-less tag helps you make your
