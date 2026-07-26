@@ -18,8 +18,9 @@ import {
 import { ViewNavIcon } from "@/components/ViewNavIcon";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
-import { type HomeStepId, deriveSteps, hasUserAuthoredNote } from "@/lib/home/checklist";
-import { useMapEarned, useNotesForDateViews, useVaultStore } from "@/lib/vault";
+import { type HomeStepId, deriveSteps } from "@/lib/home/checklist";
+import { useHasUserAuthoredNote } from "@/lib/home/use-has-user-note";
+import { useMapEarned, useVaultStore } from "@/lib/vault";
 import { useTagRoles } from "@/lib/vault/settings";
 import { DEFAULT_VIEW_PATHS } from "@/lib/views/defaults";
 import { useViewList } from "@/lib/views/queries";
@@ -405,19 +406,24 @@ export function buildNavBands(signals: NavBandSignals): NavBand[] {
  * vault-scoped without one).
  *
  * Deliberately NOT exported (app#110 Finding A): this derivation carries the
- * data layer — `useNotesForDateViews` is a full-vault live subscription with
- * no dedup below react-query, so every component that runs it opens its own
- * socket. The breakpoint contract ("one nav projection per viewport",
- * notes#147) is CSS-only — `hidden lg:flex` / `lg:hidden` hide a projection
- * without unmounting it — so when Rail, LensStrip, and NavSheet each derived
- * this themselves, every route streamed the vault twice at boot and a ☰ tap
- * streamed it a third time. Keeping the derivation module-private makes "one
- * model, N projections" structural: consumers can only read the context.
+ * data layer — a live view-list subscription (`useViewList`) plus fetches
+ * (tag-roles, the account summary, the bounded first-note probe), and there
+ * is no dedup below react-query, so every component that ran it would open
+ * its own sockets and fire its own fetches. The breakpoint contract ("one
+ * nav projection per viewport", notes#147) is CSS-only — `hidden lg:flex` /
+ * `lg:hidden` hide a projection without unmounting it — so when Rail,
+ * LensStrip, and NavSheet each derived this themselves, every data cost here
+ * was paid once per projection. (Historically that included a full-vault
+ * dateviews stream ×2 at boot and ×3 on a ☰ tap — Finding B's piece 1
+ * replaced it with `useHasUserAuthoredNote`, a bounded existence check, so
+ * the nav model no longer streams the vault at all.) Keeping the derivation
+ * module-private makes "one model, N projections" structural: consumers can
+ * only read the context.
  */
 function useNavBandsModel(): NavBand[] {
   const vault = useVaultStore((s) => s.getActiveVault());
   const mapEarned = useMapEarned();
-  const notes = useNotesForDateViews();
+  const hasUserNote = useHasUserAuthoredNote();
   const { roles } = useTagRoles(vault?.id ?? null);
   const viewList = useViewList(roles.view);
 
@@ -457,13 +463,17 @@ function useNavBandsModel(): NavBand[] {
 
   if (!vault) return [];
 
-  const steps = deriveSteps({ hasUserNote: hasUserAuthoredNote(notes.data) });
+  const steps = deriveSteps({ hasUserNote: hasUserNote.data === true });
   const incomplete = steps.filter((s) => !s.done);
   // Hidden entirely once complete (no more "dismissed" flag — W3: a
   // state-derived shelf just stops rendering when the state says onboarded;
   // adopt #12's "no persistent You're-all-set row" still holds).
+  // `data === undefined` (pending / offline) is UNKNOWN, not un-onboarded —
+  // the band renders only on a resolved `false`. The old stream had a mirror
+  // seed, so an onboarded vault never flashed "Set up" on an offline cold
+  // launch; collapsing unknown into false would regress exactly that.
   const setup =
-    incomplete.length === 0
+    hasUserNote.data === undefined || incomplete.length === 0
       ? null
       : {
           steps: incomplete.map((s) => s.id),
@@ -482,9 +492,11 @@ const NavBandsContext = createContext<NavBand[] | null>(null);
  * The ONE place the nav model derives (app#110 Finding A). Mounts once in the
  * app shell; Rail, LensStrip, and NavSheet read the result via `useNavBands`.
  * Besides the wire cost (see `useNavBandsModel`), a single deriver closes a
- * write race: two live subscriptions on the same react-query key are two
- * writers doing last-writer-wins `setQueryData` under `staleTime: Infinity`
- * — nothing self-heals a stale overwrite. One deriver, one writer.
+ * write-race class: two live subscriptions on the same react-query key are
+ * two writers doing last-writer-wins `setQueryData` under
+ * `staleTime: Infinity` — nothing self-heals a stale overwrite. One deriver,
+ * one writer per key (today the model's only live subscription is the
+ * view-list; the dateviews stream left with Finding B's bounded probe).
  */
 export function NavBandsProvider({ children }: { children: ReactNode }) {
   const bands = useNavBandsModel();
@@ -493,7 +505,8 @@ export function NavBandsProvider({ children }: { children: ReactNode }) {
 
 /** The bands, read from context. Throws outside `NavBandsProvider` — loudly,
  * so a projection mounted outside the shell (or a test missing the wrapper)
- * fails at first render instead of quietly re-opening its own vault stream. */
+ * fails at first render instead of quietly re-running the model's data layer
+ * (its own view-list socket, its own probe fetches). */
 export function useNavBands(): NavBand[] {
   const bands = useContext(NavBandsContext);
   if (bands === null) {

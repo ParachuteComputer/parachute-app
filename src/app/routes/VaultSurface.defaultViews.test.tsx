@@ -90,9 +90,11 @@ function Wrapper({ children }: { children: ReactNode }) {
  * The main list query's outgoing URL — excludes the default-view-pack
  * lookup (`path=Views%2F…`), the saved-views sidebar's own query
  * (`path_prefix=UI%2FViews%2F`, fired unconditionally by `useSavedViews`
- * regardless of preset), the capped path-tree/nav window (`limit=5000`),
- * and the nav model's view-list (`tag=view` — gated on tag-roles, so it can
- * land AFTER the list fetch). Mirrors `lastNotesUrl` in VaultSurface.test.tsx.
+ * regardless of preset), the capped path-tree window (`limit=5000`), the nav
+ * model's view-list (`tag=view` — gated on tag-roles, so it can land AFTER
+ * the list fetch), and the nav model's bounded first-note probe
+ * (`exclude_tag=guide`, use-has-user-note.ts). Mirrors `lastNotesUrl` in
+ * VaultSurface.test.tsx.
  */
 function lastListQueryUrl(fetchImpl: ReturnType<typeof installFetch>): string {
   const calls = fetchImpl.mock.calls.map((c) => String(c[0]));
@@ -102,7 +104,8 @@ function lastListQueryUrl(fetchImpl: ReturnType<typeof installFetch>): string {
       !u.includes("path=Views%2F") &&
       !u.includes("path_prefix=UI%2FViews%2F") &&
       !u.includes("limit=5000") &&
-      !u.includes("tag=view&"),
+      !u.includes("tag=view&") &&
+      !u.includes("exclude_tag=guide"),
   );
   return listCalls[listCalls.length - 1] ?? "";
 }

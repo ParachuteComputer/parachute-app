@@ -1,5 +1,50 @@
 # Changelog — @openparachute/app
 
+## [0.22.4] - 2026-07-26
+
+**A yes/no question no longer holds the whole vault open.**
+
+Every route — every route, forever — kept a full-vault live stream open to
+answer one boolean: *has this person written a note yet?* The setup shelf's
+"write your first note" step is a `.some()` over the vault, and the nav
+model fed it by subscribing to everything (`limit=5000`, 1.29 MiB at 2,606
+notes, live for the life of the app). It's now a bounded fetch: one
+25-note page, ~12 KiB, no socket — paging deeper only in the rare vault
+whose newest pages are all system/seed notes. Measured before → after:
+
+| | before | after |
+| --- | --- | --- |
+| Answering "any note yet?" | full-vault live stream, 1.29 MiB | one 25-note page, ~12 KiB, no socket |
+| `/notes` (any non-date route) | 3 sockets | **2** — zero full-vault dateviews streams |
+| `/` Recent | 4 sockets (dateviews ×2) | **3** (dateviews ×1) |
+
+- **On date routes the deleted stream was a pure duplicate.** RecentLens,
+  Activity, Calendar, and DayView each already open their own dateviews
+  subscription on mount — the nav model's was a second copy of a stream
+  the route already owned. Removing it takes date routes to exactly one
+  (owned by the view that actually reads it) and non-date routes to zero.
+  Live-ness on the watch-your-AI-write surfaces is preserved by
+  construction, not by care.
+- **Why not `limit=1`?** The obvious cheap check —
+  `sort=desc&limit=1`, is there a non-guide note? — returns the app's own
+  settings note (`.parachute/notes/settings`), which is rewritten on every
+  settings change. A fresh vault where someone only opened Settings would
+  report "onboarded": wrong on exactly the population the check serves.
+  The paged walk applies the *same* predicate as the checklist
+  (`hasUserAuthoredNote`) — agent-written and imported notes still count,
+  nothing about "authored" quietly changes. vault#628 (server-side path
+  exclusion) would collapse the walk to a single 403-byte request.
+- **Offline stays honest.** Pending/offline is *unknown*, not
+  un-onboarded — the setup band renders only on a resolved "no notes yet,"
+  so an onboarded vault never flashes "Set up" during a cold offline
+  launch. The check has no live layer by design; creating or deleting a
+  note invalidates it, so an in-app first note still completes the step
+  immediately.
+- The nav pins in `navigation-breakpoint-contract.test.tsx` tightened
+  from "exactly one dateviews subscription" to **zero**: nav projections
+  now open no full-vault streams at all, an invariant that can't quietly
+  regress back to one.
+
 ## [0.22.3] - 2026-07-26
 
 **Every tag gets a page.** Clicking a tag used to drop into `/notes?tag=X` — a

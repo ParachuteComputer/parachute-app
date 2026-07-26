@@ -836,6 +836,10 @@ export function useCreateNote() {
       // timeline (a `notesForDateViews` consumer) must show the new
       // note immediately, not on the next poll/live tick.
       qc.invalidateQueries({ queryKey: ["notesForDateViews", activeId] });
+      // The setup shelf's bounded existence check (use-has-user-note.ts) has
+      // no live layer by design — this invalidation is what makes an in-app
+      // first note complete the "write" step immediately.
+      qc.invalidateQueries({ queryKey: ["hasUserAuthoredNote", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });
       qc.invalidateQueries({ queryKey: ["vaultInfo", activeId] });
       // Seed the offline mirror with the new note. Online: the server row.
@@ -1020,6 +1024,9 @@ export function useDeleteNote() {
       qc.invalidateQueries({ queryKey: ["notes", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });
       qc.invalidateQueries({ queryKey: ["vaultInfo", activeId] });
+      // Deleting the last user-authored note should resurface the setup
+      // shelf (the bounded check has no live layer — see use-has-user-note).
+      qc.invalidateQueries({ queryKey: ["hasUserAuthoredNote", activeId] });
       // Drop the mirror row too (online path); no-ops when the flag is off.
       if (db && activeId) void mirrorRecordRemove(db, activeId, id);
     },

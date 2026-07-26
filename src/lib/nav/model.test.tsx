@@ -299,15 +299,29 @@ describe("useNavBands (hook)", () => {
       vaults: { a: makeVault({ id: "a", url: "http://localhost:1940" }) },
       activeVaultId: "a",
     });
+    // The shelf renders only on a RESOLVED "no user note" — unknown
+    // (pending/offline/no token) deliberately shows nothing (see
+    // use-has-user-note.ts). So this test needs a live client + an empty
+    // vault answer for the bounded probe to resolve `false`.
+    localStorage.setItem(
+      "lens:token:a",
+      JSON.stringify({ accessToken: "t", scope: "full", vault: "default" }),
+    );
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    })) as unknown as typeof fetch;
     const { result } = renderHook(() => useNavBands(), { wrapper });
     await waitFor(() => expect(result.current.length).toBeGreaterThan(0));
+    // A fresh vault has incomplete guided steps → the shelf shows, once the
+    // probe RESOLVES false (the bands render before it lands, without it).
+    await waitFor(() => expect(result.current.map((b) => b.id)).toContain("setup"));
     const ids = result.current.map((b) => b.id);
     expect(ids).toContain("notes");
     expect(ids).toContain("explore");
     expect(ids).toContain("parachute");
     expect(ids).toContain("foot");
-    // A fresh vault has incomplete guided steps → the shelf shows.
-    expect(ids).toContain("setup");
   });
 
   // THE CRUX (W3): the shelf must never resurface for an established vault on
@@ -342,6 +356,11 @@ describe("useNavBands (hook)", () => {
 
     const { result } = renderHook(() => useNavBands(), { wrapper });
     await waitFor(() => expect(result.current.length).toBeGreaterThan(0));
+    // Guard against a vacuous pass: "no setup band" is also what an
+    // UNRESOLVED probe renders, so first prove the probe actually ran and
+    // its answer had time to land.
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
     // No setup band at all — not "hidden", not "dismissed": state-derived
     // means it was never a candidate to show in the first place.
     await waitFor(() => expect(result.current.map((b) => b.id)).not.toContain("setup"));
