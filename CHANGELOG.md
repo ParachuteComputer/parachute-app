@@ -1,5 +1,53 @@
 # Changelog — @openparachute/app
 
+## [0.22.1] - 2026-07-26
+
+**All notes actually paginates — the page that looked finished and then
+detonated is fixed.**
+
+On a real-sized vault, All notes looked done half a second in — 50 rows, a
+pager — and then, nine seconds later on an ordinary connection, silently
+exploded into every note in the vault: one page four thousand rows long, both
+pager buttons dead, reading "Showing 1–2606". Every visit moved megabytes to
+display fifty rows. The cause: a live subscription's snapshot is always the
+*complete* matching set, so the full-vault stream clobbered the bounded page
+the moment it arrived — pagination wasn't leaky, it was absent.
+
+The list now opts out of the live layer (`useNotes({ live: false })` — the
+same contract the derived tag page ratified), so the server-side
+limit/offset window is authoritative. Measured on the same 2,606-note
+sandbox, before → after:
+
+| | before | after |
+| --- | --- | --- |
+| Rows on page 1 | 2,606 | **50** |
+| Page height | 330,339px | **6,896px** |
+| Pager | both buttons dead | works |
+| Turning a page | impossible | one 25 KiB poll |
+| Toggling a filter | new socket, 431 notes, 203 KiB | one 24 KiB poll |
+| List's own wire, cold | ~1.29 MiB | **25 KiB** |
+| Cold load @ 10 Mbps | correct at 0.49s, detonates at +8.9s | correct and stays correct |
+
+What it costs: without the stream, a note written from *outside* the tab
+reaches the open list on the polling floor — measured at 18.3s / 29.7s /
+30.1s (30s interval; every poll that fired already carried the note), or
+within 10s of refocusing the tab. Your own edits still appear immediately,
+and Recent / Activity / Calendar keep their live stream untouched — watching
+an agent write into the vault still works where watching happens.
+
+- `hasNext` is now a fact, not an inference: the list fetches one row beyond
+  the page (`limit+1`, rendered `limit`), so a vault holding an exact
+  multiple of the page size ends with Next disabled instead of one extra
+  click onto a page wearing the empty-vault copy.
+- The pager shows an honest interim total: exact ("of 23") the moment the
+  set ends, a lower bound ("of 50+") while it can't know more — a bare-array
+  list response carries no total anywhere. The real count is a wire-contract
+  addition (vault#626); the interim is marked as interim in the code.
+- Regression pins: a fake vault socket that answers any subscription with a
+  3,000-note snapshot proves the page stays at 50 rows, the windowed query
+  never subscribes, and both boundary shapes (short page, exact-multiple
+  page) end the set correctly.
+
 ## [0.22.0] - 2026-07-26
 
 **Renamed the npm package: `@openparachute/parachute-app` → `@openparachute/app`.**
