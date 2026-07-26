@@ -179,7 +179,8 @@ describe("ViewSurface", () => {
     const { container } = renderViewSurface();
     await screen.findByRole("heading", { name: "Project board" });
     // The board (and table) earn the wider ceiling; the reading-width page cap
-    // clipped the on-ramp's four-lane status board.
+    // clipped a four-lane status board (To do / In progress / Done + the
+    // uncategorized lane).
     expect(container.querySelector(".page.page-wide")).toBeTruthy();
   });
 

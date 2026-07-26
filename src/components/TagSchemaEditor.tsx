@@ -10,6 +10,12 @@ import { useEffect, useState } from "react";
 // even edit schemas; although it should include a warning that it might
 // not edit fields on existing ones."
 //
+// Also the views on-ramp's editor (Aaron, 2026-07-25): when a board/calendar
+// has nothing to organize by, the empty control opens THIS editor so the user
+// names their own field — the app supplies the mechanism, never the field
+// vocabulary. That path passes `intent` (orient the starter row + copy for
+// the job) and `onSaved` (let the view adopt the field just declared).
+//
 // Backfill semantics — confirmed by reading `parachute-vault/src/routes.ts`
 // PUT /api/tags/:name handler: the route only writes the tag-identity row.
 // Notes that already carry the tag KEEP their existing metadata shape;
@@ -25,6 +31,11 @@ type FieldRow = {
   rowId: string;
   name: string;
   type: string;
+  // Raw allowed-values text for a `string` field (comma- or newline-
+  // separated) — declared, they become the field's `enum`, which is what
+  // lets a board render its columns (empty ones included) rather than a
+  // single uncategorized lane. Ignored for non-string types.
+  values?: string;
 };
 
 // Field type vocabulary that's safe to commit. Vault accepts any string,
@@ -44,15 +55,37 @@ function fieldsToRows(fields: Record<string, TagFieldSchema> | null | undefined)
     rowId: newRowId(),
     name,
     type: schema.type || "string",
+    values: schema.enum?.join(", ") ?? "",
   }));
+}
+
+/** The starter row an on-ramp intent lands the user on — pre-typed so "Add a
+ * date field…" drops onto a date row and "Add a field to group by…" onto a
+ * values-bearing string row, rather than a bare row they must retype. */
+function starterRow(intent: "group" | "date"): FieldRow {
+  return intent === "date"
+    ? { rowId: newRowId(), name: "", type: "date" }
+    : { rowId: newRowId(), name: "", type: "string", values: "" };
 }
 
 interface Props {
   tagName: string;
+  /**
+   * Opened from a view's empty organize-by control — orients the editor for
+   * that job (a starter row of the right type + a one-line "what this powers"
+   * hint), instead of the neutral Tags-page form. Absent = the Tags-page use.
+   */
+  intent?: "group" | "date";
+  /**
+   * Fired after a successful save with the tag's resulting fields map — lets
+   * the on-ramp auto-organize by the field the user just declared. Absent for
+   * the Tags-page use (nothing to adopt it into).
+   */
+  onSaved?: (fields: Record<string, TagFieldSchema>) => void;
   onClose(): void;
 }
 
-export function TagSchemaEditor({ tagName, onClose }: Props) {
+export function TagSchemaEditor({ tagName, intent, onSaved, onClose }: Props) {
   const query = useTag(tagName);
   const mutation = useUpdateTag();
 
@@ -69,13 +102,25 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
     if (seeded) return;
     if (query.isPending) return;
     const rec = query.data;
+    let rows: FieldRow[] = [];
     if (rec) {
       setDescription(rec.description ?? "");
-      setFieldRows(fieldsToRows(rec.fields));
+      rows = fieldsToRows(rec.fields);
       setParentNames((rec.parent_names ?? []).join(", "));
     }
+    // An on-ramp open (from an empty board/calendar control) lands the user on
+    // a ready-to-name starter row of the right type — appended to whatever the
+    // tag already declares, only when it lacks a field for THIS job. A calendar
+    // invite opens on a tag that may already have non-date fields (`owner`,
+    // say) but no date one; a board invite only fires on a field-less tag. Skip
+    // the starter when a matching field already exists, so re-opening doesn't
+    // pile on blank rows.
+    const hasIntentField =
+      intent === "date" ? rows.some((r) => r.type === "date") : rows.length > 0;
+    if (intent && !hasIntentField) rows = [...rows, starterRow(intent)];
+    setFieldRows(rows);
     setSeeded(true);
-  }, [seeded, query.isPending, query.data]);
+  }, [seeded, query.isPending, query.data, intent]);
 
   const initialFields = query.data?.fields ?? null;
   // Compute whether the user's edits to `fields` would change the on-vault
@@ -172,6 +217,10 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
           payload: { ...payload, fields: newFields },
         });
       }
+      // The write landed and `useUpdateTag` has refreshed the tag cache — hand
+      // the resulting fields to the on-ramp so it can organize by the one the
+      // user just made (a no-op for the Tags-page use, which passes no onSaved).
+      onSaved?.(newFields ?? {});
       onClose();
     } catch (e) {
       if (e instanceof VaultAuthError) {
@@ -232,6 +281,18 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
               where it sits in your tag hierarchy.
             </p>
 
+            {/* On-ramp orientation: opened from an empty board/calendar, the
+                editor says plainly what this field is FOR — so the board case's
+                "declare values or you get no columns" is stated here, not
+                discovered on an empty board. */}
+            {intent ? (
+              <p className="mb-4 rounded-md border border-accent/30 bg-accent/5 p-3 text-sm text-fg-muted">
+                {intent === "group"
+                  ? "Name a field to organize by, then give it a set of values — each value becomes a column on your board."
+                  : "Name a date field — the calendar plots notes on the day it holds, and lets you drag them between days."}
+              </p>
+            ) : null}
+
             <label className="mb-4 block">
               <span className="mb-1 block text-xs uppercase tracking-wider text-fg-dim">
                 Description
@@ -259,37 +320,59 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
                   shape.
                 </p>
               ) : (
-                <ul className="mb-2 space-y-2" aria-label="Schema fields">
+                <ul className="mb-2 space-y-2.5" aria-label="Schema fields">
                   {fieldRows.map((row) => (
-                    <li key={row.rowId} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={row.name}
-                        onChange={(e) => updateField(row.rowId, { name: e.target.value })}
-                        placeholder="field_name"
-                        aria-label="Field name"
-                        className="flex-1 rounded-lg border border-border bg-bg px-2 py-1 font-mono text-xs text-fg focus:border-accent focus:outline-none"
-                      />
-                      <select
-                        value={row.type}
-                        onChange={(e) => updateField(row.rowId, { type: e.target.value })}
-                        aria-label={`Type for ${row.name || "new field"}`}
-                        className="rounded-lg border border-border bg-bg px-2 py-1 text-xs text-fg focus:border-accent focus:outline-none"
-                      >
-                        {FIELD_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => removeField(row.rowId)}
-                        aria-label={`Remove field ${row.name || "new"}`}
-                        className="text-fg-dim hover:text-red-400"
-                      >
-                        ×
-                      </button>
+                    <li key={row.rowId} className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => updateField(row.rowId, { name: e.target.value })}
+                          placeholder="field_name"
+                          aria-label="Field name"
+                          className="flex-1 rounded-lg border border-border bg-bg px-2 py-1 font-mono text-xs text-fg focus:border-accent focus:outline-none"
+                        />
+                        <select
+                          value={row.type}
+                          onChange={(e) => updateField(row.rowId, { type: e.target.value })}
+                          aria-label={`Type for ${row.name || "new field"}`}
+                          className="rounded-lg border border-border bg-bg px-2 py-1 text-xs text-fg focus:border-accent focus:outline-none"
+                        >
+                          {FIELD_TYPES.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => removeField(row.rowId)}
+                          aria-label={`Remove field ${row.name || "new"}`}
+                          className="text-fg-dim hover:text-red-400"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {/* A string field can declare its allowed values; those
+                          become the board's columns (empty ones included, so
+                          the first card has somewhere to drop). Optional — a
+                          plain string field still works, you just set values on
+                          notes as you go. Only strings carry values. */}
+                      {row.type === "string" ? (
+                        <div className="pl-1">
+                          <input
+                            type="text"
+                            value={row.values ?? ""}
+                            onChange={(e) => updateField(row.rowId, { values: e.target.value })}
+                            placeholder="e.g. To do, In progress, Done"
+                            aria-label={`Values for ${row.name || "new field"}`}
+                            className="w-full rounded-lg border border-border bg-bg px-2 py-1 text-xs text-fg focus:border-accent focus:outline-none"
+                          />
+                          <p className="mt-1 text-2xs text-fg-dim">
+                            Optional — comma-separated values become columns on a board.
+                          </p>
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -364,14 +447,44 @@ export function TagSchemaEditor({ tagName, onClose }: Props) {
   );
 }
 
+/** Split a raw allowed-values string (comma- or newline-separated) into a
+ * trimmed, de-duplicated, order-preserving list. Empty → no values. */
+function parseValues(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,\n]/)) {
+    const v = part.trim();
+    if (v && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
 function rowsToFieldsMap(rows: FieldRow[]): Record<string, TagFieldSchema> {
   const out: Record<string, TagFieldSchema> = {};
   for (const row of rows) {
     const name = row.name.trim();
     if (!name) continue;
-    out[name] = { type: row.type };
+    const schema: TagFieldSchema = { type: row.type };
+    // Declared values only mean something for a string field (they become its
+    // `enum` — the board's columns). Other types ignore them.
+    if (row.type === "string") {
+      const values = parseValues(row.values);
+      if (values.length > 0) schema.enum = values;
+    }
+    out[name] = schema;
   }
   return out;
+}
+
+function sameEnum(a: string[] | undefined, b: string[] | undefined): boolean {
+  const aa = a ?? [];
+  const bb = b ?? [];
+  if (aa.length !== bb.length) return false;
+  return aa.every((v, i) => v === bb[i]);
 }
 
 function sameFields(
@@ -384,10 +497,13 @@ function sameFields(
   for (const k of aKeys) {
     if (!b || !b[k]) return false;
     if (a![k]!.type !== b[k]!.type) return false;
+    // An enum edit (declaring/retiring board values) IS a shape change — so
+    // the existing-notes warning fires and the Save actually writes.
+    if (!sameEnum(a![k]!.enum, b[k]!.enum)) return false;
   }
   return true;
 }
 
 // Exposed for tests — verifies the diff helper behavior without spinning up
 // the full React tree.
-export const _internals = { sameFields, rowsToFieldsMap };
+export const _internals = { sameFields, rowsToFieldsMap, parseValues };

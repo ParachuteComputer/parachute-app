@@ -355,6 +355,165 @@ describe("TagSchemaEditor", () => {
       status: { type: "string" },
     });
   });
+
+  it("declares enum VALUES on a string field — the board's columns", async () => {
+    const { calls } = installFetch({
+      "/api/tags/task": [
+        {
+          body: {
+            name: "task",
+            count: 0,
+            description: null,
+            fields: null,
+            parent_names: null,
+            relationships: null,
+          },
+        },
+        {
+          body: {
+            name: "task",
+            count: 0,
+            description: null,
+            fields: { status: { type: "string", enum: ["To do", "Done"] } },
+            parent_names: null,
+            relationships: null,
+          },
+        },
+      ],
+      "PUT /api/tags/task": {
+        body: {
+          name: "task",
+          count: 0,
+          description: null,
+          fields: { status: { type: "string", enum: ["To do", "Done"] } },
+          parent_names: null,
+          relationships: null,
+        },
+      },
+    });
+    render(
+      <Wrap>
+        <TagSchemaEditor tagName="task" onClose={() => {}} />
+      </Wrap>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/no fields declared yet/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/add field/i));
+    fireEvent.change(await screen.findByLabelText(/field name/i), { target: { value: "status" } });
+    // The values input appears for a string field; comma-separated → enum.
+    fireEvent.change(screen.getByLabelText("Values for status"), {
+      target: { value: "To do, Done" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save schema/i }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect((put.body as { fields: Record<string, unknown> }).fields).toEqual({
+      status: { type: "string", enum: ["To do", "Done"] },
+    });
+  });
+
+  it("intent='group' lands on a values-bearing starter row and reports the saved field to onSaved", async () => {
+    const onSaved = vi.fn();
+    installFetch({
+      "/api/tags/task": [
+        {
+          body: {
+            name: "task",
+            count: 0,
+            description: null,
+            fields: null,
+            parent_names: null,
+            relationships: null,
+          },
+        },
+        {
+          body: {
+            name: "task",
+            count: 0,
+            description: null,
+            fields: { stage: { type: "string", enum: ["A", "B"] } },
+            parent_names: null,
+            relationships: null,
+          },
+        },
+      ],
+      "PUT /api/tags/task": {
+        body: {
+          name: "task",
+          count: 0,
+          description: null,
+          fields: { stage: { type: "string", enum: ["A", "B"] } },
+          parent_names: null,
+          relationships: null,
+        },
+      },
+    });
+    render(
+      <Wrap>
+        <TagSchemaEditor tagName="task" intent="group" onSaved={onSaved} onClose={() => {}} />
+      </Wrap>,
+    );
+    // Oriented for the job: the "values become columns" hint + a ready row —
+    // no "+ Add field" click needed.
+    expect(await screen.findByText(/each value becomes a column/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Values for new field"), { target: { value: "A, B" } });
+    fireEvent.change(screen.getByLabelText(/field name/i), { target: { value: "stage" } });
+    fireEvent.click(screen.getByRole("button", { name: /save schema/i }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(onSaved.mock.calls[0][0]).toEqual({ stage: { type: "string", enum: ["A", "B"] } });
+  });
+
+  it("intent='date' appends a date starter AFTER the tag's existing fields; save keeps them and adds the date field", async () => {
+    const onSaved = vi.fn();
+    const { calls } = installFetch({
+      "/api/tags/task": {
+        body: {
+          name: "task",
+          count: 2,
+          description: null,
+          fields: { owner: { type: "string" } },
+          parent_names: null,
+          relationships: null,
+        },
+      },
+      "PUT /api/tags/task": {
+        body: {
+          name: "task",
+          count: 2,
+          description: null,
+          fields: { owner: { type: "string" }, due: { type: "date" } },
+          parent_names: null,
+          relationships: null,
+        },
+      },
+    });
+    render(
+      <Wrap>
+        <TagSchemaEditor tagName="task" intent="date" onSaved={onSaved} onClose={() => {}} />
+      </Wrap>,
+    );
+    // `owner` plus a date starter row — two field-name inputs, the starter blank.
+    await waitFor(() => expect(screen.getAllByLabelText(/field name/i).length).toBe(2));
+    const starter = (screen.getAllByLabelText(/field name/i) as HTMLInputElement[]).find(
+      (el) => el.value === "",
+    )!;
+    fireEvent.change(starter, { target: { value: "due" } });
+    fireEvent.click(screen.getByRole("button", { name: /save schema/i }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(onSaved.mock.calls[0][0]).toEqual({
+      owner: { type: "string" },
+      due: { type: "date" },
+    });
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect((put.body as { fields: Record<string, unknown> }).fields).toEqual({
+      owner: { type: "string" },
+      due: { type: "date" },
+    });
+  });
 });
 
 describe("TagSchemaEditor _internals", () => {
@@ -369,12 +528,39 @@ describe("TagSchemaEditor _internals", () => {
     );
   });
 
-  it("rowsToFieldsMap drops blank-name rows", () => {
+  it("sameFields catches an ENUM change on an existing key (declaring board columns is a shape change)", () => {
+    expect(
+      _internals.sameFields(
+        { s: { type: "string", enum: ["a"] } },
+        { s: { type: "string", enum: ["a", "b"] } },
+      ),
+    ).toBe(false);
+    expect(
+      _internals.sameFields(
+        { s: { type: "string", enum: ["a"] } },
+        { s: { type: "string", enum: ["a"] } },
+      ),
+    ).toBe(true);
+  });
+
+  it("rowsToFieldsMap drops blank-name rows and emits an enum for a values-bearing string row", () => {
     expect(
       _internals.rowsToFieldsMap([
         { rowId: "1", name: "", type: "string" },
         { rowId: "2", name: "ok", type: "number" },
+        { rowId: "3", name: "stage", type: "string", values: "To do, Done" },
       ]),
-    ).toEqual({ ok: { type: "number" } });
+    ).toEqual({ ok: { type: "number" }, stage: { type: "string", enum: ["To do", "Done"] } });
+  });
+
+  it("parseValues splits on commas/newlines, trims, and de-dupes", () => {
+    expect(_internals.parseValues("To do,  In progress ,Done, To do")).toEqual([
+      "To do",
+      "In progress",
+      "Done",
+    ]);
+    expect(_internals.parseValues("a\nb\nc")).toEqual(["a", "b", "c"]);
+    expect(_internals.parseValues("")).toEqual([]);
+    expect(_internals.parseValues(undefined)).toEqual([]);
   });
 });

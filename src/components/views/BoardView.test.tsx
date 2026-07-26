@@ -410,8 +410,9 @@ describe("BoardView empty declared lanes (polish V4)", () => {
 // With a lane field whose schema declares no enum, on a board where no note
 // carries a value yet, there is exactly one (uncategorized) lane: no Move, and
 // omitting the chip too left the card with no way to set that field's first
-// value from the board at all. Reachable through the on-ramp's "Something
-// else…" escape, which can mint a plain string lane field.
+// value from the board at all. Reachable through the on-ramp: its "add a
+// field" invitation opens the schema editor, where a plain string lane field
+// (no declared values) can be minted.
 describe("BoardView lane-field chip fallback", () => {
   const LANE_FIELD: ResolvedField[] = [{ name: "stage", schema: { type: "string" } }];
   const UNSET: Note[] = [

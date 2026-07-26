@@ -312,9 +312,9 @@ function BoardNoteCard({
             // value yet: one uncategorized column, nothing to move to) the
             // Move affordance isn't rendered, and omitting the chip too left
             // the card with NO way to set that field's first value from the
-            // board. Reachable through the on-ramp's "Something else…"
-            // escape, which can mint a plain string lane field. Omit only
-            // when something else is already offering the field.
+            // board. Reachable through the on-ramp, whose "add a field"
+            // invitation can mint a plain string lane field (no declared
+            // values). Omit only when something else already offers the field.
             omit={targets.length > 0 ? [laneBy] : undefined}
           />
         ) : null

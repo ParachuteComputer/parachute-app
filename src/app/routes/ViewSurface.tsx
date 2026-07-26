@@ -12,10 +12,10 @@ import { DateFieldControl, GroupByControl, LensSwitcher } from "@/components/vie
 import { NoteFieldChips } from "@/components/views/NoteFieldChips";
 import { TableView } from "@/components/views/TableView";
 import { useToastStore } from "@/lib/toast/store";
-import { useCreateNote, useUpdateNote, useUpdateTag, useVaultStore } from "@/lib/vault";
+import { useCreateNote, useUpdateNote, useVaultStore } from "@/lib/vault";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { TagRoles } from "@/lib/vault/tag-roles";
-import type { Note } from "@/lib/vault/types";
+import type { Note, TagFieldSchema } from "@/lib/vault/types";
 import {
   type ViewConfigDraft,
   applyConfig,
@@ -28,12 +28,12 @@ import {
   withLens,
 } from "@/lib/views/config";
 import { viewPathForName } from "@/lib/views/defaults";
-import { type FieldPreset, fieldPresetPayload } from "@/lib/views/field-presets";
 import {
   type ResolvedField,
   singleQueryTag,
   useResolvedViewFields,
   useSchemaFieldNames,
+  useSchemaReady,
 } from "@/lib/views/fields";
 import { useViewModifiedBar } from "@/lib/views/modified-bar";
 import { partitionPinned } from "@/lib/views/partition";
@@ -182,60 +182,45 @@ function ViewSurfaceBody({ note }: { note: Note }) {
   // Revert discards the exploration — clear the URL, write nothing.
   const revert = () => setSearchParams(new URLSearchParams(), { replace: true });
 
-  // --- The one-click field on-ramp -------------------------------------
+  // --- The field on-ramp -----------------------------------------------
   //
   // The view's SINGLE query tag — the same tag `resolveViewFields` reads its
-  // schema from, so the field we write is guaranteed to be the field the
-  // control then resolves. `null` for a multi-tag or tagless query: nothing
-  // to write to, and the pills say so rather than offering an impossible
-  // button (`NO_PRIMARY_TAG_NOTE`).
+  // schema from. `null` for a multi-tag or tagless query: nothing to add a
+  // field to, and the pills say so rather than inviting an impossible one
+  // (`NO_PRIMARY_TAG_NOTE`).
   const primaryTag = useMemo(() => singleQueryTag(effDef.query), [effDef.query]);
-  const updateTag = useUpdateTag();
-  const pushToast = useToastStore((s) => s.push);
-  // "Something else…" opens the SHIPPED tag-schema editor in place — the full
-  // name/type/parents form, one modal, no navigation away from the view.
-  const [schemaEditorOpen, setSchemaEditorOpen] = useState(false);
+  // Whether the primary tag's schema has actually answered — so the empty
+  // controls only invite "add a field" once the fetch confirms the absence,
+  // never during the load window on a tag that does declare fields.
+  const schemaReady = useSchemaReady(effDef);
+  // The on-ramp is now purely: NOTICE the absence, open the shipped tag-schema
+  // editor so the USER names the field (Aaron, 2026-07-25 — the app proposes
+  // no field vocabulary of its own). The intent routes the editor's starter
+  // row and, on save, which axis auto-adopts the field; `null` = closed.
+  const [addFieldIntent, setAddFieldIntent] = useState<"group" | "date" | null>(null);
 
   /**
-   * Add one preset field to the primary tag's schema, then organize by it.
-   *
-   * Two writes with different lifetimes, deliberately: the SCHEMA write is
-   * immediate and permanent (it's the user's vault shape, the thing they
-   * asked for), while the view's `group_by`/`date_field` goes into the URL
-   * DRAFT — so the board lanes up instantly but the view note itself changes
-   * only on an explicit Save, exactly like every other config edit (train B's
-   * explore-then-save model). A user who was just curious reverts and keeps
-   * the field; the view is untouched.
+   * After the editor writes the tag schema, organize by the field the user
+   * just made — the old one-click flow's auto-select, but for a field THEY
+   * named. The pick is by TYPE, never by name: the group axis takes the first
+   * field that declares values (its enum renders the empty lanes), else the
+   * first non-date field; the date axis takes the first date-typed field.
+   * `useUpdateTag` has already written the new record into the tag cache, so
+   * the draft resolves against it on this same tick. The `group_by`/
+   * `date_field` rides the URL DRAFT, not the note — Save stays explicit
+   * (train B's explore-then-save model): revert and you keep the field, the
+   * view untouched.
    */
-  const createField = async (preset: FieldPreset, axis: "groupBy" | "dateField") => {
-    if (!primaryTag) return;
-    // Never redefine an existing field. `fieldPresetPayload` is a merge-on-write
-    // tag PUT (`{ fields: { [name]: … } }`), which the vault merges at the
-    // field-KEY level — so writing a preset over a same-named field would
-    // silently REPLACE the user's declaration (e.g. their string `due` → a date
-    // `due`). The controls already suppress a taken-name preset (LensSwitcher's
-    // `existingFieldNames`); this is the matching guard on the write boundary,
-    // so the "only ever ADD" invariant holds no matter what reaches here.
-    if (schemaFieldNames.includes(preset.name)) {
-      pushToast(
-        `#${primaryTag} already has a ${preset.name} field — change its type in the tag editor.`,
-        "error",
-      );
-      return;
-    }
-    try {
-      await updateTag.mutateAsync({ name: primaryTag, payload: fieldPresetPayload(preset) });
-      // `useUpdateTag` writes the returned record into the ["tag", …] cache,
-      // so `useResolvedViewFields` re-resolves with the new field on this
-      // same tick — the draft below then has something to organize BY.
-      setDraft({ ...draft, [axis]: preset.name });
-      pushToast(`✓ ${preset.name} added to #${primaryTag}`, "success");
-    } catch (err) {
-      pushToast(
-        `Couldn't add ${preset.name}: ${err instanceof Error ? err.message : "unknown error"}`,
-        "error",
-      );
-    }
+  const onSchemaSaved = (fields: Record<string, TagFieldSchema>) => {
+    const intent = addFieldIntent;
+    if (!intent) return;
+    const entries = Object.entries(fields);
+    const pick =
+      intent === "date"
+        ? entries.find(([, s]) => s.type === "date")?.[0]
+        : (entries.find(([, s]) => (s.enum?.length ?? 0) > 0) ??
+            entries.find(([, s]) => s.type !== "date"))?.[0];
+    if (pick) setDraft({ ...draft, [intent === "group" ? "groupBy" : "dateField"]: pick });
   };
 
   // Board and table read ACROSS — grids, not prose — so they get the wider
@@ -266,10 +251,8 @@ function ViewSurfaceBody({ note }: { note: Note }) {
               onChange={(name) => setDraft({ ...draft, groupBy: name })}
               dirty={def.groupBy !== effDef.groupBy}
               createTag={primaryTag}
-              existingFieldNames={schemaFieldNames}
-              onCreateField={(preset) => void createField(preset, "groupBy")}
-              onCustomField={() => setSchemaEditorOpen(true)}
-              creating={updateTag.isPending}
+              schemaReady={schemaReady}
+              onAddField={() => setAddFieldIntent("group")}
             />
           ) : null}
           {effDef.kind === "calendar" ? (
@@ -279,10 +262,8 @@ function ViewSurfaceBody({ note }: { note: Note }) {
               onChange={(name) => setDraft({ ...draft, dateField: name })}
               dirty={def.dateField !== effDef.dateField}
               createTag={primaryTag}
-              existingFieldNames={schemaFieldNames}
-              onCreateField={(preset) => void createField(preset, "dateField")}
-              onCustomField={() => setSchemaEditorOpen(true)}
-              creating={updateTag.isPending}
+              schemaReady={schemaReady}
+              onAddField={() => setAddFieldIntent("date")}
             />
           ) : null}
           {/* Fields matter to EVERY lens — chips, cards, and calendar entries
@@ -323,10 +304,17 @@ function ViewSurfaceBody({ note }: { note: Note }) {
             onSaved={revert}
           />
         ) : null}
-        {/* The "Something else…" escape — the shipped Tags-page schema editor,
-          mounted here so a custom field never costs a trip out of the view. */}
-        {schemaEditorOpen && primaryTag ? (
-          <TagSchemaEditor tagName={primaryTag} onClose={() => setSchemaEditorOpen(false)} />
+        {/* The on-ramp's editor — the shipped Tags-page schema editor, mounted
+          here so naming a field never costs a trip out of the view. `intent`
+          orients its starter row (a values-bearing field for a board, a date
+          field for a calendar); `onSaved` auto-adopts what the user made. */}
+        {addFieldIntent && primaryTag ? (
+          <TagSchemaEditor
+            tagName={primaryTag}
+            intent={addFieldIntent}
+            onSaved={onSchemaSaved}
+            onClose={() => setAddFieldIntent(null)}
+          />
         ) : null}
       </article>
     </div>
