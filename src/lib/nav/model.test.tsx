@@ -1,4 +1,5 @@
 import {
+  NavBandsProvider,
   type NavLocation,
   buildNavBands,
   matchAllNotes,
@@ -259,7 +260,14 @@ describe("buildNavBands (pure)", () => {
 describe("useNavBands (hook)", () => {
   function wrapper({ children }: { children: ReactNode }) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    // `useNavBands` reads the model from context now (app#110) — the
+    // derivation itself is module-private, so these hook tests go through
+    // the provider exactly like the projections do.
+    return (
+      <QueryClientProvider client={client}>
+        <NavBandsProvider>{children}</NavBandsProvider>
+      </QueryClientProvider>
+    );
   }
 
   beforeEach(() => {

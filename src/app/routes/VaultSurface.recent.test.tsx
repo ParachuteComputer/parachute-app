@@ -2,6 +2,7 @@ import { VaultSurface } from "@/app/routes/VaultSurface";
 import { getAccountSummaryState } from "@/lib/account/client";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import type { AccountSummary } from "@/lib/account/types";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { __resetInstallAffordanceForTests } from "@/lib/pwa-install";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -78,14 +79,16 @@ function Wrap({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter initialEntries={["/"]}>
       <QueryClientProvider client={qc}>
-        <Routes>
-          <Route path="/" element={children} />
-          <Route path="/notes" element={<LocationSpy />} />
-          <Route path="/new" element={<LocationSpy />} />
-          <Route path="/connect" element={<LocationSpy />} />
-          <Route path="/calendar" element={<LocationSpy />} />
-          <Route path="/today" element={<LocationSpy />} />
-        </Routes>
+        <NavBandsProvider>
+          <Routes>
+            <Route path="/" element={children} />
+            <Route path="/notes" element={<LocationSpy />} />
+            <Route path="/new" element={<LocationSpy />} />
+            <Route path="/connect" element={<LocationSpy />} />
+            <Route path="/calendar" element={<LocationSpy />} />
+            <Route path="/today" element={<LocationSpy />} />
+          </Routes>
+        </NavBandsProvider>
       </QueryClientProvider>
     </MemoryRouter>
   );
@@ -683,10 +686,12 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <QueryClientProvider client={qc}>
-          <Routes>
-            <Route path="/" element={<VaultSurface lens="recent" />} />
-            <Route path="/notes" element={<VaultSurface />} />
-          </Routes>
+          <NavBandsProvider>
+            <Routes>
+              <Route path="/" element={<VaultSurface lens="recent" />} />
+              <Route path="/notes" element={<VaultSurface />} />
+            </Routes>
+          </NavBandsProvider>
         </QueryClientProvider>
       </MemoryRouter>,
     );

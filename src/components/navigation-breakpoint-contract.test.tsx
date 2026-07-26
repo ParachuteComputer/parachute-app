@@ -3,10 +3,12 @@ import { LensStrip } from "@/components/LensStrip";
 import { NavSheet } from "@/components/NavSheet";
 import { Rail } from "@/components/Rail";
 import { SpeedDial } from "@/components/SpeedDial";
+import { NavBandsProvider } from "@/lib/nav/model";
+import { saveToken } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type RenderResult, act, render } from "@testing-library/react";
+import { type RenderResult, act, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -56,7 +58,9 @@ async function renderWithClient(ui: ReactNode): Promise<RenderResult> {
   await act(async () => {
     result = render(
       <QueryClientProvider client={client}>
-        <MemoryRouter>{ui}</MemoryRouter>
+        <MemoryRouter>
+          <NavBandsProvider>{ui}</NavBandsProvider>
+        </MemoryRouter>
       </QueryClientProvider>,
     );
   });
@@ -247,5 +251,137 @@ describe("Rail + BottomTabBar breakpoint contract (notes#147)", () => {
       "map",
     ]);
     expect(sheetNav).toEqual(railNav);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The OTHER half of the contract (app#110 Finding A): everything above is
+// CSS-only — `hidden lg:flex` / `lg:hidden` hide a projection without
+// unmounting it, so both projections (and the sheet, when open) are live
+// React trees at every viewport width. The nav model carries a full-vault
+// live subscription (`useNotesForDateViews`, limit=5000), so when each
+// projection derived the model itself, every route streamed the vault once
+// per projection — ×2 at boot, a third full stream on one ☰ tap (1.26 MiB
+// each at 2.6k notes). These tests pin the fix: the model derives in ONE
+// place (`NavBandsProvider`), however many projections mount.
+// ---------------------------------------------------------------------------
+
+describe("one nav-model derivation, N projections (app#110)", () => {
+  /** Every WebSocket the app opened, by URL. */
+  let openedSockets: string[] = [];
+
+  // Minimal double for the slice of the WebSocket API ws-transport uses.
+  // Mimics the vault's subscribe contract: after open, deliver an empty done
+  // snapshot — these tests count sockets, not rows.
+  class FakeVaultSocket {
+    static OPEN = 1;
+    url: string;
+    readyState = 0;
+    onopen: (() => void) | null = null;
+    onmessage: ((ev: { data: string }) => void) | null = null;
+    onclose: ((ev: { code: number }) => void) | null = null;
+    onerror: ((ev: unknown) => void) | null = null;
+
+    constructor(url: string) {
+      this.url = url;
+      openedSockets.push(url);
+      queueMicrotask(() => {
+        if (this.readyState === 3) return;
+        this.readyState = 1;
+        this.onopen?.();
+        this.onmessage?.({
+          data: JSON.stringify({ type: "snapshot", notes: [], done: true }),
+        });
+      });
+    }
+    send(_data: string): void {}
+    close(): void {
+      this.readyState = 3;
+      this.onclose?.({ code: 1000 });
+    }
+  }
+
+  // The dateviews stream is the expensive one — the full-vault window.
+  const dateviewsSubs = () => openedSockets.filter((u) => u.includes("limit=5000"));
+
+  beforeEach(() => {
+    localStorage.clear();
+    openedSockets = [];
+    seedActiveVault();
+    // The live layer only subscribes with a token in scope.
+    saveToken("a", { accessToken: "tok", scope: "full", vault: "http://localhost:1940" });
+    vi.stubGlobal("WebSocket", FakeVaultSocket as unknown as typeof WebSocket);
+    global.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    ) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  });
+
+  it("Rail + LensStrip + an open NavSheet under one provider: ONE dateviews subscription", async () => {
+    await renderWithClient(
+      <>
+        <Rail />
+        <LensStrip />
+        <NavSheet open onClose={() => {}} />
+      </>,
+    );
+    await waitFor(() => expect(dateviewsSubs().length).toBeGreaterThan(0));
+    // Flush the microtask-queued snapshots so any late subscriber has fired.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(dateviewsSubs().length).toBe(1);
+  });
+
+  it("opening the NavSheet later opens NO new subscription (one ☰ tap used to stream the whole vault)", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const ui = (open: boolean) => (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <NavBandsProvider>
+            <Rail />
+            <NavSheet open={open} onClose={() => {}} />
+          </NavBandsProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    let view!: RenderResult;
+    await act(async () => {
+      view = render(ui(false));
+    });
+    await waitFor(() => expect(dateviewsSubs().length).toBe(1));
+    const socketsBeforeOpen = openedSockets.length;
+
+    await act(async () => {
+      view.rerender(ui(true));
+    });
+    // The sheet really mounted (bands and all)…
+    expect(screen.getByRole("dialog", { name: /^menu$/i })).toBeInTheDocument();
+    // …without a single new socket: it reads the provider's model.
+    expect(openedSockets.length).toBe(socketsBeforeOpen);
+  });
+
+  it("a projection outside the provider throws — it can't quietly re-open its own vault stream", () => {
+    // React logs the render error before rethrowing; keep the output clean.
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    expect(() =>
+      render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <Rail />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    ).toThrow(/NavBandsProvider/);
+    quiet.mockRestore();
   });
 });

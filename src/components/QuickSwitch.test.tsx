@@ -1,6 +1,7 @@
 import { QuickSwitch } from "@/components/QuickSwitch";
 import { QuickSwitchMount } from "@/components/QuickSwitchMount";
 import { Rail } from "@/components/Rail";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
 import { pushRecent } from "@/lib/quick-switch/recents";
 import { useVaultStore } from "@/lib/vault/store";
@@ -259,7 +260,10 @@ describe("QuickSwitchMount", () => {
     installFetch([]);
     render(
       <Wrap>
-        <Rail />
+        {/* Rail reads the nav model from context (app#110). */}
+        <NavBandsProvider>
+          <Rail />
+        </NavBandsProvider>
         <QuickSwitchMount />
       </Wrap>,
     );

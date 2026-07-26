@@ -25,7 +25,7 @@ import { DEFAULT_VIEW_PATHS } from "@/lib/views/defaults";
 import { useViewList } from "@/lib/views/queries";
 import { primaryQueryTag } from "@/lib/views/query";
 import { decodeViewDef, isLegacySavedView } from "@/lib/views/schema";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, createContext, useContext, useMemo } from "react";
 
 // The shared nav model (DESIGN-SPEC §2.1; reshaped by LENS-SPEC §4 in LZ-2) —
 // ONE data model renders BOTH projections: the desktop Rail and the mobile
@@ -392,7 +392,7 @@ export function buildNavBands(signals: NavBandSignals): NavBand[] {
 }
 
 // ---------------------------------------------------------------------------
-// The hook — one derivation, two consumers (Rail, NavSheet).
+// The derivation — runs in EXACTLY ONE place (NavBandsProvider below).
 // ---------------------------------------------------------------------------
 
 /**
@@ -403,8 +403,18 @@ export function buildNavBands(signals: NavBandSignals): NavBand[] {
  * signal), and the trial chip (`useAccountSummary`, lazily — see below).
  * Returns `[]` with no active vault (both projections render nothing
  * vault-scoped without one).
+ *
+ * Deliberately NOT exported (app#110 Finding A): this derivation carries the
+ * data layer — `useNotesForDateViews` is a full-vault live subscription with
+ * no dedup below react-query, so every component that runs it opens its own
+ * socket. The breakpoint contract ("one nav projection per viewport",
+ * notes#147) is CSS-only — `hidden lg:flex` / `lg:hidden` hide a projection
+ * without unmounting it — so when Rail, LensStrip, and NavSheet each derived
+ * this themselves, every route streamed the vault twice at boot and a ☰ tap
+ * streamed it a third time. Keeping the derivation module-private makes "one
+ * model, N projections" structural: consumers can only read the context.
  */
-export function useNavBands(): NavBand[] {
+function useNavBandsModel(): NavBand[] {
   const vault = useVaultStore((s) => s.getActiveVault());
   const mapEarned = useMapEarned();
   const notes = useNotesForDateViews();
@@ -462,4 +472,34 @@ export function useNavBands(): NavBand[] {
         };
 
   return buildNavBands({ mapEarned, trialDaysLeft, setup, viewItems });
+}
+
+// `null` doubles as the "no provider" sentinel — the provider always supplies
+// an array (possibly empty), so a null read means the tree is missing it.
+const NavBandsContext = createContext<NavBand[] | null>(null);
+
+/**
+ * The ONE place the nav model derives (app#110 Finding A). Mounts once in the
+ * app shell; Rail, LensStrip, and NavSheet read the result via `useNavBands`.
+ * Besides the wire cost (see `useNavBandsModel`), a single deriver closes a
+ * write race: two live subscriptions on the same react-query key are two
+ * writers doing last-writer-wins `setQueryData` under `staleTime: Infinity`
+ * — nothing self-heals a stale overwrite. One deriver, one writer.
+ */
+export function NavBandsProvider({ children }: { children: ReactNode }) {
+  const bands = useNavBandsModel();
+  return <NavBandsContext.Provider value={bands}>{children}</NavBandsContext.Provider>;
+}
+
+/** The bands, read from context. Throws outside `NavBandsProvider` — loudly,
+ * so a projection mounted outside the shell (or a test missing the wrapper)
+ * fails at first render instead of quietly re-opening its own vault stream. */
+export function useNavBands(): NavBand[] {
+  const bands = useContext(NavBandsContext);
+  if (bands === null) {
+    throw new Error(
+      "useNavBands must render under <NavBandsProvider> — the nav model derives once, in the app shell (app#110)",
+    );
+  }
+  return bands;
 }

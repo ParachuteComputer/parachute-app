@@ -1,5 +1,52 @@
 # Changelog — @openparachute/app
 
+## [0.22.2] - 2026-07-26
+
+**Opening the menu no longer downloads the entire vault.**
+
+On a phone, one tap of ☰ — just opening the navigation sheet — silently
+streamed every note in the vault: a third full copy, on top of the two the
+app had already opened at boot. The nav model (the bands in the rail, the
+lens strip, the sheet) derives from a full-vault live subscription, and
+every component that derived it opened its own socket. The breakpoint
+contract — "exactly one nav projection per viewport" — is enforced in CSS
+only: `hidden lg:flex` / `lg:hidden` hide a projection without unmounting
+it, so Rail and LensStrip both derived at every width and the sheet added
+a third on open. Measured at 2,606 notes, before → after:
+
+| | before | after |
+| --- | --- | --- |
+| Nav full-vault streams at boot | 2 × 1.25 MiB | **1** |
+| Opening ☰ | +1 socket, +1.25 MiB, every open | **0 new sockets** |
+| Closing the sheet | socket teardown + reopen churn | nothing — pure UI |
+| Writers on the nav cache key | 2, racing | **1** |
+
+The model now derives in exactly one place — `NavBandsProvider`, mounted
+once in the app shell — and Rail, LensStrip, and NavSheet read the result
+from context.
+
+- **The correctness half, easy to under-sell next to the bytes:** the twin
+  subscriptions were two *writers* on one react-query cache key,
+  last-writer-wins, under `staleTime: Infinity` — so a stale overwrite
+  never self-healed, because nothing ever refetched. One deriver, one
+  writer; the race is structurally gone.
+- **Enforced by construction, not convention.** The original bug was an
+  invariant asserted in a layer that can't enforce it (CSS). The
+  derivation is now module-private; `useNavBands()` throws outside the
+  provider, so the next component that tries to derive privately fails at
+  first render instead of quietly opening its own vault stream. Regression
+  pins sit beside the CSS half of the contract in
+  `navigation-breakpoint-contract.test.tsx`.
+- **Composed with 0.22.1:** a cold `/notes` now opens 3 sockets where two
+  releases ago it opened 6. The offline mirror is now the *last* full-vault
+  stream on non-date routes — deliberate, not a leak: the mirror's whole job
+  is to hold a complete local copy. Named here so nobody rediscovers it as
+  a regression.
+- The provider mounts unconditionally rather than behind the focus-mode
+  gate: toggling focus used to tear down and reopen the nav sockets every
+  time (a full re-stream per toggle); one idle socket during focus mode is
+  the cheaper side of that trade.
+
 ## [0.22.1] - 2026-07-26
 
 **All notes actually paginates — the page that looked finished and then

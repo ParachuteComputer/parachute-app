@@ -1,5 +1,6 @@
 import { LensStrip } from "@/components/LensStrip";
 import { Rail } from "@/components/Rail";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type RenderResult, act, render, within } from "@testing-library/react";
@@ -40,7 +41,9 @@ async function renderAt(ui: ReactNode, path = "/"): Promise<RenderResult> {
   await act(async () => {
     result = render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>
+        <MemoryRouter initialEntries={[path]}>
+          <NavBandsProvider>{ui}</NavBandsProvider>
+        </MemoryRouter>
       </QueryClientProvider>,
     );
   });

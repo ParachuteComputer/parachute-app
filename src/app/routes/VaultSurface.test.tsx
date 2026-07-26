@@ -1,4 +1,5 @@
 import { VaultSurface } from "@/app/routes/VaultSurface";
+import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -55,7 +56,11 @@ function Wrapper({ children }: { children: ReactNode }) {
   });
   return (
     <QueryClientProvider client={client}>
-      <BrowserRouter>{children}</BrowserRouter>
+      <BrowserRouter>
+        {/* The surface renders LensStrip, which reads the nav model from
+            context — one derivation app-wide (app#110). */}
+        <NavBandsProvider>{children}</NavBandsProvider>
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }
@@ -81,16 +86,19 @@ function openFoldersAccordion() {
 
 function lastNotesUrl(fetchImpl: ReturnType<typeof installFetch>): string {
   // The saved-views sidebar also queries /api/notes (tag=view & views path
-  // prefix), and the capped 5000-row window queries (the lens strip's nav
-  // model reads notesForDateViews; the folders accordion reads the path
-  // tree) share the endpoint too. Filter those out so assertions target the
-  // primary list query.
+  // prefix), and the capped 5000-row window queries (the nav model — now the
+  // NavBandsProvider, app#110 — reads notesForDateViews; the folders
+  // accordion reads the path tree) share the endpoint too. Filter those out
+  // so assertions target the primary list query. The bare `tag=view` list
+  // (the nav model's view band) is gated on tag-roles, so its fetch can land
+  // AFTER the list fetch — exclude it by URL, not by order.
   const calls = fetchImpl.mock.calls.map((c) => String(c[0]));
   const noteCalls = calls.filter(
     (u) =>
       u.includes("/api/notes") &&
       !u.includes("path_prefix=UI%2FViews%2F") &&
-      !u.includes("limit=5000"),
+      !u.includes("limit=5000") &&
+      !u.includes("tag=view&"),
   );
   return noteCalls[noteCalls.length - 1] ?? "";
 }
