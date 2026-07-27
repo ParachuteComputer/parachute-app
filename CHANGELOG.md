@@ -1,3 +1,46 @@
+## [0.22.6] - 2026-07-27
+
+**A typeahead for the tag picker, a shortlist instead of the whole list, and
+`#capture` finally admits it has 951 notes, not 0.**
+
+Aaron's complaint from his own vault: "a bunch of tags for something like my
+vault where there's a lot." Measured against `bigvault` (50 tags / 2,600
+notes, power-law distributed) rather than the ~15-tag fixture every test
+vault had been using — the scale that let three earlier bugs ship in one
+night ships this one too:
+
+| | before | after |
+| --- | --- | --- |
+| Tag rows rendered on opening Filters | 39 (every collapsed-group row, uncapped) | **10** (shortlist), rest behind "All 50 tags ▸" |
+| Finding `#plant` (5 notes, rank 35 of 39) | no way to type a tag name at all — a ~34-row visual scan | type `plan` (4 keystrokes) + Enter — no scrolling |
+| `#capture` (622 + 304 + 25 + 0 = 951 notes across the family) | **`#capture 0`** | `#capture 951` |
+
+- **Typeahead.** The picker gets the same "Filter tags…" box the `/tags`
+  directory page already had — name-contains match, count-ranked, Enter
+  toggles the top match. Autofocuses on desktop; deliberately not on phone,
+  where it would throw up the keyboard and cover the list.
+- **Shortlist, not the whole list.** Selected tags first, then pinned, then
+  top-by-count, capped at 10 rows. Nothing is deleted — an "All N tags ▸"
+  disclosure underneath reveals today's grouped tree exactly as it rendered
+  before.
+- **The family-count bug.** A collapsed family whose parent tag exists (e.g.
+  `#capture`, which tags zero notes directly but is the heaviest family in a
+  real vault once `capture/voice`, `capture/text`, and `capture/photo` count)
+  showed the *parent's own* count instead of the family total. It now shows
+  the total.
+- **Typed tags get a `⊞ N` marker** (field count), sourced from
+  `useTagsWithSchema` — the same schema-bearing query the `/tags` page
+  already pays for, so this isn't a new round trip.
+- **`PinnedTagsStrip` is gone.** Its pinned tags dissolve into the picker's
+  shortlist. The strip was also a latent trap: single-select-*replace* (and
+  it silently cleared the path-prefix filter) sitting directly above a
+  multi-select-*toggle* control that looked just like it.
+
+Filter state and URL params are untouched — presentation only. Every new
+test was watched failing before the fix (stub the change out, confirm red
+for the stated reason, restore); the family-count regression test uses the
+bigvault fixture's real numbers so it can't pass by accident.
+
 ## [0.22.5] - 2026-07-26
 
 **A `%` in a name no longer breaks the page — and a subtler bug that nobody

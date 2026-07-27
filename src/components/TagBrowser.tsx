@@ -1,15 +1,22 @@
-import type { TagSummary } from "@/lib/vault/types";
-import { useMemo, useState } from "react";
+import type { TagRecord } from "@/lib/vault/types";
+import { isFinePointer } from "@/lib/views/dnd";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-// Tag-primary browser for the Notes sidebar. Shows all tags in the vault
-// with per-tag counts, groups slash-delimited tags under a collapsible
-// parent (e.g. `summary/daily`, `summary/weekly` → "summary" group), and
-// drives the existing `selectedTags` multi-select used by the notes list
-// query. Pinned tags float to the top; everything else is sorted by count
-// descending so the biggest buckets are most discoverable.
+// Tag-primary browser for the Notes sidebar. Leads with a typeahead (name
+// filter, count-ranked, Enter toggles the top match) so a busy vault's tags
+// are reachable by typing rather than scrolling — the `/tags` directory page
+// has had this box for a while; this is the same box, here. Below the
+// typeahead, a SHORTLIST (selected, then pinned, then top-by-count, capped
+// ~10 rows) covers the common case at a glance; an "All N tags" disclosure
+// underneath reveals the full grouped tree unchanged (slash-delimited tags
+// collapse under a collapsible parent, e.g. `summary/daily`, `summary/weekly`
+// → "summary"). Drives the existing `selectedTags` multi-select used by the
+// notes list query.
+
+const SHORTLIST_CAP = 10;
 
 interface Props {
-  tags: TagSummary[];
+  tags: TagRecord[];
   pinnedTags: string[];
   selected: string[];
   onToggle: (name: string) => void;
@@ -23,6 +30,7 @@ interface GroupedTag {
   label: string;
   count: number;
   pinned: boolean;
+  fields?: TagRecord["fields"];
 }
 
 interface GroupedTagNode {
@@ -30,17 +38,23 @@ interface GroupedTagNode {
   prefix: string;
   totalCount: number;
   // The parent tag itself, if it exists as a concrete tag (e.g. "summary").
-  selfTag?: TagSummary & { pinned: boolean };
-  children: Array<TagSummary & { pinned: boolean }>;
+  selfTag?: TagRecord & { pinned: boolean };
+  children: Array<TagRecord & { pinned: boolean }>;
 }
 
 type Entry = GroupedTag | GroupedTagNode;
 
-function groupAndRank(tags: TagSummary[], pinnedSet: Set<string>): Entry[] {
+// Field count backing the `⊞ N` typed-tag marker — 0 (or no schema at all)
+// renders nothing, so an untyped tag stays exactly as plain as it is today.
+function fieldCountOf(t: { fields?: TagRecord["fields"] }): number {
+  return Object.keys(t.fields ?? {}).length;
+}
+
+function groupAndRank(tags: TagRecord[], pinnedSet: Set<string>): Entry[] {
   // Partition into slash-prefixed vs flat. A slash-prefixed tag contributes
   // to a group only if at least 2 tags share its first segment (so we don't
   // wrap a single `summary/daily` into a pointless "summary" group of one).
-  const firstSegmentIndex = new Map<string, TagSummary[]>();
+  const firstSegmentIndex = new Map<string, TagRecord[]>();
   for (const t of tags) {
     const slash = t.name.indexOf("/");
     if (slash > 0) {
@@ -71,7 +85,7 @@ function groupAndRank(tags: TagSummary[], pinnedSet: Set<string>): Entry[] {
         groups.set(head, group);
       }
       group.children.push({ ...t, pinned: pinnedSet.has(t.name) });
-      group.totalCount += t.count;
+      group.totalCount += t.count ?? 0;
     } else if (groupedHeads.has(t.name)) {
       // This tag is the concrete parent of a group (e.g. `summary` itself
       // exists as a tag, and so do `summary/daily`, `summary/weekly`).
@@ -81,14 +95,15 @@ function groupAndRank(tags: TagSummary[], pinnedSet: Set<string>): Entry[] {
         groups.set(t.name, group);
       }
       group.selfTag = { ...t, pinned: pinnedSet.has(t.name) };
-      group.totalCount += t.count;
+      group.totalCount += t.count ?? 0;
     } else {
       leaves.push({
         kind: "leaf",
         name: t.name,
         label: t.name,
-        count: t.count,
+        count: t.count ?? 0,
         pinned: pinnedSet.has(t.name),
+        fields: t.fields,
       });
     }
   }
@@ -97,7 +112,7 @@ function groupAndRank(tags: TagSummary[], pinnedSet: Set<string>): Entry[] {
   for (const g of groups.values()) {
     g.children.sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return b.count - a.count || a.name.localeCompare(b.name);
+      return (b.count ?? 0) - (a.count ?? 0) || a.name.localeCompare(b.name);
     });
   }
 
@@ -109,7 +124,7 @@ function groupAndRank(tags: TagSummary[], pinnedSet: Set<string>): Entry[] {
   const rankOf = (e: Entry): { pinned: boolean; count: number; label: string } => {
     if (e.kind === "leaf") return { pinned: e.pinned, count: e.count, label: e.label };
     const anyPinned = (e.selfTag?.pinned ?? false) || e.children.some((c) => c.pinned);
-    const heaviest = Math.max(e.selfTag?.count ?? 0, ...e.children.map((c) => c.count)) || 0;
+    const heaviest = Math.max(e.selfTag?.count ?? 0, ...e.children.map((c) => c.count ?? 0)) || 0;
     return { pinned: anyPinned, count: heaviest, label: e.prefix };
   };
 
@@ -123,10 +138,48 @@ function groupAndRank(tags: TagSummary[], pinnedSet: Set<string>): Entry[] {
   return entries;
 }
 
+function isEntryPinned(e: Entry): boolean {
+  if (e.kind === "leaf") return e.pinned;
+  return (e.selfTag?.pinned ?? false) || e.children.some((c) => c.pinned);
+}
+
+function isEntrySelected(e: Entry, selectedSet: Set<string>): boolean {
+  if (e.kind === "leaf") return selectedSet.has(e.name.toLowerCase());
+  const selfSelected = e.selfTag ? selectedSet.has(e.selfTag.name.toLowerCase()) : false;
+  return selfSelected || e.children.some((c) => selectedSet.has(c.name.toLowerCase()));
+}
+
+// Selected first, then pinned, then whatever's left — which is already
+// count-ranked because `entries` (groupAndRank's output) is. Capped so the
+// common case never scrolls; the "All N tags" disclosure covers the rest.
+function buildShortlist(entries: Entry[], selectedSet: Set<string>, cap: number): Entry[] {
+  const selectedEntries = entries.filter((e) => isEntrySelected(e, selectedSet));
+  const rest = entries.filter((e) => !isEntrySelected(e, selectedSet));
+  const pinnedEntries = rest.filter(isEntryPinned);
+  const others = rest.filter((e) => !isEntryPinned(e));
+  return [...selectedEntries, ...pinnedEntries, ...others].slice(0, cap);
+}
+
 export function TagBrowser({ tags, pinnedTags, selected, onToggle, onClear, isLoading }: Props) {
+  const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Desktop-only autofocus (UI-audit finding: autofocusing on phone throws
+  // up the keyboard and covers the list). Read once at mount — a hybrid
+  // device changing pointer mid-session isn't worth re-deciding for a
+  // one-shot focus.
+  useEffect(() => {
+    if (isFinePointer()) inputRef.current?.focus();
+  }, []);
+
   const pinnedSet = useMemo(() => new Set(pinnedTags.map((p) => p.toLowerCase())), [pinnedTags]);
   const selectedSet = useMemo(() => new Set(selected.map((s) => s.toLowerCase())), [selected]);
   const entries = useMemo(() => groupAndRank(tags, pinnedSet), [tags, pinnedSet]);
+  const shortlist = useMemo(
+    () => buildShortlist(entries, selectedSet, SHORTLIST_CAP),
+    [entries, selectedSet],
+  );
 
   // Per-group open state. Default all groups to collapsed so the sidebar
   // stays scannable at a glance — users expand what they care about.
@@ -140,6 +193,47 @@ export function TagBrowser({ tags, pinnedTags, selected, onToggle, onClear, isLo
     });
   };
 
+  const trimmedQuery = query.trim().toLowerCase();
+  const searchResults = useMemo(() => {
+    if (!trimmedQuery) return [];
+    return tags
+      .filter((t) => t.name.toLowerCase().includes(trimmedQuery))
+      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0) || a.name.localeCompare(b.name));
+  }, [tags, trimmedQuery]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    const topMatch = searchResults[0];
+    if (!topMatch) return;
+    e.preventDefault();
+    onToggle(topMatch.name);
+  };
+
+  const renderEntry = (entry: Entry) =>
+    entry.kind === "leaf" ? (
+      <li key={entry.name}>
+        <TagRow
+          name={entry.name}
+          label={entry.label}
+          count={entry.count}
+          pinned={entry.pinned}
+          active={selectedSet.has(entry.name.toLowerCase())}
+          fieldCount={fieldCountOf(entry)}
+          onToggle={() => onToggle(entry.name)}
+        />
+      </li>
+    ) : (
+      <li key={entry.prefix}>
+        <TagGroup
+          group={entry}
+          isOpen={openGroups.has(entry.prefix)}
+          onToggleOpen={() => toggleGroup(entry.prefix)}
+          selectedSet={selectedSet}
+          onToggleTag={onToggle}
+        />
+      </li>
+    );
+
   return (
     <nav aria-label="Browse by tag">
       <div className="mb-2 flex items-baseline justify-between">
@@ -151,37 +245,68 @@ export function TagBrowser({ tags, pinnedTags, selected, onToggle, onClear, isLo
         ) : null}
       </div>
 
+      <input
+        ref={inputRef}
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Filter tags…"
+        aria-label="Filter tags"
+        className="input mb-2 w-full text-sm"
+      />
+
       {isLoading ? (
         <p className="text-xs text-fg-dim">Loading…</p>
-      ) : entries.length === 0 ? (
+      ) : tags.length === 0 ? (
         <p className="text-xs text-fg-dim">No tags in this vault.</p>
-      ) : (
-        <ul className="max-h-[60vh] space-y-0.5 overflow-y-auto pr-1">
-          {entries.map((entry) =>
-            entry.kind === "leaf" ? (
-              <li key={entry.name}>
+      ) : trimmedQuery ? (
+        searchResults.length === 0 ? (
+          <p className="text-xs text-fg-dim">No tags match "{query}".</p>
+        ) : (
+          <ul className="max-h-[60vh] space-y-0.5 overflow-y-auto pr-1" aria-label="Matching tags">
+            {searchResults.map((t) => (
+              <li key={t.name}>
                 <TagRow
-                  name={entry.name}
-                  label={entry.label}
-                  count={entry.count}
-                  pinned={entry.pinned}
-                  active={selectedSet.has(entry.name.toLowerCase())}
-                  onToggle={() => onToggle(entry.name)}
+                  name={t.name}
+                  label={t.name}
+                  count={t.count ?? 0}
+                  pinned={pinnedSet.has(t.name.toLowerCase())}
+                  active={selectedSet.has(t.name.toLowerCase())}
+                  fieldCount={fieldCountOf(t)}
+                  onToggle={() => onToggle(t.name)}
                 />
               </li>
-            ) : (
-              <li key={entry.prefix}>
-                <TagGroup
-                  group={entry}
-                  isOpen={openGroups.has(entry.prefix)}
-                  onToggleOpen={() => toggleGroup(entry.prefix)}
-                  selectedSet={selectedSet}
-                  onToggleTag={onToggle}
-                />
-              </li>
-            ),
-          )}
-        </ul>
+            ))}
+          </ul>
+        )
+      ) : (
+        <>
+          <ul className="space-y-0.5" aria-label="Shortlist">
+            {shortlist.map(renderEntry)}
+          </ul>
+          {entries.length > shortlist.length ? (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              aria-expanded={showAll}
+              className="mt-1 flex items-center gap-1 rounded-lg px-1 py-1 text-xs text-fg-dim hover:text-accent"
+            >
+              <span aria-hidden="true" className="font-mono">
+                {showAll ? "▾" : "▸"}
+              </span>
+              All {tags.length} tags
+            </button>
+          ) : null}
+          {showAll ? (
+            <ul
+              className="mt-2 max-h-[60vh] space-y-0.5 overflow-y-auto border-t border-border pr-1 pt-2"
+              aria-label="All tags"
+            >
+              {entries.map(renderEntry)}
+            </ul>
+          ) : null}
+        </>
       )}
     </nav>
   );
@@ -193,6 +318,7 @@ function TagRow({
   count,
   pinned,
   active,
+  fieldCount,
   onToggle,
 }: {
   name: string;
@@ -200,6 +326,7 @@ function TagRow({
   count: number;
   pinned: boolean;
   active: boolean;
+  fieldCount?: number;
   onToggle: () => void;
 }) {
   return (
@@ -218,6 +345,14 @@ function TagRow({
         </span>
       ) : null}
       <span className="flex-1 truncate">#{label}</span>
+      {fieldCount ? (
+        <span
+          className="shrink-0 text-xs text-fg-dim"
+          title={`${fieldCount} schema field${fieldCount === 1 ? "" : "s"}`}
+        >
+          ⊞ {fieldCount}
+        </span>
+      ) : null}
       <span className="shrink-0 text-xs text-fg-dim">{count}</span>
     </button>
   );
@@ -261,9 +396,15 @@ function TagGroup({
           <TagRow
             name={group.selfTag.name}
             label={group.prefix}
-            count={group.selfTag.count}
+            // The family TOTAL, not the parent's own count — a collapsed
+            // family whose parent exists (e.g. `#capture` with 0 notes of
+            // its own, but 951 across `capture/voice` + `capture/text` +
+            // `capture/photo`) used to show the parent's bare count here,
+            // rendering the vault's heaviest family as "#capture 0".
+            count={group.totalCount}
             pinned={group.selfTag.pinned}
             active={selfSelected}
+            fieldCount={fieldCountOf(group.selfTag)}
             onToggle={() => onToggleTag(group.selfTag!.name)}
           />
         ) : (
@@ -291,9 +432,10 @@ function TagGroup({
                 <TagRow
                   name={c.name}
                   label={leafLabel}
-                  count={c.count}
+                  count={c.count ?? 0}
                   pinned={c.pinned}
                   active={selectedSet.has(c.name.toLowerCase())}
+                  fieldCount={fieldCountOf(c)}
                   onToggle={() => onToggleTag(c.name)}
                 />
               </li>
