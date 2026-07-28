@@ -32,7 +32,7 @@ import {
   type ResolvedField,
   singleQueryTag,
   useResolvedViewFields,
-  useSchemaFieldNames,
+  useSchemaFields,
   useSchemaReady,
 } from "@/lib/views/fields";
 import { useViewModifiedBar } from "@/lib/views/modified-bar";
@@ -268,9 +268,10 @@ export function ViewCanvas({
   // view's `fields` override — resolved once and threaded to every kind, so a
   // card/row can show + edit them through the shared mutation primitive.
   const fields = useResolvedViewFields(effDef);
-  // The Fields control's union source — the primary tag's declared schema
-  // field names (a hidden schema field must still be offered for checking).
-  const schemaFieldNames = useSchemaFieldNames(effDef);
+  // The Fields control's union source — the primary tag's declared schema (a
+  // hidden schema field must still be offered for checking) — and the type
+  // source for the Fields/Group-by menus' glyphs and sectioning.
+  const schemaFields = useSchemaFields(effDef);
   const problems: ViewProblem[] = [...effDef.problems, ...results.problems];
 
   const partition = useMemo(() => {
@@ -380,7 +381,7 @@ export function ViewCanvas({
             all render the one resolved set — so this control is unconditional. */}
           <FieldsControl
             fields={fields}
-            schemaFieldNames={schemaFieldNames}
+            schemaFields={schemaFields}
             onChange={(names) => setDraft({ ...draft, fields: names })}
             dirty={def.fields !== effDef.fields}
           />

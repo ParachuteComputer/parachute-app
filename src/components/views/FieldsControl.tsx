@@ -1,4 +1,6 @@
 import { PillTrigger } from "@/components/views/ControlPill";
+import { resolveControlKind } from "@/components/views/FieldValueControl";
+import type { TagFieldSchema } from "@/lib/vault/types";
 import type { ResolvedField } from "@/lib/views/fields";
 import { useEffect, useState } from "react";
 
@@ -26,17 +28,44 @@ import { useEffect, useState } from "react";
 // Phone widths: the panel docks as a bottom sheet over a scrim (the
 // NavSheet's pattern, scaled down); sm+ it anchors as a popover under the
 // trigger (the FieldValueControl pattern).
+//
+// Every row also carries a TYPE glyph (`●` values, `📅` date, `Aa` text,
+// `#` number) — from the schema TYPE alone via the same `resolveControlKind`
+// dispatch `FieldValueControl` uses to pick an editor, never the field's
+// name (the deleted `field-presets.ts` rule). Shown rows type themselves
+// from their own `ResolvedField.schema`; hidden rows have no `ResolvedField`
+// of their own, so they look their type up in `schemaFields`.
+
+/**
+ * The row's leading type glyph. `●` folds together enum AND boolean — both
+ * are, by construction, a small fixed value set (declared or built-in),
+ * unlike free text or a per-note number.
+ */
+function typeGlyph(schema: TagFieldSchema | undefined): string {
+  switch (resolveControlKind(schema)) {
+    case "enum":
+    case "boolean":
+      return "●";
+    case "date":
+      return "📅";
+    case "number":
+      return "#";
+    default:
+      return "Aa";
+  }
+}
 
 export function FieldsControl({
   fields,
-  schemaFieldNames,
+  schemaFields,
   onChange,
   dirty = false,
 }: {
   /** The EFFECTIVE resolved set (saved def + draft overlay) — checked, in order. */
   fields: ResolvedField[];
-  /** The primary tag's declared schema field names — the union's other half. */
-  schemaFieldNames: string[];
+  /** The primary tag's declared schema (name → type) — the union's other
+   * half, and the type source for every row's glyph. */
+  schemaFields: Record<string, TagFieldSchema>;
   /** Receives the full ordered list of shown fields after every edit. */
   onChange: (next: string[]) => void;
   /** The field set diverges from the saved view — tint the pill border. */
@@ -55,7 +84,7 @@ export function FieldsControl({
   }, [open]);
 
   const shown = fields.map((f) => f.name);
-  const hidden = schemaFieldNames.filter((n) => !shown.includes(n));
+  const hidden = Object.keys(schemaFields).filter((n) => !shown.includes(n));
 
   // Nothing to configure — no single-tag schema and no effective set (the
   // same silent posture as the sibling Group/Date selects with zero options).
@@ -108,9 +137,9 @@ export function FieldsControl({
           >
             <p className="eyebrow px-2 pt-1.5 pb-1">Fields</p>
             <ul className="flex flex-col gap-0.5">
-              {shown.map((name, i) => (
+              {fields.map((f, i) => (
                 <li
-                  key={name}
+                  key={f.name}
                   className="flex items-center gap-1 rounded-lg px-2 py-1 hover:bg-bg-soft"
                 >
                   <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm text-fg">
@@ -118,13 +147,19 @@ export function FieldsControl({
                       type="checkbox"
                       checked
                       disabled={atMinimum}
-                      onChange={() => hide(name)}
+                      onChange={() => hide(f.name)}
                     />
-                    <span className="truncate">{name}</span>
+                    <span
+                      aria-hidden="true"
+                      className="w-4 flex-none text-center text-2xs text-fg-dim"
+                    >
+                      {typeGlyph(f.schema)}
+                    </span>
+                    <span className="truncate">{f.name}</span>
                   </label>
                   <button
                     type="button"
-                    aria-label={`Move ${name} up`}
+                    aria-label={`Move ${f.name} up`}
                     disabled={i === 0}
                     onClick={() => move(i, -1)}
                     className="focus-ring rounded px-1.5 py-0.5 text-sm text-fg-muted hover:bg-bg-soft hover:text-fg disabled:opacity-30"
@@ -133,7 +168,7 @@ export function FieldsControl({
                   </button>
                   <button
                     type="button"
-                    aria-label={`Move ${name} down`}
+                    aria-label={`Move ${f.name} down`}
                     disabled={i === shown.length - 1}
                     onClick={() => move(i, 1)}
                     className="focus-ring rounded px-1.5 py-0.5 text-sm text-fg-muted hover:bg-bg-soft hover:text-fg disabled:opacity-30"
@@ -149,6 +184,12 @@ export function FieldsControl({
                 >
                   <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm text-fg-muted">
                     <input type="checkbox" checked={false} onChange={() => show(name)} />
+                    <span
+                      aria-hidden="true"
+                      className="w-4 flex-none text-center text-2xs text-fg-dim"
+                    >
+                      {typeGlyph(schemaFields[name])}
+                    </span>
                     <span className="truncate">{name}</span>
                   </label>
                 </li>

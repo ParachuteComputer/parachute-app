@@ -538,11 +538,16 @@ describe("ViewSurface config draft (views train B)", () => {
     expect(screen.queryByRole("button", { name: /^by date/i })).toBeNull();
     fireEvent.click(groupPill);
     const menu = await screen.findByRole("menu", { name: "Group by" });
+    // Sectioned + type-filtered (train C): `status` (a declared enum) is
+    // value-bearing and lists first, with a preview of its values; `title`
+    // (free text) follows under the honest "one column per value" heading;
+    // `due` (date-typed) is excluded entirely — it already owns the By-date
+    // pill above.
     expect(
       within(menu)
         .getAllByRole("menuitemradio")
         .map((o) => o.textContent?.replace("✓", "")),
-    ).toEqual(["title", "status", "due"]);
+    ).toEqual(["statusactive · done", "title"]);
     expect(within(menu).getByRole("menuitemradio", { name: "status" })).toHaveAttribute(
       "aria-checked",
       "true",

@@ -1,3 +1,41 @@
+## [0.22.7] - 2026-07-27
+
+**GROUP BY and FIELDS now explain what a field's TYPE means for the menu, instead of offering 9 bare names and letting you find out the hard way.**
+
+The other half of Aaron's complaint from his own vault — "how we're doing the
+filtering, how we're selecting the schemas, um, both in the filter and in the
+tag page." Judged against `bigvault`'s richest-schema tag, `#project` (9
+declared fields: 3 enum, 1 string, 1 number, 1 boolean, 3 date):
+
+| | before | after |
+| --- | --- | --- |
+| GROUP BY menu on `#project` | 9 bare names, undifferentiated — date fields included, each grouping into one column per distinct date | 3 value-bearing fields (a values preview: `seed · active · paused…`), 3 free-text/number fields under an honest "one column per value" heading, **3 date fields excluded outright** with a note pointing at the Calendar lens |
+| FIELDS menu row | plain checkbox, no type cue | a type glyph per row — `●` values, `📅` date, `Aa` text, `#` number |
+
+- **No hardcoded field vocabulary — selection is by TYPE, never by name.**
+  A `field-presets.ts` naming `status`/`priority`/`due` was deleted from this
+  repo for exactly this reason (Aaron, 2026-07-25: "I don't think any of these
+  should be hard coded... we don't really need to be opinionated on this").
+  The sectioning and glyphs both key off `resolveControlKind` — the same
+  type→kind dispatch `FieldValueControl` already uses to pick an editor —
+  never a name.
+- **`ControlPill`** gained two small generic capabilities (not a GROUP-BY-only
+  hack): headed **sections** of option rows, and a per-option dim **hint**
+  line. Both are opt-in; every existing flat-options caller (the lens
+  switcher, By-date) renders exactly as before.
+- **The legacy-value unshift still holds**, generalized: a `group_by` naming
+  a field this menu doesn't offer — undeclared, or (since this PR) date-typed
+  — still renders as selected via an unheaded lead row, never silently
+  dropped.
+- **A tag whose only fields are date-typed** gets the honest "date fields
+  plot on the Calendar lens" note rather than a false "no fields yet" invite
+  — the invite is reserved for a tag with genuinely zero declared fields.
+
+Filter state, URL params, and the save format are untouched — presentation
+only. Every new test was watched failing before the fix (stub the type
+dispatch, the exclusion, the preview, or the section/hint rendering out;
+confirm each goes red for the stated reason; restore).
+
 ## [0.22.6] - 2026-07-27
 
 **A typeahead for the tag picker, a shortlist instead of the whole list, and
