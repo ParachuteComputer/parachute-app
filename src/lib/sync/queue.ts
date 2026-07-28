@@ -243,7 +243,7 @@ async function runMutation(ctx: DrainContext, row: PendingRow): Promise<void> {
         path,
         mimeType: m.mimeType,
         ...(m.transcribe ? { transcribe: true } : {}),
-        ...(m.metadata ? { metadata: m.metadata } : {}),
+        ...(m.segment_index !== undefined ? { segment_index: m.segment_index } : {}),
       });
       return;
     }

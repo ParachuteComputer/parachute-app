@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SEGMENT_MS, createSegmentedRecorder } from "./segmented-recorder";
+import { MAX_SEGMENT_BYTES, SEGMENT_MS, createSegmentedRecorder } from "./segmented-recorder";
 
 // Same minimal MediaRecorder stand-in the recorder tests use: stop() emits one
 // data chunk then fires onstop synchronously. Each fresh segment builds a new
 // instance, exactly as a real browser would on the same live stream.
 class FakeMediaRecorder {
   static supported = new Set<string>(["audio/webm;codecs=opus"]);
+  // Every constructed instance, in order — lets a test drive a specific
+  // segment's data events directly (see emit()) without exposing the raw
+  // recorder through SegmentedRecorderController's public surface.
+  static instances: FakeMediaRecorder[] = [];
   ondataavailable: ((e: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
   stream: MediaStream;
@@ -15,6 +19,7 @@ class FakeMediaRecorder {
   constructor(stream: MediaStream, opts: { mimeType: string }) {
     this.stream = stream;
     this.mimeType = opts.mimeType;
+    FakeMediaRecorder.instances.push(this);
   }
   static isTypeSupported(t: string): boolean {
     return FakeMediaRecorder.supported.has(t);
@@ -32,6 +37,13 @@ class FakeMediaRecorder {
     this.state = "inactive";
     this.ondataavailable?.({ data: new Blob([new Uint8Array([1, 2, 3, 4])]) });
     this.onstop?.();
+  }
+  // Simulates a periodic `ondataavailable` tick (what a real MediaRecorder
+  // fires when given a timeslice) WITHOUT stopping — lets a test emit bytes
+  // at a chosen rate to exercise the size-based rollover independently of the
+  // elapsed-time timer.
+  emit(bytes: number) {
+    this.ondataavailable?.({ data: new Blob([new Uint8Array(bytes)]) });
   }
 }
 
@@ -67,10 +79,126 @@ function manualTimer() {
 describe("createSegmentedRecorder", () => {
   beforeEach(() => {
     FakeMediaRecorder.supported = new Set(["audio/webm;codecs=opus"]);
+    FakeMediaRecorder.instances = [];
   });
 
-  it("SEGMENT_MS is the 10-minute boundary", () => {
-    expect(SEGMENT_MS).toBe(10 * 60_000);
+  it("SEGMENT_MS is the 30-minute boundary", () => {
+    expect(SEGMENT_MS).toBe(30 * 60_000);
+  });
+
+  it("MAX_SEGMENT_BYTES is the 20 MB size cap", () => {
+    expect(MAX_SEGMENT_BYTES).toBe(20 * 1024 * 1024);
+  });
+
+  it("rolls early on emitted SIZE when the bitrate hint is ignored (un-honored ~128.8 kbps default)", async () => {
+    const { stream, stop } = trackedStream();
+    const timer = manualTimer();
+    const onRoll = vi.fn();
+    const rec = createSegmentedRecorder({
+      stream,
+      mimeType: "audio/webm;codecs=opus",
+      MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+      setTimer: timer.setTimer,
+      clearTimer: timer.clearTimer,
+      onRoll,
+    });
+    rec.start();
+    const seg1 = FakeMediaRecorder.instances[0]!;
+
+    // Un-honored browser default, measured with ffprobe: 128.8 kbps =
+    // 16_100 bytes/sec. Feed it in 10s ticks (the size check's sampling
+    // grain) — crossing MAX_SEGMENT_BYTES (20 MB) takes ~131 ticks, i.e.
+    // ~1310s (~21.8 min) of simulated audio: well inside the 30-minute
+    // SEGMENT_MS window, whose timer we never fire in this test. Any roll
+    // that happens here can ONLY be the size cap.
+    const BYTES_PER_TICK = 16_100 * 10;
+    for (let i = 0; i < 200 && rec.activePart === 1; i++) {
+      seg1.emit(BYTES_PER_TICK);
+    }
+
+    expect(rec.activePart).toBe(2);
+    expect(onRoll).toHaveBeenCalledTimes(1);
+    expect(onRoll).toHaveBeenCalledWith(2);
+    // The elapsed-time timer for segment 1 was live and never fired — the
+    // stream stays open, exactly one roll happened, no reentrant double-roll
+    // from the old segment's own trailing stop()-triggered data event.
+    expect(stop).not.toHaveBeenCalled();
+
+    await rec.stop();
+    expect(rec.activePart).toBe(2); // stopping doesn't spuriously add a 3rd
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("a late data event from an already-superseded segment does not roll again (segmentGen guard)", async () => {
+    const { stream } = trackedStream();
+    const timer = manualTimer();
+    const onRoll = vi.fn();
+    const rec = createSegmentedRecorder({
+      stream,
+      mimeType: "audio/webm;codecs=opus",
+      MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+      setTimer: timer.setTimer,
+      clearTimer: timer.clearTimer,
+      onRoll,
+    });
+    rec.start();
+    const seg1 = FakeMediaRecorder.instances[0]!;
+
+    // Cross the cap once — segment 1 rolls to segment 2. This roll has fully
+    // returned by the time we get here (the `rolling` reentrancy guard is
+    // back to false), so this is a DIFFERENT hazard than the one the other
+    // size test's `stop()` assertion covers.
+    seg1.emit(MAX_SEGMENT_BYTES);
+    expect(rec.activePart).toBe(2);
+    onRoll.mockClear();
+
+    // A real browser can deliver one more `ondataavailable` for segment 1
+    // asynchronously, after JS has moved on to segment 2 — e.g. the trailing
+    // chunk from its stop() flush arriving on a later tick of the event loop.
+    // `seg1` is still the OLD instance; firing on it directly simulates
+    // exactly that late, stale event.
+    seg1.emit(MAX_SEGMENT_BYTES);
+
+    // It must NOT be mistaken for segment 2's own bytes and roll again.
+    expect(rec.activePart).toBe(2);
+    expect(onRoll).not.toHaveBeenCalled();
+
+    await rec.stop();
+    expect(rec.activePart).toBe(2);
+  });
+
+  it("at the intended 32 kbps hint, still rolls on TIME at 30 minutes — the size cap does not preempt it", async () => {
+    const { stream, stop } = trackedStream();
+    const timer = manualTimer();
+    const onRoll = vi.fn();
+    let t = 0;
+    const rec = createSegmentedRecorder({
+      stream,
+      mimeType: "audio/webm;codecs=opus",
+      now: () => t,
+      MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+      setTimer: timer.setTimer,
+      clearTimer: timer.clearTimer,
+      onRoll,
+    });
+    rec.start();
+    const seg1 = FakeMediaRecorder.instances[0]!;
+
+    // 32 kbps (the recorder's target bitrate, honored) = 4_000 bytes/sec.
+    // A full 30-minute segment at that rate is ~7.2 MB — well under the
+    // 20 MB cap — fed as one tick since the point is the TOTAL, not the
+    // sampling cadence.
+    seg1.emit(4_000 * 30 * 60);
+    expect(rec.activePart).toBe(1);
+    expect(onRoll).not.toHaveBeenCalled();
+
+    t = 30 * 60_000;
+    timer.fireRoll();
+    expect(rec.activePart).toBe(2);
+    expect(onRoll).toHaveBeenCalledWith(2);
+
+    await rec.stop();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 
   it("a recording that never rolls yields exactly ONE segment (common case)", async () => {

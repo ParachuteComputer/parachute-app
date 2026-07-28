@@ -374,6 +374,60 @@ describe("drain — link-attachment transcribe flag", () => {
       mimeType: "image/png",
     });
   });
+
+  // The bug this PR fixes: `segment_index` rode as `metadata.segment_index`
+  // through this layer while both doors read `body.segment_index` top-level
+  // — silently dropped in transit. Confirmed against pre-fix `queue.ts`: the
+  // call actually received `{ metadata: { segment_index: 0 } }`, not
+  // `{ segment_index: 0 }`. Assert the full path (enqueue → drain →
+  // client call), not just the plan object — that's exactly where it broke.
+  it("carries segment_index at the TOP level of the linkAttachment call", async () => {
+    await enqueue(
+      db,
+      {
+        kind: "link-attachment",
+        noteId: "srv-n",
+        pathRef: "/storage/part1.webm",
+        mimeType: "audio/webm",
+        transcribe: true,
+        segment_index: 0,
+      },
+      { vaultId: "v1" },
+    );
+    const linkAttachment = vi.fn(async () => ({ id: "att-1" }) as NoteAttachment);
+    const client = makeClient({ linkAttachment });
+    await drain({ db, client, vaultId: "v1", blobStore: createIdbBlobStore(db) });
+    expect(linkAttachment).toHaveBeenCalledWith("srv-n", {
+      path: "/storage/part1.webm",
+      mimeType: "audio/webm",
+      transcribe: true,
+      segment_index: 0,
+    });
+  });
+
+  it("omits segment_index for the single-segment case (no key at all, not segment_index: undefined)", async () => {
+    await enqueue(
+      db,
+      {
+        kind: "link-attachment",
+        noteId: "srv-n",
+        pathRef: "/storage/solo.webm",
+        mimeType: "audio/webm",
+        transcribe: true,
+      },
+      { vaultId: "v1" },
+    );
+    const linkAttachment = vi.fn(async () => ({ id: "att-1" }) as NoteAttachment);
+    const client = makeClient({ linkAttachment });
+    await drain({ db, client, vaultId: "v1", blobStore: createIdbBlobStore(db) });
+    // Exact-shape match (not partial) — an accidental `segment_index: undefined`
+    // key would fail this the same as a real value would.
+    expect(linkAttachment).toHaveBeenCalledWith("srv-n", {
+      path: "/storage/solo.webm",
+      mimeType: "audio/webm",
+      transcribe: true,
+    });
+  });
 });
 
 describe("drain — vault isolation", () => {

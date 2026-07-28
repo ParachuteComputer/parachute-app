@@ -13,9 +13,13 @@ export interface VoiceSegmentPlan {
   filename: string;
   /** Whether to ask the vault to transcribe this segment. */
   transcribe: boolean;
-  /** `{ segment_index }` (a NUMBER, 0-based) for a transcribed N>1 capture so
-   *  the vault fills that part's own marker; omitted otherwise. */
-  metadata?: { segment_index: number };
+  /** A NUMBER, 0-based, for a transcribed N>1 capture so the vault fills
+   *  that part's own marker; omitted otherwise. TOP LEVEL on this plan
+   *  object and every shape it flows through (`PendingLinkAttachment`, the
+   *  `linkAttachment` wire body) — a `{ metadata: { segment_index } }`
+   *  wrapper is what silently dropped it before (both doors read
+   *  `body.segment_index` directly). */
+  segment_index?: number;
 }
 
 export interface VoiceCapturePlan {
@@ -55,7 +59,7 @@ export function buildVoiceCapturePlan(input: {
       ? memoFilename(mimeType, recordedAt, k + 1)
       : memoFilename(mimeType, recordedAt),
     transcribe: willTranscribe,
-    ...(willTranscribe && multi ? { metadata: { segment_index: k } } : {}),
+    ...(willTranscribe && multi ? { segment_index: k } : {}),
   }));
 
   const markerBlock = !willTranscribe

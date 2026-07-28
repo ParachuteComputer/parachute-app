@@ -76,12 +76,14 @@ export interface PendingLinkAttachment {
   // note's `_Transcript pending._` placeholder with the transcript. Vault's
   // transcription-worker does the actual work — Notes just flags intent.
   transcribe?: boolean;
-  // Extra attachment metadata forwarded verbatim to the vault. Voice Wave 2
-  // uses `{ segment_index: k }` (a NUMBER, 0-based) to tell the vault this is
-  // part k+1 of a segmented recording so it fills that part's own
-  // `_Transcript pending (part N)._` marker. Omitted for the single-segment
-  // common case (no per-part markers) — the note shape stays byte-identical.
-  metadata?: Record<string, unknown>;
+  // A NUMBER, 0-based: tells the vault this is part k+1 of a segmented
+  // recording so it fills that part's own `_Transcript pending (part N)._`
+  // marker. Omitted for the single-segment common case (no per-part markers)
+  // — the note shape stays byte-identical. MUST be top level, not nested
+  // under a `metadata` object — both doors read `body.segment_index`
+  // directly, and a nested copy is silently dropped in transit (the bug
+  // this field's shape exists to prevent from recurring).
+  segment_index?: number;
 }
 
 export interface PendingDeleteAttachment {

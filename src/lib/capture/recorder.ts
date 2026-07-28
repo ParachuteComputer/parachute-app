@@ -12,6 +12,14 @@ export const PREFERRED_MIME_TYPES: readonly string[] = [
   "audio/ogg;codecs=opus",
 ];
 
+// Speech-tuned bitrate. Measured from Aaron's actual voice-memo files with
+// ffprobe: the browser default was 128.8 kbps — four times what the
+// pipeline was sized for, so the Cloud 25 MB per-attachment ceiling bit at
+// ~27 minutes rather than the ~109 the docs assumed a bare recording could
+// reach. 32 kbps is excellent for speech and shrinks files 4x, moving that
+// ceiling back out to ~109 minutes.
+export const TARGET_AUDIO_BITRATE = 32_000;
+
 export function pickMimeType(candidates: readonly string[] = PREFERRED_MIME_TYPES): string | null {
   if (typeof MediaRecorder === "undefined") return null;
   for (const type of candidates) {
@@ -62,13 +70,30 @@ export interface CreateRecorderOptions {
   // Injection points for tests; default to the browser globals.
   now?: () => number;
   MediaRecorderCtor?: typeof MediaRecorder;
+  // When set, requested as MediaRecorder's `start(timeslice)` argument, so
+  // `ondataavailable` fires periodically instead of only once at stop(). This
+  // is NOT a second segmentation mechanism — a segment is still made whole by
+  // `concatBlobs()` on stop(), regardless of how many chunks it arrived in —
+  // it exists purely so a caller (the segmented recorder) can observe emitted
+  // size early enough to act on it, e.g. to catch an un-honored bitrate hint
+  // before a boundary it would otherwise only find out about at stop().
+  dataIntervalMs?: number;
+  // Fired after every `ondataavailable`, with the RUNNING total size (bytes)
+  // emitted so far this recording. Omitted callers pay nothing extra.
+  onData?: (totalBytes: number) => void;
 }
 
 export function createRecorder(opts: CreateRecorderOptions): RecorderController {
   const now = opts.now ?? (() => Date.now());
   const releaseStreamOnStop = opts.releaseStreamOnStop ?? true;
   const Ctor = opts.MediaRecorderCtor ?? MediaRecorder;
-  const recorder = new Ctor(opts.stream, { mimeType: opts.mimeType });
+  // `audioBitsPerSecond` is a browser HINT, not a guarantee — some browsers
+  // ignore it. Don't build logic downstream that assumes it took effect;
+  // it's here to shrink the common case, not to bound it.
+  const recorder = new Ctor(opts.stream, {
+    mimeType: opts.mimeType,
+    audioBitsPerSecond: TARGET_AUDIO_BITRATE,
+  });
   const chunks: Blob[] = [];
   let state: RecorderState = "idle";
   // We track accumulated recording time manually instead of trusting wall
@@ -78,6 +103,7 @@ export function createRecorder(opts: CreateRecorderOptions): RecorderController 
 
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data);
+    if (opts.onData) opts.onData(chunks.reduce((n, c) => n + c.size, 0));
   };
 
   const releaseTracks = () => {
@@ -94,7 +120,7 @@ export function createRecorder(opts: CreateRecorderOptions): RecorderController 
     },
     start(): void {
       if (state !== "idle") throw new Error(`Cannot start from ${state}`);
-      recorder.start();
+      recorder.start(opts.dataIntervalMs);
       startedAt = now();
       state = "recording";
     },

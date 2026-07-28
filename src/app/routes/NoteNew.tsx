@@ -420,9 +420,9 @@ export function NoteNew() {
     });
 
     // Size validation — the SAME guard every other upload uses, run per
-    // segment. Segments are small (~10 min of opus each), so this is a safety
-    // net, not a limit; a failure aborts the whole save rather than enqueuing a
-    // partial capture.
+    // segment. Segments are small (~30 min of 32kbps opus each, ~6.9MB), so
+    // this is a safety net, not a limit; a failure aborts the whole save
+    // rather than enqueuing a partial capture.
     for (let k = 0; k < segments.length; k++) {
       const reason = validateFile(
         new File([segments[k]!.data], plan.segments[k]!.filename, { type: mimeType }),
@@ -478,7 +478,7 @@ export function NoteNew() {
             pathRef: blobRef(blobId),
             mimeType,
             transcribe: seg.transcribe,
-            ...(seg.metadata ? { metadata: seg.metadata } : {}),
+            ...(seg.segment_index !== undefined ? { segment_index: seg.segment_index } : {}),
           },
           { vaultId: activeVault.id },
         );

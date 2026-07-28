@@ -63,6 +63,41 @@ describe("VaultClient (Notes subclass) — Notes-only endpoints", () => {
       });
     });
 
+    it("sends segment_index at the TOP level of the JSON body, not nested under metadata", async () => {
+      const fetchImpl = mockFetch({
+        status: 201,
+        json: {
+          id: "att-1",
+          noteId: "note-a",
+          path: "2026-04-18/part1.webm",
+          mimeType: "audio/webm",
+          createdAt: "2026-04-18T12:00:00Z",
+        },
+      });
+      const client = new VaultClient({
+        vaultUrl: "http://localhost:1940",
+        accessToken: "pvt_abc",
+        fetchImpl,
+      });
+      await client.linkAttachment("note-a", {
+        path: "2026-04-18/part1.webm",
+        mimeType: "audio/webm",
+        transcribe: true,
+        segment_index: 0,
+      });
+      const call = fetchImpl.mock.calls[0];
+      const init = call?.[1] as RequestInit;
+      // The actual bytes that would hit the wire — both doors read
+      // `body.segment_index` directly, so this is the shape that matters,
+      // not whatever object shape a caller happens to build in memory.
+      expect(JSON.parse(init.body as string)).toEqual({
+        path: "2026-04-18/part1.webm",
+        mimeType: "audio/webm",
+        transcribe: true,
+        segment_index: 0,
+      });
+    });
+
     it("propagates 401 as VaultAuthError", async () => {
       const fetchImpl = mockFetch({ ok: false, status: 401 });
       const client = new VaultClient({
