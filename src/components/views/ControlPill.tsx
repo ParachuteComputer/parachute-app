@@ -209,11 +209,17 @@ export function ControlPill<V extends string>({
             {opt.glyph}
           </span>
         ) : null}
-        {/* The wrapper (not the label) carries flex-1 — with a hint, label
-            and hint share it and each truncates on its own; without one,
-            this is behaviorally identical to the old bare flex-1 label. */}
+        {/* The wrapper (not the label) carries flex-1 — with a hint, the
+            label keeps its own content width (shrink-0) and the hint alone
+            absorbs the squeeze. Sharing shrink between them (the previous
+            shape) let a long hint's larger flex-basis claim a larger
+            ABSOLUTE reduction under proportional flex-shrink math, which
+            crushed the shorter label toward zero — backwards from the
+            goal, since the label is the thing being identified. Without a
+            hint this is behaviorally identical to the old bare flex-1
+            label: nothing else shares the row to shrink against. */}
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="min-w-0 shrink truncate">{opt.label ?? opt.value}</span>
+          <span className="shrink-0">{opt.label ?? opt.value}</span>
           {opt.hint ? (
             <span aria-hidden="true" className="min-w-0 shrink truncate text-2xs text-fg-dim">
               {opt.hint}

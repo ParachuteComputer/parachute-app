@@ -172,6 +172,36 @@ describe("ControlPill sections", () => {
     expect(priority.textContent).toBe("priority");
   });
 
+  // jsdom loads no stylesheet (`css: false` in vitest.config.ts) so scrollWidth
+  // vs clientWidth is always 0/0 here — className is the only real signal
+  // available, matching how the rest of this suite already asserts
+  // presentational behavior (e.g. the dirty-border `color-mix` checks above).
+  // A long hint used to claim a larger ABSOLUTE reduction under proportional
+  // flex-shrink math (bigger flex-basis = bigger raw-pixel cut), which crushed
+  // the field's own short name toward zero even though it lost fewer pixels
+  // than the hint did. The label must never carry shrink/truncate — the hint
+  // alone absorbs the squeeze — so a field's name is legible regardless of how
+  // long its value preview runs.
+  it("a long hint never shares shrink with the label — the label holds its width, the hint alone truncates", () => {
+    renderSections([
+      {
+        heading: "Fields with values",
+        options: [
+          {
+            value: "status",
+            hint: "backlog · in progress · in review · blocked · done · archived",
+          },
+        ],
+      },
+    ]);
+    const row = screen.getByRole("menuitemradio", { name: /status/ });
+    const label = within(row).getByText("status");
+    const hint = within(row).getByText(/backlog/);
+    expect(label.className).not.toContain("truncate");
+    expect(label.className).toContain("shrink-0");
+    expect(hint.className).toContain("truncate");
+  });
+
   it("selecting a sectioned row reports its value and closes the menu, same as the flat shape", () => {
     const onSelect = renderSections([
       { heading: "Fields with values", options: [{ value: "status" }, { value: "priority" }] },

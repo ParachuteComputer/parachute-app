@@ -23,6 +23,12 @@ declared fields: 3 enum, 1 string, 1 number, 1 boolean, 3 date):
   hack): headed **sections** of option rows, and a per-option dim **hint**
   line. Both are opt-in; every existing flat-options caller (the lens
   switcher, By-date) renders exactly as before.
+- **A long hint no longer crushes the field's own name.** Label and hint
+  shared `flex-shrink` on the same row, so proportional flex math let a long
+  enum preview (`home · craft · community · money`) claim the bigger
+  absolute cut, squeezing a short field name toward nothing — `status` and
+  `area` rendered as `st…`/`ar…` on `bigvault`'s `#project`. The label now
+  holds its width; only the hint shrinks and truncates.
 - **The legacy-value unshift still holds**, generalized: a `group_by` naming
   a field this menu doesn't offer — undeclared, or (since this PR) date-typed
   — still renders as selected via an unheaded lead row, never silently
