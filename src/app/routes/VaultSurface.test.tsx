@@ -259,7 +259,11 @@ describe("VaultSurface route (/notes)", () => {
     expect(firstRow.getByLabelText(/pinned/i)).toBeInTheDocument();
   });
 
-  it("renders the Pinned tags strip inside the Filters panel when the vault has pinned tags", async () => {
+  it("floats pinned tags to the top of the tag picker's shortlist, toggling rather than replacing the selection", async () => {
+    // The old PinnedTagsStrip lived above the TagBrowser as a separate
+    // single-select-replace control; it's gone now — pinned tags surface
+    // inside the picker itself, governed by the SAME multi-select-toggle
+    // behavior as every other row.
     localStorage.setItem("lens:pinned-tags:dev", JSON.stringify(["daily", "idea"]));
     installFetch({
       notes: [
@@ -279,39 +283,18 @@ describe("VaultSurface route (/notes)", () => {
     render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
 
-    // Strip buttons render as pressable chips, not links, so tag filters apply
-    // in-place rather than routing away. The panel's TagBrowser also renders a
-    // #daily button — scope the query to the strip explicitly.
-    const strip = await screen.findByRole("navigation", { name: /pinned tags/i });
-    const dailyChip = within(strip).getByRole("button", { name: /#daily/i });
-    expect(dailyChip).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(dailyChip);
-    await waitFor(() => expect(dailyChip).toHaveAttribute("aria-pressed", "true"));
-  });
+    const picker = await screen.findByRole("navigation", { name: /browse by tag/i });
+    const dailyRow = within(picker).getByTitle("#daily");
+    expect(dailyRow).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(dailyRow);
+    await waitFor(() => expect(dailyRow).toHaveAttribute("aria-pressed", "true"));
 
-  it("renders a first-run hint in the pinned-tags strip when no tags are pinned", async () => {
-    installFetch({
-      notes: [
-        {
-          id: "n1",
-          path: "daily-note",
-          tags: ["daily"],
-          createdAt: "2026-04-18T10:00:00.000Z",
-        },
-      ],
-      tags: [{ name: "daily", count: 2 }],
-    });
-    render(<VaultSurface />, { wrapper: Wrapper });
-    await screen.findByRole("list", { name: "Notes" });
-    await openFilters();
-    const strip = await screen.findByRole("navigation", { name: /pinned tags/i });
-    expect(within(strip).getByText(/Pin tags here for quick access/i)).toBeInTheDocument();
-    expect(within(strip).getByRole("link", { name: /open the tag browser/i })).toHaveAttribute(
-      "href",
-      "/tags",
-    );
-    // No pinned-tag chips render in the empty state.
-    expect(within(strip).queryByRole("button", { name: /^#/i })).not.toBeInTheDocument();
+    // Toggle, not replace: picking a second pinned tag ADDS to the
+    // selection instead of clearing the first one out.
+    const ideaRow = within(picker).getByTitle("#idea");
+    fireEvent.click(ideaRow);
+    await waitFor(() => expect(ideaRow).toHaveAttribute("aria-pressed", "true"));
+    expect(dailyRow).toHaveAttribute("aria-pressed", "true");
   });
 
   it("hides archived notes by default and shows them when toggled on", async () => {
@@ -706,7 +689,6 @@ describe("VaultSurface route (/notes)", () => {
     expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/filter by path prefix/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /browse by tag/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: /pinned tags/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: /saved views/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^Folders$/)).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /show only/i })).not.toBeInTheDocument();
@@ -772,7 +754,6 @@ describe("VaultSurface route (/notes)", () => {
     expect(within(panel).getByLabelText(/show archived/i)).toBeInTheDocument();
     expect(within(panel).getByLabelText(/filter by path prefix/i)).toBeInTheDocument();
     expect(within(panel).getByRole("navigation", { name: /browse by tag/i })).toBeInTheDocument();
-    expect(within(panel).getByRole("navigation", { name: /pinned tags/i })).toBeInTheDocument();
 
     // Close: the panel unmounts, nothing lingers.
     fireEvent.click(filtersBtn);
@@ -821,7 +802,6 @@ describe("VaultSurface route (/notes)", () => {
     expect(screen.queryByRole("button", { name: /toggle sort/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/filter by path prefix/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: /pinned tags/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /^views$/i })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: /all notes · everything, searchable/i }),

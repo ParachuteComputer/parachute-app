@@ -46,12 +46,12 @@ import {
   useNotesForPathTree,
   usePinnedTags,
   useTagRoles,
-  useTags,
+  useTagsWithSchema,
   useUpdateNote,
   useVaultStore,
 } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
-import type { Note, TagSummary } from "@/lib/vault/types";
+import type { Note, TagRecord } from "@/lib/vault/types";
 import type { DefaultPageId } from "@/lib/views/defaults";
 import { useDefaultViewDef } from "@/lib/views/queries";
 import { queryTags } from "@/lib/views/query";
@@ -238,7 +238,10 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   // freshness comes from the polling floor (30s interval + refetch-on-focus)
   // and from mutations invalidating the cache on our own writes.
   const notes = useNotes(queryState, { live: false });
-  const tags = useTags();
+  // Schema-bearing listing — the tag picker's typed-tag marker needs field
+  // info, and the /tags page already pays for this query shape, so this
+  // isn't a new network cost, just a shared one.
+  const tags = useTagsWithSchema();
   const savedViews = useSavedViews(roles.view);
   const saveView = useSaveView(roles.view);
   const renameView = useRenameView();
@@ -503,21 +506,13 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
               </div>
             </div>
 
-            {/* Tags — pinned quick-picks, then browse-by-tag multi-select.
-                (The untagged view is definitionally tag-free.) */}
+            {/* Tags — browse-by-tag multi-select. Pinned tags float to the
+                top of its shortlist rather than living in a strip of their
+                own (the old strip was single-select-replace right above a
+                multi-select-toggle control — two look-alikes, different
+                behavior). (The untagged view is definitionally tag-free.) */}
             {preset !== "untagged" ? (
               <div className="space-y-4">
-                {!preset ? (
-                  <PinnedTagsStrip
-                    pinnedTags={pinnedTags}
-                    tagCounts={tags.data ?? []}
-                    selected={selectedTags}
-                    onPick={(name) => {
-                      setPathPrefix("");
-                      setSelectedTags((cur) => (cur.length === 1 && cur[0] === name ? [] : [name]));
-                    }}
-                  />
-                ) : null}
                 <TagBrowser
                   tags={tags.data ?? []}
                   pinnedTags={pinnedTags}
@@ -1352,7 +1347,7 @@ function QuickTagControl({
 }: {
   noteId: string;
   existing: string[];
-  suggestions: TagSummary[];
+  suggestions: TagRecord[];
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -1450,67 +1445,13 @@ function QuickTagControl({
                 className="flex w-full items-center justify-between px-2 py-1 text-left text-fg hover:bg-bg/60"
               >
                 <span className="truncate">{t.name}</span>
-                <span className="ml-2 shrink-0 text-fg-dim">{t.count}</span>
+                <span className="ml-2 shrink-0 text-fg-dim">{t.count ?? 0}</span>
               </button>
             </li>
           ))}
         </ul>
       ) : null}
     </div>
-  );
-}
-
-function PinnedTagsStrip({
-  pinnedTags,
-  tagCounts,
-  selected,
-  onPick,
-}: {
-  pinnedTags: string[];
-  tagCounts: TagSummary[];
-  selected: string[];
-  onPick: (name: string) => void;
-}) {
-  const countFor = (name: string) =>
-    tagCounts.find((t) => t.name.toLowerCase() === name.toLowerCase())?.count;
-  if (pinnedTags.length === 0) {
-    return (
-      <nav aria-label="Pinned tags" className="mb-6 flex flex-wrap items-center gap-2">
-        <span className="eyebrow">Pinned tags</span>
-        <span className="text-xs text-fg-dim">
-          Pin tags here for quick access —{" "}
-          <Link to="/tags" className="text-accent hover:underline">
-            open the tag browser
-          </Link>
-          .
-        </span>
-      </nav>
-    );
-  }
-  return (
-    <nav aria-label="Pinned tags" className="mb-6 flex flex-wrap items-center gap-2">
-      <span className="eyebrow">Pinned tags</span>
-      {pinnedTags.map((name) => {
-        const active = selected.length === 1 && selected[0] === name;
-        const count = countFor(name);
-        return (
-          <button
-            key={name}
-            type="button"
-            onClick={() => onPick(name)}
-            className={`chip focus-ring max-w-full ${
-              active ? "chip-tag-active font-medium" : "chip-tag"
-            }`}
-            aria-pressed={active}
-          >
-            <span className="min-w-0 break-all">#{name}</span>
-            {count !== undefined ? (
-              <span className={active ? "text-on-accent/80" : "text-accent/70"}>{count}</span>
-            ) : null}
-          </button>
-        );
-      })}
-    </nav>
   );
 }
 
