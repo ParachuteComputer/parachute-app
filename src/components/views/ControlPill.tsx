@@ -25,6 +25,23 @@ export interface ControlPillOption<V extends string = string> {
   label?: string;
   /** Decorative leading glyph or tint dot. */
   glyph?: ReactNode;
+  /** A dim trailing preview on the SAME row (e.g. an enum field's declared
+   * values) — context for this one option, not a second label. */
+  hint?: string;
+}
+
+/**
+ * A headed GROUP of option rows — generic grouping, not a GroupBy-specific
+ * shape: any caller can section its options under an eyebrow heading (which
+ * may itself carry a brief mechanical caveat, e.g. "Other fields · one
+ * column per value"). Omit `heading` for an unheaded lead group — how a
+ * single row that fits no group (the legacy-value unshift) sits above
+ * everything else. Passing `sections` to `ControlPill` renders grouped;
+ * the flat `options` prop is ignored when `sections` is given.
+ */
+export interface ControlPillSection<V extends string = string> {
+  heading?: string;
+  options: ControlPillOption<V>[];
 }
 
 /**
@@ -113,6 +130,7 @@ export function ControlPill<V extends string>({
   ariaLabel,
   menuLabel,
   options,
+  sections,
   current,
   onSelect,
   note,
@@ -129,7 +147,11 @@ export function ControlPill<V extends string>({
   ariaLabel?: string;
   /** Names the menu, and heads the phone sheet as its eyebrow. */
   menuLabel: string;
-  options: ControlPillOption<V>[];
+  /** Flat option rows. Ignored when `sections` is given. */
+  options?: ControlPillOption<V>[];
+  /** Grouped option rows under optional headings — takes precedence over
+   * `options` when both are given. */
+  sections?: ControlPillSection<V>[];
   /** The current option's value — aria-checked + the trailing ✓. */
   current?: V;
   onSelect: (value: V) => void;
@@ -167,6 +189,63 @@ export function ControlPill<V extends string>({
     action.onSelect();
   };
 
+  // One row renderer for both shapes below — sectioning is presentational
+  // grouping only, never a second option-row implementation.
+  const renderOption = (opt: ControlPillOption<V>) => {
+    const checked = opt.value === current;
+    return (
+      <button
+        key={opt.value}
+        type="button"
+        role="menuitemradio"
+        aria-checked={checked}
+        onClick={() => pick(opt.value)}
+        className={`focus-ring flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-bg-soft ${
+          checked ? "text-fg" : "text-fg-muted"
+        }`}
+      >
+        {opt.glyph ? (
+          <span aria-hidden="true" className="flex-none">
+            {opt.glyph}
+          </span>
+        ) : null}
+        {/* The wrapper (not the label) carries flex-1 — with a hint, the
+            label holds its own content width (shrink-0, no truncate needed)
+            and the hint alone absorbs the squeeze. Sharing shrink between
+            them (the previous shape) let a long hint's larger flex-basis
+            claim a larger ABSOLUTE reduction under proportional
+            flex-shrink math, which crushed the shorter label toward zero —
+            backwards from the goal, since the label is the thing being
+            identified. WITHOUT a hint the label goes back to
+            `min-w-0 shrink truncate` — the original bare flex-1 shape —
+            because a flat caller's label is the only thing in the row
+            competing for space; a user-defined value (the By-date pill's
+            field names) can still run long, and shrink-0-with-no-truncate
+            would let it overflow the menu's fixed sm:w-56 into horizontal
+            scroll/clip instead of a clean ellipsis. */}
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className={opt.hint ? "shrink-0" : "min-w-0 shrink truncate"}>
+            {opt.label ?? opt.value}
+          </span>
+          {opt.hint ? (
+            <span aria-hidden="true" className="min-w-0 shrink truncate text-2xs text-fg-dim">
+              {opt.hint}
+            </span>
+          ) : null}
+        </span>
+        {checked ? (
+          <span aria-hidden="true" className="text-accent">
+            ✓
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
+  const optionCount = sections
+    ? sections.reduce((n, s) => n + s.options.length, 0)
+    : (options?.length ?? 0);
+
   return (
     <div className="relative">
       <PillTrigger
@@ -198,40 +277,31 @@ export function ControlPill<V extends string>({
             <p aria-hidden="true" className="eyebrow px-2 pt-1.5 pb-1">
               {menuLabel}
             </p>
-            {options.map((opt) => {
-              const checked = opt.value === current;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={checked}
-                  onClick={() => pick(opt.value)}
-                  className={`focus-ring flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-bg-soft ${
-                    checked ? "text-fg" : "text-fg-muted"
-                  }`}
-                >
-                  {opt.glyph ? (
-                    <span aria-hidden="true" className="flex-none">
-                      {opt.glyph}
-                    </span>
-                  ) : null}
-                  <span className="min-w-0 flex-1 truncate">{opt.label ?? opt.value}</span>
-                  {checked ? (
-                    <span aria-hidden="true" className="text-accent">
-                      ✓
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
+            {sections
+              ? sections.map((section, i) => (
+                  <div
+                    key={section.heading ?? i}
+                    className={i > 0 ? "mt-1 border-t border-border-light pt-1" : undefined}
+                  >
+                    {section.heading ? (
+                      <p
+                        aria-hidden="true"
+                        className="px-2 pt-1 pb-0.5 text-2xs uppercase tracking-[0.08em] text-fg-dim"
+                      >
+                        {section.heading}
+                      </p>
+                    ) : null}
+                    {section.options.map(renderOption)}
+                  </div>
+                ))
+              : options?.map(renderOption)}
             {note ? <p className="px-2 pt-1.5 pb-1 text-xs text-fg-dim">{note}</p> : null}
             {actions && actions.length > 0 ? (
               <div
                 className={
                   // A hairline only when real options sit above — the empty
                   // state's note already separates them.
-                  options.length > 0 ? "mt-1 border-t border-border-light pt-1" : undefined
+                  optionCount > 0 ? "mt-1 border-t border-border-light pt-1" : undefined
                 }
               >
                 {actions.map((action) => (

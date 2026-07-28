@@ -86,16 +86,19 @@ function tagFieldsOf(tag: TagRecord | null | undefined): Record<string, TagField
 }
 
 /**
- * The primary tag's declared schema field NAMES, in schema order — the other
- * half of the Fields control's union (schema ∪ current effective set), so a
- * field the view currently hides can still be offered for checking. `[]` when
- * the query has no single tag or the tag has no schema (yet). Fetch-deduped
+ * The primary tag's declared schema, name → type, in schema order — the
+ * other half of the Fields control's union (schema ∪ current effective
+ * set), so a field the view currently hides can still be offered for
+ * checking. Also the TYPE source for the Fields/Group-by menus' type
+ * glyphs and sectioning — a hidden field carries no `ResolvedField` of its
+ * own, so its type has to come from here, not from `fields`. `{}` when the
+ * query has no single tag or the tag has no schema (yet). Fetch-deduped
  * with `useResolvedViewFields` (same `useTag` query key).
  */
-export function useSchemaFieldNames(def: ViewDef | null): string[] {
+export function useSchemaFields(def: ViewDef | null): Record<string, TagFieldSchema> {
   const single = def ? singleQueryTag(def.query) : null;
   const tag = useTag(single);
-  return useMemo(() => Object.keys(tagFieldsOf(tag.data) ?? {}), [tag.data]);
+  return useMemo(() => tagFieldsOf(tag.data) ?? {}, [tag.data]);
 }
 
 /**
@@ -110,7 +113,7 @@ export function useSchemaFieldNames(def: ViewDef | null): string[] {
  * but no identity row — the on-ramp's core case) resolves to `null` data with
  * `isSuccess === true` (`VaultClient` maps 404→null), so the invitation still
  * fires for exactly the schema-less tag that needs it. Fetch-deduped with
- * `useResolvedViewFields`/`useSchemaFieldNames` (same `useTag` query key).
+ * `useResolvedViewFields`/`useSchemaFields` (same `useTag` query key).
  */
 export function useSchemaReady(def: ViewDef | null): boolean {
   const single = def ? singleQueryTag(def.query) : null;

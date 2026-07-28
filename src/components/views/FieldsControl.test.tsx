@@ -1,4 +1,5 @@
 import { FieldsControl } from "@/components/views/FieldsControl";
+import type { TagFieldSchema } from "@/lib/vault/types";
 import type { ResolvedField } from "@/lib/views/fields";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -6,16 +7,27 @@ import { describe, expect, it, vi } from "vitest";
 // The Fields control (views train C) — presentational, so driven directly
 // with a spy `onChange` receiving the full ordered list after every edit.
 // Asserts the schema∪override union, ordered toggle writes, up/down reorder,
-// and the minimum-one lock (the wire format can't express "show none").
+// the minimum-one lock (the wire format can't express "show none"), and the
+// per-row type glyph (from the schema TYPE alone, never the field's name).
 
 function resolved(names: string[]): ResolvedField[] {
   return names.map((name) => ({ name, schema: { type: "string" } }));
 }
 
+// All-string fixture — every row's glyph is "Aa"; the dedicated glyph test
+// below varies the type per field.
+function schemaMap(names: string[]): Record<string, TagFieldSchema> {
+  return Object.fromEntries(names.map((name) => [name, { type: "string" } as TagFieldSchema]));
+}
+
 function renderOpen(shown: string[], schemaNames: string[]) {
   const onChange = vi.fn();
   render(
-    <FieldsControl fields={resolved(shown)} schemaFieldNames={schemaNames} onChange={onChange} />,
+    <FieldsControl
+      fields={resolved(shown)}
+      schemaFields={schemaMap(schemaNames)}
+      onChange={onChange}
+    />,
   );
   fireEvent.click(screen.getByRole("button", { name: /^fields/i }));
   return onChange;
@@ -26,8 +38,13 @@ describe("FieldsControl", () => {
     renderOpen(["status", "extra"], ["title", "status", "due"]);
     // Shown (checked, in view order) first, hidden schema fields after.
     const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    // Strip the reorder glyphs AND this all-string fixture's "Aa" type glyph
+    // (the dedicated glyph test below asserts it varies by type).
     expect(
-      boxes.map((b) => [b.closest("li")!.textContent!.replace(/[↑↓]/g, ""), b.checked]),
+      boxes.map((b) => [
+        b.closest("li")!.textContent!.replace(/[↑↓]/g, "").replace(/^Aa/, ""),
+        b.checked,
+      ]),
     ).toEqual([
       ["status", true],
       ["extra", true],
@@ -84,7 +101,7 @@ describe("FieldsControl", () => {
 
   it("renders nothing when the union is empty (no schema, no effective set)", () => {
     const onChange = vi.fn();
-    render(<FieldsControl fields={[]} schemaFieldNames={[]} onChange={onChange} />);
+    render(<FieldsControl fields={[]} schemaFields={{}} onChange={onChange} />);
     expect(screen.queryByRole("button", { name: /^fields/i })).toBeNull();
   });
 
@@ -93,5 +110,32 @@ describe("FieldsControl", () => {
     expect(screen.getByRole("dialog", { name: "Fields" })).toBeTruthy();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Fields" })).toBeNull();
+  });
+
+  describe("type glyph — from the schema TYPE alone, never the field's name", () => {
+    it("shown rows glyph from their own ResolvedField.schema; hidden rows from schemaFields", () => {
+      const onChange = vi.fn();
+      render(
+        <FieldsControl
+          fields={[
+            { name: "status", schema: { type: "string", enum: ["active", "done"] } },
+            { name: "effort_days", schema: { type: "number" } },
+          ]}
+          schemaFields={{
+            status: { type: "string", enum: ["active", "done"] },
+            effort_days: { type: "number" },
+            due: { type: "date" },
+            done: { type: "boolean" },
+            owner: { type: "string" },
+          }}
+          onChange={onChange}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^fields/i }));
+      const rows = screen
+        .getAllByRole("checkbox")
+        .map((cb) => cb.closest("li")!.textContent!.replace(/[↑↓]/g, ""));
+      expect(rows).toEqual(["●status", "#effort_days", "📅due", "●done", "Aaowner"]);
+    });
   });
 });

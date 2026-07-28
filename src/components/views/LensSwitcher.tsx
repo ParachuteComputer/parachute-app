@@ -1,5 +1,10 @@
 import { IconCalendar, IconColumns, IconGrid, IconNotes, IconTable } from "@/components/NavIcons";
-import { ControlPill, type ControlPillAction } from "@/components/views/ControlPill";
+import {
+  ControlPill,
+  type ControlPillAction,
+  type ControlPillSection,
+} from "@/components/views/ControlPill";
+import { resolveControlKind } from "@/components/views/FieldValueControl";
 import { hueForEnumValue } from "@/lib/hue/hue";
 import type { ResolvedField } from "@/lib/views/fields";
 import { VIEW_KINDS, type ViewKind } from "@/lib/views/schema";
@@ -111,13 +116,101 @@ function addFieldAction(label: string, hint: string, onAddField: () => void): Co
 }
 
 /**
- * Board-only: which field groups the lanes. Any resolved field can group.
- * Zero resolvable fields still renders — `[GROUP BY  — ▾]` — but it no longer
- * DEAD-ENDS there: when the view has a primary tag, the menu invites the user
- * to add a field to group by, opening the tag-schema editor so they name it
- * themselves. "This view's tag has no schema fields" was, for almost every
- * real user, the end of the road. With no primary tag there is nothing to add
- * to, so the control says so — and says what to do instead. The invitation
+ * Date-typed fields already own the Calendar's By-date axis
+ * (`DateFieldControl`) — the honest reason GROUP BY never lists them.
+ */
+const DATE_EXCLUDED_NOTE = "Date fields plot on the Calendar lens (By date) — not offered here.";
+
+/**
+ * A tint-dot option for one groupable field — the V2 stable-hue dot, same
+ * value → same hue as everywhere else.
+ */
+function groupByOption(name: string, hint?: string) {
+  return {
+    value: name,
+    hint,
+    glyph: <span className={`tint-dot tint-${hueForEnumValue(name)}`} />,
+  };
+}
+
+/**
+ * Partition a view's resolved fields by GROUPING mechanics — from the
+ * declared TYPE alone, never the field's name (the deleted
+ * `field-presets.ts` rule: "we don't really need to be opinionated on
+ * this"). `resolveControlKind` is the same type→kind dispatch
+ * `FieldValueControl` uses to pick an editor, reused here to pick a menu
+ * section:
+ *
+ *   enum   → `valueBearing` — a small, declared, inspectable value set.
+ *            Good board lanes; the menu shows a preview of the values.
+ *   date   → `dateFields` — excluded outright, not just deprioritized:
+ *            they already own the Calendar's By-date axis.
+ *   other  → everything else (string, number, boolean). Groups fine, but
+ *            produces one column per DISTINCT value SEEN — a wall for free
+ *            text or a per-note number. Named honestly, not hidden.
+ */
+function partitionGroupableFields(fields: ResolvedField[]): {
+  valueBearing: ResolvedField[];
+  other: ResolvedField[];
+  dateFields: ResolvedField[];
+} {
+  const valueBearing: ResolvedField[] = [];
+  const other: ResolvedField[] = [];
+  const dateFields: ResolvedField[] = [];
+  for (const f of fields) {
+    const kind = resolveControlKind(f.schema);
+    if (kind === "date") dateFields.push(f);
+    else if (kind === "enum") valueBearing.push(f);
+    else other.push(f);
+  }
+  return { valueBearing, other, dateFields };
+}
+
+/**
+ * A dim preview of an enum field's own declared values — "seed · active ·
+ * paused" — nothing invented, always the schema's own list; the row's CSS
+ * `truncate` (not this function) handles the "…" when it doesn't fit.
+ */
+function enumPreview(schema: ResolvedField["schema"]): string {
+  return (schema.enum ?? []).join(" · ");
+}
+
+/**
+ * The note under a GROUP BY menu — the empty-state on-ramp (unchanged from
+ * before this PR) PLUS the new type-exclusion honesty: when the tag has
+ * fields but every one is date-typed, say so rather than falsely claiming
+ * "no fields yet" (which the invitation would otherwise imply).
+ */
+function groupByNote(
+  hasRows: boolean,
+  dateFieldCount: number,
+  createTag: string | null,
+  noFieldsAtAll: boolean,
+  canAddField: boolean,
+): string | undefined {
+  if (hasRows) return dateFieldCount > 0 ? DATE_EXCLUDED_NOTE : undefined;
+  if (!createTag) return NO_PRIMARY_TAG_NOTE;
+  if (canAddField)
+    return `#${createTag} has no fields yet — add one to give this board its columns:`;
+  if (!noFieldsAtAll) return DATE_EXCLUDED_NOTE;
+  return undefined; // schema still loading (schemaReady false) — say nothing yet
+}
+
+/**
+ * Board-only: which field groups the lanes. TYPE-SECTIONED (not every
+ * resolved field is equally useful here): value-bearing fields (a declared
+ * `enum`) come first with a preview of their values — good board lanes;
+ * free-text/number fields follow under an honest "one column per value"
+ * heading; date-typed fields are excluded outright (`DateFieldControl` owns
+ * them) with a note explaining why. A current value naming a field this
+ * menu doesn't offer — undeclared, or (since this PR) date-typed — still
+ * renders as selected via an unheaded lead row, never vanishing.
+ *
+ * Zero groupable rows still renders — `[GROUP BY  — ▾]` — but it no longer
+ * DEAD-ENDS there: when the view has a primary tag with genuinely no
+ * fields at all, the menu invites the user to add one, opening the
+ * tag-schema editor so they name it themselves. With no primary tag there
+ * is nothing to add to, so the control says so instead. The invitation
  * waits for `schemaReady`: while the schema is still loading, `fields` is
  * empty too, and claiming "no fields yet" then would cry wolf on a tag that
  * does declare fields.
@@ -143,29 +236,43 @@ export function GroupByControl({
   /** Open the tag-schema editor to add a grouping field. Absent → no invite. */
   onAddField?: () => void;
 }) {
-  const options = fieldOptions(fields, value, () => true);
-  const canAddField = options.length === 0 && !!createTag && schemaReady && !!onAddField;
+  const { valueBearing, other, dateFields } = partitionGroupableFields(fields);
+  const knownNames = new Set([...valueBearing, ...other].map((f) => f.name));
+  // The legacy unshift, generalized: a current value naming a field this
+  // menu doesn't offer — undeclared, OR (since this PR) date-typed — still
+  // renders as selected, never vanishes.
+  const legacyCurrent = value !== undefined && !knownNames.has(value) ? value : undefined;
+
+  const sections: ControlPillSection[] = [];
+  if (legacyCurrent !== undefined) {
+    sections.push({ options: [groupByOption(legacyCurrent)] });
+  }
+  if (valueBearing.length > 0) {
+    sections.push({
+      heading: "Fields with values",
+      options: valueBearing.map((f) => groupByOption(f.name, enumPreview(f.schema))),
+    });
+  }
+  if (other.length > 0) {
+    sections.push({
+      heading: "Other fields · one column per value",
+      options: other.map((f) => groupByOption(f.name)),
+    });
+  }
+
+  const hasRows = sections.length > 0;
+  const noFieldsAtAll = fields.length === 0;
+  const canAddField = noFieldsAtAll && !!createTag && schemaReady && !!onAddField;
+
   return (
     <ControlPill
       label="Group by"
       menuLabel="Group by"
       value={value ?? "—"}
-      options={options.map((name) => ({
-        value: name,
-        // The V2 stable-hue dot — same value → same hue as everywhere else.
-        glyph: <span className={`tint-dot tint-${hueForEnumValue(name)}`} />,
-      }))}
+      sections={sections}
       current={value}
       onSelect={onChange}
-      note={
-        options.length > 0
-          ? undefined
-          : !createTag
-            ? NO_PRIMARY_TAG_NOTE
-            : canAddField
-              ? `#${createTag} has no fields yet — add one to give this board its columns:`
-              : undefined
-      }
+      note={groupByNote(hasRows, dateFields.length, createTag, noFieldsAtAll, canAddField)}
       actions={
         canAddField
           ? addFieldAction(

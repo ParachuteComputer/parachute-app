@@ -59,29 +59,52 @@ describe("LensSwitcher (lens dropdown)", () => {
 });
 
 describe("GroupByControl", () => {
-  it("labeled pill [GROUP BY value]; every resolved field is an option, each with its stable tint dot", () => {
+  it("sections VALUE-BEARING fields first (with a preview of their declared values), free-text/number fields after (honest 'one column per value' heading); a date-typed field is excluded, with a note explaining why", () => {
     const onChange = vi.fn();
     render(<GroupByControl value="status" fields={FIELDS} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Group by status" }));
     const menu = screen.getByRole("menu", { name: "Group by" });
+
+    // Section headings, in order — "Fields with values" before "Other
+    // fields"; no section for `due` (date-typed) at all.
+    expect(within(menu).getByText("Fields with values")).toBeTruthy();
+    expect(within(menu).getByText("Other fields · one column per value")).toBeTruthy();
+
     const items = within(menu).getAllByRole("menuitemradio");
-    expect(items.map((i) => i.textContent?.replace("✓", ""))).toEqual(["title", "status", "due"]);
+    // `status` (value-bearing, its enum previewed) first, `title` (other)
+    // second — `due` (date) is gone entirely, not just deprioritized.
+    expect(items.map((i) => i.textContent?.replace("✓", ""))).toEqual([
+      "statusactive · done",
+      "title",
+    ]);
     expect(within(menu).getByRole("menuitemradio", { name: "status" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    // The V2 stable-hue dot rides each option.
+    // The V2 stable-hue dot still rides every option.
     expect(items.every((i) => i.querySelector(".tint-dot"))).toBe(true);
+    // The honest reason `due` isn't offered here — not a silent drop.
+    expect(
+      within(menu).getByText("Date fields plot on the Calendar lens (By date) — not offered here."),
+    ).toBeTruthy();
 
-    fireEvent.click(within(menu).getByRole("menuitemradio", { name: "due" }));
-    expect(onChange).toHaveBeenCalledWith("due");
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name: "title" }));
+    expect(onChange).toHaveBeenCalledWith("title");
   });
 
-  it("a legacy value on an undeclared field still shows selected (the unshift)", () => {
+  it("a legacy value naming a field this menu doesn't offer still shows selected — an undeclared name, exactly as before this PR", () => {
     render(<GroupByControl value="legacy_lane" fields={FIELDS} onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Group by legacy_lane" }));
     const items = screen.getAllByRole("menuitemradio");
     expect(items[0].textContent).toContain("legacy_lane");
+    expect(items[0]).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("a value naming a REAL field the type rule now excludes (date-typed) also still shows selected, never silently dropped", () => {
+    render(<GroupByControl value="due" fields={FIELDS} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Group by due" }));
+    const items = screen.getAllByRole("menuitemradio");
+    expect(items[0].textContent).toContain("due");
     expect(items[0]).toHaveAttribute("aria-checked", "true");
   });
 
@@ -145,7 +168,7 @@ describe("GroupByControl", () => {
     expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
   });
 
-  it("fields already resolve → no invitation; the menu is values only", () => {
+  it("fields already resolve → no invitation; the menu offers the two groupable fields (due excluded)", () => {
     render(
       <GroupByControl
         value="status"
@@ -156,7 +179,27 @@ describe("GroupByControl", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Group by status" }));
-    expect(screen.getAllByRole("menuitemradio")).toHaveLength(3);
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(2);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+
+  it("a tag whose only field is date-typed: no invitation (a field DOES exist, just not a groupable one) — the same honest note, not a false 'no fields yet'", () => {
+    const onAddField = vi.fn();
+    render(
+      <GroupByControl
+        value={undefined}
+        fields={[{ name: "due", schema: { type: "date" } }]}
+        onChange={vi.fn()}
+        createTag="project"
+        onAddField={onAddField}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Group by —" }));
+    expect(screen.queryByText(/has no fields yet/)).toBeNull();
+    expect(
+      screen.getByText("Date fields plot on the Calendar lens (By date) — not offered here."),
+    ).toBeTruthy();
+    expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
     expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
   });
 });
