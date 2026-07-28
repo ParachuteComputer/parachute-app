@@ -28,7 +28,12 @@ declared fields: 3 enum, 1 string, 1 number, 1 boolean, 3 date):
   enum preview (`home · craft · community · money`) claim the bigger
   absolute cut, squeezing a short field name toward nothing — `status` and
   `area` rendered as `st…`/`ar…` on `bigvault`'s `#project`. The label now
-  holds its width; only the hint shrinks and truncates.
+  holds its width; only the hint shrinks and truncates — but ONLY on hinted
+  rows. A flat, no-hint row (the By-date pill's user-defined field names)
+  keeps its original `truncate`, since there it's the only thing in the row
+  competing for space — holding it unconditionally would let a long name
+  (`estimated_completion_date`) overflow the menu's fixed width into
+  horizontal scroll instead of a clean ellipsis.
 - **The legacy-value unshift still holds**, generalized: a `group_by` naming
   a field this menu doesn't offer — undeclared, or (since this PR) date-typed
   — still renders as selected via an unheaded lead row, never silently

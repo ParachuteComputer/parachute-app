@@ -202,6 +202,20 @@ describe("ControlPill sections", () => {
     expect(hint.className).toContain("truncate");
   });
 
+  // A flat, no-hint row (the By-date pill's field-name options, e.g. a
+  // vault-defined `estimated_completion_date`) is the ONE caller where the
+  // label is the only thing in the row competing for space — shrink-0 with
+  // no truncate would let a long user-defined name overflow the menu's fixed
+  // sm:w-56 into horizontal scroll/clip, where the original bare-flex-1 shape
+  // gave a clean ellipsis instead. The label must keep truncating there.
+  it("a row with NO hint keeps its own truncate — nothing else competes for the row's space", () => {
+    renderSections([{ options: [{ value: "estimated_completion_date" }] }]);
+    const row = screen.getByRole("menuitemradio", { name: "estimated_completion_date" });
+    const label = within(row).getByText("estimated_completion_date");
+    expect(label.className).toContain("truncate");
+    expect(label.className).not.toContain("shrink-0");
+  });
+
   it("selecting a sectioned row reports its value and closes the menu, same as the flat shape", () => {
     const onSelect = renderSections([
       { heading: "Fields with values", options: [{ value: "status" }, { value: "priority" }] },

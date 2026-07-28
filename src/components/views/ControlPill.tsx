@@ -210,16 +210,23 @@ export function ControlPill<V extends string>({
           </span>
         ) : null}
         {/* The wrapper (not the label) carries flex-1 — with a hint, the
-            label keeps its own content width (shrink-0) and the hint alone
-            absorbs the squeeze. Sharing shrink between them (the previous
-            shape) let a long hint's larger flex-basis claim a larger
-            ABSOLUTE reduction under proportional flex-shrink math, which
-            crushed the shorter label toward zero — backwards from the
-            goal, since the label is the thing being identified. Without a
-            hint this is behaviorally identical to the old bare flex-1
-            label: nothing else shares the row to shrink against. */}
+            label holds its own content width (shrink-0, no truncate needed)
+            and the hint alone absorbs the squeeze. Sharing shrink between
+            them (the previous shape) let a long hint's larger flex-basis
+            claim a larger ABSOLUTE reduction under proportional
+            flex-shrink math, which crushed the shorter label toward zero —
+            backwards from the goal, since the label is the thing being
+            identified. WITHOUT a hint the label goes back to
+            `min-w-0 shrink truncate` — the original bare flex-1 shape —
+            because a flat caller's label is the only thing in the row
+            competing for space; a user-defined value (the By-date pill's
+            field names) can still run long, and shrink-0-with-no-truncate
+            would let it overflow the menu's fixed sm:w-56 into horizontal
+            scroll/clip instead of a clean ellipsis. */}
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="shrink-0">{opt.label ?? opt.value}</span>
+          <span className={opt.hint ? "shrink-0" : "min-w-0 shrink truncate"}>
+            {opt.label ?? opt.value}
+          </span>
           {opt.hint ? (
             <span aria-hidden="true" className="min-w-0 shrink truncate text-2xs text-fg-dim">
               {opt.hint}
