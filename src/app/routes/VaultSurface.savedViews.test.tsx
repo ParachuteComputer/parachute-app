@@ -3,7 +3,7 @@ import { NavBandsProvider } from "@/lib/nav/model";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { BrowserRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -108,7 +108,14 @@ async function openFilters() {
   await screen.findByRole("region", { name: /^filters$/i });
 }
 
-describe("SavedViewsSidebar management menu", () => {
+// PR-B retired the per-row management menu (rename/update/delete) from this
+// surface entirely — Aaron: "a Filters panel shouldn't also be a view
+// manager." What's left is a quiet, apply-only "Saved filters" disclosure:
+// closed by default, a plain link per view, absent completely when there's
+// nothing to show. These tests replace the old "SavedViewsSidebar management
+// menu" suite (each of whose five cases exercised a control that no longer
+// exists on this surface).
+describe("Saved filters disclosure (apply-only, PR-B)", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -123,101 +130,74 @@ describe("SavedViewsSidebar management menu", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders saved views with a per-row management menu trigger", async () => {
+  it("renders a closed 'Saved filters' disclosure with no management menu anywhere", async () => {
     installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
     render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
 
-    const list = await screen.findByRole("list", { name: /saved views/i });
-    const item = within(list).getByText("Daily").closest("li") as HTMLElement;
-    expect(item).not.toBeNull();
-    const trigger = within(item).getByRole("button", { name: /manage saved view daily/i });
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    const summary = await screen.findByText("Saved filters");
+    const details = summary.closest("details") as HTMLDetailsElement;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+
+    // The retired affordances are gone, not just hidden-until-clicked.
+    expect(screen.queryByRole("button", { name: /manage saved view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /rename/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /^delete$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /update with current filters/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("opens the menu and disables 'Update with current filters' when no filters are active", async () => {
+  it("opening the disclosure reveals the view as a plain link that loads it", async () => {
     installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
     render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
-    const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
-    fireEvent.click(trigger);
 
-    const update = await screen.findByRole("menuitem", { name: /update with current filters/i });
-    expect(update).toBeDisabled();
+    const details = (await screen.findByText("Saved filters")).closest(
+      "details",
+    ) as HTMLDetailsElement;
+    act(() => {
+      details.open = true;
+      details.dispatchEvent(new Event("toggle"));
+    });
+
+    const link = await screen.findByRole("link", { name: "Daily" });
+    expect(link).toHaveAttribute("href", "/notes?tag=journal");
   });
 
-  it("Delete sends DELETE to the view note id when confirmed", async () => {
-    const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
-    vi.stubGlobal("confirm", () => true);
+  it("is absent entirely when there are no saved views — no persistent 'None yet' footer", async () => {
+    installFetch({ notes: [plainNote], tags: [], views: [] });
 
     render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
-    const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
-    fireEvent.click(trigger);
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("menuitem", { name: /^delete$/i }));
-    });
-
-    await waitFor(() => {
-      const del = fetchImpl.mock.calls.find(
-        ([url, init]) =>
-          (init as RequestInit | undefined)?.method === "DELETE" &&
-          String(url).includes("/api/notes/view-1"),
-      );
-      expect(del).toBeDefined();
-    });
-  });
-
-  it("Delete is a no-op when the user cancels the confirm prompt", async () => {
-    const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
-    vi.stubGlobal("confirm", () => false);
-
-    render(<VaultSurface />, { wrapper: Wrapper });
-    await openFilters();
-    const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
-    fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole("menuitem", { name: /^delete$/i }));
-
-    // Give react-query a microtask in case the mutation queued anyway.
+    // Give the saved-views query a tick to resolve before asserting absence.
     await act(async () => {
       await Promise.resolve();
     });
-    const del = fetchImpl.mock.calls.find(
-      ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
-    );
-    expect(del).toBeUndefined();
+    expect(screen.queryByText("Saved filters")).not.toBeInTheDocument();
   });
 
-  it("Rename opens a dialog and PATCHes the new path on save", async () => {
+  it("clicking the saved-view link never issues a PATCH or DELETE — apply-only", async () => {
     const fetchImpl = installFetch({ notes: [plainNote], tags: [], views: [viewNote] });
 
     render(<VaultSurface />, { wrapper: Wrapper });
     await openFilters();
-    const trigger = await screen.findByRole("button", { name: /manage saved view daily/i });
-    fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole("menuitem", { name: /rename/i }));
-
-    const dialog = await screen.findByRole("dialog", { name: /rename view/i });
-    const input = within(dialog).getByLabelText(/view name/i) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Weekly" } });
-
-    await act(async () => {
-      fireEvent.click(within(dialog).getByRole("button", { name: /^save$/i }));
+    const details = (await screen.findByText("Saved filters")).closest(
+      "details",
+    ) as HTMLDetailsElement;
+    act(() => {
+      details.open = true;
+      details.dispatchEvent(new Event("toggle"));
     });
+    await screen.findByRole("link", { name: "Daily" });
 
-    await waitFor(() => {
-      const patch = fetchImpl.mock.calls.find(
-        ([url, init]) =>
-          (init as RequestInit | undefined)?.method === "PATCH" &&
-          String(url).includes("/api/notes/view-1"),
-      );
-      expect(patch).toBeDefined();
-      const body = JSON.parse((patch?.[1] as RequestInit).body as string);
-      expect(body.path).toBe("UI/Views/Weekly");
-      expect(body.if_updated_at).toBe("2026-04-25T10:00:00Z");
-    });
+    const mutating = fetchImpl.mock.calls.find(([, init]) =>
+      ["PATCH", "DELETE"].includes((init as RequestInit | undefined)?.method ?? "GET"),
+    );
+    expect(mutating).toBeUndefined();
   });
 });

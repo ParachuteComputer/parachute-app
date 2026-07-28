@@ -8,6 +8,7 @@ import { normalizeTag } from "@/components/TagEditor";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { OfflineRibbon } from "@/components/ui/OfflineRibbon";
+import { RefinementChip } from "@/components/ui/RefinementChip";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
@@ -21,13 +22,7 @@ import {
 } from "@/lib/home/checklist";
 import { useHomeChecklist } from "@/lib/home/use-home-checklist";
 import { meetsAutoThreshold, usePathTreeMode } from "@/lib/path-tree";
-import {
-  useDeleteView,
-  useRenameView,
-  useSaveView,
-  useSavedViews,
-  useUpdateView,
-} from "@/lib/saved-views/queries";
+import { useSaveView, useSavedViews } from "@/lib/saved-views/queries";
 import {
   type SavedView,
   type SavedViewFilters,
@@ -244,17 +239,28 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   const tags = useTagsWithSchema();
   const savedViews = useSavedViews(roles.view);
   const saveView = useSaveView(roles.view);
-  const renameView = useRenameView();
-  const updateView = useUpdateView();
-  const deleteView = useDeleteView();
   const pushToast = useToastStore((s) => s.push);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [renaming, setRenaming] = useState<SavedView | null>(null);
   // W2-11 progressive disclosure: everything beyond the resting search lives
-  // behind ONE "Filters" disclosure. Deliberately NOT persisted — the page
-  // rests calm on every arrival; the button's count badge carries any active
-  // (but folded) filter state, so nothing is hidden surprisingly.
+  // behind ONE "Filters" control. Deliberately NOT persisted — the page rests
+  // calm on every arrival; the chips row below carries any active (but
+  // folded) filter state, so nothing is hidden surprisingly. PR-B: the panel
+  // itself is now an OVERLAY (anchored popover / bottom sheet, FieldsControl's
+  // pattern) — never inline flow, so the results list never moves when it
+  // opens (the measured complaint: 0 rows visible at 1440×900 with the old
+  // in-flow panel).
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // Escape closes the panel (outside-tap lands on the scrim below) — the
+  // FieldsControl pattern, lifted verbatim.
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFiltersOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [filtersOpen]);
 
   // Path tree: independent capped fetch (separate from the filtered list) so
   // the tree stays stable as the user narrows results. Disabled on preset
@@ -295,46 +301,6 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
       }
     },
     [saveView, currentFilters, pushToast],
-  );
-
-  const onRenameView = useCallback(
-    async (view: SavedView, newName: string) => {
-      try {
-        await renameView.mutateAsync({ view, newName });
-        pushToast(`Renamed to "${newName}".`, "success");
-        setRenaming(null);
-      } catch (err) {
-        pushToast(`Could not rename: ${(err as Error).message}`, "error");
-      }
-    },
-    [renameView, pushToast],
-  );
-
-  const onUpdateView = useCallback(
-    async (view: SavedView) => {
-      try {
-        await updateView.mutateAsync({ view, filters: currentFilters });
-        pushToast(`Updated "${view.name}".`, "success");
-      } catch (err) {
-        pushToast(`Could not update: ${(err as Error).message}`, "error");
-      }
-    },
-    [updateView, currentFilters, pushToast],
-  );
-
-  const onDeleteView = useCallback(
-    async (view: SavedView) => {
-      // Plain confirm is consistent with the other destructive flows in this
-      // app (Vaults.tsx removal, SyncStatusPanel discard).
-      if (!confirm(`Delete saved view "${view.name}"? This can't be undone.`)) return;
-      try {
-        await deleteView.mutateAsync(view);
-        pushToast(`Deleted "${view.name}".`, "success");
-      } catch (err) {
-        pushToast(`Could not delete: ${(err as Error).message}`, "error");
-      }
-    },
-    [deleteView, pushToast],
   );
 
   // Client-side post-process: hide archived on default list unless toggled, and
@@ -387,10 +353,11 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
     knownTotal !== null ? ` of ${knownTotal}` : ` of ${offset + DEFAULT_PAGE_SIZE}+`;
   const filteringActive = isFiltersNonEmpty(currentFilters);
 
-  // How many FOLDED filter dimensions are live — the Filters button wears
-  // this as a badge so closing the panel never hides active state. Search is
-  // excluded (it stays visible at rest).
-  const foldedFilterCount =
+  // How many filter dimensions are active beyond search — feeds the
+  // vaultEmpty gate below (a fresh, truly unfiltered vault gets no filter
+  // chrome at all). This no longer feeds a badge — the chips row (PR-B)
+  // carries active state visibly at rest instead.
+  const activeFilterDimensions =
     (selectedTags.length > 0 ? 1 : 0) +
     (pathPrefix.trim() ? 1 : 0) +
     (showArchived ? 1 : 0) +
@@ -404,7 +371,7 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   const vaultEmpty =
     !preset &&
     !filteringActive &&
-    foldedFilterCount === 0 &&
+    activeFilterDimensions === 0 &&
     !notes.isPending &&
     (notes.data?.length ?? 0) === 0 &&
     offset === 0;
@@ -430,192 +397,218 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
       {!preset ? <Composer key={activeVault.id} vault={activeVault} focused={false} /> : null}
 
       {/* The at-rest chrome (W2-11 progressive disclosure): a search field
-          and one Filters disclosure. Everything else — sort, archived
+          and one Filters control. Everything else — sort, archived
           visibility, path prefix, tags, pinned tags, saved views, folders,
           the Untagged/Orphaned maintenance views — lives in the panel below,
           folded until asked for. The desktop view-chip row (PresetFilterBar)
           retired in LZ-3: the rail owns the lens set now (LENS-SPEC §3 item
           4). `data-notes-chrome` scopes the resting-control census test. */}
-      <div data-notes-chrome className="mb-6 flex items-center gap-3">
-        <input
-          type="search"
-          placeholder="Search…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input min-w-0 flex-1"
-          aria-label="Search notes"
-        />
-        {showFiltersControl ? (
-          <button
-            type="button"
-            onClick={() => setFiltersOpen((o) => !o)}
-            aria-expanded={filtersOpen}
-            aria-controls="notes-filters"
-            className="btn btn-secondary btn-touch shrink-0"
-          >
-            Filters
-            {foldedFilterCount > 0 ? (
-              <span className="rounded-full bg-grass-soft px-1.5 font-semibold text-grass-ink text-xs">
-                {foldedFilterCount}
-              </span>
-            ) : null}
-            <span aria-hidden="true" className="font-mono text-xs">
-              {filtersOpen ? "▴" : "▾"}
-            </span>
-          </button>
-        ) : null}
-      </div>
-
-      {filtersOpen && showFiltersControl ? (
-        <section id="notes-filters" aria-label="Filters" className="card mb-6 p-4 md:p-5">
-          {/* Two columns at most (was 3): the one-surface width (--w-surface,
-              52rem) leaves three columns too cramped for the tag browser and
-              saved views — [spec-resolved §3] builder's-discretion drop. */}
-          <div className={`grid gap-x-8 gap-y-6 ${preset === "untagged" ? "" : "md:grid-cols-2"}`}>
-            {/* Refine — order, archived visibility, path narrowing. */}
-            <div>
-              <h2 className="eyebrow mb-3">Refine</h2>
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setSort((s) => (s === "desc" ? "asc" : "desc"))}
-                  className="focus-ring block text-fg-muted text-sm hover:text-accent"
-                  aria-label="Toggle sort direction"
-                >
-                  Sort: {sort === "desc" ? "newest" : "oldest"} first
-                </button>
-                {!preset ? (
-                  <label className="flex items-center gap-1.5 text-fg-muted text-sm hover:text-accent">
-                    <input
-                      type="checkbox"
-                      checked={showArchived}
-                      onChange={(e) => setShowArchived(e.target.checked)}
-                    />
-                    Show archived
-                  </label>
-                ) : null}
-                <input
-                  type="text"
-                  placeholder="Title starts with…"
-                  value={pathPrefix}
-                  onChange={(e) => setPathPrefix(e.target.value)}
-                  className="input w-full font-mono"
-                  aria-label="Filter by path prefix"
-                />
-                <MaintenanceViewsRow active={preset} />
-              </div>
-            </div>
-
-            {/* Tags — browse-by-tag multi-select. Pinned tags float to the
-                top of its shortlist rather than living in a strip of their
-                own (the old strip was single-select-replace right above a
-                multi-select-toggle control — two look-alikes, different
-                behavior). (The untagged view is definitionally tag-free.) */}
-            {preset !== "untagged" ? (
-              <div className="space-y-4">
-                <TagBrowser
-                  tags={tags.data ?? []}
-                  pinnedTags={pinnedTags}
-                  selected={selectedTags}
-                  onToggle={(name) =>
-                    setSelectedTags((cur) =>
-                      cur.includes(name) ? cur.filter((t) => t !== name) : [...cur, name],
-                    )
-                  }
-                  onClear={() => setSelectedTags([])}
-                  isLoading={tags.isPending}
-                />
-                {selectedTags.length > 1 ? (
-                  <fieldset className="flex items-center gap-3 text-xs">
-                    <legend className="sr-only">Match mode</legend>
-                    <span className="text-fg-dim">Match</span>
-                    <label className="flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        name="tag-match"
-                        value="any"
-                        checked={tagMatch === "any"}
-                        onChange={() => setTagMatch("any")}
-                      />
-                      Any
-                    </label>
-                    <label className="flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        name="tag-match"
-                        value="all"
-                        checked={tagMatch === "all"}
-                        onChange={() => setTagMatch("all")}
-                      />
-                      All
-                    </label>
-                  </fieldset>
-                ) : null}
-              </div>
-            ) : null}
-
-            {/* Views & folders — saved views + the lazy folder tree (full
-                list only; presets are already a view). */}
-            {!preset ? (
-              <div className="space-y-6">
-                <div>
-                  <SavedViewsSidebar
-                    views={savedViews.data}
-                    isPending={savedViews.isPending}
-                    error={savedViews.error}
-                    canUpdateWithCurrent={isFiltersNonEmpty(currentFilters)}
-                    onRename={(v) => setRenaming(v)}
-                    onUpdate={onUpdateView}
-                    onDelete={onDeleteView}
+      <div className="mb-6">
+        <div data-notes-chrome className="flex items-center gap-3">
+          <input
+            type="search"
+            placeholder="Search…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input min-w-0 flex-1"
+            aria-label="Search notes"
+          />
+          {showFiltersControl ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((o) => !o)}
+                aria-expanded={filtersOpen}
+                aria-controls="notes-filters"
+                className="btn btn-secondary btn-touch shrink-0"
+              >
+                Filters
+                <span aria-hidden="true" className="font-mono text-xs">
+                  {filtersOpen ? "▴" : "▾"}
+                </span>
+              </button>
+              {filtersOpen ? (
+                <>
+                  {/* Outside-tap backdrop — the FieldsControl pattern, lifted
+                      verbatim: a visible scrim under the phone sheet,
+                      invisible under the desktop popover. */}
+                  <button
+                    type="button"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                    onClick={() => setFiltersOpen(false)}
+                    className="enter-fade fixed inset-0 z-30 cursor-default bg-black/40 sm:bg-transparent"
                   />
-                  {filteringActive ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowSaveDialog(true)}
-                      className="btn btn-accent-soft btn-sm mt-3"
-                    >
-                      Save view…
-                    </button>
-                  ) : null}
-                </div>
-                {showFoldersAccordion ? (
-                  <details
-                    className="group"
-                    open={foldersOpen}
-                    onToggle={(e) => setFoldersOpen(e.currentTarget.open)}
+                  {/* The panel itself is an OVERLAY, not inline flow — the
+                      results list below never moves when this opens. Phone:
+                      a bottom sheet capped at 70dvh over the scrim, list live
+                      behind it. Desktop: an anchored popover under the
+                      trigger with its own internal scroll. */}
+                  <section
+                    id="notes-filters"
+                    aria-label="Filters"
+                    className="card enter-rise fixed inset-x-0 bottom-0 z-40 max-h-[70dvh] overflow-y-auto rounded-b-none p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lift sm:absolute sm:top-full sm:right-0 sm:left-auto sm:bottom-auto sm:mt-1 sm:max-h-[30rem] sm:w-[26rem] sm:rounded-b-[var(--radius-2xl)] sm:pb-4"
                   >
-                    <summary className="eyebrow flex cursor-pointer list-none items-center justify-between rounded-lg px-1 py-1 hover:text-accent">
-                      <span>Folders</span>
-                      <span
-                        aria-hidden="true"
-                        className="font-mono text-xs transition-transform group-open:rotate-90"
-                      >
-                        ▸
-                      </span>
-                    </summary>
-                    <div className="mt-2">
-                      {showPathTree ? (
-                        <PathTree
-                          paths={treePaths}
-                          vaultId={activeVault.id}
-                          currentPrefix={pathPrefix}
-                          onSelect={(p) => setPathPrefix(p)}
-                        />
-                      ) : treeNotes.isLoading ? (
-                        <p className="px-1 text-xs text-fg-dim">Loading…</p>
-                      ) : (
-                        <p className="px-1 text-xs text-fg-dim">
-                          Not enough folder variety to show a tree yet.
-                        </p>
-                      )}
+                    <div className="space-y-5">
+                      {/* Refine — order, archived visibility, path narrowing. */}
+                      <div>
+                        <h2 className="eyebrow mb-3">Refine</h2>
+                        <div className="space-y-3">
+                          <button
+                            type="button"
+                            onClick={() => setSort((s) => (s === "desc" ? "asc" : "desc"))}
+                            className="focus-ring block text-fg-muted text-sm hover:text-accent"
+                            aria-label="Toggle sort direction"
+                          >
+                            Sort: {sort === "desc" ? "newest" : "oldest"} first
+                          </button>
+                          {!preset ? (
+                            <label className="flex items-center gap-1.5 text-fg-muted text-sm hover:text-accent">
+                              <input
+                                type="checkbox"
+                                checked={showArchived}
+                                onChange={(e) => setShowArchived(e.target.checked)}
+                              />
+                              Show archived
+                            </label>
+                          ) : null}
+                          <input
+                            type="text"
+                            placeholder="Title starts with…"
+                            value={pathPrefix}
+                            onChange={(e) => setPathPrefix(e.target.value)}
+                            className="input w-full font-mono"
+                            aria-label="Filter by path prefix"
+                          />
+                          <MaintenanceViewsRow active={preset} />
+                        </div>
+                      </div>
+
+                      {/* Tags — browse-by-tag multi-select. Pinned tags float
+                          to the top of its shortlist rather than living in a
+                          strip of their own (the old strip was
+                          single-select-replace right above a
+                          multi-select-toggle control — two look-alikes,
+                          different behavior). (The untagged view is
+                          definitionally tag-free.) */}
+                      {preset !== "untagged" ? (
+                        <div>
+                          <TagBrowser
+                            tags={tags.data ?? []}
+                            pinnedTags={pinnedTags}
+                            selected={selectedTags}
+                            onToggle={(name) =>
+                              setSelectedTags((cur) =>
+                                cur.includes(name) ? cur.filter((t) => t !== name) : [...cur, name],
+                              )
+                            }
+                            onClear={() => setSelectedTags([])}
+                            isLoading={tags.isPending}
+                          />
+                          {selectedTags.length > 1 ? (
+                            <fieldset className="mt-3 flex items-center gap-3 text-xs">
+                              <legend className="sr-only">Match mode</legend>
+                              <span className="text-fg-dim">Match</span>
+                              <label className="flex items-center gap-1.5">
+                                <input
+                                  type="radio"
+                                  name="tag-match"
+                                  value="any"
+                                  checked={tagMatch === "any"}
+                                  onChange={() => setTagMatch("any")}
+                                />
+                                Any
+                              </label>
+                              <label className="flex items-center gap-1.5">
+                                <input
+                                  type="radio"
+                                  name="tag-match"
+                                  value="all"
+                                  checked={tagMatch === "all"}
+                                  onChange={() => setTagMatch("all")}
+                                />
+                                All
+                              </label>
+                            </fieldset>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {/* Folders — the lazy folder tree (full list only;
+                          presets are already a view). Fetch-on-open only:
+                          only opening this accordion fires the capped
+                          5000-note path-tree query. */}
+                      {showFoldersAccordion ? (
+                        <details
+                          className="group"
+                          open={foldersOpen}
+                          onToggle={(e) => setFoldersOpen(e.currentTarget.open)}
+                        >
+                          <summary className="eyebrow flex cursor-pointer list-none items-center justify-between rounded-lg px-1 py-1 hover:text-accent">
+                            <span>Folders</span>
+                            <span
+                              aria-hidden="true"
+                              className="font-mono text-xs transition-transform group-open:rotate-90"
+                            >
+                              ▸
+                            </span>
+                          </summary>
+                          <div className="mt-2">
+                            {showPathTree ? (
+                              <PathTree
+                                paths={treePaths}
+                                vaultId={activeVault.id}
+                                currentPrefix={pathPrefix}
+                                onSelect={(p) => setPathPrefix(p)}
+                              />
+                            ) : treeNotes.isLoading ? (
+                              <p className="px-1 text-xs text-fg-dim">Loading…</p>
+                            ) : (
+                              <p className="px-1 text-xs text-fg-dim">
+                                Not enough folder variety to show a tree yet.
+                              </p>
+                            )}
+                          </div>
+                        </details>
+                      ) : null}
+
+                      {/* Saved filters — a quiet disclosure at the foot, not
+                          a view manager: apply-only (click a name to load
+                          it), no rename/update/delete here (Aaron: "a
+                          Filters panel shouldn't also be a view manager").
+                          Rewriting the save format itself is a separate,
+                          later PR — this is presentation only. */}
+                      {!preset ? <SavedFiltersDisclosure views={savedViews.data} /> : null}
                     </div>
-                  </details>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
+                  </section>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Chips row — the active filter state, visible AT REST (panel
+            closed or open, doesn't matter — this row's presence depends only
+            on filter state, never on `filtersOpen`, so it never shifts when
+            the panel toggles). Replaces the old badge-on-the-Filters-button:
+            a selected tag the typeahead has scrolled out of view, or a
+            filter applied via a shared link, now stays visible without
+            opening anything. */}
+        <FilterChipsRow
+          selectedTags={selectedTags}
+          onRemoveTag={(t) => setSelectedTags((cur) => cur.filter((x) => x !== t))}
+          tagMatch={tagMatch}
+          onToggleTagMatch={() => setTagMatch((m) => (m === "all" ? "any" : "all"))}
+          pathPrefix={pathPrefix}
+          onClearPathPrefix={() => setPathPrefix("")}
+          showArchived={showArchived}
+          onClearArchived={() => setShowArchived(false)}
+          sort={sort}
+          onResetSort={() => setSort("desc")}
+          showSave={filteringActive}
+          onSaveView={() => setShowSaveDialog(true)}
+        />
+      </div>
 
       {/* The lens label (§3 item 5) — names the lens over the list: a sage
           eyebrow + quiet hint, replacing the old SectionLabel title+count
@@ -704,16 +697,6 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
           isSaving={saveView.isPending}
           onCancel={() => setShowSaveDialog(false)}
           onSave={onSaveView}
-        />
-      ) : null}
-
-      {renaming ? (
-        <RenameViewDialog
-          view={renaming}
-          existing={savedViews.data ?? []}
-          isSaving={renameView.isPending}
-          onCancel={() => setRenaming(null)}
-          onSave={(name) => onRenameView(renaming, name)}
         />
       ) : null}
     </div>
@@ -1074,205 +1057,115 @@ function PlanBacklink({
   );
 }
 
-function SavedViewsSidebar({
-  views,
-  isPending,
-  error,
-  canUpdateWithCurrent,
-  onRename,
-  onUpdate,
-  onDelete,
+// The chips row (PR-B) — the active filter state, visible AT REST, replacing
+// the old badge-on-the-Filters-button. Its presence depends only on filter
+// state, never on whether the panel is open, so it never moves the results
+// list. Reuses RefinementChip (the view surface's own dismissable-filter
+// affordance), so All-notes starts reading like every other surface.
+function FilterChipsRow({
+  selectedTags,
+  onRemoveTag,
+  tagMatch,
+  onToggleTagMatch,
+  pathPrefix,
+  onClearPathPrefix,
+  showArchived,
+  onClearArchived,
+  sort,
+  onResetSort,
+  showSave,
+  onSaveView,
 }: {
-  views: SavedView[] | undefined;
-  isPending: boolean;
-  error: Error | null;
-  canUpdateWithCurrent: boolean;
-  onRename: (view: SavedView) => void;
-  onUpdate: (view: SavedView) => void;
-  onDelete: (view: SavedView) => void;
+  selectedTags: string[];
+  onRemoveTag: (tag: string) => void;
+  tagMatch: "any" | "all";
+  onToggleTagMatch: () => void;
+  pathPrefix: string;
+  onClearPathPrefix: () => void;
+  showArchived: boolean;
+  onClearArchived: () => void;
+  sort: "asc" | "desc";
+  onResetSort: () => void;
+  /** Same gate as before (`isFiltersNonEmpty`) — search/tags/pathPrefix, not
+   * sort/archived. Unchanged from #119: presentation only, not a save-format
+   * or state-model change. */
+  showSave: boolean;
+  onSaveView: () => void;
 }) {
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-
-  // Close the menu when the user clicks/taps outside or presses Escape — small
-  // dropdowns rendered inline like this don't get focus-trap behavior for free.
-  useEffect(() => {
-    if (!openMenuId) return;
-    const onDocClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest("[data-saved-view-menu]")) return;
-      setOpenMenuId(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenMenuId(null);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [openMenuId]);
+  const trimmedPrefix = pathPrefix.trim();
+  const hasChips =
+    selectedTags.length > 0 || trimmedPrefix.length > 0 || showArchived || sort === "asc";
+  if (!hasChips && !showSave) return null;
 
   return (
-    <aside>
-      <h2 className="eyebrow mb-2">Saved views</h2>
-      {isPending ? (
-        <p className="text-xs text-fg-dim">Loading…</p>
-      ) : error ? (
-        <p className="text-xs text-danger">Could not load views.</p>
-      ) : !views || views.length === 0 ? (
-        <p className="text-xs text-fg-dim">
-          None yet. Apply a filter and click “Save view” to add one.
-        </p>
-      ) : (
-        <ul className="space-y-1" aria-label="Saved views">
-          {views.map((v) => (
-            <li
-              key={v.id}
-              className="group flex items-center rounded-lg border border-transparent hover:border-border hover:bg-card"
-            >
-              <Link
-                to={`/notes?${filtersToSearchParams(v.filters).toString()}`}
-                className="block flex-1 truncate px-2 py-1 text-sm text-fg-muted hover:text-accent"
-              >
-                {v.name}
-              </Link>
-              <div className="relative" data-saved-view-menu>
-                <button
-                  type="button"
-                  onClick={() => setOpenMenuId((c) => (c === v.id ? null : v.id))}
-                  aria-label={`Manage saved view ${v.name}`}
-                  aria-haspopup="menu"
-                  aria-expanded={openMenuId === v.id}
-                  className="px-2 py-1 text-fg-dim hover:text-accent"
-                >
-                  <span aria-hidden="true" className="font-mono text-xs">
-                    ⋯
-                  </span>
-                </button>
-                {openMenuId === v.id ? (
-                  <div
-                    role="menu"
-                    className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-xl border border-border bg-card shadow-lift"
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={!canUpdateWithCurrent}
-                      onClick={() => {
-                        setOpenMenuId(null);
-                        onUpdate(v);
-                      }}
-                      className="block w-full px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
-                      title={
-                        canUpdateWithCurrent
-                          ? undefined
-                          : "Apply some filters first to update this view."
-                      }
-                    >
-                      Update with current filters
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setOpenMenuId(null);
-                        onRename(v);
-                      }}
-                      className="block w-full px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-accent"
-                    >
-                      Rename…
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setOpenMenuId(null);
-                        onDelete(v);
-                      }}
-                      className="block w-full border-t border-border px-3 py-2 text-left text-sm text-danger hover:bg-bg"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </aside>
+    <div aria-label="Active filters" className="mt-3 flex flex-wrap items-center gap-2">
+      {selectedTags.map((t) => (
+        <RefinementChip key={`tag-${t}`} label={`#${t}`} onRemove={() => onRemoveTag(t)} />
+      ))}
+      {selectedTags.length > 1 ? (
+        // Not removable like the other chips — there's no "off" state for a
+        // match mode with 2+ tags selected, only the other value. The ▾
+        // (PillTrigger's glyph) marks it as a toggle rather than a filter to
+        // clear, so you don't need the panel open just to flip Any/All.
+        <button
+          type="button"
+          onClick={onToggleTagMatch}
+          aria-label={`Tag match is currently "${tagMatch}" — click to switch`}
+          className="chip"
+        >
+          match {tagMatch}
+          <span aria-hidden="true" className="ml-1">
+            ▾
+          </span>
+        </button>
+      ) : null}
+      {trimmedPrefix ? (
+        <RefinementChip label={`title: ${trimmedPrefix}`} onRemove={onClearPathPrefix} />
+      ) : null}
+      {showArchived ? <RefinementChip label="archived shown" onRemove={onClearArchived} /> : null}
+      {sort === "asc" ? <RefinementChip label="oldest first" onRemove={onResetSort} /> : null}
+      {showSave ? (
+        <button type="button" onClick={onSaveView} className="btn btn-accent-soft btn-sm ml-auto">
+          Save as view…
+        </button>
+      ) : null}
+    </div>
   );
 }
 
-function RenameViewDialog({
-  view,
-  existing,
-  isSaving,
-  onCancel,
-  onSave,
-}: {
-  view: SavedView;
-  existing: SavedView[];
-  isSaving: boolean;
-  onCancel: () => void;
-  onSave: (name: string) => void;
-}) {
-  const [name, setName] = useState(view.name);
-  const trimmed = name.trim();
-  // Same-name (no-op) is allowed-but-disabled — it's just clutter to send a
-  // rename that doesn't change anything. Collision check skips the view itself
-  // so re-typing its current name doesn't read as a collision.
-  const collides = existing.some(
-    (v) => v.id !== view.id && v.name.toLowerCase() === trimmed.toLowerCase(),
-  );
-  const unchanged = trimmed === view.name;
-  const canSave = trimmed.length > 0 && !collides && !unchanged && !isSaving;
-
+// The legacy saved-views list, retired as a view MANAGER on this surface
+// (Aaron: "a Filters panel shouldn't also be a view manager") — apply-only
+// now: click a name to load it, same href as today. Rename/update/delete
+// moved out entirely (the views themselves are untouched in the vault;
+// managing them is a different surface's job, not this panel's). Quiet:
+// closed by default, and absent completely when there's nothing to disclose
+// — no persistent "None yet" footer eating space in every empty vault.
+function SavedFiltersDisclosure({ views }: { views: SavedView[] | undefined }) {
+  if (!views || views.length === 0) return null;
   return (
-    <div
-      className="dialog-overlay"
-      // biome-ignore lint/a11y/useSemanticElements: native <dialog> requires imperative showModal()/close(); we want declarative open=!!renaming
-      role="dialog"
-      aria-modal="true"
-      aria-label="Rename view"
-    >
-      <div className="dialog-panel max-w-(--w-narrow)">
-        <h3 className="mb-3 font-serif text-lg text-fg">Rename view</h3>
-        <label className="block text-sm">
-          <span className="mb-1 block text-fg-muted">Name</span>
-          <input
-            type="text"
-            value={name}
-            // biome-ignore lint/a11y/noAutofocus: dialog focus
-            autoFocus
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && canSave) onSave(trimmed);
-              if (e.key === "Escape") onCancel();
-            }}
-            aria-label="View name"
-            className="input input-on-bg"
-          />
-        </label>
-        {collides ? (
-          <p className="mt-2 text-xs text-danger">A view with that name already exists.</p>
-        ) : null}
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className="btn btn-secondary btn-touch">
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => canSave && onSave(trimmed)}
-            disabled={!canSave}
-            className="btn btn-primary btn-touch"
-          >
-            {isSaving ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <details className="group border-t border-border pt-3">
+      <summary className="eyebrow flex cursor-pointer list-none items-center gap-1.5 text-fg-dim hover:text-accent">
+        <span
+          aria-hidden="true"
+          className="font-mono text-xs transition-transform group-open:rotate-90"
+        >
+          ▸
+        </span>
+        Saved filters
+      </summary>
+      <ul className="mt-2 space-y-0.5" aria-label="Saved views">
+        {views.map((v) => (
+          <li key={v.id}>
+            <Link
+              to={`/notes?${filtersToSearchParams(v.filters).toString()}`}
+              className="block truncate rounded-lg px-2 py-1 text-sm text-fg-muted hover:bg-bg-soft hover:text-accent"
+            >
+              {v.name}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
