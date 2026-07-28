@@ -3,6 +3,7 @@ import { TagSchemaEditor } from "@/components/TagSchemaEditor";
 import { ViewNavIcon } from "@/components/ViewNavIcon";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { RefinementChip } from "@/components/ui/RefinementChip";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BoardView } from "@/components/views/BoardView";
 import { CalendarView } from "@/components/views/CalendarView";
@@ -910,22 +911,6 @@ function BaseChipButton({
     );
   }
   return <span className="chip">{chip.label}</span>;
-}
-
-function RefinementChip({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <span className="chip chip-tag-active">
-      {label}
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Remove refinement ${label}`}
-        className="focus-ring ml-1 rounded-full"
-      >
-        ×
-      </button>
-    </span>
-  );
 }
 
 function AddTagControl({ onAdd }: { onAdd: (tag: string) => void }) {

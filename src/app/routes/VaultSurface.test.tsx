@@ -762,7 +762,62 @@ describe("VaultSurface route (/notes)", () => {
     expect(screen.queryByRole("button", { name: /toggle sort/i })).not.toBeInTheDocument();
   });
 
-  it("the closed Filters button wears a count badge when folded filters are active", async () => {
+  // PR-B: the measured complaint was that opening Filters left ZERO result
+  // rows visible at 1440×900 — the old panel was a `<section>` sitting in
+  // flow, pushing the list down. Fixed by lifting FieldsControl's overlay
+  // dual (scrim + fixed bottom sheet / sm:absolute popover) onto this panel
+  // too. jsdom can't compute real layout, so the full "≥4 rows visible" proof
+  // is the bigvault Playwright probe (PR body); this test pins the DOM-level
+  // fact a regression back to inline flow would break: the panel carries
+  // out-of-flow positioning classes, and the list's own DOM node never moves.
+  it("the panel is an overlay, not inline flow — the results list never moves when it opens", async () => {
+    installFetch({
+      notes: [
+        { id: "n1", path: "some-note", tags: ["idea"], createdAt: "2026-04-18T10:00:00.000Z" },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+    const rowBefore = screen.getByText("some-note").closest("li");
+
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    const panel = await screen.findByRole("region", { name: /^filters$/i });
+
+    // Fixed bottom sheet on phone, absolute-anchored-under-the-trigger on
+    // sm+ — never static/relative in flow, which is what used to push the
+    // list down.
+    expect(panel.className).toMatch(/\bfixed\b/);
+    expect(panel.className).toMatch(/\bsm:absolute\b/);
+    expect(panel.className).toMatch(/\bsm:top-full\b/);
+    // The phone-sheet height cap from the acceptance criterion.
+    expect(panel.className).toMatch(/max-h-\[70dvh\]/);
+
+    // Same element, same parent — opening the panel touched nothing about
+    // the list's position in the DOM.
+    expect(screen.getByText("some-note").closest("li")).toBe(rowBefore);
+  });
+
+  it("Escape closes the panel — the FieldsControl pattern, lifted verbatim", async () => {
+    installFetch({
+      notes: [
+        { id: "n1", path: "some-note", tags: ["idea"], createdAt: "2026-04-18T10:00:00.000Z" },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const filtersBtn = screen.getByRole("button", { name: /filters/i });
+    fireEvent.click(filtersBtn);
+    await screen.findByRole("region", { name: /^filters$/i });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(filtersBtn).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("region", { name: /^filters$/i })).not.toBeInTheDocument();
+  });
+
+  it("the chips row carries active filter state at rest — visible with the panel closed, no badge on the button", async () => {
     // Arrive with a shared/deep-linked filter URL — the panel stays closed
     // ("remember nothing surprising") but the active state must show.
     window.history.replaceState({}, "", "/?tag=idea&path_prefix=Projects");
@@ -782,8 +837,122 @@ describe("VaultSurface route (/notes)", () => {
 
     const filtersBtn = screen.getByRole("button", { name: /filters/i });
     expect(filtersBtn).toHaveAttribute("aria-expanded", "false");
-    // Two folded dimensions live: the tag pick and the path prefix.
-    expect(filtersBtn.textContent).toContain("2");
+    // The old badge is retired — the trigger itself carries no count anymore.
+    expect(filtersBtn.textContent).not.toMatch(/\d/);
+
+    // Both folded dimensions are visible as chips instead, panel still closed.
+    const chips = screen.getByLabelText(/active filters/i);
+    expect(chips.textContent).toContain("#idea");
+    expect(chips.textContent).toContain("title: Projects");
+
+    // Removing the tag chip clears it — the same effect as unchecking it in
+    // the panel, without opening anything.
+    fireEvent.click(within(chips).getByRole("button", { name: /remove refinement #idea/i }));
+    expect(chips.textContent).not.toContain("#idea");
+  });
+
+  it("the chips row is entirely absent at rest — no wrapper, nothing to see, when no filters are active", async () => {
+    installFetch({
+      notes: [
+        { id: "n1", path: "some-note", tags: ["idea"], createdAt: "2026-04-18T10:00:00.000Z" },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+    expect(screen.queryByLabelText(/active filters/i)).not.toBeInTheDocument();
+  });
+
+  it("the 'match' chip appears only at 2+ tags and toggles Any/All without opening the panel", async () => {
+    window.history.replaceState({}, "", "/?tag=idea&tag=work");
+    installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "some-note",
+          tags: ["idea", "work"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [
+        { name: "idea", count: 1 },
+        { name: "work", count: 1 },
+      ],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const chips = screen.getByLabelText(/active filters/i);
+    const matchChip = within(chips).getByRole("button", {
+      name: /tag match is currently "any"/i,
+    });
+    expect(matchChip.textContent).toContain("match any");
+
+    // No panel was ever opened — this flips the mode directly from the chip.
+    fireEvent.click(matchChip);
+    expect(
+      within(chips).getByRole("button", { name: /tag match is currently "all"/i }).textContent,
+    ).toContain("match all");
+
+    // Dropping to one tag drops the chip too — there's no mode to show once
+    // "any vs all" stops meaning anything.
+    fireEvent.click(within(chips).getByRole("button", { name: /remove refinement #work/i }));
+    expect(
+      screen.queryByRole("button", { name: /tag match is currently/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("the 'archived shown' chip appears when toggled on and clearing it via the chip turns it back off", async () => {
+    window.history.replaceState({}, "", "/?show_archived=1");
+    installFetch({
+      notes: [{ id: "n1", path: "some-note", tags: [], createdAt: "2026-04-18T10:00:00.000Z" }],
+      tags: [],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const chips = screen.getByLabelText(/active filters/i);
+    fireEvent.click(
+      within(chips).getByRole("button", { name: /remove refinement archived shown/i }),
+    );
+    expect(screen.queryByLabelText(/active filters/i)).not.toBeInTheDocument();
+
+    // The panel's own checkbox agrees — same state, not a second copy of it.
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    expect(screen.getByLabelText(/show archived/i)).not.toBeChecked();
+  });
+
+  it("the 'oldest first' chip appears only when sort diverges from the default and resets it", async () => {
+    window.history.replaceState({}, "", "/?sort=asc");
+    installFetch({
+      notes: [{ id: "n1", path: "some-note", tags: [], createdAt: "2026-04-18T10:00:00.000Z" }],
+      tags: [],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const chips = screen.getByLabelText(/active filters/i);
+    expect(chips.textContent).toContain("oldest first");
+
+    fireEvent.click(within(chips).getByRole("button", { name: /remove refinement oldest first/i }));
+    expect(screen.queryByLabelText(/active filters/i)).not.toBeInTheDocument();
+  });
+
+  it("'Save as view…' trails the chips row only while a filter is active, and opens the save dialog", async () => {
+    window.history.replaceState({}, "", "/?tag=idea");
+    installFetch({
+      notes: [
+        { id: "n1", path: "some-note", tags: ["idea"], createdAt: "2026-04-18T10:00:00.000Z" },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    const chips = screen.getByLabelText(/active filters/i);
+    const saveBtn = within(chips).getByRole("button", { name: /save as view/i });
+    fireEvent.click(saveBtn);
+    expect(await screen.findByRole("dialog", { name: /save view/i })).toBeInTheDocument();
   });
 
   it("a fresh empty vault shows ONLY the masthead + composer + search + the empty state — no filter wall, no pager", async () => {

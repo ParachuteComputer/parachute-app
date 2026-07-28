@@ -47,9 +47,6 @@ vi.mock("@/lib/saved-views/queries", async (importOriginal) => {
     ...actual,
     useSavedViews: () => ({ data: [], isPending: false, error: null }),
     useSaveView: () => ({ mutateAsync: vi.fn(), isPending: false }),
-    useRenameView: () => ({ mutateAsync: vi.fn(), isPending: false }),
-    useUpdateView: () => ({ mutateAsync: vi.fn(), isPending: false }),
-    useDeleteView: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
 
