@@ -129,6 +129,44 @@ describe("createSegmentedRecorder", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it("a late data event from an already-superseded segment does not roll again (segmentGen guard)", async () => {
+    const { stream } = trackedStream();
+    const timer = manualTimer();
+    const onRoll = vi.fn();
+    const rec = createSegmentedRecorder({
+      stream,
+      mimeType: "audio/webm;codecs=opus",
+      MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+      setTimer: timer.setTimer,
+      clearTimer: timer.clearTimer,
+      onRoll,
+    });
+    rec.start();
+    const seg1 = FakeMediaRecorder.instances[0]!;
+
+    // Cross the cap once — segment 1 rolls to segment 2. This roll has fully
+    // returned by the time we get here (the `rolling` reentrancy guard is
+    // back to false), so this is a DIFFERENT hazard than the one the other
+    // size test's `stop()` assertion covers.
+    seg1.emit(MAX_SEGMENT_BYTES);
+    expect(rec.activePart).toBe(2);
+    onRoll.mockClear();
+
+    // A real browser can deliver one more `ondataavailable` for segment 1
+    // asynchronously, after JS has moved on to segment 2 — e.g. the trailing
+    // chunk from its stop() flush arriving on a later tick of the event loop.
+    // `seg1` is still the OLD instance; firing on it directly simulates
+    // exactly that late, stale event.
+    seg1.emit(MAX_SEGMENT_BYTES);
+
+    // It must NOT be mistaken for segment 2's own bytes and roll again.
+    expect(rec.activePart).toBe(2);
+    expect(onRoll).not.toHaveBeenCalled();
+
+    await rec.stop();
+    expect(rec.activePart).toBe(2);
+  });
+
   it("at the intended 32 kbps hint, still rolls on TIME at 30 minutes — the size cap does not preempt it", async () => {
     const { stream, stop } = trackedStream();
     const timer = manualTimer();

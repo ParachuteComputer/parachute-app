@@ -41,9 +41,12 @@ export const SEGMENT_MS = 30 * 60_000;
  *  Rolling early at 20 MB makes every segment safe UNCONDITIONALLY, the same
  *  property the old 10-minute boundary had: hint honored, you still get full
  *  30-minute segments (~6.9 MB — this cap never fires); hint ignored, you get
- *  ~10-minute segments — exactly today's pre-this-PR behavior, not a new
- *  failure mode. 20 MB rather than 25 leaves headroom for container overhead
- *  and the final chunk landing after the check fires. */
+ *  ~21.8-minute segments (20 MB / 16.1 KB/s) — still safely under the 25 MB
+ *  ceiling, not a new failure mode. (Pre-PR was a flat 10 minutes regardless
+ *  of bitrate; that boundary doesn't reappear here, and doesn't need to —
+ *  ~21.8 min is under every ceiling on its own.) 20 MB rather than 25 leaves
+ *  headroom for container overhead and the final chunk landing after the
+ *  check fires. */
 export const MAX_SEGMENT_BYTES = 20 * 1024 * 1024;
 
 // How often we sample the current segment's emitted size against
