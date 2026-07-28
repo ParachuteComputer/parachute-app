@@ -26,6 +26,9 @@ class FakeMediaRecorder {
   mimeType: string;
   audioBitsPerSecond?: number;
   state: "inactive" | "recording" | "paused" = "inactive";
+  // Records the timeslice createRecorder's start() forwarded, so a test can
+  // assert `dataIntervalMs` actually reaches MediaRecorder.start().
+  startedWithTimeslice: number | undefined;
 
   constructor(stream: MediaStream, opts: { mimeType: string; audioBitsPerSecond?: number }) {
     this.stream = stream;
@@ -36,8 +39,9 @@ class FakeMediaRecorder {
   static isTypeSupported(t: string): boolean {
     return FakeMediaRecorder.supported.has(t);
   }
-  start() {
+  start(timeslice?: number) {
     this.state = "recording";
+    this.startedWithTimeslice = timeslice;
   }
   pause() {
     this.state = "paused";
@@ -134,6 +138,29 @@ describe("createRecorder", () => {
     });
     expect(FakeMediaRecorder.instances).toHaveLength(1);
     expect(FakeMediaRecorder.instances[0]!.audioBitsPerSecond).toBe(32_000);
+  });
+
+  // The plumbing the segmented recorder's size cap relies on: a periodic
+  // timeslice, and the running-total callback it drives.
+  it("forwards dataIntervalMs as the start() timeslice and reports cumulative bytes via onData", () => {
+    FakeMediaRecorder.instances = [];
+    const onData = vi.fn();
+    const rec = createRecorder({
+      stream: fakeStream(),
+      mimeType: "audio/webm;codecs=opus",
+      MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+      dataIntervalMs: 10_000,
+      onData,
+    });
+    rec.start();
+    expect(FakeMediaRecorder.instances[0]!.startedWithTimeslice).toBe(10_000);
+
+    const instance = FakeMediaRecorder.instances[0]!;
+    instance.ondataavailable?.({ data: new Blob([new Uint8Array(5)]) });
+    expect(onData).toHaveBeenLastCalledWith(5);
+    instance.ondataavailable?.({ data: new Blob([new Uint8Array(7)]) });
+    // Cumulative, not just the latest chunk.
+    expect(onData).toHaveBeenLastCalledWith(12);
   });
 
   it("pause + resume excludes paused time from duration", async () => {

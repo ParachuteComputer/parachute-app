@@ -70,6 +70,17 @@ export interface CreateRecorderOptions {
   // Injection points for tests; default to the browser globals.
   now?: () => number;
   MediaRecorderCtor?: typeof MediaRecorder;
+  // When set, requested as MediaRecorder's `start(timeslice)` argument, so
+  // `ondataavailable` fires periodically instead of only once at stop(). This
+  // is NOT a second segmentation mechanism — a segment is still made whole by
+  // `concatBlobs()` on stop(), regardless of how many chunks it arrived in —
+  // it exists purely so a caller (the segmented recorder) can observe emitted
+  // size early enough to act on it, e.g. to catch an un-honored bitrate hint
+  // before a boundary it would otherwise only find out about at stop().
+  dataIntervalMs?: number;
+  // Fired after every `ondataavailable`, with the RUNNING total size (bytes)
+  // emitted so far this recording. Omitted callers pay nothing extra.
+  onData?: (totalBytes: number) => void;
 }
 
 export function createRecorder(opts: CreateRecorderOptions): RecorderController {
@@ -92,6 +103,7 @@ export function createRecorder(opts: CreateRecorderOptions): RecorderController 
 
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data);
+    if (opts.onData) opts.onData(chunks.reduce((n, c) => n + c.size, 0));
   };
 
   const releaseTracks = () => {
@@ -108,7 +120,7 @@ export function createRecorder(opts: CreateRecorderOptions): RecorderController 
     },
     start(): void {
       if (state !== "idle") throw new Error(`Cannot start from ${state}`);
-      recorder.start();
+      recorder.start(opts.dataIntervalMs);
       startedAt = now();
       state = "recording";
     },
