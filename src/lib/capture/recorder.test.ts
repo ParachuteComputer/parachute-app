@@ -16,15 +16,22 @@ import {
 // start / pause / resume / stop methods.
 class FakeMediaRecorder {
   static supported = new Set<string>();
+  // Every constructed instance, in order — lets a test inspect the options
+  // the wrapper actually passed (e.g. audioBitsPerSecond) without exposing
+  // the raw recorder through RecorderController's public surface.
+  static instances: FakeMediaRecorder[] = [];
   ondataavailable: ((e: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
   stream: MediaStream;
   mimeType: string;
+  audioBitsPerSecond?: number;
   state: "inactive" | "recording" | "paused" = "inactive";
 
-  constructor(stream: MediaStream, opts: { mimeType: string }) {
+  constructor(stream: MediaStream, opts: { mimeType: string; audioBitsPerSecond?: number }) {
     this.stream = stream;
     this.mimeType = opts.mimeType;
+    this.audioBitsPerSecond = opts.audioBitsPerSecond;
+    FakeMediaRecorder.instances.push(this);
   }
   static isTypeSupported(t: string): boolean {
     return FakeMediaRecorder.supported.has(t);
@@ -112,6 +119,21 @@ describe("createRecorder", () => {
     expect(result.mimeType).toBe("audio/webm;codecs=opus");
     expect(result.durationMs).toBe(3_500);
     expect(Array.from(new Uint8Array(result.data))).toEqual([1, 2, 3, 4]);
+  });
+
+  // Measured from Aaron's actual voice-memo files with ffprobe: the browser
+  // default was 128.8 kbps — four times what the pipeline was sized for, so
+  // the Cloud 25 MB ceiling bit at ~27 minutes instead of the ~109 the docs
+  // assumed. 32 kbps is excellent for speech and moves that ceiling out 4x.
+  it("passes audioBitsPerSecond: 32000 to the MediaRecorder constructor", () => {
+    FakeMediaRecorder.instances = [];
+    createRecorder({
+      stream: fakeStream(),
+      mimeType: "audio/webm;codecs=opus",
+      MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+    });
+    expect(FakeMediaRecorder.instances).toHaveLength(1);
+    expect(FakeMediaRecorder.instances[0]!.audioBitsPerSecond).toBe(32_000);
   });
 
   it("pause + resume excludes paused time from duration", async () => {

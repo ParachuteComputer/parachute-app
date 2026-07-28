@@ -19,9 +19,17 @@
 
 import { type CreateRecorderOptions, type RecordingResult, createRecorder } from "./recorder";
 
-/** Roll to a new segment every 10 minutes. Constant on purpose — the boundary
- *  is a memory/pipeline safety valve, not a user-facing dial. */
-export const SEGMENT_MS = 10 * 60_000;
+/** Roll to a new segment every 30 minutes. Constant on purpose — the boundary
+ *  is a memory/pipeline safety valve, not a user-facing dial.
+ *
+ *  What actually bounds this number (don't raise it past 45 without
+ *  re-deriving both): at the recorder's 32 kbps speech bitrate, a 30-minute
+ *  segment is ~6.9 MB — 3.6x under Cloud's 25 MB per-attachment ceiling, and
+ *  2x under the ~60-minute Whisper inference wall. The inference wall is a
+ *  DURATION limit no bitrate change moves, so it's the harder ceiling of the
+ *  two past a point. 30 was picked because Aaron's actual walks run
+ *  20-30 minutes, so this is the first boundary he doesn't routinely hit. */
+export const SEGMENT_MS = 30 * 60_000;
 
 /** One recorded segment — the same shape a single `RecorderController.stop()`
  *  returns, so a one-segment recording is indistinguishable from the old path. */

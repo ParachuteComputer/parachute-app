@@ -973,8 +973,8 @@ describe("NoteNew — voice affordance", () => {
     const link = links[0]!;
     if (link.mutation.kind === "link-attachment") {
       expect(link.mutation.transcribe).toBe(true);
-      // The sacred invariant: no per-part metadata on a single-segment capture.
-      expect(link.mutation.metadata).toBeUndefined();
+      // The sacred invariant: no per-part segment_index on a single-segment capture.
+      expect(link.mutation.segment_index).toBeUndefined();
     }
     const create = pending.find((p) => p.mutation.kind === "create-note");
     if (create && create.mutation.kind === "create-note") {
@@ -1278,8 +1278,8 @@ describe("NoteNew — per-capture transcribe toggle (voice W3)", () => {
     expect(link).toBeDefined();
     if (link && link.mutation.kind === "link-attachment") {
       expect(link.mutation.transcribe).toBe(false);
-      // Audio-only: no per-part metadata rides the link.
-      expect(link.mutation.metadata).toBeUndefined();
+      // Audio-only: no per-part segment_index rides the link.
+      expect(link.mutation.segment_index).toBeUndefined();
     }
     const create = pending.find((p) => p.mutation.kind === "create-note");
     if (create && create.mutation.kind === "create-note") {

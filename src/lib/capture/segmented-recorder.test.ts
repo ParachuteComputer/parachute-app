@@ -69,8 +69,8 @@ describe("createSegmentedRecorder", () => {
     FakeMediaRecorder.supported = new Set(["audio/webm;codecs=opus"]);
   });
 
-  it("SEGMENT_MS is the 10-minute boundary", () => {
-    expect(SEGMENT_MS).toBe(10 * 60_000);
+  it("SEGMENT_MS is the 30-minute boundary", () => {
+    expect(SEGMENT_MS).toBe(30 * 60_000);
   });
 
   it("a recording that never rolls yields exactly ONE segment (common case)", async () => {

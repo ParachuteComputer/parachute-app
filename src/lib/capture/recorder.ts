@@ -12,6 +12,14 @@ export const PREFERRED_MIME_TYPES: readonly string[] = [
   "audio/ogg;codecs=opus",
 ];
 
+// Speech-tuned bitrate. Measured from Aaron's actual voice-memo files with
+// ffprobe: the browser default was 128.8 kbps — four times what the
+// pipeline was sized for, so the Cloud 25 MB per-attachment ceiling bit at
+// ~27 minutes rather than the ~109 the docs assumed a bare recording could
+// reach. 32 kbps is excellent for speech and shrinks files 4x, moving that
+// ceiling back out to ~109 minutes.
+export const TARGET_AUDIO_BITRATE = 32_000;
+
 export function pickMimeType(candidates: readonly string[] = PREFERRED_MIME_TYPES): string | null {
   if (typeof MediaRecorder === "undefined") return null;
   for (const type of candidates) {
@@ -68,7 +76,13 @@ export function createRecorder(opts: CreateRecorderOptions): RecorderController 
   const now = opts.now ?? (() => Date.now());
   const releaseStreamOnStop = opts.releaseStreamOnStop ?? true;
   const Ctor = opts.MediaRecorderCtor ?? MediaRecorder;
-  const recorder = new Ctor(opts.stream, { mimeType: opts.mimeType });
+  // `audioBitsPerSecond` is a browser HINT, not a guarantee — some browsers
+  // ignore it. Don't build logic downstream that assumes it took effect;
+  // it's here to shrink the common case, not to bound it.
+  const recorder = new Ctor(opts.stream, {
+    mimeType: opts.mimeType,
+    audioBitsPerSecond: TARGET_AUDIO_BITRATE,
+  });
   const chunks: Blob[] = [];
   let state: RecorderState = "idle";
   // We track accumulated recording time manually instead of trusting wall

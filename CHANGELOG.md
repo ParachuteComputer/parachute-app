@@ -1,3 +1,15 @@
+## [0.22.9] - 2026-07-27
+
+**A 26-minute voice memo used to render as three "Transcript pending" placeholders with only one transcript actually written back, out of order — while all three sat complete in attachment metadata. Nothing was lost; the write-back was broken.**
+
+Root cause: the app sent `segment_index` nested under a `metadata` object; both doors read it top-level. Silently dropped, on Cloud and self-host alike. With `segment_index` absent, the vault worker treated three segments as three independent memos racing to write one note behind one shared completion flag — first to commit appends and clears the flag, the other two see "done" and no-op.
+
+- **`segment_index` now rides at the TOP level of the attach body**, all the way from `buildVoiceCapturePlan` through `PendingLinkAttachment` through `linkAttachment`'s wire body — nowhere nested under `metadata`. Fixes the Cloud door outright (it already read `body.segment_index`); self-host gets the same fix. A new test asserts the actual JSON body sent over the wire, not just the in-memory plan object — that's exactly the layer where the bug lived and no existing test looked.
+- **Recorder now requests 32 kbps** (`audioBitsPerSecond`, a browser hint — some ignore it). Measured from Aaron's actual files with ffprobe: the previous browser default was **128.8 kbps** (≈0.92 MiB/min) — four times what the pipeline was sized for. That made Cloud's 25 MB per-attachment ceiling bite at **~27 minutes** instead of the ~109 the docs assumed a capture could reach. 32 kbps is excellent for speech and pushes that ceiling back out to **~109 minutes**.
+- **Segment rollover moved from 10 to 30 minutes.** Aaron's walks run 20–30 minutes, so he hit the old boundary every time. At 32 kbps a 30-minute segment is ~6.9 MB — 3.6x under the Cloud ceiling and 2x under the ~60-minute Whisper inference wall (a duration limit no bitrate change moves — the reason not to push this past 45).
+
+Every new/changed assertion was watched failing first, including a scratch reproduction of the real bug against pre-fix `queue.ts` (confirmed it actually sent `{ metadata: { segment_index: 0 } }`, not `{ segment_index: 0 }`, before any production code changed).
+
 ## [0.22.7] - 2026-07-27
 
 **GROUP BY and FIELDS now explain what a field's TYPE means for the menu, instead of offering 9 bare names and letting you find out the hard way.**

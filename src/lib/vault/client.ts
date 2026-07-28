@@ -296,11 +296,14 @@ export class VaultClient extends BaseVaultClient {
       path: string;
       mimeType: string;
       transcribe?: boolean;
-      // Extra attachment metadata (Voice Wave 2: `{ segment_index }`). The base
-      // `addAttachment` JSON-stringifies the whole body, so this rides the wire
-      // even though the base's typed body predates it — the door contract
-      // accepts it and both doors ignore unknown keys.
-      metadata?: Record<string, unknown>;
+      // 0-based part index for a segmented (N>1) voice capture (Voice Wave 2).
+      // TOP LEVEL, not nested — both doors read `body.segment_index` directly,
+      // and the base `addAttachment` JSON-stringifies the body unchanged, so
+      // this rides the wire only if it's flat here. (A prior nested
+      // `{ metadata: { segment_index } }` shape shipped silently broken: the
+      // field never reached the door, so segments landed with no part marker
+      // to fill and the vault treated them as racing writers on one note.)
+      segment_index?: number;
     },
   ): Promise<NoteAttachment> {
     return this.addAttachment(noteIdOrPath, body);
