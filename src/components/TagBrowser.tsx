@@ -152,12 +152,16 @@ function isEntrySelected(e: Entry, selectedSet: Set<string>): boolean {
 // Selected first, then pinned, then whatever's left — which is already
 // count-ranked because `entries` (groupAndRank's output) is. Capped so the
 // common case never scrolls; the "All N tags" disclosure covers the rest.
+// Selections are reserved before the cap is applied to the remainder — the
+// cap governs discovery, never active state, so a selected tag can never
+// fall out of the shortlist no matter how many are selected.
 function buildShortlist(entries: Entry[], selectedSet: Set<string>, cap: number): Entry[] {
   const selectedEntries = entries.filter((e) => isEntrySelected(e, selectedSet));
   const rest = entries.filter((e) => !isEntrySelected(e, selectedSet));
   const pinnedEntries = rest.filter(isEntryPinned);
   const others = rest.filter((e) => !isEntryPinned(e));
-  return [...selectedEntries, ...pinnedEntries, ...others].slice(0, cap);
+  const remainder = Math.max(0, cap - selectedEntries.length);
+  return [...selectedEntries, ...[...pinnedEntries, ...others].slice(0, remainder)];
 }
 
 export function TagBrowser({ tags, pinnedTags, selected, onToggle, onClear, isLoading }: Props) {

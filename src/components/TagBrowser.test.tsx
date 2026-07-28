@@ -321,6 +321,14 @@ describe("TagBrowser", () => {
         .filter((b) => b.title?.startsWith("#"));
       expect(rows.map((r) => r.title)).toEqual(["#picked", "#starred", "#heavy"]);
     });
+
+    it("never drops a selected tag from the shortlist, even past the cap", () => {
+      const selected = manyTags.slice(0, 12).map((t) => t.name);
+      render(<TagBrowser {...baseProps} tags={manyTags} pinnedTags={[]} selected={selected} />);
+      for (const name of selected) {
+        expect(screen.getByTitle(`#${name}`)).toBeInTheDocument();
+      }
+    });
   });
 
   describe("typed-tag schema marker", () => {
