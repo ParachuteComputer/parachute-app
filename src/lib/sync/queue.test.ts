@@ -355,6 +355,82 @@ describe("drain — link-attachment transcribe flag", () => {
     });
   });
 
+  it("forwards `transcribe: false` — the user's opt-out must reach the wire", async () => {
+    // The whole point. `voice-capture-plan.ts` sets `transcribe` from the
+    // capture's toggle and documents "every link sends `transcribe: false`";
+    // this layer used to drop the `false`, so a vault that would honour an
+    // explicit opt-out saw silence instead and fell through to its
+    // auto-transcribe guess. Measured against a live vault at parachute-vault
+    // 7652af4: explicit-false and absent produced byte-identical outcomes
+    // (`origin=auto status=failed`), so the "no" was genuinely unhearable.
+    await enqueue(
+      db,
+      {
+        kind: "link-attachment",
+        noteId: "srv-n",
+        pathRef: "/storage/memo.webm",
+        mimeType: "audio/webm",
+        transcribe: false,
+      },
+      { vaultId: "v1" },
+    );
+    const linkAttachment = vi.fn(async () => ({ id: "att-1" }) as NoteAttachment);
+    const client = makeClient({ linkAttachment });
+    await drain({ db, client, vaultId: "v1", blobStore: createIdbBlobStore(db) });
+    expect(linkAttachment).toHaveBeenCalledWith("srv-n", {
+      path: "/storage/memo.webm",
+      mimeType: "audio/webm",
+      transcribe: false,
+    });
+  });
+
+  it("keeps all three caller intents distinct on the wire", async () => {
+    // true / false / absent are three different things and must stay three.
+    // Collapsing false into absent is exactly the bug; collapsing absent into
+    // false would be a new one, silently opting out callers who never chose.
+    const cases: Array<{ note: string; mutation: Record<string, unknown>; expected: unknown }> = [
+      { note: "n-true", mutation: { transcribe: true }, expected: true },
+      { note: "n-false", mutation: { transcribe: false }, expected: false },
+      { note: "n-absent", mutation: {}, expected: undefined },
+    ];
+    for (const c of cases) {
+      await enqueue(
+        db,
+        {
+          kind: "link-attachment",
+          noteId: c.note,
+          pathRef: "/storage/a.webm",
+          mimeType: "audio/webm",
+          ...c.mutation,
+        } as never,
+        { vaultId: "v1" },
+      );
+    }
+    // Typed params so `.mock.calls` is indexable — a bare `vi.fn(async () => …)`
+    // infers a zero-length tuple and `calls[n][1]` doesn't typecheck.
+    const linkAttachment = vi.fn(
+      async (_id: string, _body: Record<string, unknown>) => ({ id: "att-1" }) as NoteAttachment,
+    );
+    await drain({
+      db,
+      client: makeClient({ linkAttachment: linkAttachment as never }),
+      vaultId: "v1",
+      blobStore: createIdbBlobStore(db),
+    });
+    for (const c of cases) {
+      const call = linkAttachment.mock.calls.find((args) => args[0] === c.note);
+      expect(call, `no linkAttachment call for ${c.note}`).toBeDefined();
+      expect(call?.[1].transcribe).toBe(c.expected);
+    }
+    // And "absent" must mean the key is genuinely missing, not present-as-undefined
+    // — the vault reads `body.transcribe === true` / `=== false`, and a JSON
+    // body carrying `"transcribe": undefined` is not a thing, but an object
+    // with the key set to undefined would serialize away silently and hide a
+    // regression here.
+    const absentCall = linkAttachment.mock.calls.find((args) => args[0] === "n-absent");
+    expect(Object.hasOwn(absentCall?.[1] ?? {}, "transcribe")).toBe(false);
+  });
+
   it("omits the flag when transcribe is not set", async () => {
     await enqueue(
       db,
