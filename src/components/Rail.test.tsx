@@ -3,7 +3,15 @@ import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type RenderResult, act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  type RenderResult,
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,6 +49,49 @@ async function renderRail(path = "/"): Promise<RenderResult> {
 function seedVaults(entries: Record<string, VaultRecord>) {
   const first = Object.keys(entries)[0] ?? null;
   useVaultStore.setState({ vaults: entries, activeVaultId: first });
+}
+
+function seedToken(vaultId: string) {
+  localStorage.setItem(
+    `lens:token:${vaultId}`,
+    JSON.stringify({ accessToken: "pvt_test", scope: "full", vault: "default" }),
+  );
+}
+
+function installPinnedFetch(notes: unknown[]) {
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const body = url.includes("settings")
+      ? {
+          id: "settings",
+          path: ".parachute/notes/settings",
+          metadata: {
+            notes: {
+              schemaVersion: 1,
+              tagRoles: {
+                pinned: "pinned",
+                archived: "archived",
+                captureVoice: "capture",
+                captureText: "capture",
+                view: "view",
+              },
+            },
+          },
+        }
+      : url.includes("/api/notes") && url.includes("tag=pinned")
+        ? notes
+        : url.includes("/api/notes") || url.includes("/api/tags")
+          ? []
+          : { notes: [], vaults: [], services: [] };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => body,
+      text: async () => "",
+    } as Response;
+  });
+  global.fetch = fetchImpl as unknown as typeof fetch;
+  return fetchImpl;
 }
 
 describe("Rail (two-zone desktop spine, W2-5)", () => {
@@ -229,6 +280,140 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
     });
     await renderRail("/map");
     expect(screen.getByRole("link", { name: /^map$/i })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders fetched pinned notes as a sub-list beneath the Pinned row", async () => {
+    installPinnedFetch([
+      {
+        id: "first",
+        path: "Ideas/First pinned.md",
+        tags: ["pinned"],
+        createdAt: "2026-04-22T10:00:00.000Z",
+        updatedAt: "2026-04-22T11:00:00.000Z",
+      },
+      {
+        id: "second",
+        path: "Ideas/Second pinned.md",
+        tags: ["pinned", "ideas"],
+        createdAt: "2026-04-22T09:00:00.000Z",
+        updatedAt: "2026-04-22T10:00:00.000Z",
+      },
+      {
+        id: "third",
+        path: "Ideas/Third pinned.md",
+        tags: ["pinned"],
+        createdAt: "2026-04-22T08:00:00.000Z",
+        updatedAt: "2026-04-22T09:00:00.000Z",
+      },
+    ]);
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    seedToken("a");
+    await renderRail();
+
+    const notesBand = screen.getByText(/^pinned$/i).closest('[data-nav-band="notes"]');
+    expect(notesBand).not.toBeNull();
+    const list = within(notesBand as HTMLElement).getByRole("list", { name: "Pinned notes" });
+    expect(
+      within(list)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["First pinned", "Second pinned", "Third pinned"]);
+  });
+
+  it("hides the pinned-note sub-list when the resolved list is empty", async () => {
+    installPinnedFetch([]);
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    seedToken("a");
+    await renderRail();
+
+    await waitFor(() => {
+      expect(screen.queryByRole("list", { name: "Pinned notes" })).toBeNull();
+    });
+  });
+
+  it("keeps the server response order and requests the five-note pinned window", async () => {
+    const fetchImpl = installPinnedFetch([
+      {
+        id: "second",
+        path: "Second.md",
+        tags: ["pinned"],
+        createdAt: "2026-04-22T09:00:00.000Z",
+        updatedAt: "2026-04-22T10:00:00.000Z",
+      },
+      {
+        id: "first",
+        path: "First.md",
+        tags: ["pinned"],
+        createdAt: "2026-04-22T08:00:00.000Z",
+        updatedAt: "2026-04-22T11:00:00.000Z",
+      },
+    ]);
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    seedToken("a");
+    await renderRail();
+
+    const list = await screen.findByRole("list", { name: "Pinned notes" });
+    expect(
+      within(list)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["Second", "First"]);
+
+    const pinnedUrls = fetchImpl.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes("/api/notes") && url.includes("tag=pinned"));
+    const pinnedUrl = pinnedUrls[pinnedUrls.length - 1];
+    expect(pinnedUrl).toBeDefined();
+    const params = new URL(pinnedUrl!).searchParams;
+    expect(params.get("tag")).toBe("pinned");
+    expect(params.get("sort")).toBe("desc");
+    expect(params.get("limit")).toBe("5");
+  });
+
+  it("links each pinned note directly to its encoded note route", async () => {
+    const notes = [
+      {
+        id: "folder/first note",
+        path: "First.md",
+        tags: ["pinned"],
+        createdAt: "2026-04-22T10:00:00.000Z",
+      },
+      {
+        id: "second-note",
+        path: "Second.md",
+        tags: ["pinned"],
+        createdAt: "2026-04-22T09:00:00.000Z",
+      },
+    ];
+    installPinnedFetch(notes);
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    seedToken("a");
+    await renderRail();
+
+    const list = await screen.findByRole("list", { name: "Pinned notes" });
+    expect(
+      within(list)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(notes.map((note) => `/n/${encodeURIComponent(note.id)}`));
+  });
+
+  it("hides the pinned-note sub-list when the rail is collapsed", async () => {
+    installPinnedFetch([
+      {
+        id: "pinned",
+        path: "Pinned.md",
+        tags: ["pinned"],
+        createdAt: "2026-04-22T10:00:00.000Z",
+      },
+    ]);
+    seedVaults({ a: makeVault({ id: "a", url: "http://localhost:1940", name: "gardening" }) });
+    seedToken("a");
+    await renderRail();
+    await screen.findByRole("list", { name: "Pinned notes" });
+
+    fireEvent.click(screen.getByRole("button", { name: /collapse the sidebar/i }));
+    expect(screen.queryByRole("list", { name: "Pinned notes" })).toBeNull();
   });
 
   it("collapses to the icon rail (labels hidden, tooltips carry them) and persists", async () => {
