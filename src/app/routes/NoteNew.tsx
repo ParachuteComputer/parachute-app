@@ -694,7 +694,7 @@ export function NoteNew() {
               onTranscribeChange={setTranscribeThisCapture}
               showTranscribeToggle={showTranscribeToggle}
             />
-            <RetentionChoice vaultId={activeVault.id} captureEngaged={captureInFlight} />
+            <RetentionChoice vaultId={activeVault.id} captureEngaged={hasAudio} />
           </>
         )}
 
@@ -797,7 +797,8 @@ export function NoteNew() {
 // records the choice per-vault in localStorage so it never re-renders once
 // answered. Never blocks a capture:
 //   - it renders only alongside the recorder (the #167 capability gate
-//     already decided the mic renders), and only once the mic is engaged;
+//     already decided the mic renders), and only once a recording exists
+//     (audio has been captured);
 //   - a failed PATCH shows one quiet line, the capture proceeds under the
 //     server default (keep), and the choice re-offers next time;
 //   - it's not offered at all when the vault predates the dial (`config`
@@ -894,7 +895,7 @@ function TranscribeToggle({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div className="flex basis-full items-center justify-between gap-3">
+    <div className="flex basis-full items-center gap-3">
       <span className="text-xs text-fg-dim">Transcribe this recording</span>
       <button
         type="button"
@@ -909,7 +910,7 @@ function TranscribeToggle({
         }`}
       >
         <span
-          className={`absolute top-0.5 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
+          className={`absolute top-0.5 left-0 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
             checked ? "translate-x-5" : "translate-x-0.5"
           }`}
         />

@@ -341,7 +341,7 @@ function VoiceSection({ vaultId }: { vaultId: string }) {
           }`}
         >
           <span
-            className={`absolute top-0.5 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
+            className={`absolute top-0.5 left-0 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
               transcribeDefault ? "translate-x-5" : "translate-x-0.5"
             }`}
           />
@@ -440,7 +440,7 @@ function EditorSection() {
           }`}
         >
           <span
-            className={`absolute top-0.5 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
+            className={`absolute top-0.5 left-0 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
               on ? "translate-x-5" : "translate-x-0.5"
             }`}
           />
