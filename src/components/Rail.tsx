@@ -2,9 +2,10 @@ import { IconChevronLeft, IconSearch } from "@/components/NavIcons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { type NavBand, type NavItem, useNavBands } from "@/lib/nav/model";
+import { displayTitle } from "@/lib/note-title";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
-import { useVaultStore } from "@/lib/vault";
-import { useCallback, useState } from "react";
+import { DEFAULT_NOTE_QUERY, useNotes, useTagRoles, useVaultStore } from "@/lib/vault";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 // The desktop left rail — the app's spine on wide screens (DESIGN-SPEC §2.2;
@@ -150,9 +151,51 @@ function RailBand({ band, collapsed }: { band: NavBand; collapsed: boolean }) {
         <div aria-hidden className="mx-2 mt-3 mb-2 border-t border-border-light" />
       ) : null}
       {band.items.map((item) => (
-        <RailLink key={item.id} item={item} collapsed={collapsed} />
+        <Fragment key={item.id}>
+          <RailLink item={item} collapsed={collapsed} />
+          {band.id === "notes" && item.id === "pinned" ? (
+            <RailPinnedNotes collapsed={collapsed} />
+          ) : null}
+        </Fragment>
       ))}
     </div>
+  );
+}
+
+// The desktop rail gets a glanceable pinned-note list; keep it out of the
+// shared nav model so the mobile sheet remains a flat projection.
+function RailPinnedNotes({ collapsed }: { collapsed: boolean }) {
+  const vault = useVaultStore((s) => s.getActiveVault());
+  const { roles } = useTagRoles(vault?.id ?? null);
+  const queryState = useMemo(
+    () => ({
+      ...DEFAULT_NOTE_QUERY,
+      tags: [roles.pinned],
+      sort: "desc" as const,
+      limit: 5,
+    }),
+    [roles.pinned],
+  );
+  const notes = useNotes(queryState, { live: false });
+
+  if (collapsed || !vault || !notes.data || notes.data.length === 0) return null;
+
+  return (
+    <ul aria-label="Pinned notes" className="min-w-0 space-y-0.5 pb-1">
+      {notes.data.map((note) => {
+        const title = displayTitle(note);
+        return (
+          <li key={note.id} className="min-w-0">
+            <Link
+              to={`/n/${encodeURIComponent(note.id)}`}
+              className="focus-ring block min-w-0 truncate rounded-lg px-3 pl-11 py-1 font-round text-xs text-fg-dim transition-colors duration-(--dur-quick) ease-out hover:bg-bg hover:text-fg-muted"
+            >
+              {title.text}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
