@@ -13,13 +13,16 @@ import { Link, useLocation } from "react-router";
 //   Voice note   → /new?voice=1  (lands in voice capture, no extra tap)
 //   Import notes → /import
 //
-// Desktop ≥lg ONLY (`hidden lg:block`). On mobile the BottomTabBar's raised
-// centre [+] stays the one capture gesture and hops straight to /new — a
-// second stacked menu on a phone would slow the thing the phone is built
-// around. The breakpoint contract test pins the gate.
+// Tablet + desktop, ≥md (`hidden md:block`). On a PHONE the BottomTabBar's
+// raised centre [+] stays the one capture gesture and hops straight to /new —
+// a second stacked menu on a phone would slow the thing the phone is built
+// around. The gate follows the bar's: the bar is `md:hidden` since the tablet
+// band went to the NavDrawer (which, like the Rail, carries no capture verb),
+// so without this at md there would be no capture affordance on a tablet at
+// all. The breakpoint contract test pins the gate.
 //
 // Placement: top-right, clear of everything else floating — the AmbientMapFab
-// lives bottom-right (lg:bottom-6) and the palette pill floats bottom-centre,
+// lives bottom-right (md:bottom-6) and the palette pill floats bottom-centre,
 // so the two coral discs can never stack. Hidden on ceremony routes (§4.1
 // rule 5 — no chrome noise under "Making a place for moss…") and on /new
 // itself (you're already holding the pen — same rule as the Map FAB hiding
@@ -66,7 +69,7 @@ export function SpeedDial() {
   if (pathname === "/new") return null;
 
   return (
-    <div ref={rootRef} className="fixed top-6 right-6 z-30 hidden lg:block">
+    <div ref={rootRef} className="fixed top-6 right-6 z-30 hidden md:block">
       <button
         ref={triggerRef}
         type="button"

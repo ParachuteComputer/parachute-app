@@ -133,7 +133,11 @@ describe("LensStrip (LENS-SPEC §5.1)", () => {
     }
   });
 
-  it("is mobile-only: lg:hidden on the root, never md: (the breakpoint contract)", async () => {
+  // Unchanged by the three-band amendment: the strip is an on-surface filter
+  // control, not one of the three primary-nav projections, so it spans BOTH
+  // sub-desktop bands (phone AND tablet, where the NavDrawer rests closed) and
+  // yields only to the Rail's permanent chrome.
+  it("spans phone+tablet: lg:hidden on the root, never md: (the breakpoint contract)", async () => {
     const { container } = await renderAt(<LensStrip />);
     const nav = container.querySelector('nav[aria-label="Lenses"]');
     expect(nav).not.toBeNull();

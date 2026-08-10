@@ -1,7 +1,7 @@
 import { useNavBands } from "@/lib/nav/model";
 import { Link, useLocation } from "react-router";
 
-// The mobile lens strip (LENS-SPEC §5.1, LZ-5) — the nav model's lens band
+// The on-surface lens strip (LENS-SPEC §5.1, LZ-5) — the nav model's lens band
 // projected ON the surface as a horizontal chip row, directly under the
 // masthead, below `lg` ONLY: at lg+ the desktop Rail owns the lens set, and
 // rendering both would duplicate the vocabulary D2 rejected. This is the
@@ -16,9 +16,16 @@ import { Link, useLocation } from "react-router";
 // a lens switch is a place change — react-router Links push by default). The
 // active chip wears the §3 grass-soft pill, same as the rail row it mirrors.
 // The row scrolls horizontally if cramped, bleeding into the page padding so
-// the scroll runs edge to edge. The strip pairs with the BottomTabBar across
-// the same `lg` gate the Rail flips on — exactly one projection per viewport
-// (the notes#147 breakpoint contract).
+// the scroll runs edge to edge.
+//
+// It keeps `lg:hidden` — i.e. it spans BOTH sub-desktop bands of the amended
+// three-band contract (phone AND tablet), and is deliberately NOT one of the
+// three primary-nav projections that contract counts. It is a filter control
+// on the surface, not a room list: on a tablet the NavDrawer rests CLOSED, so
+// this strip is what makes lens switching one tap rather than three, and the
+// only moment both carry the lens set is while the drawer is deliberately held
+// open. At lg+ the Rail is PERMANENT chrome, which is why the strip still
+// yields there and only there. See `navigation-breakpoint-contract.test.tsx`.
 export function LensStrip() {
   const bands = useNavBands();
   const location = useLocation();

@@ -84,9 +84,9 @@ Build surfaces from these instead of re-hand-rolling strings:
   (`--radius-xl` — a pill textarea is silly) (+ `.input-on-bg` when the field
   sits on a recessed/dialog surface).
 - **Surfaces** — `.card` (`--radius-2xl`); `.glass-panel` (translucent
-  `--color-bg-soft` at 82% over `backdrop-blur(10px)` — the rail, the mobile
-  nav sheet, the command palette, sticky headers; pair with `--shadow-lift`
-  when it floats).
+  `--color-bg-soft` at 82% over `backdrop-blur(10px)` — the rail, the tablet
+  nav drawer, the mobile nav sheet, the command palette, sticky headers; pair
+  with `--shadow-lift` when it floats).
 - **Chips** — `.chip` + `.chip-tag` / `.chip-tag-active` (the #tag pill) /
   `.chip-featured` (the coral-soft "highlight" badge — distinct from the
   interactive accent, e.g. a plan's featured tier).

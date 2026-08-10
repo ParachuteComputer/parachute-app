@@ -5,9 +5,15 @@ import { useVaultStore } from "@/lib/vault";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 
-// Mobile + tablet top bar (`lg:hidden`). On desktop the left Rail is the app's
-// spine and this header is gone; below lg this bar + the BottomTabBar carry
-// navigation, and the NavSheet carries everything else.
+// PHONE top bar (`md:hidden`). On desktop the left Rail is the app's spine and
+// this header is gone; at md–lg the NavDrawer is that spine and this header is
+// gone too — the drawer carries the vault switcher itself (as the Rail does),
+// so leaving the bar up would double the switcher AND leave a ☰ that opens a
+// `md:hidden` NavSheet, i.e. a button that does nothing. Below md this bar +
+// the BottomTabBar carry navigation and the NavSheet carries everything else.
+// (Consequence, accepted: `SyncStatusIndicator` lives only here, so md+ has no
+// sync chip — which is exactly the desktop Rail's long-standing state, not a
+// tablet-specific hole.)
 //
 // The vault switcher pill leads the bar — the vault name is the identity spine
 // on the phone exactly as in the desktop rail. W2-5 replaced the old ☰
@@ -40,7 +46,7 @@ export function Header() {
   return (
     <>
       <header
-        className="sticky top-0 z-10 border-b border-border bg-bg/90 backdrop-blur lg:hidden"
+        className="sticky top-0 z-10 border-b border-border bg-bg/90 backdrop-blur md:hidden"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         <nav className="flex items-center justify-between gap-3 px-4 py-3">

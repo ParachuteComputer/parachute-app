@@ -126,12 +126,17 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
     vi.restoreAllMocks();
   });
 
-  it("is a mobile-only top bar (lg:hidden) — the Rail is the desktop spine", () => {
+  // Three-band amendment (notes#147): `md:hidden`, not `lg:hidden`. At md–lg
+  // the NavDrawer is the spine and carries the vault switcher itself, so
+  // leaving this bar up would double the switcher and leave a ☰ pointing at a
+  // `md:hidden` NavSheet — a button that does nothing.
+  it("is a PHONE-only top bar (md:hidden) — the NavDrawer is the tablet spine, the Rail the desktop one", () => {
     seedVault();
     const { container } = renderHeader();
     const header = container.querySelector("header");
     expect(header).not.toBeNull();
-    expect(header?.className).toContain("lg:hidden");
+    expect(header?.className).toContain("md:hidden");
+    expect(header?.className).not.toContain("lg:hidden");
   });
 
   it("leads with the vault switcher when a vault is connected", () => {

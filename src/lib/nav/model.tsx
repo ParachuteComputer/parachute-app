@@ -29,10 +29,12 @@ import { decodeViewDef, isLegacySavedView } from "@/lib/views/schema";
 import { type ReactNode, createContext, useContext, useMemo } from "react";
 
 // The shared nav model (DESIGN-SPEC §2.1; reshaped by LENS-SPEC §4 in LZ-2) —
-// ONE data model renders BOTH projections: the desktop Rail and the mobile
-// NavSheet. This is the F14 fix at the root: the two form factors can't
-// disagree about what the rooms are, because neither owns a room list — they
-// both render `useNavBands()`.
+// ONE data model renders EVERY projection: the desktop Rail, the tablet
+// NavDrawer, and the phone NavSheet (plus the LensStrip's lens-band slice and
+// the BottomTabBar's match rules). This is the F14 fix at the root: the form
+// factors can't disagree about what the rooms are, because none of them owns a
+// room list — they all render `useNavBands()`. Adding the tablet band in the
+// three-band breakpoint amendment therefore added a PROJECTION, not a model.
 //
 // Three named zones (the lens model — LENS-SPEC §1's lens/destination line):
 //   YOUR NOTES     — the LENS SET over the one collection (Recent · All notes ·
@@ -410,10 +412,12 @@ export function buildNavBands(signals: NavBandSignals): NavBand[] {
  * (tag-roles, the account summary, the bounded first-note probe), and there
  * is no dedup below react-query, so every component that ran it would open
  * its own sockets and fire its own fetches. The breakpoint contract ("one
- * nav projection per viewport", notes#147) is CSS-only — `hidden lg:flex` /
- * `lg:hidden` hide a projection without unmounting it — so when Rail,
- * LensStrip, and NavSheet each derived this themselves, every data cost here
- * was paid once per projection. (Historically that included a full-vault
+ * primary-nav projection per viewport BAND", notes#147 — three bands since the
+ * tablet NavDrawer landed) is CSS-only — `hidden lg:flex` / `hidden md:flex
+ * lg:hidden` / `md:hidden` hide a projection without unmounting it — so when
+ * Rail, LensStrip, and NavSheet each derived this themselves, every data cost
+ * here was paid once per projection, and adding a third band would have made
+ * the drawer a fourth payer rather than a swap. (Historically that included a full-vault
  * dateviews stream ×2 at boot and ×3 on a ☰ tap — Finding B's piece 1
  * replaced it with `useHasUserAuthoredNote`, a bounded existence check, so
  * the nav model no longer streams the vault at all.) Keeping the derivation

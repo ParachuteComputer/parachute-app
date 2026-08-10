@@ -1,10 +1,11 @@
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { PinnedNotesSubList, isPinnedRow } from "@/components/PinnedNotesSubList";
 import { TextSizeControl } from "@/components/TextSizeControl";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { type NavBand, type NavItem, type NavLocation, useNavBands } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 
 // The mobile NavSheet (DESIGN-SPEC §2.3) — the ☰ junk-drawer menu's
@@ -22,8 +23,15 @@ import { Link, useLocation } from "react-router";
 //
 // Chrome: fixed bottom sheet, max-h-[85dvh], rounded top, glass over a scrim,
 // drag handle. Dialog semantics: focus-trapped, closes on scrim tap / Escape /
-// swipe-down / route change (the owner closes on pathname change). `lg:hidden`
-// — at lg+ the Rail is the one projection (the breakpoint contract).
+// swipe-down / route change (the owner closes on pathname change).
+//
+// PHONE ONLY (`md:hidden`) — the breakpoint contract has three bands, not two:
+// phone (<768px) = BottomTabBar + THIS sheet · tablet (768–1023px) = the
+// docked `NavDrawer` · desktop (>=1024px) = the Rail. The drawer is the
+// deliberate counterpart to this sheet, not a variant of it: persistent handle
+// instead of a hidden ☰, docked instead of modal, no scrim/focus-trap/scroll-
+// lock. A tablet is not a big phone, and this sheet is the phone's answer.
+// The pinned invariant lives in `navigation-breakpoint-contract.test.tsx`.
 
 export interface NavSheetProps {
   open: boolean;
@@ -125,7 +133,7 @@ function NavSheetPanel({ onClose, initialFocus }: Omit<NavSheetProps, "open">) {
   };
 
   return (
-    <div className="fixed inset-0 z-40 lg:hidden">
+    <div className="fixed inset-0 z-40 md:hidden">
       {/* Scrim — tap to close. */}
       <button
         type="button"
@@ -203,7 +211,15 @@ function SheetBand({ band }: { band: NavBand }) {
         </p>
       ) : null}
       {band.items.map((item) => (
-        <SheetRow key={item.id} item={item} loc={location} />
+        <Fragment key={item.id}>
+          <SheetRow item={item} loc={location} />
+          {/* Pinned-note parity — the third projection #131 deferred. The
+              sheet is only MOUNTED while open, so the five-row fetch is paid
+              on a ☰ tap, never at rest. Closing on tap is the owner's job
+              here (the sheet already closes on pathname change), so no
+              onNavigate. */}
+          {isPinnedRow(band.id, item.id) ? <PinnedNotesSubList variant="touch" /> : null}
+        </Fragment>
       ))}
     </div>
   );

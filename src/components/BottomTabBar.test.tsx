@@ -77,14 +77,16 @@ describe("BottomTabBar (LENS-SPEC §5.2 — the 3-slot bar, ratified D2)", () =>
     expect(screen.queryByRole("navigation", { name: /primary/i })).toBeNull();
   });
 
-  it("is hidden on lg+ viewports via lg:hidden class (matches the Rail's lg:flex gate — notes#147)", () => {
+  it("is PHONE-only via md:hidden (the tablet band belongs to the NavDrawer — notes#147, three bands)", () => {
     renderAt("/");
     const nav = screen.getByRole("navigation", { name: /primary/i });
-    expect(nav.className).toMatch(/\blg:hidden\b/);
-    // Guard against regressing back to `md:hidden` — at 768-1023px that would
-    // hide the bar while the Rail (lg:flex) is still hidden too, leaving
-    // tablet users with no primary navigation.
-    expect(nav.className).not.toMatch(/\bmd:hidden\b/);
+    expect(nav.className).toMatch(/\bmd:hidden\b/);
+    // Guard against drifting BACK to `lg:hidden`: at 768-1023px that would put
+    // this bar on screen beside the NavDrawer (`hidden md:flex lg:hidden`) —
+    // two primary-nav projections in one band, which is the thing the contract
+    // forbids. The gap this gate used to guard against (nothing at all in
+    // 768-1023px) is now filled by the drawer, not by this bar.
+    expect(nav.className).not.toMatch(/\blg:hidden\b/);
   });
 
   // The one surface tab lights across the WHOLE surface (§5.2): every lens
