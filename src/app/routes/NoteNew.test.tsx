@@ -526,7 +526,9 @@ describe("NoteNew route — unified create surface", () => {
     await waitFor(() => {
       expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
     });
-    expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/n/new-note-id" });
+    await waitFor(() => {
+      expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/n/new-note-id" });
+    });
   });
 
   it("extracts #hashtags from body content alongside explicit tag chips", async () => {
@@ -914,9 +916,11 @@ describe("NoteNew — voice affordance", () => {
     // path (the audio save shares the same compose-form-consumption rule).
     // The local id is generated inside the component, so assert the shape of
     // the destination path rather than an exact id.
-    expect(navLog.at(-1)).toMatchObject({
-      type: "REPLACE",
-      pathname: expect.stringMatching(/^\/n\/.+/),
+    await waitFor(() => {
+      expect(navLog.at(-1)).toMatchObject({
+        type: "REPLACE",
+        pathname: expect.stringMatching(/^\/n\/.+/),
+      });
     });
     const db = await openLensDB();
     const pending = await listPending(db, "dev");
