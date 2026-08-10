@@ -1658,7 +1658,7 @@ describe("NoteNew — first-voice-capture retention choice", () => {
     });
   }
 
-  it("no choice before the mic is engaged; engaging the recorder reveals it", async () => {
+  it("no choice while recording; stopping the recorder reveals it once audio exists", async () => {
     installFetch({ "GET /api/vault": { body: UNCHOSEN_VAULT } });
     renderAt("/new");
 
@@ -1670,6 +1670,8 @@ describe("NoteNew — first-voice-capture retention choice", () => {
     expect(screen.queryByTestId("retention-choice")).toBeNull();
 
     await engageRecorder();
+    expect(screen.queryByTestId("retention-choice")).toBeNull();
+    await stopRecorder();
     expect(await screen.findByTestId("retention-choice")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /keep my recordings/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /just keep the words/i })).toBeInTheDocument();
@@ -1683,6 +1685,7 @@ describe("NoteNew — first-voice-capture retention choice", () => {
     renderAt("/new");
 
     await engageRecorder();
+    await stopRecorder();
     await screen.findByTestId("retention-choice");
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /just keep the words/i }));
@@ -1695,8 +1698,8 @@ describe("NoteNew — first-voice-capture retention choice", () => {
     });
     // The per-vault flag landed — the prompt never re-renders in this vault.
     expect(localStorage.getItem("lens:audio-retention-choice:dev")).not.toBeNull();
-    // …and the capture is untouched: recording continues (Stop still live).
-    expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
+    // …and the completed capture remains available for Create.
+    expect(screen.getByText(/recorded\s+/i)).toBeInTheDocument();
   });
 
   it("choosing 'Keep my recordings' PATCHes keep explicitly and settles the choice", async () => {
@@ -1707,6 +1710,7 @@ describe("NoteNew — first-voice-capture retention choice", () => {
     renderAt("/new");
 
     await engageRecorder();
+    await stopRecorder();
     await screen.findByTestId("retention-choice");
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /keep my recordings/i }));
@@ -1743,6 +1747,7 @@ describe("NoteNew — first-voice-capture retention choice", () => {
     const first = renderAt("/new");
 
     await engageRecorder();
+    await stopRecorder();
     await screen.findByTestId("retention-choice");
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /just keep the words/i }));
@@ -1753,9 +1758,8 @@ describe("NoteNew — first-voice-capture retention choice", () => {
     expect(await screen.findByTestId("retention-choice-error")).toHaveTextContent(/couldn't save/i);
     expect(localStorage.getItem("lens:audio-retention-choice:dev")).toBeNull();
 
-    // The capture is never blocked on the choice: stop + Create still land
-    // the full voice enqueue and navigate to the note.
-    await stopRecorder();
+    // The capture is never blocked on the choice: the stopped capture + Create
+    // still land the full voice enqueue and navigate to the note.
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
     });
@@ -1775,6 +1779,7 @@ describe("NoteNew — first-voice-capture retention choice", () => {
     first.unmount();
     renderAt("/new");
     await engageRecorder();
+    await stopRecorder();
     expect(await screen.findByTestId("retention-choice")).toBeInTheDocument();
   });
 

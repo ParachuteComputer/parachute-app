@@ -425,8 +425,17 @@ function LinksPanel({
 }
 
 function AttachmentView({ attachment }: { attachment: NoteAttachment }) {
+  const filename = attachment.filename;
+
+  if (!filename || !attachment.url) {
+    return (
+      <figure className="card shadow-soft p-3">
+        <AttachmentProcessing />
+      </figure>
+    );
+  }
+
   const mime = (attachment.mimeType ?? "").toLowerCase();
-  const filename = attachment.filename ?? attachment.id;
 
   return (
     <figure className="card shadow-soft p-3">
@@ -438,6 +447,15 @@ function AttachmentView({ attachment }: { attachment: NoteAttachment }) {
       </figcaption>
       <AttachmentBody attachment={attachment} mime={mime} filename={filename} />
     </figure>
+  );
+}
+
+function AttachmentProcessing() {
+  return (
+    <div className="flex items-center gap-2 text-sm text-fg-dim" aria-busy="true">
+      <Skeleton className="h-4 w-32" />
+      <span>Processing…</span>
+    </div>
   );
 }
 
@@ -481,7 +499,7 @@ function AttachmentBody({
   }, [needsBlob, src, client]);
 
   if (!src) {
-    return <p className="text-sm text-fg-dim">(no URL)</p>;
+    return <AttachmentProcessing />;
   }
   if (error) {
     return <p className="text-sm text-danger">{error}</p>;

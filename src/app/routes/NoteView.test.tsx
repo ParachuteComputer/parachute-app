@@ -526,6 +526,28 @@ describe("NoteView route", () => {
     URL.createObjectURL = origCreate;
   });
 
+  it("shows a processing state for an attachment placeholder", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "pending-attachment-note",
+          path: "media",
+          createdAt: "2026-04-16T00:00:00Z",
+          content: "pic",
+          tags: [],
+          links: [],
+          attachments: [{ id: "att-pending", mimeType: "image/png" }],
+        },
+      },
+    });
+
+    renderAt("/n/pending-attachment-note");
+
+    expect(await screen.findByText("Processing…")).toBeInTheDocument();
+    expect(screen.queryByText("att-pending", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("(no URL)", { exact: true })).not.toBeInTheDocument();
+  });
+
   it("shows a 404 block when the vault returns no note for the id", async () => {
     installFetch({
       "/api/notes": { body: [] },
