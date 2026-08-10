@@ -688,7 +688,7 @@ describe("NoteView — offline voice capture (local id → id-map resolution) [F
     // navigates to /n/<localId>. A bare getNote(localId) would 404.
     qc.setQueryData(["note", "dev", localId], {
       id: localId,
-      path: "Voice/memo",
+      path: "Notes/2026/07-03/00-00-00",
       createdAt: "2026-07-03T00:00:00Z",
       updatedAt: "2026-07-03T00:00:00Z",
       content: "_Transcript pending._",
@@ -705,7 +705,7 @@ describe("NoteView — offline voice capture (local id → id-map resolution) [F
       "id=real-123": {
         body: {
           id: "real-123",
-          path: "Voice/memo",
+          path: "Notes/2026/07-03/00-00-00",
           createdAt: "2026-07-03T00:00:00Z",
           content: "# Memo\n\nThe transcribed text.",
           tags: ["capture"],
@@ -717,11 +717,10 @@ describe("NoteView — offline voice capture (local id → id-map resolution) [F
     renderWith(qc, `/n/${encodeURIComponent(localId)}`);
 
     // Lands on a readable note, not an error/404 screen. The optimistic note's
-    // first line (the pending placeholder) IS its title now, so the page heads
-    // on it rather than the path leaf.
-    expect(
-      await screen.findByRole("heading", { level: 1, name: /transcript pending/i }),
-    ).toBeInTheDocument();
+    // pending placeholder is not a title, so the quickPath timestamp is used.
+    const optimisticHeading = await screen.findByRole("heading", { level: 1 });
+    expect(optimisticHeading).toHaveTextContent(/July 3/);
+    expect(optimisticHeading).not.toHaveTextContent(/transcript pending/i);
     expect(screen.queryByText(/could not load note/i)).toBeNull();
     expect(screen.queryByText(/note not found/i)).toBeNull();
 
