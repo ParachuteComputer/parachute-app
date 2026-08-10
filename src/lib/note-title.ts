@@ -1,3 +1,8 @@
+import {
+  PENDING_MARKER_RE,
+  UNAVAILABLE_MARKER_RE,
+  VOICE_LIMIT_MARKER_RE,
+} from "@/lib/transcription-status";
 import type { Note, NoteSummary } from "@/lib/vault/types";
 
 // Human-readable title for a note, shared by every surface that renders a note
@@ -5,16 +10,18 @@ import type { Note, NoteSummary } from "@/lib/vault/types";
 // The mono path stays as dim metadata beside the title, never the headline —
 // this helper is what makes the headline human.
 //
-// The title IS the first non-empty content line (one leading heading marker
+// The title IS the first meaningful content line (one leading heading marker
 // stripped, frontmatter skipped) — the vault's `displayTitle` model (ratified
 // 2026-07-17; parachute-vault core `computeDisplayTitle`). `firstLineTitle`
 // below is the app's byte-for-byte mirror of that derivation, so the editor
 // (its in-place first-line decoration), the read view (this derivation over
 // full content), and the list (the vault's wire `displayTitle`) can't disagree
-// about which line is the title.
+// about which line is the title. Transcription-status markers and bare
+// attachment embeds are not meaningful titles while a voice note is pending
+// or has no transcript yet.
 //
 // Resolution order:
-//   1. the first non-empty line of content (one leading `#{1,6}` marker
+//   1. the first meaningful line of content (one leading `#{1,6}` marker
 //      stripped, any leading frontmatter skipped, 120-codepoint cap);
 //   2. else the path leaf (last segment, `.md` stripped);
 //   3. else the id.
@@ -79,6 +86,17 @@ export function pathLeaf(path: string): string {
   return last.replace(/\.md$/i, "");
 }
 
+/**
+ * True when a derived content title is just the note's storage identity.
+ * These values remain valid path/id fallbacks, but must not be promoted as a
+ * human title when content happens to repeat them verbatim.
+ */
+export function isRawPathOrId(text: string, note: { id: string; path?: string }): boolean {
+  if (text === note.id) return true;
+  if (!note.path) return false;
+  return text === note.path || text === pathLeaf(note.path);
+}
+
 // A note's title, distinguishing a GENUINE title (from content, or an
 // operator-chosen path) from an untouched `quickPath()` default — a
 // machine-generated timestamp that isn't a name yet. Callers that render
@@ -117,20 +135,30 @@ export function pathDisplayTitle(path: string): DisplayTitle {
 
 export function displayTitle(note: TitleSource): DisplayTitle {
   // The lean list shape carries the vault's own computed `displayTitle` (the
-  // canonical first-line derivation) — prefer it so the list agrees with the
-  // vault by construction, without paying to fetch full content per row.
+  // canonical first-meaningful-line derivation) — prefer it so the list agrees
+  // with the vault by construction, without paying to fetch full content per
+  // row. A null/undefined or meaningless wire value means "no title yet";
+  // older or in-flight vault data can still carry a placeholder marker here,
+  // so it must fall through just like a missing value.
   const wire = (note as { displayTitle?: string | null }).displayTitle;
-  if (typeof wire === "string" && wire.length > 0) return { kind: "title", text: wire };
-  // `wire === null` is the vault saying "no first-line title" (empty note) —
-  // fall through to the path/timestamp voice. `wire === undefined` means the
-  // field wasn't sent (a full-content fetch, or a pre-`displayTitle` vault), so
-  // derive from content when we have it — the same first-line rule the vault
-  // itself applies.
-  if (wire === undefined) {
-    const content = (note as { content?: string }).content;
-    if (typeof content === "string") {
-      const fromContent = firstLineTitle(content);
-      if (fromContent) return { kind: "title", text: fromContent };
+  if (
+    typeof wire === "string" &&
+    wire.length > 0 &&
+    !isMeaninglessTitleCandidate(wire) &&
+    !isRawPathOrId(wire, note)
+  ) {
+    return { kind: "title", text: wire };
+  }
+  // `wire === null` is the vault saying "no first-line title" and
+  // `wire === undefined` means the field was not sent (a full-content fetch or
+  // a pre-`displayTitle` vault). A blank, placeholder, or raw-identity wire
+  // value is the same display-side "no title yet" state, so derive from content
+  // whenever it is present before falling through to the path/timestamp voice.
+  const content = (note as { content?: string }).content;
+  if (typeof content === "string") {
+    const fromContent = firstLineTitle(content);
+    if (fromContent && !isRawPathOrId(fromContent, note)) {
+      return { kind: "title", text: fromContent };
     }
   }
   if (note.path) return pathDisplayTitle(note.path);
@@ -144,6 +172,17 @@ export function displayTitle(note: TitleSource): DisplayTitle {
 // computes for the list shape.
 const DISPLAY_TITLE_MAX_LEN = 120;
 const FRONTMATTER_SCAN_LINES = 100;
+
+// The transcription-status module owns the marker vocabulary. Anchor its
+// regexes here because title derivation skips a marker only when the whole
+// candidate line is that marker, never when marker text appears in prose.
+const TRANSCRIPTION_PLACEHOLDER_RE = new RegExp(
+  `^(?:${PENDING_MARKER_RE.source}|${UNAVAILABLE_MARKER_RE.source}|${VOICE_LIMIT_MARKER_RE.source})$`,
+);
+// Voice captures write wiki embeds; imported/storage-rewritten attachments can
+// arrive as ordinary Markdown image embeds. Either syntax alone is not a
+// meaningful title until some real note text exists.
+const BARE_ATTACHMENT_RE = /^(?:!\[\[[^\n]+\]\]|!\[[^\n]*\]\([^\n]*\))$/;
 
 // Index of the first line that counts as the start of the DOCUMENT body: after
 // a leading, closed YAML frontmatter block when `content` opens with one, else
@@ -170,18 +209,27 @@ function titleTextOf(line: string): string {
   return line.replace(/^#{1,6}\s*/, "").trim();
 }
 
-// The app's mirror of the vault's `computeDisplayTitle`: the first non-empty
+function isMeaninglessTitleCandidate(text: string): boolean {
+  const candidate = text.trim();
+  return (
+    candidate === "" ||
+    TRANSCRIPTION_PLACEHOLDER_RE.test(candidate) ||
+    BARE_ATTACHMENT_RE.test(candidate)
+  );
+}
+
+// The app's mirror of the vault's `computeDisplayTitle`: the first meaningful
 // content line (after any leading frontmatter), one leading `#{1,6}` marker and
 // its trailing whitespace stripped, truncated to DISPLAY_TITLE_MAX_LEN code
-// points. `null` when there's no non-empty line (empty / whitespace-only /
-// frontmatter-only / bare-marker-only note) — callers decide the fallback voice
-// (path/timestamp).
+// points. `null` when there's no meaningful line (empty / whitespace-only /
+// frontmatter-only / bare-marker-only / transcription-placeholder-only /
+// attachment-only note) — callers decide the fallback voice (path/timestamp).
 export function firstLineTitle(content: string | null | undefined): string | null {
   if (!content) return null;
   const lines = content.split("\n");
   for (let i = bodyStartLine(lines); i < lines.length; i++) {
     const stripped = titleTextOf(lines[i]!);
-    if (stripped === "") continue;
+    if (isMeaninglessTitleCandidate(stripped)) continue;
     // Code-point iteration so a truncation can't split a surrogate pair.
     const codePoints = Array.from(stripped);
     return codePoints.length > DISPLAY_TITLE_MAX_LEN
@@ -191,21 +239,23 @@ export function firstLineTitle(content: string | null | undefined): string | nul
   return null;
 }
 
-// Remove the first non-empty content line — the exact line `firstLineTitle`
+// Remove the first meaningful content line — the exact line `firstLineTitle`
 // lifts into a page header — plus the blank / bare-marker lines that preceded
 // it and the blank lines that trailed it, so a read view that promotes the
 // first line to its title doesn't render that line twice. The leading-skip
-// predicate is `titleTextOf` (NOT a raw trim) so it lands on the same line
-// `firstLineTitle` chose: a bare `#` before real content is skipped here too,
-// rather than removed alone and leaving the title text in the body. Any leading
-// frontmatter is preserved but skipped when locating the title line. Returns
-// `content` unchanged when there's no title line to lift (empty / whitespace /
-// bare-marker-only / frontmatter-only note).
+// predicate is `isMeaninglessTitleCandidate(titleTextOf(...))` (NOT a raw trim)
+// so it lands on the same line `firstLineTitle` chose: a bare `#`,
+// transcription marker, or attachment embed before real content is skipped
+// here too, rather than removed alone and leaving the title text in the body.
+// Any leading frontmatter is preserved but skipped when locating the title
+// line. Returns `content` unchanged when there's no title line to lift (empty /
+// whitespace / bare-marker-only / placeholder-only / attachment-only /
+// frontmatter-only note).
 export function stripFirstTitleLine(content: string): string {
   const lines = content.split("\n");
   const start = bodyStartLine(lines);
   let i = start;
-  while (i < lines.length && titleTextOf(lines[i]!) === "") i++;
+  while (i < lines.length && isMeaninglessTitleCandidate(titleTextOf(lines[i]!))) i++;
   if (i >= lines.length) return content; // no title line to lift
   // Drop everything from the body start through the title line (any blank or
   // bare-marker lines that preceded it, then the line itself) plus the blanks

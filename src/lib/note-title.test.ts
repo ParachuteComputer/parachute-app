@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   displayTitle,
   firstLineTitle,
+  isRawPathOrId,
   leadingH1,
   noteTitle,
   pathDisplayTitle,
@@ -120,6 +121,42 @@ describe("firstLineTitle (mirror of the vault's computeDisplayTitle)", () => {
     expect(firstLineTitle("Hello world\n\nmore")).toBe("Hello world");
   });
 
+  it("skips pending markers and bare attachment embeds instead of promoting them", () => {
+    expect(
+      firstLineTitle("_Transcript pending._\n\n![[memo-2026-07-16T12-00-00-000.webm]]\n"),
+    ).toBeNull();
+    expect(firstLineTitle("![memo](attachments/memo.webm)\n")).toBeNull();
+  });
+
+  it("skips every segmented pending marker and embed when no real text exists", () => {
+    const content = `${[
+      "_Transcript pending (part 1)._",
+      "_Transcript pending (part 2)._",
+      "![[memo-part1.webm]]",
+      "![[memo-part2.webm]]",
+    ].join("\n\n")}\n`;
+    expect(firstLineTitle(content)).toBeNull();
+  });
+
+  it("keeps a typed first line ahead of later transcription placeholders", () => {
+    expect(
+      firstLineTitle(
+        "Typed thought\n\n_Transcript pending._\n\n![[memo-2026-07-16T12-00-00-000.webm]]",
+      ),
+    ).toBe("Typed thought");
+  });
+
+  it("resumes promoting the real transcript once the placeholder is replaced", () => {
+    expect(firstLineTitle("# Real title\n\nThe transcribed text.")).toBe("Real title");
+  });
+
+  it("skips terminal transcription markers too", () => {
+    expect(firstLineTitle("_Transcription unavailable._\n\n![[memo.webm]]")).toBeNull();
+    expect(
+      firstLineTitle("_Monthly voice limit reached — transcription resumes next month._"),
+    ).toBeNull();
+  });
+
   it("strips one leading heading marker at any level", () => {
     expect(firstLineTitle("# Title\n\nbody")).toBe("Title");
     expect(firstLineTitle("### Deep\n\nbody")).toBe("Deep");
@@ -181,6 +218,12 @@ describe("stripFirstTitleLine", () => {
     // strip must remove BOTH lines so the body doesn't double-render the title.
     expect(stripFirstTitleLine("#\nActual title\n\nbody")).toBe("body");
     expect(stripFirstTitleLine("#\nActual title")).toBe("");
+  });
+
+  it("skips pending markers and embeds before a real title, and leaves placeholder-only notes intact", () => {
+    const pending = "_Transcript pending._\n\n![[memo.webm]]\n";
+    expect(stripFirstTitleLine(pending)).toBe(pending);
+    expect(stripFirstTitleLine(`${pending}\n# Real title\n\nbody`)).toBe("body");
   });
 
   it("removes leading blank lines that preceded the first line", () => {
@@ -254,6 +297,19 @@ describe("displayTitle", () => {
     ).toEqual({ kind: "title", text: "Groceries for the week" });
   });
 
+  it("filters a wire pending marker and falls back to the quickPath timestamp", () => {
+    const result = displayTitle(
+      leanNote({
+        id: "voice-1",
+        path: "Notes/2026/07-16/12-00-00",
+        displayTitle: "_Transcript pending._",
+      }),
+    );
+    expect(result.kind).toBe("timestamp");
+    expect(result.text).toMatch(/July 16/);
+    expect(result.text).not.toMatch(/transcript pending/i);
+  });
+
   it("falls to the timestamp voice when the vault reports displayTitle: null (empty note)", () => {
     const result = displayTitle(
       leanNote({ id: "a", path: "Notes/2026/07-16/22-10-48", displayTitle: null }),
@@ -269,6 +325,42 @@ describe("displayTitle", () => {
     });
   });
 
+  it("falls back to the quickPath timestamp for pending voice content", () => {
+    const result = displayTitle({
+      id: "voice-1",
+      path: "Notes/2026/07-16/12-00-00",
+      content: "_Transcript pending._\n\n![[memo-2026-07-16T12-00-00-000.webm]]\n",
+    });
+    expect(result.kind).toBe("timestamp");
+    expect(result.text).toMatch(/July 16/);
+  });
+
+  it("falls back for segmented pending and failed transcription content", () => {
+    const path = "Notes/2026/07-16/12-00-00";
+    const segmented = `${[
+      "_Transcript pending (part 1)._",
+      "_Transcript pending (part 2)._",
+      "![[memo-part1.webm]]",
+      "![[memo-part2.webm]]",
+    ].join("\n\n")}\n`;
+    for (const content of [segmented, "_Transcription unavailable._\n\n![[memo.webm]]"]) {
+      const result = displayTitle({ id: "voice-1", path, content });
+      expect(result.kind).toBe("timestamp");
+      expect(result.text).toMatch(/July 16/);
+    }
+  });
+
+  it("does not promote a note's raw path, leaf, or id as its title", () => {
+    const path = "Notes/2026/07-16/12-00-00";
+    const id = "01JNOTEID";
+    for (const text of [path, pathLeaf(path), id]) {
+      expect(isRawPathOrId(text, { id, path })).toBe(true);
+      const result = displayTitle({ id, path, content: text });
+      expect(result.kind).toBe("timestamp");
+      expect(result.text).toMatch(/July 16/);
+    }
+  });
+
   it("prefers content over the quickPath timestamp, same as noteTitle()", () => {
     expect(
       displayTitle({ id: "a", path: "Notes/2026/07-16/22-10-48", content: "# Real title" }),
@@ -277,6 +369,16 @@ describe("displayTitle", () => {
 
   it("renders an untouched quickPath() default as a timestamp when there's no content", () => {
     const result = displayTitle({ id: "a", path: "Notes/2026/07-16/22-10-48" });
+    expect(result.kind).toBe("timestamp");
+    expect(result.text).toMatch(/July 16/);
+  });
+
+  it("renders a genuinely empty quick note as a timestamp too", () => {
+    const result = displayTitle({
+      id: "empty",
+      path: "Notes/2026/07-16/22-10-48",
+      content: "",
+    });
     expect(result.kind).toBe("timestamp");
     expect(result.text).toMatch(/July 16/);
   });

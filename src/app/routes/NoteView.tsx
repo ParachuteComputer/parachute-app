@@ -15,6 +15,7 @@ import { useFocusMode } from "@/lib/focus-mode";
 import {
   type DisplayTitle,
   firstLineTitle,
+  isRawPathOrId,
   pathDisplayTitle,
   stripFirstTitleLine,
 } from "@/lib/note-title";
@@ -110,16 +111,19 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [focusOn, setFocusOn]);
   const label = note.path ?? note.id;
-  // Title coherence: the first non-empty content line IS the title — whether or
-  // not it opens with a literal `#` — matching the editor's first-line-title
+  // Title coherence: the first meaningful content line IS the title — whether
+  // or not it opens with a literal `#` — matching the editor's first-line-title
   // decoration and the list's `displayTitle`. It renders in the page header and
   // is STRIPPED from the body so the note isn't headed by its own first line
   // twice. `firstLineTitle` is the shared vault-`displayTitle` derivation, so
-  // read / editor / list can't drift. When content has no non-empty line
-  // (empty / whitespace / frontmatter-only note) there's no content title: an
-  // untouched quickPath() default renders as a timestamp variant (metadata
-  // voice, never a headline), else the path leaf.
-  const titleText = firstLineTitle(note.content);
+  // read / editor / list can't drift. When content has no meaningful line
+  // (empty / whitespace / frontmatter-only / transcription-placeholder-only /
+  // attachment-only note), or when it repeats the note's raw path/id, there's
+  // no content title: an untouched quickPath() default renders as a timestamp
+  // variant (metadata voice, never a headline), else the path leaf.
+  const derivedTitleText = firstLineTitle(note.content);
+  const titleText =
+    derivedTitleText !== null && !isRawPathOrId(derivedTitleText, note) ? derivedTitleText : null;
   const title: DisplayTitle =
     titleText !== null
       ? { kind: "title", text: titleText }
