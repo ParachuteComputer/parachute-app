@@ -1,4 +1,4 @@
-# Release workflow — triggered by pushing a semver tag.
+# Release workflow — publishes on merge to main.
 #
 # Publishes ONE package: @openparachute/app — the super-surface
 # SPA. Unlike the library packages in the ecosystem, what ships here is a
@@ -20,15 +20,31 @@
 # `npm pack` produces the same tarball `npm publish` would) plus the explicit
 # verification steps below.
 #
+# Publish-on-merge (ports parachute-hub's hub#790 pattern; see the `plan` job
+# below and governance.md's "Publishing is on merge, not on a remembered tag").
+# Governance rule 2 already requires every code-touching PR to bump `version`,
+# so package.json IS the per-PR release intent — the tag used to be a second,
+# manual copy of a decision the PR already made, and remembering to cut it was
+# the weak link. The decision logic lives in `scripts/release-plan.ts`
+# (unit-tested — release logic that can double-publish or silently drop a
+# release shouldn't be untested shell in a `run:` block).
+#
+# The tag-push path is UNCHANGED and still works: an explicit tag still
+# publishes, and still overrides every check (including a deliberate
+# re-release of an older version), because a tag is a human saying "release
+# this".
+#
 # Tag conventions (governance rule 2):
 #   - rc:     v<X>.<Y>.<Z>-rc.<N>   (e.g. v0.21.0-rc.1)  → dist-tag `rc`
 #   - stable: v<X>.<Y>.<Z>          (e.g. v0.21.0)       → dist-tag `latest`
 #
 # Release flow:
-#   1. Bump `version` in package.json on main.
-#   2. git tag v$(bun -e "console.log(require('./package.json').version)")
-#      && git push --tags
-#   3. CI runs the gates, then publishes.
+#   1. Bump `version` in package.json in a release PR (governance rule 2 —
+#      feature PRs don't touch it).
+#   2. Merge to main. CI runs the gates, `plan` decides the version isn't on
+#      npm yet, and publish runs automatically — no tag to remember.
+#   (An explicit `git tag v$(...) && git push --tags` still works for a
+#   deliberate re-release, same as before.)
 #
 # OPERATOR SETUP (one-time, and REQUIRED before the first publish can
 # succeed): an npm Trusted Publisher rule for @openparachute/app —
@@ -36,17 +52,21 @@
 # Without it the publish step fails (a sibling package 404'd on its first CI
 # publish for exactly this reason). No NPM_TOKEN secret is involved; the
 # `id-token: write` permission below is what npm verifies against the rule.
+# The rule matches on this workflow's filename, not its trigger — no change
+# needed there when moving from tag-triggered to publish-on-merge.
 
 name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
 
 concurrency:
-  # Don't let two releases race on the same tag.
+  # Don't let two releases race on the same ref.
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
@@ -54,6 +74,32 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Whether this run should publish.
+  #
+  # hub#790: releasing used to require remembering `git tag && git push` after
+  # every merge. The remembering is the weak link — several PRs merged in one
+  # session with no tags, so nothing published and nobody noticed until an
+  # operator asked why their box was stale.
+  #
+  # Note the tag-push path is unchanged: an explicit tag still publishes, and
+  # still overrides every check, because a tag is a human saying "release
+  # this". On a tag push this job's own verdict isn't consulted by
+  # `publish-npm` below (same as hub's workflow) — the tag alone decides.
+  # ---------------------------------------------------------------------------
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.app.outputs.should_publish }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3
+      - id: app
+        run: bun scripts/release-plan.ts . @openparachute/app
+
   test:
     name: test
     runs-on: ubuntu-latest
@@ -73,7 +119,11 @@ jobs:
 
   publish-npm:
     name: publish to npm
-    needs: test
+    needs: [plan, test]
+    # A tag push always publishes (a human said release this). A branch push
+    # (i.e. a merge to main) publishes only when `plan` decided the version
+    # isn't on npm yet.
+    if: ${{ github.ref_type == 'tag' || (github.ref_type != 'tag' && needs.plan.outputs.should_publish == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -95,6 +145,9 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: verify package.json version matches tag
+        # Tag path only — on a branch (merge) push the version comes FROM
+        # package.json, so there is nothing to drift against.
+        if: github.ref_type == 'tag'
         # Defense against tag-vs-package.json drift. If they don't match, we'd
         # publish under the wrong version.
         run: |
@@ -122,9 +175,10 @@ jobs:
         # resolver on the operator's box.
         run: |
           npm pack --silent >/dev/null
-          # Derive the name rather than globbing: deterministic, and it also
-          # asserts npm produced the filename we expect for this version.
-          TARBALL="openparachute-app-${GITHUB_REF_NAME#v}.tgz"
+          # Derive the name from package.json's version, not the git ref — on
+          # a merge-triggered run GITHUB_REF_NAME is "main", not a version.
+          PKG_VERSION=$(bun -e "console.log(require('./package.json').version)")
+          TARBALL="openparachute-app-${PKG_VERSION}.tgz"
           echo "tarball: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
           CONTENTS=$(tar -tzf "$TARBALL")
           for required in \
@@ -152,12 +206,50 @@ jobs:
         # against the package's configured trusted publisher rule
         # (org=ParachuteComputer, repo=parachute-app, workflow=release.yml).
         run: |
-          # Detect rc vs stable from tag name. The tag pattern in `on:` above
-          # enforces the shape, so this is just disambiguation.
-          if [[ "$GITHUB_REF_NAME" =~ -rc\. ]]; then
-            DIST_TAG=rc
-          else
-            DIST_TAG=latest
-          fi
+          # dist-tag comes from the VERSION BEING PUBLISHED, not from the git
+          # ref. Deriving it from GITHUB_REF_NAME (as the tag-triggered
+          # version of this workflow did) is fine on a tag push but wrong on
+          # a merge-triggered run, where the ref is "main" and matches no rc
+          # pattern — every publish-on-merge would land on `latest`. This bit
+          # parachute-hub for real (hub#792: an rc briefly became @latest).
+          # The package's own version is the only honest source.
+          PKG_VERSION=$(bun -e "console.log(require('./package.json').version)")
+          case "$PKG_VERSION" in
+            *-rc.*) DIST_TAG=rc ;;
+            *)      DIST_TAG=latest ;;
+          esac
           echo "publishing @openparachute/app with dist-tag=$DIST_TAG"
           npm publish --tag "$DIST_TAG" --access public --provenance
+
+  # ---------------------------------------------------------------------------
+  # Record what shipped as a git tag.
+  #
+  # A RECORD, not a trigger — nothing fires off this tag, which is exactly why
+  # GITHUB_TOKEN pushing it is fine (a token-pushed tag can't start a workflow,
+  # and here it doesn't need to). Skipped entirely on a tag-push run — the tag
+  # already exists in that case.
+  # ---------------------------------------------------------------------------
+  tag-record:
+    name: tag what shipped
+    needs: [plan, publish-npm]
+    if: ${{ always() && github.ref_type != 'tag' && needs.publish-npm.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3
+      - name: tag the published version
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          V=$(bun -e "console.log(require('./package.json').version)")
+          T="v$V"
+          if git rev-parse "$T" >/dev/null 2>&1; then
+            echo "$T already exists"
+          else
+            git tag "$T" && git push origin "$T" && echo "tagged $T"
+          fi
