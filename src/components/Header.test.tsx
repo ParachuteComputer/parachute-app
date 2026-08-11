@@ -3,7 +3,7 @@ import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +15,42 @@ function GoElsewhere({ to }: { to: string }) {
       go-elsewhere
     </button>
   );
+}
+
+// The sheet is CSS-hidden outside the phone band, never unmounted, so Header
+// listens for the band boundary itself (`matchMedia`, mirroring `md:hidden`)
+// to force-close on resize out — same shape as NavDrawer's tablet-band
+// listener (NavDrawer.test.tsx). jsdom can't do real layout, so this stub
+// hands back a `MediaQueryList`-shaped object whose `addEventListener`
+// registrations are captured, letting the test fire a synthetic "crossed into
+// the tablet/desktop band" change event by hand.
+function stubPhoneBandMatchMedia() {
+  const listeners = new Set<(e: MediaQueryListEvent) => void>();
+  const mql = {
+    matches: true,
+    media: "(max-width: 767.98px)",
+    onchange: null,
+    addEventListener: (_type: string, listener: (e: MediaQueryListEvent) => void) => {
+      listeners.add(listener);
+    },
+    removeEventListener: (_type: string, listener: (e: MediaQueryListEvent) => void) => {
+      listeners.delete(listener);
+    },
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  } as unknown as MediaQueryList;
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => mql),
+  );
+  return {
+    /** Simulate the viewport crossing from phone width to >=768px. */
+    leavePhoneBand: () => {
+      const event = { matches: false } as MediaQueryListEvent;
+      for (const listener of listeners) listener(event);
+    },
+  };
 }
 
 function makeVault(partial: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url">): VaultRecord {
@@ -124,6 +160,7 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
   afterEach(() => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   // Three-band amendment (notes#147): `md:hidden`, not `lg:hidden`. At md–lg
@@ -245,5 +282,29 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
     // the owner's effect must close the sheet.
     fireEvent.click(screen.getByRole("button", { name: /go-elsewhere/i }));
     expect(screen.queryByRole("dialog", { name: /^menu$/i })).not.toBeInTheDocument();
+  });
+
+  // The sheet is CSS-hidden (`md:hidden`), not unmounted, so `sheet` state
+  // living in Header can survive a resize past the phone band: rotate a
+  // phone in portrait (sheet open — body scroll locked, Escape/Tab trap
+  // armed) to landscape >=768px and the sheet's own close paths (scrim tap,
+  // Escape, swipe) are all inside the subtree that just went `display: none`
+  // — nothing fires, so without a force-close the page would stay
+  // scroll-locked and keyboard nav dead behind an invisible dialog.
+  it("force-closes the sheet when the viewport crosses out of the phone band (open state must not survive a resize)", async () => {
+    const { leavePhoneBand } = stubPhoneBandMatchMedia();
+    seedVault();
+    renderHeader();
+
+    fireEvent.click(screen.getByRole("button", { name: /open menu/i }));
+    expect(screen.getByRole("dialog", { name: /^menu$/i })).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+
+    await act(async () => {
+      leavePhoneBand();
+    });
+
+    expect(screen.queryByRole("dialog", { name: /^menu$/i })).not.toBeInTheDocument();
+    expect(document.body.style.overflow).not.toBe("hidden");
   });
 });

@@ -23,6 +23,11 @@ import { Link, useLocation } from "react-router";
 // the pill lands on its switcher band. One surface, two entry points, no
 // separate menu vocabulary. With no vault, the bar shows the "Parachute"
 // wordmark (the "No vault connected" state line died with the menu — F21).
+// Mirrors the CSS band this header (and the NavSheet it owns) renders in
+// (`md:hidden`, Tailwind's default 768px breakpoint) — see the force-close
+// effect below for why a JS-side copy of that boundary is needed at all.
+const PHONE_BAND_QUERY = "(max-width: 767.98px)";
+
 export function Header() {
   const location = useLocation();
   const hasVaults = useVaultStore((s) => Object.keys(s.vaults).length > 0);
@@ -34,6 +39,26 @@ export function Header() {
   useEffect(() => {
     setSheet(null);
   }, [location.pathname]);
+
+  // The NavSheet is CSS-hidden (`md:hidden`), never unmounted, while `sheet`
+  // state lives HERE rather than inside it — so `sheet` can survive a resize
+  // past the phone band. Rotate a phone from portrait (sheet open: body
+  // scroll locked, Escape/Tab trap armed) to landscape >=768px and the
+  // sheet's own close paths (scrim tap, Escape, swipe) are all inside the
+  // subtree that just went `display: none`; nothing fires, so the page stays
+  // scroll-locked and keyboard nav stays dead behind an invisible dialog. A
+  // `matchMedia` listener on the same boundary the CSS uses force-closes the
+  // moment the phone band is left, in either direction — mirrors NavDrawer's
+  // tablet-band listener (NavDrawer.tsx).
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia(PHONE_BAND_QUERY);
+    const onChange = (e: MediaQueryListEvent) => {
+      if (!e.matches) setSheet(null);
+    };
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
 
   // UI-audit finding #10: the signed-out arrival screen (`/`, no vault
   // connected — front door / already-signed-in / net-error) renders its own
