@@ -5,6 +5,7 @@ import { AppErrorBoundary, RouteErrorBoundary } from "@/components/ErrorBoundary
 import { FocusModeExitChip, FocusModeMount } from "@/components/FocusModeMount";
 import { Header } from "@/components/Header";
 import { MirrorStatusLine } from "@/components/MirrorStatusLine";
+import { NavDrawer } from "@/components/NavDrawer";
 import { QuickSwitchMount } from "@/components/QuickSwitchMount";
 import { Rail } from "@/components/Rail";
 import { SpeedDial } from "@/components/SpeedDial";
@@ -307,20 +308,32 @@ function AppShell() {
       <MirrorStatusLine />
       <FocusModeMount />
       {/*
-        The shell: a left Rail (desktop spine, hidden lg:flex) beside the
-        content column. Below lg the Rail collapses and the mobile Header
-        + BottomTabBar carry navigation. `pb-16 lg:pb-0` keeps content
-        clear of the fixed bottom bar on mobile only. Focus mode (PR 4)
-        drops Rail/Header/BottomTabBar/AppFooter/SpeedDial/AmbientMapFab
+        The shell: a left nav column beside the content column. THREE bands
+        now (the notes#147 contract as amended — see
+        `navigation-breakpoint-contract.test.tsx`), and the nav column is a
+        flex sibling in all of them, which is what lets both the desktop Rail
+        and the tablet NavDrawer dock by animating their own width while the
+        content reflows:
+          · phone  (<768px)     — no nav column; Header + LensStrip +
+                                  BottomTabBar + the modal NavSheet carry nav,
+                                  and `pb-16` keeps content clear of the fixed
+                                  bottom bar.
+          · tablet (768–1023px) — the NavDrawer: a persistent 56px handle rail
+                                  that slides out to a docked 288px panel.
+          · desktop (>=1024px)  — the Rail (unchanged).
+        `pb-16 md:pb-0` therefore drops the bottom-bar gutter at md, where the
+        bar itself is gone. Focus mode (PR 4) drops
+        Rail/NavDrawer/Header/BottomTabBar/AppFooter/SpeedDial/AmbientMapFab
         entirely — an instant unmount, not an exit animation: PR1 already
         settled "entrances only, exits stay instant" for every floating
         surface in this app, and re-litigating that here for the chrome
         itself would mean keeping it mounted mid-animation (the deferred-
         unmount machinery PR1 deliberately avoided).
       */}
-      <div className="lg:flex">
+      <div className="md:flex">
+        {focusActive ? null : <NavDrawer />}
         {focusActive ? null : <Rail />}
-        <div className={`flex min-w-0 flex-1 flex-col ${focusActive ? "" : "pb-16 lg:pb-0"}`}>
+        <div className={`flex min-w-0 flex-1 flex-col ${focusActive ? "" : "pb-16 md:pb-0"}`}>
           {focusActive ? null : <Header />}
           <QuickSwitchMount />
           <main
@@ -676,8 +689,8 @@ export function App() {
           */}
           <BrowserRouter basename={detectMountBase()}>
             {/*
-              The ONE nav-model derivation (app#110 Finding A): Rail, LensStrip
-              and NavSheet all read `useNavBands()` from this provider instead
+              The ONE nav-model derivation (app#110 Finding A): Rail, NavDrawer,
+              LensStrip and NavSheet all read `useNavBands()` from this provider instead
               of deriving it themselves — the breakpoint contract hides
               projections in CSS without unmounting them, so per-consumer
               derivation paid the model's data layer once per projection

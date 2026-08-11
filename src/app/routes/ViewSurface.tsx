@@ -450,8 +450,10 @@ export function ViewCanvas({
 // The modified bar — the explore-then-save affordance for CONFIG + QUERY
 // divergence (train B). Distinct from DATA writes (chips, board moves),
 // which stay immediate and never wait here. A bottom-anchored strip: above
-// the BottomTabBar below lg (which is `bottom-0 z-20`, content padded
-// `pb-16`), at the screen bottom on desktop where the tab bar is hidden.
+// the BottomTabBar on a PHONE (which is `bottom-0 z-20`, content padded
+// `pb-16`), at the screen bottom from md up, where the tab bar is gone. That
+// clearance tracks the BAR's gate, which went `md:hidden` when the tablet band
+// became the NavDrawer's (notes#147, three bands) — not the Rail's `lg:`.
 // ---------------------------------------------------------------------------
 
 function ViewModifiedBar({ onSave, onRevert }: { onSave: () => void; onRevert: () => void }) {
@@ -466,11 +468,13 @@ function ViewModifiedBar({ onSave, onRevert }: { onSave: () => void; onRevert: (
   return (
     <div
       aria-label="View modified"
-      // Below lg the strip rests on the BottomTabBar: h-14 of content plus
+      // On a phone the strip rests on the BottomTabBar: h-14 of content plus
       // its own env(safe-area-inset-bottom) padding — so the offset must be
       // 3.5rem + the inset, not a hardcoded 4rem, or a notched phone's tab
-      // bar covers the bottom of Save/Revert (review must-fix).
-      className="glass-panel fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-border lg:bottom-0 lg:pb-[env(safe-area-inset-bottom)]"
+      // bar covers the bottom of Save/Revert (review must-fix). From md up the
+      // bar is gone (`md:hidden`), so the strip drops to the true bottom —
+      // holding this at `lg:` would float it 3.5rem above nothing on a tablet.
+      className="glass-panel fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-border md:bottom-0 md:pb-[env(safe-area-inset-bottom)]"
     >
       <div className="mx-auto flex w-full max-w-(--w-page) items-center justify-between gap-3 px-5 py-2.5 md:px-10">
         {/* The bar's voice (polish V6): a live accent dot (stilled under

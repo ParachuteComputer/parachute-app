@@ -46,7 +46,7 @@ describe("SpeedDial (W2-9)", () => {
     expect(container.firstElementChild).toBeNull();
   });
 
-  it("is DESKTOP-ONLY: the root gates `hidden lg:block` (mobile capture stays the tab bar's [+])", () => {
+  it("is TABLET+DESKTOP: the root gates `hidden md:block` (phone capture stays the tab bar's [+])", () => {
     seedVault();
     const { container } = renderDial();
     const root = container.firstElementChild;
@@ -54,8 +54,12 @@ describe("SpeedDial (W2-9)", () => {
     // JSDOM can't compute layout — the breakpoint contract is asserted at
     // the class level, same as navigation-breakpoint-contract.test.tsx.
     expect(root?.className).toMatch(/\bhidden\b/);
-    expect(root?.className).toMatch(/\blg:block\b/);
-    expect(root?.className).not.toMatch(/\bmd:block\b/);
+    // Three-band amendment (notes#147): the dial's gate mirrors the BOTTOM
+    // BAR's, which went to `md:hidden` when the tablet band became the
+    // NavDrawer's. The drawer, like the Rail, carries no capture verb — at
+    // `lg:block` a tablet would have had no way to write at all.
+    expect(root?.className).toMatch(/\bmd:block\b/);
+    expect(root?.className).not.toMatch(/\blg:block\b/);
   });
 
   it("starts collapsed: the coral trigger only, no verbs", () => {

@@ -98,7 +98,7 @@ describe("App shell — focus mode (POLISH-WAVE PR 4)", () => {
     useFocusMode.setState({ on: false });
   });
 
-  it("Rail, BottomTabBar, and the AGPL footer are present before focus mode", async () => {
+  it("Rail, NavDrawer, BottomTabBar, and the AGPL footer are present before focus mode", async () => {
     render(<App />);
     await screen.findByText("Teacher and builder.");
     // Rail is an <aside>, not a <nav> — role "complementary", not
@@ -106,10 +106,13 @@ describe("App shell — focus mode (POLISH-WAVE PR 4)", () => {
     // "Primary" by design, so role is what disambiguates them here).
     expect(screen.getByRole("complementary", { name: /primary/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
+    // The tablet band's projection (notes#147's third band) is chrome too — at
+    // rest it is just its handle, which is exactly what focus mode must drop.
+    expect(screen.getByRole("button", { name: /open the navigation drawer/i })).toBeInTheDocument();
     expect(screen.getByText(/AGPL-3\.0/i)).toBeInTheDocument();
   });
 
-  it("arming focus mode via the ghost button hides Rail, BottomTabBar, the footer, and shows the exit chip", async () => {
+  it("arming focus mode via the ghost button hides Rail, NavDrawer, BottomTabBar, the footer, and shows the exit chip", async () => {
     render(<App />);
     await screen.findByText("Teacher and builder.");
 
@@ -119,6 +122,9 @@ describe("App shell — focus mode (POLISH-WAVE PR 4)", () => {
 
     expect(screen.queryByRole("complementary", { name: /primary/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /primary/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /open the navigation drawer/i }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/AGPL-3\.0/i)).not.toBeInTheDocument();
     // The universal door out.
     expect(screen.getByRole("button", { name: /exit focus mode/i })).toBeInTheDocument();
@@ -140,6 +146,7 @@ describe("App shell — focus mode (POLISH-WAVE PR 4)", () => {
     });
     expect(screen.getByRole("complementary", { name: /primary/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open the navigation drawer/i })).toBeInTheDocument();
     expect(screen.getByText(/AGPL-3\.0/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /exit focus mode/i })).not.toBeInTheDocument();
   });

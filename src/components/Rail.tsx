@@ -1,16 +1,20 @@
 import { IconChevronLeft, IconSearch } from "@/components/NavIcons";
+import { PinnedNotesSubList, isPinnedRow } from "@/components/PinnedNotesSubList";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { type NavBand, type NavItem, useNavBands } from "@/lib/nav/model";
-import { displayTitle } from "@/lib/note-title";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
-import { DEFAULT_NOTE_QUERY, useNotes, useTagRoles, useVaultStore } from "@/lib/vault";
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { useVaultStore } from "@/lib/vault";
+import { Fragment, useCallback, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 // The desktop left rail — the app's spine on wide screens (DESIGN-SPEC §2.2;
-// prototype scenes 10–12). Rendered `hidden lg:flex`; below lg the mobile
-// chrome (Header + NavSheet + BottomTabBar) takes over. Reading top→bottom:
+// prototype scenes 10–12). Rendered `hidden lg:flex` — the DESKTOP third of
+// the three-band breakpoint contract (notes#147 as amended): phone (<768px)
+// gets Header + LensStrip + BottomTabBar + the modal NavSheet, tablet
+// (768–1023px) gets the docked `NavDrawer`, and this rail owns >=1024px.
+// This gate is UNCHANGED by that amendment — the drawer took the middle band
+// out of the phone's hands, not out of the rail's. Reading top→bottom:
 //
 //   · the vault switcher (the hinge — identity leads everything) + the
 //     collapse toggle,
@@ -21,11 +25,14 @@ import { Link, useLocation } from "react-router";
 //   · SET UP — the guided shelf, hidden once done or dismissed,
 //   · Settings, pinned to the foot (theme toggle keeps its spot).
 //
-// The bands come from `useNavBands()` — the ONE nav model the mobile NavSheet
-// also renders (F14: neither projection owns a room list, so they can't
-// disagree). Collapses to a 64px icon rail (icons only, title tooltips),
-// persisted in localStorage("parachute.rail-collapsed"). Returns null with no
-// active vault (the no-vault desktop view is the full-width Landing).
+// The bands come from `useNavBands()` — the ONE nav model the tablet NavDrawer
+// and the phone NavSheet also render (F14: no projection owns a room list, so
+// they can't disagree). Collapses to a 64px icon rail (icons only, title
+// tooltips), persisted in localStorage("parachute.rail-collapsed"). That
+// collapsed mode is a MOUSE-scale hover pattern — which is exactly why the
+// tablet band got a purpose-built touch drawer rather than being pushed into
+// it. Returns null with no active vault (the no-vault desktop view is the
+// full-width Landing).
 
 const RAIL_COLLAPSED_KEY = "parachute.rail-collapsed";
 
@@ -153,49 +160,16 @@ function RailBand({ band, collapsed }: { band: NavBand; collapsed: boolean }) {
       {band.items.map((item) => (
         <Fragment key={item.id}>
           <RailLink item={item} collapsed={collapsed} />
-          {band.id === "notes" && item.id === "pinned" ? (
-            <RailPinnedNotes collapsed={collapsed} />
+          {/* The pinned-note sub-list (app#131), now shared with the tablet
+              drawer and the phone sheet — `PinnedNotesSubList`. The COLLAPSED
+              rail still hides it: a 64px icon rail has no room for titles, and
+              that gate is the rail's alone (no other projection collapses). */}
+          {isPinnedRow(band.id, item.id) && !collapsed ? (
+            <PinnedNotesSubList variant="rail" />
           ) : null}
         </Fragment>
       ))}
     </div>
-  );
-}
-
-// The desktop rail gets a glanceable pinned-note list; keep it out of the
-// shared nav model so the mobile sheet remains a flat projection.
-function RailPinnedNotes({ collapsed }: { collapsed: boolean }) {
-  const vault = useVaultStore((s) => s.getActiveVault());
-  const { roles } = useTagRoles(vault?.id ?? null);
-  const queryState = useMemo(
-    () => ({
-      ...DEFAULT_NOTE_QUERY,
-      tags: [roles.pinned],
-      sort: "desc" as const,
-      limit: 5,
-    }),
-    [roles.pinned],
-  );
-  const notes = useNotes(queryState, { live: false });
-
-  if (collapsed || !vault || !notes.data || notes.data.length === 0) return null;
-
-  return (
-    <ul aria-label="Pinned notes" className="min-w-0 space-y-0.5 pb-1">
-      {notes.data.map((note) => {
-        const title = displayTitle(note);
-        return (
-          <li key={note.id} className="min-w-0">
-            <Link
-              to={`/n/${encodeURIComponent(note.id)}`}
-              className="focus-ring block min-w-0 truncate rounded-lg px-3 pl-11 py-1 font-round text-xs text-fg-dim transition-colors duration-(--dur-quick) ease-out hover:bg-bg hover:text-fg-muted"
-            >
-              {title.text}
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 

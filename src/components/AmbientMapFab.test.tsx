@@ -58,6 +58,23 @@ describe("AmbientMapFab", () => {
     expect(fab.className).not.toMatch(/\blg:hidden\b/);
   });
 
+  // Three-band amendment (notes#147): the FAB's bottom clearance exists to
+  // clear the BottomTabBar, so it tracks the BAR's gate, not the Rail's. The
+  // bar is `md:hidden` since the tablet band became the NavDrawer's — holding
+  // this at `lg:` would float the FAB 80px above nothing on a tablet.
+  it("drops to the corner as soon as the bottom bar is gone (md:, not lg:)", () => {
+    useVaultStore.setState({
+      vaults: { a: makeVault("a", "http://localhost:1940") },
+      activeVaultId: "a",
+    });
+    renderFab("/");
+    const fab = screen.getByRole("link", { name: /open the relational map/i });
+    // Phone: raised above the bar. From md up: the true corner.
+    expect(fab.className).toMatch(/\bbottom-20\b/);
+    expect(fab.className).toMatch(/\bmd:bottom-6\b/);
+    expect(fab.className).not.toMatch(/\blg:bottom-6\b/);
+  });
+
   it("is hidden on the map route itself (W2-7 rename)", () => {
     useVaultStore.setState({
       vaults: { a: makeVault("a", "http://localhost:1940") },

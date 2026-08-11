@@ -12,10 +12,16 @@ import { Link, useLocation } from "react-router";
 // whole surface — `/`, `/notes` in every `?view=` dress, and the drill-ins
 // (/n/:id, /today?date=) that stay under it. WHICH lens you're wearing is
 // the on-surface LensStrip's job — carrying the lens set in the bar too is
-// the redundancy D2 rejected. Hidden on >= lg where the desktop Rail handles
-// navigation. The `lg:hidden` gate MUST match the Rail's `lg:flex` gate — at
-// any width exactly one projection shows (the notes#147 contract, now
-// Rail ↔ LensStrip+BottomTabBar).
+// the redundancy D2 rejected.
+//
+// PHONE ONLY (`md:hidden`). The notes#147 contract is THREE bands now, not
+// two: phone (<768px) = this bar + the modal NavSheet · tablet (768–1023px) =
+// the docked NavDrawer (`hidden md:flex lg:hidden`) · desktop (>=1024px) =
+// the Rail (`hidden lg:flex`). Exactly one primary-nav projection shows at
+// every width, and this gate is the phone end of it: drifting it back to
+// `lg:hidden` would put the bar and the drawer on screen together on a
+// tablet. The pinned invariant lives in
+// `navigation-breakpoint-contract.test.tsx`.
 //
 // Settings left the bottom bar with the D6 pass — it lives behind the header
 // ⋯ menu and in the desktop rail foot (the dissolved console is a room, not a
@@ -37,7 +43,7 @@ export function BottomTabBar() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-bg/95 backdrop-blur lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-bg/95 backdrop-blur md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-(--w-page) items-stretch justify-around px-2">

@@ -13,8 +13,12 @@ import { Link, useLocation } from "react-router";
 // it hid on desktop only, because mobile had no earned-gated nav row to hand
 // off to — that asymmetry was half of F14.)
 //
-// It sits above the mobile bottom-tab bar (bottom-20) and drops to the corner
-// on desktop (lg:bottom-6). Hidden on the graph route itself — you're already
+// It sits above the PHONE bottom-tab bar (bottom-20) and drops to the corner
+// as soon as that bar is gone (md:bottom-6). The clearance tracks the BAR's
+// gate, not the Rail's: the bar went `md:hidden` when the tablet band became
+// the NavDrawer's (notes#147, three bands), so holding this at `lg:` would
+// float the FAB 80px up from a tablet's corner with nothing underneath it.
+// Hidden on the graph route itself — you're already
 // there. Uses ONLY the shipped graph route; no new backend.
 export function AmbientMapFab() {
   const hasVault = useVaultStore((s) => s.activeVaultId !== null);
@@ -36,7 +40,7 @@ export function AmbientMapFab() {
       to={MAP_TO}
       aria-label="Open the relational map"
       title="Your map"
-      className="focus-ring fixed right-5 bottom-20 z-20 grid h-12 w-12 place-items-center rounded-full border border-border bg-card text-accent shadow-lg hover:border-accent lg:right-6 lg:bottom-6"
+      className="focus-ring fixed right-5 bottom-20 z-20 grid h-12 w-12 place-items-center rounded-full border border-border bg-card text-accent shadow-lg hover:border-accent md:right-6 md:bottom-6"
     >
       <IconMap width={22} height={22} />
     </Link>
