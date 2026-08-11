@@ -442,6 +442,39 @@ describe("the three-band navigation contract (notes#147, amended for tablet)", (
     expect(root?.className).toMatch(CLOSED_WIDTH);
   });
 
+  it("a search-param-only location change leaves the drawer open (VaultSurface's filter writeback must not slam it shut)", async () => {
+    // VaultSurface mirrors its live filters into `?search=&tag=` with
+    // `replace: true` on every keystroke (NAVIGATION.md, "All-lens filter
+    // writeback"). The drawer's close effect keys on `location.pathname`
+    // ONLY (NavDrawer.tsx) precisely so this doesn't happen — closing on the
+    // full location would shut the drawer per keystroke while someone types
+    // in the surface behind it.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let result!: RenderResult;
+    await act(async () => {
+      result = render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={["/notes"]}>
+            <NavBandsProvider>
+              <NavDrawer />
+            </NavBandsProvider>
+            <GoElsewhere to="/notes?search=foo&tag=bar" />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+
+    await openDrawer(result.container);
+    await act(async () => {
+      fireEvent.click(within(result.container).getByRole("button", { name: /go-elsewhere/i }));
+    });
+
+    const root = result.container.querySelector('[data-nav-projection="drawer"]');
+    expect(root?.getAttribute("data-drawer-open")).toBe("true");
+    expect(root?.className).toMatch(OPEN_WIDTH);
+    expect(result.container.querySelector("#nav-drawer-panel")).not.toBeNull();
+  });
+
   it("Escape hands focus back to the handle — the panel it unmounts must not drop it on <body>", async () => {
     const { container } = await renderWithClient(<NavDrawer />);
     await openDrawer(container);
