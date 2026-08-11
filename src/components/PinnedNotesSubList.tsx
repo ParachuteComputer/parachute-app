@@ -43,7 +43,7 @@ export function isPinnedRow(bandId: string, itemId: string): boolean {
 }
 
 /** The five newest pinned notes — the window every projection renders. */
-export function usePinnedNoteWindow() {
+function usePinnedNoteWindow() {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(vault?.id ?? null);
   const queryState = useMemo(

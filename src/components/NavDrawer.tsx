@@ -162,7 +162,19 @@ export function NavDrawer() {
           navigation landmark: the breakpoint contract is CSS-only, so all three
           projections share one DOM (only `display: none` keeps the other two out
           of the a11y tree) and a repeated landmark name would be ambiguous. */}
-      <nav aria-label="Vault navigation" className="flex min-h-0 flex-1 flex-col">
+      <nav
+        aria-label="Vault navigation"
+        // The disclosed region the handle's `aria-controls` names — this must
+        // wrap everything the toggle actually shows/hides (search, rooms, AND
+        // the foot band), not just the rooms scroller. It used to sit on that
+        // inner div alone, which under-described the disclosure: a screen
+        // reader following `aria-controls` from the handle would land only on
+        // the room list and miss the Search button and foot band right
+        // beside it. Undefined while closed so `#nav-drawer-panel` resolves
+        // to nothing until there is content to point at.
+        id={open ? DRAWER_PANEL_ID : undefined}
+        className="flex min-h-0 flex-1 flex-col"
+      >
         {/* The handle row. The toggle keeps ONE position in the tree across both
             states so a keyboard user's focus survives the slide. Closed padding
             is `p-1` on purpose: `box-sizing: border-box` means `w-14` (56px)
@@ -201,10 +213,7 @@ export function NavDrawer() {
               <DrawerSearch onDone={close} />
             </div>
 
-            <div
-              id={DRAWER_PANEL_ID}
-              className="enter-fade min-h-0 flex-1 overflow-y-auto px-3 pb-3"
-            >
+            <div className="enter-fade min-h-0 flex-1 overflow-y-auto px-3 pb-3">
               {rooms.map((band) => (
                 <DrawerBand key={band.id} band={band} onNavigate={close} />
               ))}

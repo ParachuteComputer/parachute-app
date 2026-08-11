@@ -546,8 +546,12 @@ describe("the three-band navigation contract (notes#147, amended for tablet)", (
     // thumb scale…
     expect(drawerRow?.className).toMatch(/\bpy-2\.5\b/);
     expect(drawerRow?.className).toMatch(/\btext-base\b/);
-    // …and pointedly not the rail's py-2 / text-sm (36px) mouse rows.
-    expect(railRow?.className).toMatch(/\bpy-2\b/);
+    // …and pointedly not the rail's py-2 / text-sm (36px) mouse rows. `\bpy-2\b`
+    // would also match inside `py-2.5` (`\b` fires on the word/non-word
+    // boundary between "2" and "."), which would let the row silently drift
+    // to the drawer's thumb scale without failing this assertion — the
+    // lookahead rules that out.
+    expect(railRow?.className).toMatch(/py-2(?!\.)/);
     expect(railRow?.className).toMatch(/\btext-sm\b/);
   });
 
