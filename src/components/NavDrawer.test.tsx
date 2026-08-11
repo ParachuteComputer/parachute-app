@@ -32,6 +32,41 @@ function seedVault() {
   });
 }
 
+// The drawer is CSS-hidden outside the tablet band, never unmounted, so it
+// listens for the band boundary itself (`matchMedia`, mirroring the
+// `md:flex lg:hidden` breakpoints) to force-close on resize out. jsdom can't
+// do real layout, so this stub hands back a `MediaQueryList`-shaped object
+// whose `addEventListener("change", …)` calls are captured, letting the test
+// fire a synthetic "left the band" change event by hand.
+function stubTabletBandMatchMedia() {
+  const listeners = new Set<(e: MediaQueryListEvent) => void>();
+  const mql = {
+    matches: true,
+    media: "(min-width: 768px) and (max-width: 1023.98px)",
+    onchange: null,
+    addEventListener: (_type: string, listener: (e: MediaQueryListEvent) => void) => {
+      listeners.add(listener);
+    },
+    removeEventListener: (_type: string, listener: (e: MediaQueryListEvent) => void) => {
+      listeners.delete(listener);
+    },
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  } as unknown as MediaQueryList;
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => mql),
+  );
+  return {
+    /** Simulate the viewport leaving the tablet band, in either direction. */
+    leaveTabletBand: () => {
+      const event = { matches: false } as MediaQueryListEvent;
+      for (const listener of listeners) listener(event);
+    },
+  };
+}
+
 async function renderDrawer(path = "/") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let result!: ReturnType<typeof render>;
@@ -70,6 +105,7 @@ describe("NavDrawer (tablet projection, notes#147)", () => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useQuickSwitchOpen.setState({ open: false });
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("is the tablet-only primary projection, with its handle present while closed", async () => {
@@ -124,5 +160,30 @@ describe("NavDrawer (tablet projection, notes#147)", () => {
     expect(
       container.querySelector('[data-nav-projection="drawer"]')?.getAttribute("data-drawer-open"),
     ).toBe("false");
+  });
+
+  it("force-closes when the viewport leaves the tablet band (open state must not survive a resize out and back)", async () => {
+    const { leaveTabletBand } = stubTabletBandMatchMedia();
+    const { container } = await renderDrawer();
+    await act(async () => {
+      fireEvent.click(
+        within(container).getByRole("button", { name: /open the navigation drawer/i }),
+      );
+    });
+
+    const root = container.querySelector('[data-nav-projection="drawer"]');
+    expect(root?.getAttribute("data-drawer-open")).toBe("true");
+    expect(container.querySelector("#nav-drawer-panel")).not.toBeNull();
+
+    // Leaving the band — either narrower to phone or wider to desktop — must
+    // force the drawer shut. It is CSS-hidden, not unmounted, the moment the
+    // band changes, so if `open` survived, resizing back into the tablet band
+    // would hand the surface a docked panel it never asked for.
+    await act(async () => {
+      leaveTabletBand();
+    });
+
+    expect(root?.getAttribute("data-drawer-open")).toBe("false");
+    expect(container.querySelector("#nav-drawer-panel")).toBeNull();
   });
 });

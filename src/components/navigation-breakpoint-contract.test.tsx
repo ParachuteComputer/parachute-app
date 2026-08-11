@@ -151,11 +151,18 @@ async function renderWithClient(ui: ReactNode): Promise<RenderResult> {
   return result;
 }
 
-// The drawer's two widths — 56px closed, 288px open — each carrying the LEFT
-// safe-area inset, because a big phone in landscape is ≥768px and lands in the
-// tablet band with its notch over exactly this rail (insets are 0 elsewhere).
-const CLOSED_WIDTH = /w-\[calc\(3\.5rem\+env\(safe-area-inset-left\)\)\]/;
-const OPEN_WIDTH = /w-\[calc\(18rem\+env\(safe-area-inset-left\)\)\]/;
+// The drawer's two widths — 56px closed, 288px open — carry NO safe-area
+// inset of their own: `body` already pays `padding-left:
+// env(safe-area-inset-left)` once for every normal-flow element
+// (src/styles/index.css), and this drawer is `position: sticky` in normal
+// flow, same as the Rail. Baking the inset into the width TOO would
+// double-pay it — on a notched device in landscape (≥768px CSS px lands in
+// the tablet band) the rail would render wider than its design width and the
+// open drawer would eat extra content it never needed. Do not add the inset
+// back here if a future regression makes these fail — fix the drawer, not
+// the test.
+const CLOSED_WIDTH = /\bw-14\b/;
+const OPEN_WIDTH = /\bw-72\b/;
 
 /** Render the drawer and slide it out — the docked panel only exists open. */
 async function openDrawer(container: HTMLElement): Promise<void> {
@@ -343,10 +350,11 @@ describe("the three-band navigation contract (notes#147, amended for tablet)", (
     expect(root?.getAttribute("data-drawer-open")).toBe("true");
     expect(root?.className).toMatch(OPEN_WIDTH); // 288px docked panel
     expect(root?.className).not.toMatch(CLOSED_WIDTH);
-    // The inset is paid as padding too, so the rail keeps its full 56px of
-    // usable width beside a landscape notch rather than losing the handle's
-    // 44px target to it.
-    expect(root?.className).toMatch(/pl-\[env\(safe-area-inset-left\)\]/);
+    // No left-inset padding here: body single-pays it for every normal-flow
+    // element on the page (including this sticky-in-flow drawer), so the
+    // drawer must not add its own `pl-[env(...)]` on top — that would
+    // double-pay the inset on a notched device in landscape.
+    expect(root?.className).not.toMatch(/pl-\[env\(safe-area-inset-left\)\]/);
     // Docked = an in-flow flex sibling of the content column, so the content
     // reflows. NOT `fixed`/`absolute`, and NOT the sheet's `inset-0` overlay.
     expect(root?.className).toMatch(/\bsticky\b/);

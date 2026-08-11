@@ -57,6 +57,11 @@ import { Link, useLocation } from "react-router";
 /** The `<nav>` the handle discloses — only in the DOM while open. */
 const DRAWER_PANEL_ID = "nav-drawer-panel";
 
+// Mirrors the CSS band this component renders in (`hidden md:flex lg:hidden`,
+// Tailwind's default 768px/1024px breakpoints) — see the open-state effect
+// below for why a JS-side copy of that boundary is needed at all.
+const TABLET_BAND_QUERY = "(min-width: 768px) and (max-width: 1023.98px)";
+
 export function NavDrawer() {
   const vault = useVaultStore((s) => s.getActiveVault());
   const bands = useNavBands();
@@ -101,6 +106,23 @@ export function NavDrawer() {
     setOpen(false);
   }, [location.pathname]);
 
+  // This element is CSS-hidden outside the tablet band, never unmounted —
+  // `display: none` doesn't reset React state. Without this, `open` survives
+  // a resize out of the band: shrink to phone width and back (or a foldable
+  // unfolding past 1024px and back), and the drawer reappears already docked,
+  // exactly the "480px content column on arrival" the comment above says must
+  // not happen. A `matchMedia` listener on the same boundary the CSS uses
+  // force-closes the moment the band is left, in either direction.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia(TABLET_BAND_QUERY);
+    const onChange = (e: MediaQueryListEvent) => {
+      if (!e.matches) setOpen(false);
+    };
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
   if (!vault) return null;
 
   const rooms = bands.filter((b) => b.id !== "foot");
@@ -115,19 +137,21 @@ export function NavDrawer() {
       // under prefers-reduced-motion at the token layer, so the slide stills
       // itself without a per-callsite `motion-reduce:`.
       //
-      // The widths are 3.5rem/18rem (`w-14`/`w-72`) PLUS the left safe-area
-      // inset, with that inset also paid as padding. A big phone in LANDSCAPE
-      // is ≥768px CSS px (an iPhone Pro Max is 932), so it lands in the tablet
-      // band and its notch sits exactly where this rail does — the Rail never
-      // had to care, because nothing that wide is a phone at `lg`. Adding the
-      // inset to the padding alone would eat the handle's 44px target out of a
-      // fixed 56px rail; adding it to BOTH keeps the rail 56px of usable width
-      // beside the notch. Insets are 0 everywhere else, so this is a no-op on
-      // every tablet.
-      className={`glass-panel sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border pl-[env(safe-area-inset-left)] transition-[width] duration-(--dur-move) ease-out md:flex lg:hidden ${
-        open
-          ? "w-[calc(18rem+env(safe-area-inset-left))]"
-          : "w-[calc(3.5rem+env(safe-area-inset-left))]"
+      // The widths are a plain 3.5rem/18rem (`w-14`/`w-72`) — NOT plus the
+      // left safe-area inset. This drawer is `position: sticky` in normal
+      // flow, and `body` already pays `padding-left: env(safe-area-inset-left)`
+      // once, for every normal-flow element on the page (src/styles/index.css)
+      // — the Rail gets its notch clearance the same way, for free. Adding
+      // the inset here TOO double-pays it: on a notched device in landscape
+      // (~59px inset) the closed rail rendered ~59px wider than its 56px
+      // design width, and the open drawer ate ~59px of content it never
+      // needed. Do not reintroduce a left/right inset on this element — body
+      // already single-pays it for anything in normal flow. (The BOTTOM inset
+      // in the foot below is a different box and IS paid locally: `h-dvh`
+      // makes this drawer its own viewport-height column, so body's bottom
+      // padding never reaches inside it.)
+      className={`glass-panel sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border transition-[width] duration-(--dur-move) ease-out md:flex lg:hidden ${
+        open ? "w-72" : "w-14"
       }`}
       style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
