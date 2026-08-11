@@ -20,8 +20,19 @@ import {
   within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// A test-only trigger for a route change, standing in for navigation that did
+// not originate from one of the drawer's own rows.
+function GoElsewhere({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      go-elsewhere
+    </button>
+  );
+}
 
 // Contract test (notes#147, re-homed to Rail↔BottomTabBar in Phase 3a; band
 // parity added in W2-5; AMENDED from two bands to THREE when the tablet
@@ -397,6 +408,32 @@ describe("the three-band navigation contract (notes#147, amended for tablet)", (
     ).toBe("false");
   });
 
+  it("navigation from elsewhere closes the drawer via the pathname effect — back/forward or another in-app link must not leave an open panel eating the destination", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let result!: RenderResult;
+    await act(async () => {
+      result = render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={["/"]}>
+            <NavBandsProvider>
+              <NavDrawer />
+            </NavBandsProvider>
+            <GoElsewhere to="/tags" />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+
+    await openDrawer(result.container);
+    await act(async () => {
+      fireEvent.click(within(result.container).getByRole("button", { name: /go-elsewhere/i }));
+    });
+
+    const root = result.container.querySelector('[data-nav-projection="drawer"]');
+    expect(root?.getAttribute("data-drawer-open")).toBe("false");
+    expect(root?.className).toMatch(CLOSED_WIDTH);
+  });
+
   it("Escape hands focus back to the handle — the panel it unmounts must not drop it on <body>", async () => {
     const { container } = await renderWithClient(<NavDrawer />);
     await openDrawer(container);
@@ -652,6 +689,10 @@ describe("the three-band navigation contract (notes#147, amended for tablet)", (
     await openDrawer(container);
     const foot = container.querySelector('[data-nav-band="foot"]');
     expect(foot).not.toBeNull();
+    // The drawer is h-dvh, so body-level safe-area padding is outside this
+    // box. The foot pays the bottom inset itself; when env() resolves to zero,
+    // calc(0.75rem + 0) is the existing p-3 spacing.
+    expect(foot?.className).toMatch(/pb-\[calc\(0\.75rem\+env\(safe-area-inset-bottom\)\)\]/);
     // Settings, as in every projection…
     expect(foot?.querySelector('a[data-nav-item="settings"]')).not.toBeNull();
     // …plus the text-size and theme controls. Before the amendment these

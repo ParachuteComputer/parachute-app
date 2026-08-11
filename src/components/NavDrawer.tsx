@@ -188,7 +188,12 @@ export function NavDrawer() {
 
             <div
               data-nav-band="foot"
-              className="enter-fade shrink-0 border-t border-border px-3 py-3"
+              // `h-dvh` makes this drawer its own viewport-height box, so the
+              // body's bottom padding sits OUTSIDE it and cannot lift these
+              // controls clear of a landscape phone's home indicator. Pay the
+              // inset where the content actually ends; env() is 0 off a
+              // notched device, so this is the same 0.75rem foot at rest.
+              className="enter-fade shrink-0 border-t border-border px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
             >
               {foot?.items.map((item) => (
                 <DrawerRow key={item.id} item={item} loc={location} onNavigate={close} />
