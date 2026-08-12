@@ -111,7 +111,9 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       renderWelcome("/welcome", navLog);
       await waitFor(() => expect(screen.getByText(/create ceremony/i)).toBeInTheDocument());
       expect(screen.getByText(/\?first=1/)).toBeInTheDocument();
-      expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/add-vault/create?first=1" });
+      await waitFor(() =>
+        expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/add-vault/create?first=1" }),
+      );
     });
   });
 
@@ -124,7 +126,9 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       vi.mocked(listVaults).mockResolvedValue({ vaults: [{ name: "moss" }] });
       renderWelcome("/welcome?new=1", navLog);
       await waitFor(() => expect(screen.getByText(/create ceremony/i)).toBeInTheDocument());
-      expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/add-vault/create" });
+      await waitFor(() =>
+        expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/add-vault/create" }),
+      );
       // Pure shim: no dispatch ran, nothing auto-opened.
       expect(getSession).not.toHaveBeenCalled();
       expect(openHostedVault).not.toHaveBeenCalled();
@@ -187,7 +191,7 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       const opens = screen.getAllByRole("button", { name: /open →/i });
       fireEvent.click(opens[1] as HTMLElement);
       await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
-      expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" });
+      await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" }));
     });
 
     // §4.4 switch-confirmation: picking a vault announces "Now in {vault}".
@@ -229,7 +233,9 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       );
       fireEvent.click(screen.getByRole("button", { name: /create a new vault/i }));
       await waitFor(() => expect(screen.getByText(/create ceremony/i)).toBeInTheDocument());
-      expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/add-vault/create" });
+      await waitFor(() =>
+        expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/add-vault/create" }),
+      );
     });
 
     // The W2-2 regression this suite has guarded since the picker→naming push
@@ -320,7 +326,7 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       vi.mocked(listVaults).mockResolvedValue({ vaults: [{ name: "moss" }] });
       renderWelcome("/welcome", navLog);
       await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
-      expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/" });
+      await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/" }));
     });
   });
 

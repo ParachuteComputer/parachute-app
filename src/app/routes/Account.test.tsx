@@ -262,7 +262,7 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /open →/i }));
     await waitFor(() => expect(screen.getByText("Home surface")).toBeInTheDocument());
-    expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" });
+    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" }));
   });
 
   // F12 — same friendly-copy mapping as the create-vault naming form: never a
