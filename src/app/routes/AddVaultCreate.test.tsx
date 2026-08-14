@@ -212,7 +212,9 @@ describe("AddVaultCreate (naming + the in-shell creating beat)", () => {
       await waitFor(() =>
         expect(screen.getByRole("heading", { name: /moss is ready/i })).toBeInTheDocument(),
       );
-      expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/add-vault/ready?vault=moss" });
+      await waitFor(() =>
+        expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/add-vault/ready?vault=moss" }),
+      );
     });
 
     it("?first=1 rides through to the ready beat (onboarding keeps its shape)", async () => {
@@ -223,10 +225,12 @@ describe("AddVaultCreate (naming + the in-shell creating beat)", () => {
       await waitFor(() =>
         expect(screen.getByRole("heading", { name: /moss is ready/i })).toBeInTheDocument(),
       );
-      expect(navLog.at(-1)).toEqual({
-        type: "REPLACE",
-        pathname: "/add-vault/ready?vault=moss&first=1",
-      });
+      await waitFor(() =>
+        expect(navLog.at(-1)).toEqual({
+          type: "REPLACE",
+          pathname: "/add-vault/ready?vault=moss&first=1",
+        }),
+      );
     });
 
     // THE CORRECTNESS FIX (WALK-manager #2 / §4.2): creating no longer
@@ -332,7 +336,7 @@ describe("AddVaultReady (the ready beat — where activation actually happens)",
     await waitFor(() => expect(screen.getByText(/home surface/i)).toBeInTheDocument());
     expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Now in moss");
     // NAVIGATION.md: "Ready 'Open {name} →' → /" — user-initiated, push.
-    expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" });
+    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" }));
   });
 
   it("an Open failure shows friendly copy inline — no toast, no navigation", async () => {
