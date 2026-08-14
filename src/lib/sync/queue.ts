@@ -242,7 +242,28 @@ async function runMutation(ctx: DrainContext, row: PendingRow): Promise<void> {
       await ctx.client.linkAttachment(noteId, {
         path,
         mimeType: m.mimeType,
-        ...(m.transcribe ? { transcribe: true } : {}),
+        // Send the boolean the caller actually chose, including `false`.
+        //
+        // This used to be `...(m.transcribe ? { transcribe: true } : {})`,
+        // which collapsed three distinct caller intents into two on the wire:
+        //
+        //   true       "transcribe this"        → survived
+        //   false      "do NOT transcribe this" → DROPPED, indistinguishable
+        //                                         from having no opinion
+        //   undefined  "no opinion"             → survived
+        //
+        // The middle one is the user's own decision — `voice-capture-plan.ts`
+        // sets it from the capture's transcribe toggle and its docstring
+        // states the invariant outright ("every link sends `transcribe: false`
+        // with NO segment_index"). Dropping it here broke that invariant four
+        // files from where it's written down, so a vault that would honour an
+        // explicit opt-out never got the chance: it saw silence and fell
+        // through to its auto-transcribe guess, which is a feature for callers
+        // who expressed no preference, not for one who said no.
+        //
+        // `undefined` still omits the field, so a caller with genuinely no
+        // opinion is unchanged and old queued rows keep their meaning.
+        ...(m.transcribe !== undefined ? { transcribe: m.transcribe } : {}),
         ...(m.segment_index !== undefined ? { segment_index: m.segment_index } : {}),
       });
       return;
