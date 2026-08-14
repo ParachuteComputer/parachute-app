@@ -166,6 +166,6 @@ describe("DeleteNoteButton", () => {
     expect(useToastStore.getState().toasts[0]?.message).toContain("Deleted Canon/Aaron");
     // NAVIGATION.md: "Note delete → /" — replace; Back into the deleted note's
     // dead `/n/<id>` view would show a stale/not-found note.
-    expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/" });
+    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "REPLACE", pathname: "/" }));
   });
 });
