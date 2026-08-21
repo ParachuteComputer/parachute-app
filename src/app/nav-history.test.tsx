@@ -73,11 +73,18 @@ async function submitSignInEmail() {
   await waitFor(() => expect(window.location.pathname).toBe("/check-email"));
 }
 
-/** CheckEmail polls every 3s (real `setInterval`, not mocked) — wait past one
- *  tick for real. Slower than a fake-timer approach, but avoids fake-timer/
- *  testing-library `waitFor` interaction footguns for a one-shot per test. */
-async function waitPastCheckEmailPoll() {
-  await new Promise((r) => setTimeout(r, 3200));
+/**
+ * CheckEmail's session poll is a real 3s `setInterval` with no immediate
+ * tick (CheckEmail.tsx). A wall-clock `sleep(3200)` is what flakes under
+ * full-suite load (app#57): on a contended runner the interval fires late
+ * and the next assertion reads the pre-poll URL (`/` vs `/welcome`).
+ *
+ * Wait on the actual post-poll signal instead of guessing the interval.
+ * 8s is inside each test's 10s budget and leaves headroom for a delayed
+ * tick without coupling the assertion to wall-clock.
+ */
+async function waitForCheckEmailPoll(assertion: () => void) {
+  await waitFor(assertion, { timeout: 8_000 });
 }
 
 describe("Golden flows — history-depth measurements (mirrors WALK-nav.md)", () => {
@@ -131,11 +138,10 @@ describe("Golden flows — history-depth measurements (mirrors WALK-nav.md)", ()
     });
     vi.mocked(listVaults).mockResolvedValue({ vaults: [{ name: "moss" }] });
 
-    await waitPastCheckEmailPoll();
-    // CheckEmail replace -> /welcome -> dispatcher replace -> welcome-back
-    // auto-open replace -> "/". None of those grow the stack.
-    await waitFor(() => expect(window.location.pathname).toBe("/"));
-    await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
+    await waitForCheckEmailPoll(() => {
+      expect(window.location.pathname).toBe("/");
+      expect(openHostedVault).toHaveBeenCalledWith("moss");
+    });
     expect(window.history.length).toBe(baseline + 1);
 
     // Reproduce WALK-nav's own observation: Back #1 is a visual no-op
@@ -153,7 +159,7 @@ describe("Golden flows — history-depth measurements (mirrors WALK-nav.md)", ()
     // across everything that happens in it.
     window.history.forward();
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-  }, 10_000);
+  }, 15_000);
 
   it("Mechanism A, MANY-vaults picker persona — FIXED: Back now returns to the picker, not out of the app", async () => {
     const baseline = window.history.length;
@@ -172,12 +178,11 @@ describe("Golden flows — history-depth measurements (mirrors WALK-nav.md)", ()
       vaults: [{ name: "moss" }, { name: "journal" }, { name: "atlas" }],
     });
 
-    await waitPastCheckEmailPoll();
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: /which vault today/i })).toBeInTheDocument(),
-    );
+    await waitForCheckEmailPoll(() => {
+      expect(window.location.pathname).toBe("/welcome");
+      expect(screen.getByRole("heading", { name: /which vault today/i })).toBeInTheDocument();
+    });
     // The picker renders IN PLACE at /welcome — no navigation yet.
-    expect(window.location.pathname).toBe("/welcome");
     expect(window.history.length).toBe(baseline + 1);
 
     // NAVIGATION.md fix: picking a vault now PUSHes / (was a gratuitous
@@ -206,7 +211,7 @@ describe("Golden flows — history-depth measurements (mirrors WALK-nav.md)", ()
     // Test hygiene (see the comment in the persona-1 test above).
     window.history.forward();
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-  }, 10_000);
+  }, 15_000);
 
   it("Mechanism B, magic-link opened in a fresh tab — accepted limit, UNCHANGED (spec's own call, not fixed by history policy)", async () => {
     // A magic-link click opens `/welcome` directly in a brand-new tab —
