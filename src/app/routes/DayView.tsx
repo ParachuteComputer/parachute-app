@@ -1,9 +1,21 @@
 import { NoteRow, NoteRowList } from "@/components/NoteRow";
 import { SectionLabel } from "@/components/RecentTimeline";
 import { EmptyState, ErrorState, OfflineRibbon, Skeleton } from "@/components/ui";
-import { formatLongDate, parseDateKey, shiftDay, toDateKey, todayKey } from "@/lib/dates";
+import {
+  formatLongDate,
+  localDayBoundaryIso,
+  parseDateKey,
+  shiftDay,
+  toDateKey,
+  todayKey,
+} from "@/lib/dates";
 import { useHistoryAwareBack } from "@/lib/nav/history";
-import { useNotesForDateViews, useTagRoles, useVaultStore } from "@/lib/vault";
+import {
+  DATE_VIEW_QUERY_LIMIT,
+  useNotesForDateViews,
+  useTagRoles,
+  useVaultStore,
+} from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
 import type { Note } from "@/lib/vault/types";
 import { useMemo } from "react";
@@ -44,21 +56,43 @@ function SingleDay({ dateParam }: { dateParam: string }) {
   const todayStr = todayKey();
   const targetKey = dateParam || todayStr;
   const parsed = parseDateKey(targetKey);
-
-  const notes = useNotesForDateViews();
+  const from = localDayBoundaryIso(targetKey) ?? "";
+  const to = localDayBoundaryIso(shiftDay(targetKey, 1)) ?? "";
+  const createdNotes = useNotesForDateViews({
+    field: "created_at",
+    from,
+    to,
+    limit: DATE_VIEW_QUERY_LIMIT,
+    enabled: !!parsed,
+  });
+  const updatedNotes = useNotesForDateViews({
+    field: "updated_at",
+    from,
+    to,
+    limit: DATE_VIEW_QUERY_LIMIT,
+    enabled: !!parsed,
+  });
+  const notes = useMemo(() => {
+    if (!createdNotes.data || !updatedNotes.data) return undefined;
+    return [
+      ...new Map([...createdNotes.data, ...updatedNotes.data].map((n) => [n.id, n])).values(),
+    ];
+  }, [createdNotes.data, updatedNotes.data]);
+  const notesPending = createdNotes.isPending || updatedNotes.isPending;
+  const notesError = createdNotes.error ?? updatedNotes.error;
 
   const buckets = useMemo(() => {
     const created: Note[] = [];
     const edited: Note[] = [];
-    if (!notes.data || !parsed) return { created, edited };
-    for (const n of notes.data) {
+    if (!notes || !parsed) return { created, edited };
+    for (const n of notes) {
       const ck = toDateKey(n.createdAt);
       const uk = toDateKey(n.updatedAt ?? n.createdAt);
       if (ck === targetKey) created.push(n);
       if (uk === targetKey && ck !== targetKey) edited.push(n);
     }
     return { created, edited };
-  }, [notes.data, parsed, targetKey]);
+  }, [notes, parsed, targetKey]);
 
   if (!parsed) {
     return (
@@ -118,15 +152,15 @@ function SingleDay({ dateParam }: { dateParam: string }) {
         </div>
       </header>
 
-      {notes.isPending ? (
+      {notesPending ? (
         <TimelineSkeleton />
-      ) : notes.isError && !notes.data ? (
-        <ErrorBlock error={notes.error} />
+      ) : notesError && !notes ? (
+        <ErrorBlock error={notesError} />
       ) : buckets.created.length === 0 && buckets.edited.length === 0 ? (
         <EmptyBlock isToday={isToday} targetKey={targetKey} />
       ) : (
         <div className="space-y-8">
-          {notes.isError ? <OfflineRibbon /> : null}
+          {notesError ? <OfflineRibbon /> : null}
           {buckets.created.length > 0 ? (
             <Section
               title={isToday ? "Created today" : `Created on ${targetKey}`}

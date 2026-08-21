@@ -8,7 +8,7 @@ import {
   toDateKey,
   todayKey,
 } from "@/lib/dates";
-import { useNotesForDateViews, useVaultStore } from "@/lib/vault";
+import { DATE_VIEW_QUERY_LIMIT, useNotesForDateViews, useVaultStore } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
 import { useMemo } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
@@ -22,10 +22,22 @@ export function Calendar() {
   const [searchParams] = useSearchParams();
   const monthParam = searchParams.get("month");
   const parsed = parseMonthKey(monthParam) ?? parseMonthKey(currentMonthKey())!;
-  const notes = useNotesForDateViews();
   const today = todayKey();
 
   const days = useMemo(() => monthGrid(parsed.year, parsed.month), [parsed.year, parsed.month]);
+  const range = useMemo(() => {
+    const first = days[0]!;
+    const last = days[days.length - 1]!;
+    return {
+      from: first.toISOString(),
+      to: new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1).toISOString(),
+    };
+  }, [days]);
+  const notes = useNotesForDateViews({
+    field: "created_at",
+    ...range,
+    limit: DATE_VIEW_QUERY_LIMIT,
+  });
 
   // Bucket notes by local date key. We tally by createdAt; if you want edited
   // activity instead, switch to updatedAt — but for a calendar, "when was this

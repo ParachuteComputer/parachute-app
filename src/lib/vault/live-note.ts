@@ -1,9 +1,9 @@
 /**
  * Single-note live subscription — the open note view's real-time bridge.
  *
- * The list hooks (`useNotes`, `useNotesForDateViews`) get live updates off
- * vault's live-query WebSocket via `live-query.ts` (the SDK's `createLiveList`
- * mirrored into a list-shaped cache). The single-note cache `["note", …]` had
+ * Live list hooks get updates off vault's live-query WebSocket via
+ * `live-query.ts` (the SDK's `createLiveList` mirrored into a list-shaped
+ * cache). The single-note cache `["note", …]` had
  * no such bridge: a voice note's transcript (or its failure marker) is written
  * server-side by REWRITING THE NOTE BODY through the standard note-update
  * layer, which broadcasts an `upsert{note}` to any subscriber whose query
