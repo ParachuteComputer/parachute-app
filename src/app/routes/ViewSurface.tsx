@@ -619,7 +619,7 @@ function ProblemsBanner({ problems }: { problems: ViewProblem[] }) {
   return (
     <output
       aria-live="polite"
-      className="mt-4 block rounded-lg border border-[--color-warning] bg-[--color-warning-soft] p-3 text-sm text-fg"
+      className="mt-4 block rounded-lg border border-(--color-warning) bg-(--color-warning-soft) p-3 text-sm text-fg"
     >
       <ul className="list-disc space-y-1 pl-5">
         {problems.map((p, i) => (
