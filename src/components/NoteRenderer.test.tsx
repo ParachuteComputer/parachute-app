@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { NoteRenderer } from "./NoteRenderer";
 
@@ -6,19 +6,27 @@ import { NoteRenderer } from "./NoteRenderer";
 const NO_RESOLVE = () => null;
 
 describe("NoteRenderer", () => {
-  it("dispatches to markdown for no extension", () => {
+  // Defensive wait; mechanism unconfirmed. react-markdown 10.1.0's default
+  // export is synchronous, so a paint-then-update via rehype-highlight is
+  // not a supported explanation. Waiting on the rendered node is the
+  // "markdown test once" face of app#57, not a proven race.
+  it("dispatches to markdown for no extension", async () => {
     const { container } = render(
       <NoteRenderer note={{ path: "Daily/2026-05-18", content: "# Hello" }} resolve={NO_RESOLVE} />,
     );
     // Markdown rendering produces an <h1> from `# Hello`.
-    expect(container.querySelector("h1")?.textContent).toBe("Hello");
+    await waitFor(() => {
+      expect(container.querySelector("h1")?.textContent).toBe("Hello");
+    });
   });
 
-  it("dispatches to markdown for .md", () => {
+  it("dispatches to markdown for .md", async () => {
     const { container } = render(
       <NoteRenderer note={{ path: "notes/foo.md", content: "**bold**" }} resolve={NO_RESOLVE} />,
     );
-    expect(container.querySelector("strong")?.textContent).toBe("bold");
+    await waitFor(() => {
+      expect(container.querySelector("strong")?.textContent).toBe("bold");
+    });
   });
 
   it("dispatches to CSV for .csv", () => {
