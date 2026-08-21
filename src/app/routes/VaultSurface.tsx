@@ -22,20 +22,13 @@ import {
 } from "@/lib/home/checklist";
 import { useHomeChecklist } from "@/lib/home/use-home-checklist";
 import { meetsAutoThreshold, usePathTreeMode } from "@/lib/path-tree";
-import { useSaveView, useSavedViews } from "@/lib/saved-views/queries";
-import {
-  type SavedView,
-  type SavedViewFilters,
-  filtersToSearchParams,
-  isFiltersNonEmpty,
-  searchParamsToFilters,
-} from "@/lib/saved-views/spec";
 import { useToastStore } from "@/lib/toast/store";
 import {
   DEFAULT_NOTE_QUERY,
   DEFAULT_PAGE_SIZE,
   type NoteQueryState,
   isFilteringActive,
+  useCreateNote,
   useNotes,
   useNotesForDateViews,
   useNotesForPathTree,
@@ -47,9 +40,18 @@ import {
 } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
 import type { Note, TagRecord } from "@/lib/vault/types";
-import type { DefaultPageId } from "@/lib/views/defaults";
-import { useDefaultViewDef } from "@/lib/views/queries";
+import {
+  type AllNotesFilters,
+  filtersToSearchParams,
+  filtersToViewQuery,
+  isFiltersNonEmpty,
+  searchParamsToFilters,
+} from "@/lib/views/all-notes";
+import { type DefaultPageId, viewPathForName } from "@/lib/views/defaults";
+import { useDefaultViewDef, useViewList } from "@/lib/views/queries";
 import { queryTags } from "@/lib/views/query";
+import { decodeViewDef } from "@/lib/views/schema";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 
@@ -159,7 +161,7 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: writes only when filter dimensions change
   useEffect(() => {
     if (preset) return;
-    const next: SavedViewFilters = {
+    const next: AllNotesFilters = {
       search: debouncedSearch,
       tags: selectedTags,
       tagMatch,
@@ -237,8 +239,9 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   // info, and the /tags page already pays for this query shape, so this
   // isn't a new network cost, just a shared one.
   const tags = useTagsWithSchema();
-  const savedViews = useSavedViews(roles.view);
-  const saveView = useSaveView(roles.view);
+  const viewList = useViewList(roles.view);
+  const createView = useCreateNote();
+  const queryClient = useQueryClient();
   const pushToast = useToastStore((s) => s.push);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   // W2-11 progressive disclosure: everything beyond the resting search lives
@@ -278,7 +281,7 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
     treeEnabled &&
     (pathTreeMode === "always" || (pathTreeMode === "auto" && meetsAutoThreshold(treePaths)));
 
-  const currentFilters: SavedViewFilters = useMemo(
+  const currentFilters: AllNotesFilters = useMemo(
     () => ({
       search: debouncedSearch,
       tags: selectedTags,
@@ -293,14 +296,43 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
   const onSaveView = useCallback(
     async (name: string) => {
       try {
-        await saveView.mutateAsync({ name, filters: currentFilters });
+        const created = await createView.mutateAsync({
+          content: "",
+          path: viewPathForName(name),
+          tags: [roles.view],
+          metadata: {
+            kind: "list",
+            query: JSON.stringify(filtersToViewQuery(currentFilters, roles.archived)),
+          },
+        });
+        // The rail and this surface share the same view-list cache. Seed the
+        // returned note immediately so the successful save cannot leave the
+        // new view invisible until a live event or refetch arrives.
+        queryClient.setQueriesData<Note[]>(
+          { queryKey: ["viewList", activeVault?.id] },
+          (current) => [...(current ?? []).filter((note) => note.id !== created.id), created],
+        );
+        void queryClient.invalidateQueries({ queryKey: ["viewList", activeVault?.id] });
         pushToast(`Saved view "${name}".`, "success");
         setShowSaveDialog(false);
       } catch (err) {
         pushToast(`Could not save view: ${(err as Error).message}`, "error");
       }
     },
-    [saveView, currentFilters, pushToast],
+    [
+      createView,
+      currentFilters,
+      roles.view,
+      roles.archived,
+      queryClient,
+      activeVault?.id,
+      pushToast,
+    ],
+  );
+
+  const existingViewNames = useMemo(
+    () => (viewList.data ?? []).map((note) => decodeViewDef(note).title),
+    [viewList.data],
   );
 
   // Client-side post-process: hide archived on default list unless toggled, and
@@ -578,7 +610,6 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
                           Filters panel shouldn't also be a view manager").
                           Rewriting the save format itself is a separate,
                           later PR — this is presentation only. */}
-                      {!preset ? <SavedFiltersDisclosure views={savedViews.data} /> : null}
                     </div>
                   </section>
                 </>
@@ -693,8 +724,8 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
 
       {showSaveDialog ? (
         <SaveViewDialog
-          existing={savedViews.data ?? []}
-          isSaving={saveView.isPending}
+          existingNames={existingViewNames}
+          isSaving={createView.isPending}
           onCancel={() => setShowSaveDialog(false)}
           onSave={onSaveView}
         />
@@ -1133,56 +1164,20 @@ function FilterChipsRow({
   );
 }
 
-// The legacy saved-views list, retired as a view MANAGER on this surface
-// (Aaron: "a Filters panel shouldn't also be a view manager") — apply-only
-// now: click a name to load it, same href as today. Rename/update/delete
-// moved out entirely (the views themselves are untouched in the vault;
-// managing them is a different surface's job, not this panel's). Quiet:
-// closed by default, and absent completely when there's nothing to disclose
-// — no persistent "None yet" footer eating space in every empty vault.
-function SavedFiltersDisclosure({ views }: { views: SavedView[] | undefined }) {
-  if (!views || views.length === 0) return null;
-  return (
-    <details className="group border-t border-border pt-3">
-      <summary className="eyebrow flex cursor-pointer list-none items-center gap-1.5 text-fg-dim hover:text-accent">
-        <span
-          aria-hidden="true"
-          className="font-mono text-xs transition-transform group-open:rotate-90"
-        >
-          ▸
-        </span>
-        Saved filters
-      </summary>
-      <ul className="mt-2 space-y-0.5" aria-label="Saved views">
-        {views.map((v) => (
-          <li key={v.id}>
-            <Link
-              to={`/notes?${filtersToSearchParams(v.filters).toString()}`}
-              className="block truncate rounded-lg px-2 py-1 text-sm text-fg-muted hover:bg-bg-soft hover:text-accent"
-            >
-              {v.name}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </details>
-  );
-}
-
 function SaveViewDialog({
-  existing,
+  existingNames,
   isSaving,
   onCancel,
   onSave,
 }: {
-  existing: SavedView[];
+  existingNames: string[];
   isSaving: boolean;
   onCancel: () => void;
   onSave: (name: string) => void;
 }) {
   const [name, setName] = useState("");
   const trimmed = name.trim();
-  const collides = existing.some((v) => v.name.toLowerCase() === trimmed.toLowerCase());
+  const collides = existingNames.some((name) => name.toLowerCase() === trimmed.toLowerCase());
   const canSave = trimmed.length > 0 && !collides && !isSaving;
 
   return (

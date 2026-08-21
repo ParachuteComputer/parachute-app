@@ -121,8 +121,8 @@ export function hasRefinements(r: ViewRefinements): boolean {
 }
 
 // Refinements live in the URL (§5: "shareable, reload-surviving, gone when
-// you leave") — the same pattern legacy saved-views already used
-// (`filtersToSearchParams`/`searchParamsToFilters`, saved-views/spec.ts).
+// you leave") — the same pattern All notes uses
+// (`filtersToSearchParams`/`searchParamsToFilters`, views/all-notes.ts).
 
 export function refinementsToSearchParams(r: ViewRefinements): URLSearchParams {
   const params = new URLSearchParams();

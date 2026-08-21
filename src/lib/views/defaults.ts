@@ -24,10 +24,8 @@ export const DEFAULT_VIEW_PATHS: readonly string[] = [
 ];
 
 // The canonical path prefix new views are created under (VIEWS-RENDER-SPEC
-// §6 creation flow) — distinct from the legacy saved-views prefix
-// (`UI/Views/`, `src/lib/saved-views/spec.ts`). §8's read/reconcile bridge
-// for that old shape is void (2026-07-17 scope cut, unused in practice) —
-// `src/lib/saved-views/` is untouched dead code, a follow-up deletes it.
+// §6 creation flow). The old `UI/Views/` saved-filter writer was retired;
+// every human creation path now writes this shape.
 export const VIEWS_PATH_PREFIX = "Views/";
 
 export function viewPathForName(name: string): string {

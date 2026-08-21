@@ -31,11 +31,11 @@ function installFetch(state: FetchState) {
     }
     // The default-view resolution lookup (`useDefaultViewDef`) queries the
     // pack's canonical EXACT path — distinct from the main list's `tag=`
-    // query and from the saved-views sidebar's `path_prefix=UI%2FViews%2F`.
+    // query and from the rail's canonical view-list query.
     if (url.includes("path=Views%2FPinned") || url.includes("path=Views%2FArchive")) {
       return jsonResponse(state.packNote ? [state.packNote] : []);
     }
-    if (url.includes("path_prefix=UI%2FViews%2F") || url.includes("limit=5000")) {
+    if (url.includes("limit=5000")) {
       return jsonResponse([]);
     }
     return jsonResponse(state.notes);
@@ -88,10 +88,8 @@ function Wrapper({ children }: { children: ReactNode }) {
 
 /**
  * The main list query's outgoing URL — excludes the default-view-pack
- * lookup (`path=Views%2F…`), the saved-views sidebar's own query
- * (`path_prefix=UI%2FViews%2F`, fired unconditionally by `useSavedViews`
- * regardless of preset), the capped path-tree window (`limit=5000`), the nav
- * model's view-list (`tag=view` — gated on tag-roles, so it can land AFTER
+ * lookup (`path=Views%2F…`), the capped path-tree window (`limit=5000`), the
+ * nav model's view-list (`tag=view` — gated on tag-roles, so it can land AFTER
  * the list fetch), and the nav model's bounded first-note probe
  * (`exclude_tag=guide`, use-has-user-note.ts). Mirrors `lastNotesUrl` in
  * VaultSurface.test.tsx.
@@ -102,7 +100,6 @@ function lastListQueryUrl(fetchImpl: ReturnType<typeof installFetch>): string {
     (u) =>
       u.includes("/api/notes") &&
       !u.includes("path=Views%2F") &&
-      !u.includes("path_prefix=UI%2FViews%2F") &&
       !u.includes("limit=5000") &&
       !u.includes("tag=view&") &&
       !u.includes("exclude_tag=guide"),

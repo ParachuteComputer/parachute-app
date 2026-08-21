@@ -13,8 +13,23 @@ interface FetchState {
 }
 
 function installFetch(state: FetchState) {
-  const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
+    if ((init?.method ?? "GET").toUpperCase() === "POST" && url.includes("/api/notes")) {
+      const requestBody = JSON.parse((init?.body as string) ?? "{}");
+      const created = {
+        id: "created-view",
+        createdAt: "2026-04-18T12:00:00.000Z",
+        ...requestBody,
+      };
+      state.notes.push(created);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => created,
+        text: async () => "",
+      } as Response;
+    }
     const body = url.includes("/api/tags") ? state.tags : state.notes;
     return {
       ok: true,
@@ -85,10 +100,9 @@ function openFoldersAccordion() {
 }
 
 function lastNotesUrl(fetchImpl: ReturnType<typeof installFetch>): string {
-  // The saved-views sidebar also queries /api/notes (tag=view & views path
-  // prefix), and the capped 5000-row path-tree window shares the endpoint
-  // too. Filter those out so assertions target the primary list query. The
-  // bare `tag=view` list (the nav model's view band) is gated on tag-roles,
+  // The capped 5000-row path-tree window shares the endpoint. Filter it out
+  // so assertions target the primary list query. The bare `tag=view` list
+  // (the nav model's view band) is gated on tag-roles,
   // so its fetch can land AFTER the list fetch — exclude it by URL, not by
   // order. Same for the nav model's bounded first-note probe
   // (`exclude_tag=guide`, use-has-user-note.ts — the NavBandsProvider,
@@ -97,7 +111,6 @@ function lastNotesUrl(fetchImpl: ReturnType<typeof installFetch>): string {
   const noteCalls = calls.filter(
     (u) =>
       u.includes("/api/notes") &&
-      !u.includes("path_prefix=UI%2FViews%2F") &&
       !u.includes("limit=5000") &&
       !u.includes("tag=view&") &&
       !u.includes("exclude_tag=guide"),
@@ -953,6 +966,76 @@ describe("VaultSurface route (/notes)", () => {
     const saveBtn = within(chips).getByRole("button", { name: /save as view/i });
     fireEvent.click(saveBtn);
     expect(await screen.findByRole("dialog", { name: /save view/i })).toBeInTheDocument();
+  });
+
+  it("saves All-notes filters as a canonical #view note that the Views band can list", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/?tag=idea&tag=project&tag_match=all&path_prefix=Work%2F&sort=asc",
+    );
+    const fetchImpl = installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "Work/plan",
+          tags: ["idea", "project"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [
+        { name: "idea", count: 1 },
+        { name: "project", count: 1 },
+      ],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const TestWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <BrowserRouter>
+          <NavBandsProvider>{children}</NavBandsProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    );
+    render(<VaultSurface />, { wrapper: TestWrapper });
+    await screen.findByText("Work/plan");
+
+    fireEvent.click(screen.getByRole("button", { name: /save as view/i }));
+    fireEvent.change(await screen.findByLabelText(/view name/i), {
+      target: { value: "Active projects" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => {
+      const post = fetchImpl.mock.calls.find(
+        ([, init]) => ((init as RequestInit | undefined)?.method ?? "GET") === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse((post?.[1] as RequestInit).body as string);
+      expect(body).toEqual({
+        content: "",
+        path: "Views/Active projects",
+        tags: ["view"],
+        metadata: {
+          kind: "list",
+          query: JSON.stringify({
+            tag: ["idea", "project"],
+            tag_match: "all",
+            path_prefix: "Work/",
+            sort: "asc",
+            exclude_tags: ["archived"],
+          }),
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const cachedLists = client.getQueriesData<unknown[]>({ queryKey: ["viewList", "dev"] });
+      expect(
+        cachedLists.some(([, notes]) =>
+          notes?.some((note) => (note as { id?: string }).id === "created-view"),
+        ),
+      ).toBe(true);
+    });
   });
 
   it("a fresh empty vault shows ONLY the masthead + composer + search + the empty state — no filter wall, no pager", async () => {
