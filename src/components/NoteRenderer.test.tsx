@@ -6,10 +6,10 @@ import { NoteRenderer } from "./NoteRenderer";
 const NO_RESOLVE = () => null;
 
 describe("NoteRenderer", () => {
-  // MarkdownView (rehype-highlight + the vault-client memo) can paint, then
-  // update. Under full-suite load the first paint is what a sync assertion
-  // sees — empty, no <h1> — which is the "markdown test once" face of app#57.
-  // Wait on the rendered node instead of guessing the highlight has finished.
+  // Defensive wait; mechanism unconfirmed. react-markdown 10.1.0's default
+  // export is synchronous, so a paint-then-update via rehype-highlight is
+  // not a supported explanation. Waiting on the rendered node is the
+  // "markdown test once" face of app#57, not a proven race.
   it("dispatches to markdown for no extension", async () => {
     const { container } = render(
       <NoteRenderer note={{ path: "Daily/2026-05-18", content: "# Hello" }} resolve={NO_RESOLVE} />,

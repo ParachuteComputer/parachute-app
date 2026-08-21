@@ -320,7 +320,9 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
 
     const notesBand = screen.getByText(/^pinned$/i).closest('[data-nav-band="notes"]');
     expect(notesBand).not.toBeNull();
-    const list = await within(notesBand as HTMLElement).findByRole("list", { name: "Pinned notes" });
+    const list = await within(notesBand as HTMLElement).findByRole("list", {
+      name: "Pinned notes",
+    });
     expect(
       within(list)
         .getAllByRole("link")
