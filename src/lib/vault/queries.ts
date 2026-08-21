@@ -411,8 +411,8 @@ export function useAllNotesForSwitcher(enabled: boolean) {
       // Without an explicit sort, the vault's default is created_at ASC —
       // on a vault past the VAULT_GRAPH_NOTE_CAP, that silently drops the
       // NEWEST notes from the switcher instead of the oldest. `desc` matches
-      // the other capped-window queries below (useNotesForDateViews,
-      // useNotesForPathTree) so "capped at N" always means "the N most
+      // the other capped-window query below (`useNotesForPathTree`) so
+      // "capped at N" always means "the N most
       // recent," never "the N oldest."
       params.set("sort", "desc");
       params.set("limit", String(VAULT_GRAPH_NOTE_CAP));
@@ -422,46 +422,59 @@ export function useAllNotesForSwitcher(enabled: boolean) {
   });
 }
 
-// Fetches a capped window of recent notes (by vault's default sort, desc) for
-// date-grouped surfaces like /today and /calendar. The vault has no date-range
-// filter, so we client-side bucket. A vault with more than the cap gets the
-// most-recent N — older days on the calendar show empty.
-export function useNotesForDateViews() {
+// Window contract shared by the date-grouped surfaces. Bounds are ISO instants
+// because each route converts its user-facing local calendar boundary before
+// calling the hook.
+export interface DateViewWindow {
+  field: "created_at" | "updated_at";
+  from: string;
+  to?: string;
+  excludeTag?: string;
+  enabled?: boolean;
+}
+
+// Fetch exactly the timestamp window a chronological surface can display.
+// The bracket filters lower to vault's indexed created_at / updated_at date
+// columns. Date-filter subscriptions are intentionally unsupported by the
+// vault, so this hook stays on the existing 60s poll + focus-refetch path.
+export function useNotesForDateViews({
+  field,
+  from,
+  to,
+  excludeTag,
+  enabled = true,
+}: DateViewWindow) {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
   const { db } = useSync();
   const mirrorOn = isMirrorEnabled();
 
-  const queryKey = useMemo(() => ["notesForDateViews", activeId], [activeId]);
   const params = useMemo(() => {
     const p = new URLSearchParams();
     p.set("sort", "desc");
-    p.set("limit", String(VAULT_GRAPH_NOTE_CAP));
+    p.set(`meta[${field}][gte]`, from);
+    if (to) p.set(`meta[${field}][lt]`, to);
+    if (excludeTag) p.set("exclude_tag", excludeTag);
     // Lean list shape — see `useNotes`. Recent / Activity / Calendar render
-    // NoteRow (title + preview + tags), never `note.content`, so the live
-    // subscription can ship lean frames (vault#620); the REST poll is already
-    // content-less by the vault list default.
+    // title + preview + tags, never `note.content`.
     p.set("include_content", "false");
     return p;
-  }, []);
+  }, [excludeTag, field, from, to]);
+  const paramsKey = params.toString();
+  const queryKey = useMemo(() => ["notesForDateViews", activeId, paramsKey], [activeId, paramsKey]);
 
-  // Live layer for Recent / Activity / Calendar — same reconcile-into-cache
-  // pattern as `useNotes`. The capped recent-notes window is a plain
-  // sort+limit query (subscribable). When live, relax the 60s staleTime; when
-  // not, the same polling floor as `useNotes` (interval + focus refetch).
-  const { isLive } = useLiveNotesQuery({ queryKey, params, client });
   const seed = useMirrorListSeed(db, activeId, params, mirrorOn);
 
   return useQuery({
     queryKey,
-    enabled: !!client,
+    enabled: !!client && enabled,
     queryFn: () =>
       mirrorOn
         ? withMirrorList(db, activeId, params, () => client!.queryNotes(params))
         : client!.queryNotes(params),
-    staleTime: isLive ? Number.POSITIVE_INFINITY : 60_000,
-    refetchInterval: isLive ? false : 60_000,
-    refetchOnWindowFocus: !isLive,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
     // Flag on: cold-launch seed from the mirror (Recent / Calendar paint
     // instantly); flag off: unchanged (no placeholderData).
     placeholderData: mirrorOn ? (prev) => prev ?? seed : undefined,

@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
-import { shiftDay, toDateKey, todayKey } from "@/lib/dates";
+import { localDayBoundaryIso, shiftDay, toDateKey, todayKey } from "@/lib/dates";
 import {
   type HomeStepId,
   deriveSteps,
@@ -730,7 +730,7 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
 // ---------------------------------------------------------------------------
 // The Recent lens (LZ-4, LENS-SPEC §1 + §3) — the old Home, dissolved into
 // the one surface. BootGate's vault-active branches render it at `/`. The
-// body is the capped live window over the vault (`useNotesForDateViews`),
+// body is the bounded, polled 14-day window (`useNotesForDateViews`),
 // day-grouped by RecentTimeline, with the two §1.1 changes from Home's list:
 // archived notes drop OUT of Recent (they're set aside, not "touched
 // lately" — Home used to show them dimmed), and the window wears a visible
@@ -754,9 +754,14 @@ export const RECENT_NOTE_CAP = 100;
 
 function RecentLens() {
   const vault = useVaultStore((s) => s.getActiveVault());
-  const notes = useNotesForDateViews();
   const { dismissed, dismiss } = useHomeChecklist(vault?.id ?? null);
   const { roles } = useTagRoles(vault?.id ?? null);
+  const floorKey = shiftDay(todayKey(), -(RECENT_WINDOW_DAYS - 1));
+  const notes = useNotesForDateViews({
+    field: "updated_at",
+    from: localDayBoundaryIso(floorKey)!,
+    excludeTag: roles.archived,
+  });
 
   // Trial ambience (DESIGN-SPEC §3.1, sanctioned places 2 + 4) — the SHARED
   // account-summary query, enabled only for a home-door (account-minted)
@@ -774,14 +779,13 @@ function RecentLens() {
   // field. `undefined` until the query settles (the skeleton's cue).
   const recent = useMemo(() => {
     if (!notes.data) return undefined;
-    const floorKey = shiftDay(todayKey(), -(RECENT_WINDOW_DAYS - 1));
     const stamp = (n: Note) => n.updatedAt ?? n.createdAt;
     return notes.data
       .filter((n) => !(n.tags ?? []).includes(roles.archived))
       .filter((n) => (toDateKey(stamp(n)) ?? "") >= floorKey)
       .sort((a, b) => (stamp(a) < stamp(b) ? 1 : stamp(a) > stamp(b) ? -1 : 0))
       .slice(0, RECENT_NOTE_CAP);
-  }, [notes.data, roles.archived]);
+  }, [floorKey, notes.data, roles.archived]);
 
   // BootGate only renders this lens when a vault is active, but guard anyway:
   // a vault removed mid-session falls back to the arrival (via the index).

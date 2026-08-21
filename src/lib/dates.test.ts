@@ -3,6 +3,7 @@ import {
   currentMonthKey,
   formatFieldDate,
   formatLongMonth,
+  localDayBoundaryIso,
   monthGrid,
   pad2,
   parseDateKey,
@@ -61,6 +62,16 @@ describe("parseDateKey", () => {
     expect(d?.getFullYear()).toBe(2026);
     expect(d?.getMonth()).toBe(3);
     expect(d?.getDate()).toBe(18);
+  });
+});
+
+describe("localDayBoundaryIso", () => {
+  it("converts local midnight to its exact UTC instant", () => {
+    expect(localDayBoundaryIso("2026-04-18")).toBe(new Date(2026, 3, 18).toISOString());
+  });
+
+  it("returns null for an invalid day key", () => {
+    expect(localDayBoundaryIso("not-a-day")).toBeNull();
   });
 });
 

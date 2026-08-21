@@ -87,13 +87,17 @@ describe("Calendar route", () => {
   });
 
   it("renders the long month header for the requested month", async () => {
-    installFetch([]);
+    const fetchImpl = installFetch([]);
     render(
       <Wrap initial="/calendar?month=2026-04">
         <Calendar />
       </Wrap>,
     );
     expect(await screen.findByRole("heading", { name: /april 2026/i })).toBeInTheDocument();
+    const params = new URL(String(fetchImpl.mock.calls[0]![0])).searchParams;
+    expect(params.get("meta[created_at][gte]")).toBe(new Date(2026, 2, 29).toISOString());
+    expect(params.get("meta[created_at][lt]")).toBe(new Date(2026, 4, 10).toISOString());
+    expect(params.has("limit")).toBe(false);
   });
 
   it("renders 42 day cells (6 weeks)", async () => {

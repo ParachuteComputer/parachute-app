@@ -89,7 +89,7 @@ describe("Activity route", () => {
   });
 
   it("groups events into Today / Yesterday / This week / Older", async () => {
-    installFetch([
+    const fetchImpl = installFetch([
       { id: "n1", path: "Today.md", createdAt: localIso(2026, 4, 18, 9) },
       { id: "n2", path: "Yesterday.md", createdAt: localIso(2026, 4, 17, 9) },
       { id: "n3", path: "Wk.md", createdAt: localIso(2026, 4, 14, 9) },
@@ -106,6 +106,9 @@ describe("Activity route", () => {
     expect(screen.getByText(/^yesterday \(1\)$/i)).toBeInTheDocument();
     expect(screen.getByText(/^this week \(1\)$/i)).toBeInTheDocument();
     expect(screen.getByText(/^older \(1\)$/i)).toBeInTheDocument();
+    const params = new URL(String(fetchImpl.mock.calls[0]![0])).searchParams;
+    expect(params.get("meta[updated_at][gte]")).toBe(new Date(2026, 2, 19, 12).toISOString());
+    expect(params.has("limit")).toBe(false);
   });
 
   it("renders both Created and Edited rows for an updated note", async () => {

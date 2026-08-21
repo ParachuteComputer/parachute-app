@@ -11,7 +11,7 @@ import { useVaultStore } from "./store";
 // default is created_at ASC, so a vault past VAULT_GRAPH_NOTE_CAP silently
 // drops the NEWEST notes instead of the oldest. Asserts the real fetch URL
 // (not a mocked queryNotes) carries `sort=desc`, matching the other
-// capped-window queries (useNotesForDateViews / useNotesForPathTree).
+// capped-window query (`useNotesForPathTree`).
 function wrapper(): ({ children }: { children: ReactNode }) => ReactNode {
   return ({ children }) => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

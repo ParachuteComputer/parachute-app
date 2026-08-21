@@ -89,10 +89,24 @@ describe("notes-list queries request the lean shape (include_content=false)", ()
     expect(listFetchParams().get("include_content")).toBe("false");
   });
 
-  it("useNotesForDateViews sends include_content=false", async () => {
-    const { result } = renderHook(() => useNotesForDateViews(), { wrapper: wrapper() });
+  it("useNotesForDateViews sends a bounded date filter, not the legacy 5,000-note cap", async () => {
+    const { result } = renderHook(
+      () =>
+        useNotesForDateViews({
+          field: "updated_at",
+          from: "2026-08-01T06:00:00.000Z",
+          to: "2026-08-15T06:00:00.000Z",
+          excludeTag: "archive",
+        }),
+      { wrapper: wrapper() },
+    );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(listFetchParams().get("include_content")).toBe("false");
+    const params = listFetchParams();
+    expect(params.get("include_content")).toBe("false");
+    expect(params.get("meta[updated_at][gte]")).toBe("2026-08-01T06:00:00.000Z");
+    expect(params.get("meta[updated_at][lt]")).toBe("2026-08-15T06:00:00.000Z");
+    expect(params.get("exclude_tag")).toBe("archive");
+    expect(params.has("limit")).toBe(false);
   });
 
   // The switcher and the graph/link hooks are NOT plain NoteRow lists — they

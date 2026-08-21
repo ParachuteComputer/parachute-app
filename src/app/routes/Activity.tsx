@@ -22,7 +22,11 @@ const PAGE_SIZE = 50;
 // scan, not a working list.
 export function Activity() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
-  const notes = useNotesForDateViews();
+  const activityFrom = useMemo(
+    () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    [],
+  );
+  const notes = useNotesForDateViews({ field: "updated_at", from: activityFrom });
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const events = useMemo(() => {
