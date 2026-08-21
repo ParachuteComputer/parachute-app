@@ -32,10 +32,10 @@ function useCreateWithSync() {
   return { mutation: useCreateNote(), sync: useSync() };
 }
 function useDeleteWithSync() {
-  return { mutation: useDeleteNote(), sync: useSync() };
+  return { mutation: useDeleteNote(), sync: useSync(), qc: useQueryClient() };
 }
 function useUpdateWithSync(id: string) {
-  return { mutation: useUpdateNote(id), sync: useSync() };
+  return { mutation: useUpdateNote(id), sync: useSync(), qc: useQueryClient() };
 }
 
 function wrapper(): ({ children }: { children: ReactNode }) => ReactNode {
@@ -115,9 +115,11 @@ describe("mutation hooks — offline dispatch", () => {
     await waitFor(() => {
       expect(result.current.sync.db).not.toBeNull();
     });
+    const invalidate = vi.spyOn(result.current.qc, "invalidateQueries");
     await act(async () => {
       await result.current.mutation.mutateAsync("srv-42");
     });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notesForDateViews", "v1"] });
     const sharedDb = await openLensDB();
     const rows = await listPending(sharedDb, "v1");
     expect(rows[0].mutation.kind).toBe("delete-note");
@@ -129,9 +131,11 @@ describe("mutation hooks — offline dispatch", () => {
     await waitFor(() => {
       expect(result.current.sync.db).not.toBeNull();
     });
+    const invalidate = vi.spyOn(result.current.qc, "invalidateQueries");
     await act(async () => {
       await result.current.mutation.mutateAsync({ content: "# updated" });
     });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notesForDateViews", "v1"] });
     const sharedDb = await openLensDB();
     const rows = await listPending(sharedDb, "v1");
     expect(rows[0].mutation.kind).toBe("update-note");

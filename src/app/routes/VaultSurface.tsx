@@ -24,6 +24,7 @@ import { useHomeChecklist } from "@/lib/home/use-home-checklist";
 import { meetsAutoThreshold, usePathTreeMode } from "@/lib/path-tree";
 import { useToastStore } from "@/lib/toast/store";
 import {
+  DATE_VIEW_QUERY_LIMIT,
   DEFAULT_NOTE_QUERY,
   DEFAULT_PAGE_SIZE,
   type NoteQueryState,
@@ -761,6 +762,7 @@ function RecentLens() {
     field: "updated_at",
     from: localDayBoundaryIso(floorKey)!,
     excludeTag: roles.archived,
+    limit: DATE_VIEW_QUERY_LIMIT,
   });
 
   // Trial ambience (DESIGN-SPEC §3.1, sanctioned places 2 + 4) — the SHARED

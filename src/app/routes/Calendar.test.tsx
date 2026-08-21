@@ -97,7 +97,7 @@ describe("Calendar route", () => {
     const params = new URL(String(fetchImpl.mock.calls[0]![0])).searchParams;
     expect(params.get("meta[created_at][gte]")).toBe(new Date(2026, 2, 29).toISOString());
     expect(params.get("meta[created_at][lt]")).toBe(new Date(2026, 4, 10).toISOString());
-    expect(params.has("limit")).toBe(false);
+    expect(params.get("limit")).toBe("5000");
   });
 
   it("renders 42 day cells (6 weeks)", async () => {

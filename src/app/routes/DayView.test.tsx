@@ -137,7 +137,7 @@ describe("DayView — single day (?date drill-in)", () => {
         .sort(),
     ).toEqual(["created_at", "updated_at"]);
     for (const params of queries) {
-      expect(params.has("limit")).toBe(false);
+      expect(params.get("limit")).toBe("5000");
       expect(params.get("meta[created_at][gte]") ?? params.get("meta[updated_at][gte]")).toBe(
         new Date(2026, 3, 18).toISOString(),
       );

@@ -189,7 +189,7 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
       .find((params) => params.has("meta[updated_at][gte]"));
     expect(dateQuery).toBeDefined();
     expect(dateQuery!.get("exclude_tag")).toBe("archived");
-    expect(dateQuery!.has("limit")).toBe(false);
+    expect(dateQuery!.get("limit")).toBe("5000");
   });
 
   it("wears the lens label over the list — RECENT · what you've touched lately", async () => {

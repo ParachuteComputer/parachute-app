@@ -430,7 +430,17 @@ export interface DateViewWindow {
   from: string;
   to?: string;
   excludeTag?: string;
+  limit: number;
   enabled?: boolean;
+}
+
+export const DATE_VIEW_QUERY_LIMIT = 5000;
+
+export class DateViewOverflowError extends Error {
+  constructor(limit: number) {
+    super(`This date window reached its ${limit.toLocaleString()}-note safety ceiling.`);
+    this.name = "DateViewOverflowError";
+  }
 }
 
 // Fetch exactly the timestamp window a chronological surface can display.
@@ -442,6 +452,7 @@ export function useNotesForDateViews({
   from,
   to,
   excludeTag,
+  limit,
   enabled = true,
 }: DateViewWindow) {
   const client = useActiveVaultClient();
@@ -455,11 +466,15 @@ export function useNotesForDateViews({
     p.set(`meta[${field}][gte]`, from);
     if (to) p.set(`meta[${field}][lt]`, to);
     if (excludeTag) p.set("exclude_tag", excludeTag);
+    // The date brackets are the honest semantic bound; this explicit limit is
+    // only a generous safety ceiling. Vault's implicit default is 50, which
+    // silently truncates real Recent/Activity/Calendar windows at scale.
+    p.set("limit", String(limit));
     // Lean list shape — see `useNotes`. Recent / Activity / Calendar render
     // title + preview + tags, never `note.content`.
     p.set("include_content", "false");
     return p;
-  }, [excludeTag, field, from, to]);
+  }, [excludeTag, field, from, limit, to]);
   const paramsKey = params.toString();
   const queryKey = useMemo(() => ["notesForDateViews", activeId, paramsKey], [activeId, paramsKey]);
 
@@ -468,10 +483,15 @@ export function useNotesForDateViews({
   return useQuery({
     queryKey,
     enabled: !!client && enabled,
-    queryFn: () =>
-      mirrorOn
+    queryFn: async () => {
+      const rows = await (mirrorOn
         ? withMirrorList(db, activeId, params, () => client!.queryNotes(params))
-        : client!.queryNotes(params),
+        : client!.queryNotes(params));
+      // A full page is ambiguous: there may be more matches behind the
+      // ceiling. Refuse to present a silently incomplete chronological view.
+      if (rows.length >= limit) throw new DateViewOverflowError(limit);
+      return rows;
+    },
     staleTime: 60_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
@@ -815,6 +835,7 @@ export function useUpdateNote(id: string | undefined) {
     onSuccess: (updated) => {
       qc.setQueryData(["note", activeId, id], updated);
       qc.invalidateQueries({ queryKey: ["notes", activeId] });
+      qc.invalidateQueries({ queryKey: ["notesForDateViews", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });
       // If the path changed (→ new id), also seed the new key.
       if (updated?.id && updated.id !== id) {
@@ -1035,6 +1056,7 @@ export function useDeleteNote() {
     onSuccess: (id) => {
       qc.removeQueries({ queryKey: ["note", activeId, id] });
       qc.invalidateQueries({ queryKey: ["notes", activeId] });
+      qc.invalidateQueries({ queryKey: ["notesForDateViews", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });
       qc.invalidateQueries({ queryKey: ["vaultInfo", activeId] });
       // Deleting the last user-authored note should resurface the setup

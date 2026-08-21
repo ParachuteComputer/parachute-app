@@ -10,7 +10,12 @@ import {
   todayKey,
 } from "@/lib/dates";
 import { useHistoryAwareBack } from "@/lib/nav/history";
-import { useNotesForDateViews, useTagRoles, useVaultStore } from "@/lib/vault";
+import {
+  DATE_VIEW_QUERY_LIMIT,
+  useNotesForDateViews,
+  useTagRoles,
+  useVaultStore,
+} from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
 import type { Note } from "@/lib/vault/types";
 import { useMemo } from "react";
@@ -57,12 +62,14 @@ function SingleDay({ dateParam }: { dateParam: string }) {
     field: "created_at",
     from,
     to,
+    limit: DATE_VIEW_QUERY_LIMIT,
     enabled: !!parsed,
   });
   const updatedNotes = useNotesForDateViews({
     field: "updated_at",
     from,
     to,
+    limit: DATE_VIEW_QUERY_LIMIT,
     enabled: !!parsed,
   });
   const notes = useMemo(() => {

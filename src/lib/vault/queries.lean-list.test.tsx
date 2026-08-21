@@ -6,6 +6,7 @@ import { BrowserRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_NOTE_QUERY } from "./note-query";
 import {
+  DateViewOverflowError,
   useAllNotesForSwitcher,
   useAllNotesWithLinks,
   useNotes,
@@ -97,6 +98,7 @@ describe("notes-list queries request the lean shape (include_content=false)", ()
           from: "2026-08-01T06:00:00.000Z",
           to: "2026-08-15T06:00:00.000Z",
           excludeTag: "archive",
+          limit: 5000,
         }),
       { wrapper: wrapper() },
     );
@@ -106,7 +108,35 @@ describe("notes-list queries request the lean shape (include_content=false)", ()
     expect(params.get("meta[updated_at][gte]")).toBe("2026-08-01T06:00:00.000Z");
     expect(params.get("meta[updated_at][lt]")).toBe("2026-08-15T06:00:00.000Z");
     expect(params.get("exclude_tag")).toBe("archive");
-    expect(params.has("limit")).toBe(false);
+    expect(params.get("limit")).toBe("5000");
+  });
+
+  it("rejects a full date-window page instead of presenting a possibly truncated result", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "a", createdAt: "2026-08-02T00:00:00Z" },
+              { id: "b", createdAt: "2026-08-01T00:00:00Z" },
+            ]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+    const { result } = renderHook(
+      () =>
+        useNotesForDateViews({
+          field: "created_at",
+          from: "2026-08-01T00:00:00.000Z",
+          limit: 2,
+        }),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(DateViewOverflowError);
   });
 
   // The switcher and the graph/link hooks are NOT plain NoteRow lists — they

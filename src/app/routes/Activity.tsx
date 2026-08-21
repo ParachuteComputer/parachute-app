@@ -8,13 +8,15 @@ import {
   buildActivityEvents,
   groupEventsByBucket,
 } from "@/lib/activity/events";
+import { localDayBoundaryIso, shiftDay, todayKey } from "@/lib/dates";
 import { relativeTime } from "@/lib/time";
-import { useNotesForDateViews, useVaultStore } from "@/lib/vault";
+import { DATE_VIEW_QUERY_LIMIT, useNotesForDateViews, useVaultStore } from "@/lib/vault";
 import { VaultAuthError } from "@/lib/vault/client";
 import { useMemo, useState } from "react";
 import { Link, Navigate } from "react-router";
 
 const PAGE_SIZE = 50;
+const ACTIVITY_WINDOW_DAYS = 30;
 
 // The reflective "what happened" view — a calm timeline grouped into
 // Today / Yesterday / This week / Older, each an eyebrow-labelled section
@@ -22,11 +24,12 @@ const PAGE_SIZE = 50;
 // scan, not a working list.
 export function Activity() {
   const activeVault = useVaultStore((s) => s.getActiveVault());
-  const activityFrom = useMemo(
-    () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    [],
-  );
-  const notes = useNotesForDateViews({ field: "updated_at", from: activityFrom });
+  const floorKey = shiftDay(todayKey(), -(ACTIVITY_WINDOW_DAYS - 1));
+  const notes = useNotesForDateViews({
+    field: "updated_at",
+    from: localDayBoundaryIso(floorKey)!,
+    limit: DATE_VIEW_QUERY_LIMIT,
+  });
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const events = useMemo(() => {

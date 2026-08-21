@@ -107,8 +107,8 @@ describe("Activity route", () => {
     expect(screen.getByText(/^this week \(1\)$/i)).toBeInTheDocument();
     expect(screen.getByText(/^older \(1\)$/i)).toBeInTheDocument();
     const params = new URL(String(fetchImpl.mock.calls[0]![0])).searchParams;
-    expect(params.get("meta[updated_at][gte]")).toBe(new Date(2026, 2, 19, 12).toISOString());
-    expect(params.has("limit")).toBe(false);
+    expect(params.get("meta[updated_at][gte]")).toBe(new Date(2026, 2, 20).toISOString());
+    expect(params.get("limit")).toBe("5000");
   });
 
   it("renders both Created and Edited rows for an updated note", async () => {
