@@ -1,6 +1,6 @@
 {
   "name": "@openparachute/app",
-  "version": "0.22.11",
+  "version": "0.22.12",
   "type": "module",
   "description": "Parachute — the super-surface. A single-page app for interfacing with your Parachute: name a vault, capture and browse notes, connect your AI, and manage the cloud + hub via their APIs. Seeded from notes-ui; the calm centered arrival + warm home lead the experience.",
   "license": "AGPL-3.0-only",
