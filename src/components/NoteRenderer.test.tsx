@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { NoteRenderer } from "./NoteRenderer";
 
@@ -6,19 +6,27 @@ import { NoteRenderer } from "./NoteRenderer";
 const NO_RESOLVE = () => null;
 
 describe("NoteRenderer", () => {
-  it("dispatches to markdown for no extension", () => {
+  // MarkdownView (rehype-highlight + the vault-client memo) can paint, then
+  // update. Under full-suite load the first paint is what a sync assertion
+  // sees — empty, no <h1> — which is the "markdown test once" face of app#57.
+  // Wait on the rendered node instead of guessing the highlight has finished.
+  it("dispatches to markdown for no extension", async () => {
     const { container } = render(
       <NoteRenderer note={{ path: "Daily/2026-05-18", content: "# Hello" }} resolve={NO_RESOLVE} />,
     );
     // Markdown rendering produces an <h1> from `# Hello`.
-    expect(container.querySelector("h1")?.textContent).toBe("Hello");
+    await waitFor(() => {
+      expect(container.querySelector("h1")?.textContent).toBe("Hello");
+    });
   });
 
-  it("dispatches to markdown for .md", () => {
+  it("dispatches to markdown for .md", async () => {
     const { container } = render(
       <NoteRenderer note={{ path: "notes/foo.md", content: "**bold**" }} resolve={NO_RESOLVE} />,
     );
-    expect(container.querySelector("strong")?.textContent).toBe("bold");
+    await waitFor(() => {
+      expect(container.querySelector("strong")?.textContent).toBe("bold");
+    });
   });
 
   it("dispatches to CSV for .csv", () => {

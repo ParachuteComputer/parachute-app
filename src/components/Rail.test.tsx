@@ -27,8 +27,13 @@ function makeVault(partial: Partial<VaultRecord> & Pick<VaultRecord, "id" | "url
   };
 }
 
-// Async so the setup-checklist query settles inside act() — the Rail reads
-// react-query data, so a bare render leaves a pending state update.
+// The nav model kicks off several react-query hops (tag-roles / settings,
+// hasUserAuthoredNote, view-list, then pinned notes). One `act()` around
+// `render` only sees the first hop; later hops resolve after the helper
+// returns. Under full-suite load those land after assertions (app#57 Rail
+// face — act() warnings on every test, and the pinned-list test that
+// `getByRole`s immediately is the one that actually goes red). Drain until
+// the client is idle so every test sees the settled rail.
 async function renderRail(path = "/"): Promise<RenderResult> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let result!: RenderResult;
@@ -42,6 +47,9 @@ async function renderRail(path = "/"): Promise<RenderResult> {
         </MemoryRouter>
       </QueryClientProvider>,
     );
+  });
+  await waitFor(() => {
+    expect(client.isFetching()).toBe(0);
   });
   return result;
 }
@@ -312,7 +320,7 @@ describe("Rail (two-zone desktop spine, W2-5)", () => {
 
     const notesBand = screen.getByText(/^pinned$/i).closest('[data-nav-band="notes"]');
     expect(notesBand).not.toBeNull();
-    const list = within(notesBand as HTMLElement).getByRole("list", { name: "Pinned notes" });
+    const list = await within(notesBand as HTMLElement).findByRole("list", { name: "Pinned notes" });
     expect(
       within(list)
         .getAllByRole("link")
