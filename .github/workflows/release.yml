@@ -183,6 +183,7 @@ jobs:
           CONTENTS=$(tar -tzf "$TARBALL")
           for required in \
             package/package.json \
+            package/meta.json \
             package/dist/index.html \
             package/dist/manifest.webmanifest \
             package/dist/sw.js
@@ -199,6 +200,22 @@ jobs:
             exit 1
           fi
           echo "tarball carries dist/index.html + $ASSETS asset files"
+
+          # meta.json ships hand-formatted, not generated — `prepack`'s
+          # `sync-meta-version` step (scripts/sync-meta-version.ts) rewrites
+          # its `version` field from package.json at build time. Confirm the
+          # tarball we're about to publish actually carries the right value
+          # rather than trusting the build step silently (parachute-app#136 —
+          # meta.json shipped "0.1.3" through 0.22.11). Same check as ci.yml's
+          # pack+verify step, repeated here because THIS tarball is the one
+          # that ships, not the one CI built on the PR.
+          META_VERSION=$(tar -xzf "$TARBALL" -O package/meta.json | bun -e "console.log(JSON.parse(await Bun.stdin.text()).version)")
+          if [ "$META_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::tarball's meta.json version is \"$META_VERSION\" but package.json is \"$PKG_VERSION\" — refusing to publish"
+            exit 1
+          fi
+          echo "meta.json version ($META_VERSION) matches package.json"
+
           rm -f "$TARBALL"
 
       - name: publish

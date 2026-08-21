@@ -53,10 +53,22 @@ describe("syncMetaVersion", () => {
     expect(parsed.scopes_required).toEqual(["vault:*:read", "vault:*:write"]);
   });
 
-  it("is a no-op when there is no version field to rewrite", () => {
+  it("throws (does not silently no-op) when there is no version field to rewrite", () => {
     const noVersion = `{ "name": "parachute" }`;
-    const { raw, changed } = syncMetaVersion(noVersion, "0.22.11");
-    expect(changed).toBe(false);
-    expect(raw).toBe(noVersion);
+    expect(() => syncMetaVersion(noVersion, "0.22.11")).toThrow(/no "version" field/);
+  });
+
+  it("rewrites an empty version value without corrupting the surrounding quotes", () => {
+    const empty = `{ "name": "parachute", "version": "" }`;
+    const { raw, changed } = syncMetaVersion(empty, "0.22.11");
+    expect(changed).toBe(true);
+    expect(JSON.parse(raw)).toEqual({ name: "parachute", version: "0.22.11" });
+  });
+
+  it("rewrites a version whose value happens to be the literal string 'version'", () => {
+    const tricky = `{ "name": "parachute", "version": "version" }`;
+    const { raw, changed } = syncMetaVersion(tricky, "0.22.11");
+    expect(changed).toBe(true);
+    expect(JSON.parse(raw)).toEqual({ name: "parachute", version: "0.22.11" });
   });
 });
