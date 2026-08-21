@@ -47,7 +47,7 @@ import {
   isFiltersNonEmpty,
   searchParamsToFilters,
 } from "@/lib/views/all-notes";
-import { type DefaultPageId, viewPathForName } from "@/lib/views/defaults";
+import { DEFAULT_VIEW_PATHS, type DefaultPageId, viewPathForName } from "@/lib/views/defaults";
 import { useDefaultViewDef, useViewList } from "@/lib/views/queries";
 import { queryTags } from "@/lib/views/query";
 import { decodeViewDef } from "@/lib/views/schema";
@@ -603,13 +603,6 @@ function SearchableLenses({ preset: presetProp }: { preset?: VaultView }) {
                           </div>
                         </details>
                       ) : null}
-
-                      {/* Saved filters — a quiet disclosure at the foot, not
-                          a view manager: apply-only (click a name to load
-                          it), no rename/update/delete here (Aaron: "a
-                          Filters panel shouldn't also be a view manager").
-                          Rewriting the save format itself is a separate,
-                          later PR — this is presentation only. */}
                     </div>
                   </section>
                 </>
@@ -1177,7 +1170,10 @@ function SaveViewDialog({
 }) {
   const [name, setName] = useState("");
   const trimmed = name.trim();
-  const collides = existingNames.some((name) => name.toLowerCase() === trimmed.toLowerCase());
+  const candidatePath = viewPathForName(trimmed).toLowerCase();
+  const collides =
+    DEFAULT_VIEW_PATHS.some((path) => path.toLowerCase() === candidatePath) ||
+    existingNames.some((name) => viewPathForName(name).toLowerCase() === candidatePath);
   const canSave = trimmed.length > 0 && !collides && !isSaving;
 
   return (
