@@ -19,11 +19,12 @@
   "files": ["dist", "meta.json", "README.md", "LICENSE", "CHANGELOG.md"],
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "bun run sync-meta-version && tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "bun scripts/verify-dist.ts",
+    "sync-meta-version": "bun scripts/sync-meta-version.ts",
     "bigvault": "bun scripts/bigvault/bigvault.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
