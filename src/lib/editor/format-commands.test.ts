@@ -8,6 +8,7 @@ import {
   wrapLink,
 } from "@/lib/editor/format-commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { syntaxTree } from "@codemirror/language";
 import { EditorState, type StateCommand } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 
@@ -110,6 +111,23 @@ describe("toggleBold — ragged selections crossing a mark boundary (review delt
     const doc = "one **two** and **three** four";
     const { state } = apply(toggleBold, doc, { anchor: 7, head: 20 });
     expect(state.doc.toString()).toBe("one **two and three** four");
+  });
+
+  it("three-mark crossing: expands through inline code so its parse precedence cannot swallow the closing bold marker", () => {
+    const doc = "a **bold** b *ital* c `code` d";
+    // Start inside bold and end inside code. Before #58, normalization
+    // expanded through the bold node only, leaving the closing `**` inside
+    // the code span: `**bold b *ital* c `co**de``. The bytes were balanced,
+    // but the parser produced no StrongEmphasis node.
+    const { state } = apply(toggleBold, doc, {
+      anchor: doc.indexOf("bold") + 1,
+      head: doc.indexOf("code") + 2,
+    });
+
+    expect(state.doc.toString()).toBe("a **bold b *ital* c `code`** d");
+    expect(
+      syntaxTree(state).topNode.getChild("Paragraph")?.getChild("StrongEmphasis"),
+    ).not.toBeNull();
   });
 
   it("offset sweep: every (from, to) pair over a marked string produces a balanced (even-count) marker result", () => {

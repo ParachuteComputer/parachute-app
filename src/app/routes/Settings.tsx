@@ -735,7 +735,7 @@ const ROLE_LABELS: Record<TagRoleKey, { title: string; help: string }> = {
   },
   view: {
     title: "Saved view",
-    help: "Tag the saved-view notes carry. Used to list them in the notes sidebar.",
+    help: "Tag that view notes carry. Used to list them in the Views band.",
   },
 };
 

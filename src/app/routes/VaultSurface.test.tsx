@@ -968,6 +968,46 @@ describe("VaultSurface route (/notes)", () => {
     expect(await screen.findByRole("dialog", { name: /save view/i })).toBeInTheDocument();
   });
 
+  it("blocks reserved default-view names and compares existing names after path sanitization", async () => {
+    window.history.replaceState({}, "", "/?tag=idea");
+    installFetch({
+      notes: [
+        {
+          id: "n1",
+          path: "some-note",
+          tags: ["idea"],
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+        {
+          id: "existing-view",
+          path: "Views/a-b",
+          tags: ["view"],
+          metadata: { kind: "list", query: "{}" },
+          createdAt: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+      tags: [{ name: "idea", count: 1 }],
+    });
+    render(<VaultSurface />, { wrapper: Wrapper });
+    await screen.findByText("some-note");
+
+    fireEvent.click(screen.getByRole("button", { name: /save as view/i }));
+    const input = await screen.findByLabelText(/view name/i);
+    const save = screen.getByRole("button", { name: /^save$/i });
+
+    fireEvent.change(input, { target: { value: "a/b" } });
+    expect(screen.getByText(/a view with that name already exists/i)).toBeInTheDocument();
+    expect(save).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "Recent" } });
+    expect(screen.getByText(/a view with that name already exists/i)).toBeInTheDocument();
+    expect(save).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "Fresh view" } });
+    expect(screen.queryByText(/a view with that name already exists/i)).not.toBeInTheDocument();
+    expect(save).toBeEnabled();
+  });
+
   it("saves All-notes filters as a canonical #view note that the Views band can list", async () => {
     window.history.replaceState(
       {},
