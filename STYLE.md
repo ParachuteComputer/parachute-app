@@ -65,9 +65,10 @@ below).
 
 The Tailwind v4 `@theme` block means every `--color-*`, `--text-*`, `--radius-*`
 token is also a utility (`bg-accent`, `text-fg-muted`, `text-2xs`,
-`max-w-[--w-page]`). For the semantic state tokens, use the arbitrary-value form:
-`text-[--color-danger]`, `bg-[--color-danger-soft]`,
-`border-[--color-danger-border]`.
+`max-w-(--w-page)`). For semantic state tokens, use Tailwind's custom-property
+shorthand: `text-(--color-danger)`, `bg-(--color-danger-soft)`,
+`border-(--color-danger-border)`. Bare custom properties in arbitrary-value
+brackets compile without a `var()` wrapper and produce invalid CSS.
 
 ## Component classes (`@layer components`)
 
@@ -159,7 +160,7 @@ accent-on-canvas 4.75:1 (4.91:1 on card) — all pass AA. In dark mode the
 accent LIGHTENS to `#ec7a5c` (6.14:1 on the forest-night ground), so
 `--color-on-accent` flips to a dark warm ink (`#2a1710` → 6.11:1 on the dark
 accent) instead of white. Every accent-surfaced label uses `.btn-primary` or
-`text-[--color-on-accent]`; there are **no** `text-white`-on-accent uses.
+`text-(--color-on-accent)`; there are **no** `text-white`-on-accent uses.
 
 | Surface | Ink | Ratio | AA (4.5:1) |
 |---|---|---|---|
