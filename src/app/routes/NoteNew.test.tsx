@@ -89,6 +89,34 @@ const fakeState = {
   pickResult: "audio/webm;codecs=opus" as string | null,
 };
 
+const blobStoreFailure = vi.hoisted(() => ({
+  failOnPut: null as number | null,
+  putCalls: 0,
+}));
+
+vi.mock("@/lib/sync/blob-store", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/sync/blob-store")>("@/lib/sync/blob-store");
+  return {
+    ...actual,
+    createBlobStore(db: Parameters<typeof actual.createBlobStore>[0]) {
+      const store = actual.createBlobStore(db);
+      return {
+        backend: store.backend,
+        async put(...args: Parameters<typeof store.put>) {
+          blobStoreFailure.putCalls += 1;
+          if (blobStoreFailure.putCalls === blobStoreFailure.failOnPut) {
+            throw new Error("synthetic blob-store failure");
+          }
+          await store.put(...args);
+        },
+        get: (...args: Parameters<typeof store.get>) => store.get(...args),
+        delete: (...args: Parameters<typeof store.delete>) => store.delete(...args),
+      };
+    },
+  };
+});
+
 vi.mock("@/lib/capture/recorder", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/capture/recorder")>("@/lib/capture/recorder");
@@ -274,6 +302,8 @@ describe("NoteNew route — unified create surface", () => {
     fakeState.controller = null;
     fakeState.pickResult = "audio/webm;codecs=opus";
     fakeState.requestMic = vi.fn(async () => ({ getTracks: () => [] }) as unknown as MediaStream);
+    blobStoreFailure.failOnPut = null;
+    blobStoreFailure.putCalls = 0;
     vi.spyOn(window, "confirm").mockImplementation(() => true);
     vi.stubGlobal(
       "URL",
@@ -751,6 +781,8 @@ describe("NoteNew — voice affordance", () => {
     fakeState.controller = null;
     fakeState.pickResult = "audio/webm;codecs=opus";
     fakeState.requestMic = vi.fn(async () => ({ getTracks: () => [] }) as unknown as MediaStream);
+    blobStoreFailure.failOnPut = null;
+    blobStoreFailure.putCalls = 0;
     vi.spyOn(window, "confirm").mockImplementation(() => true);
     vi.stubGlobal(
       "URL",
@@ -941,6 +973,37 @@ describe("NoteNew — voice affordance", () => {
       expect(create.mutation.payload.tags).toContain("capture");
       expect(create.mutation.payload.metadata).toEqual({ source: "voice" });
     }
+  });
+
+  it("does not enqueue the note until its audio blob is stored", async () => {
+    installFetch({});
+    blobStoreFailure.failOnPut = 1;
+    renderAt("/new");
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /record voice memo/i }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tapStop();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await screen.findByText(/recorded\s+/i);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/synthetic blob-store failure/i);
+    });
+    expect(screen.queryByText("NoteViewPage")).toBeNull();
+
+    const db = await openLensDB();
+    const pending = await listPending(db, "dev");
+    db.close();
+    expect(pending).toEqual([]);
   });
 
   // The SACRED common case: a recording that never rolls (single segment)

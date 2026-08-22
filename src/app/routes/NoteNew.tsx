@@ -453,6 +453,27 @@ export function NoteNew() {
     };
 
     try {
+      // Stage every byte before making the note visible to the sync queue.
+      // A failed segment must leave no create-note/upload/link mutations that
+      // can drain later into a partial voice capture.
+      const stagedSegments = plan.segments.map((segment, index) => ({
+        segment,
+        data: segments[index]!.data,
+        blobId: newBlobId(),
+      }));
+      const storedBlobIds: string[] = [];
+      try {
+        for (const stagedSegment of stagedSegments) {
+          await blobStore.put(stagedSegment.blobId, stagedSegment.data, mimeType, activeVault.id);
+          storedBlobIds.push(stagedSegment.blobId);
+        }
+      } catch (error) {
+        // Nothing references these blobs yet, so best-effort rollback is safe
+        // and avoids leaving successfully staged earlier segments orphaned.
+        await Promise.allSettled(storedBlobIds.map((blobId) => blobStore.delete(blobId)));
+        throw error;
+      }
+
       await enqueue(
         db,
         { kind: "create-note", localId, payload: createPayload },
@@ -461,10 +482,7 @@ export function NoteNew() {
       // One upload + link pair per segment, in order. Each link references its
       // own blob and (for N>1) carries the numeric `segment_index` the door
       // contract keys per-part markers on.
-      for (let k = 0; k < plan.segments.length; k++) {
-        const seg = plan.segments[k]!;
-        const blobId = newBlobId();
-        await blobStore.put(blobId, segments[k]!.data, mimeType, activeVault.id);
+      for (const { segment: seg, blobId } of stagedSegments) {
         await enqueue(
           db,
           { kind: "upload-attachment", blobId, filename: seg.filename, mimeType },
