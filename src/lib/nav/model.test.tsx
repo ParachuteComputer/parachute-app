@@ -416,6 +416,9 @@ describe("useNavBands (hook)", () => {
             // A shipped default page — excluded from the band (it already
             // has a Rail row under "Your notes").
             { id: "v2", path: "Views/Pinned", tags: ["view"], metadata: {} },
+            // Vault paths are case-sensitive, but the human-facing reserved
+            // names are not. This must dedup with the same rule as dialogs.
+            { id: "v4", path: "views/recent", tags: ["view"], metadata: {} },
             // A legacy saved-view — §8 is void; excluded from the band.
             {
               id: "v3",
@@ -438,6 +441,7 @@ describe("useNavBands (hook)", () => {
     const ids = views?.items.map((i) => i.id) ?? [];
     expect(ids).toContain("view-v1");
     expect(ids).not.toContain("view-v2"); // Views/Pinned is a default page
+    expect(ids).not.toContain("view-v4"); // case variant of Views/Recent
     expect(ids).not.toContain("view-v3"); // legacy saved-view — §8 void
     expect(ids.at(-1)).toBe("new-view"); // the permanent trailing affordance
   });

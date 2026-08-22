@@ -23,6 +23,13 @@ export const DEFAULT_VIEW_PATHS: readonly string[] = [
   ARCHIVE_VIEW_PATH,
 ];
 
+export function isDefaultViewPath(path: string | null | undefined): boolean {
+  const normalized = path?.toLowerCase();
+  return (
+    normalized !== undefined && DEFAULT_VIEW_PATHS.some((item) => item.toLowerCase() === normalized)
+  );
+}
+
 // The canonical path prefix new views are created under (VIEWS-RENDER-SPEC
 // §6 creation flow). The old `UI/Views/` saved-filter writer was retired;
 // every human creation path now writes this shape.

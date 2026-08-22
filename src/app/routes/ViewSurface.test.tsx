@@ -325,7 +325,11 @@ describe("ViewSurface", () => {
     };
     const fetchImpl = installFetch({
       note,
-      views: [note, { ...note, id: "v2", path: "Views/a-b" }],
+      views: [
+        note,
+        { ...note, id: "v2", path: "Views/a-b" },
+        { ...note, id: "v3", path: "Collections/Weekly review" },
+      ],
       results: [],
     });
 
@@ -347,17 +351,54 @@ describe("ViewSurface", () => {
     fireEvent.change(input, { target: { value: "a/b" } });
     expect(within(dialog).getByText(/already exists/i)).toBeInTheDocument();
 
+    // Collision follows the label the rail renders, even when the other
+    // #view note lives outside the canonical Views/ folder.
     fireEvent.change(input, { target: { value: "Weekly review" } });
+    expect(within(dialog).getByText(/already exists/i)).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "Quarterly review" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
 
-    await screen.findByRole("heading", { name: "Weekly review" });
+    await screen.findByRole("heading", { name: "Quarterly review" });
     const patchCall = fetchImpl.mock.calls.find(
       ([, init]) => (init?.method ?? "GET").toUpperCase() === "PATCH",
     );
     expect(patchCall).toBeTruthy();
     expect(JSON.parse((patchCall?.[1]?.body as string) ?? "{}")).toMatchObject({
-      path: "Views/Weekly review",
+      path: "Views/Quarterly review",
       if_updated_at: "2026-07-17T00:00:00Z",
+    });
+  });
+
+  it("allows a case-only rename while still treating other views case-insensitively", async () => {
+    const note = {
+      id: "v1",
+      path: "Views/projects",
+      tags: ["view"],
+      updatedAt: "2026-07-17T00:00:00Z",
+      metadata: { kind: "list", query: JSON.stringify({ tag: "project" }) },
+    };
+    const fetchImpl = installFetch({ note, views: [note], results: [] });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "projects" });
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rename view" });
+    await waitFor(() => {
+      expect(within(dialog).queryByText(/checking existing views/i)).not.toBeInTheDocument();
+    });
+    fireEvent.change(within(dialog).getByLabelText("View name"), {
+      target: { value: "Projects" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+
+    await waitFor(() => {
+      const patchCall = fetchImpl.mock.calls.find(
+        ([, init]) => (init?.method ?? "GET").toUpperCase() === "PATCH",
+      );
+      expect(JSON.parse((patchCall?.[1]?.body as string) ?? "{}")).toMatchObject({
+        path: "Views/Projects",
+      });
     });
   });
 

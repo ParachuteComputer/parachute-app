@@ -22,7 +22,7 @@ import { type HomeStepId, deriveSteps } from "@/lib/home/checklist";
 import { useHasUserAuthoredNote } from "@/lib/home/use-has-user-note";
 import { useMapEarned, useVaultStore } from "@/lib/vault";
 import { useTagRoles } from "@/lib/vault/settings";
-import { DEFAULT_VIEW_PATHS } from "@/lib/views/defaults";
+import { isDefaultViewPath } from "@/lib/views/defaults";
 import { useViewList } from "@/lib/views/queries";
 import { primaryQueryTag } from "@/lib/views/query";
 import { decodeViewDef, isLegacySavedView } from "@/lib/views/schema";
@@ -449,7 +449,7 @@ function useNavBandsModel(): NavBand[] {
   const viewItems = useMemo(() => {
     if (!Array.isArray(viewList.data)) return [];
     return viewList.data
-      .filter((n) => !DEFAULT_VIEW_PATHS.includes(n.path ?? "") && !isLegacySavedView(n))
+      .filter((n) => !isDefaultViewPath(n.path) && !isLegacySavedView(n))
       .map((n) => {
         const def = decodeViewDef(n);
         const to = `/views/${encodeURIComponent(n.id)}`;
