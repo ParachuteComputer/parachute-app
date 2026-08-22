@@ -173,6 +173,30 @@ describe("toggleItalic / toggleStrikethrough / toggleCode", () => {
   });
 });
 
+describe("toggleCode — ragged selection crossing emphasis (#144)", () => {
+  it("expands through the complete strong-emphasis span before adding backticks", () => {
+    const doc = "a **bold** b `code` d";
+    const { state } = apply(toggleCode, doc, {
+      anchor: doc.indexOf("bold") + 1,
+      head: doc.indexOf("code") + 2,
+    });
+
+    expect(state.doc.toString()).toBe("a `**bold** b code` d");
+    expect(syntaxTree(state).topNode.getChild("Paragraph")?.getChild("InlineCode")).not.toBeNull();
+  });
+
+  it("does the same across italic emphasis", () => {
+    const doc = "a *italic* b `code` d";
+    const { state } = apply(toggleCode, doc, {
+      anchor: doc.indexOf("italic") + 1,
+      head: doc.indexOf("code") + 2,
+    });
+
+    expect(state.doc.toString()).toBe("a `*italic* b code` d");
+    expect(syntaxTree(state).topNode.getChild("Paragraph")?.getChild("InlineCode")).not.toBeNull();
+  });
+});
+
 describe("wrapLink", () => {
   it("wraps a selection as [text]() and parks the cursor inside the parens", () => {
     const { state } = apply(wrapLink, "see docs here", { anchor: 4, head: 8 });
