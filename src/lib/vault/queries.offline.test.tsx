@@ -131,11 +131,25 @@ describe("mutation hooks — offline dispatch", () => {
     await waitFor(() => {
       expect(result.current.sync.db).not.toBeNull();
     });
+    const existing = {
+      id: "srv-42",
+      path: "Views/Old name",
+      tags: ["view"],
+      createdAt: "2026-04-20T00:00:00Z",
+    };
+    act(() => {
+      result.current.qc.setQueryData(["note", "v1", "srv-42"], existing);
+      result.current.qc.setQueryData(["viewList", "v1", "view"], [existing]);
+    });
     const invalidate = vi.spyOn(result.current.qc, "invalidateQueries");
     await act(async () => {
-      await result.current.mutation.mutateAsync({ content: "# updated" });
+      await result.current.mutation.mutateAsync({ content: "# updated", path: "Views/New name" });
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notesForDateViews", "v1"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["viewList", "v1"] });
+    expect(result.current.qc.getQueryData<{ path: string }[]>(["viewList", "v1", "view"])).toEqual([
+      expect.objectContaining({ id: "srv-42", path: "Views/New name" }),
+    ]);
     const sharedDb = await openLensDB();
     const rows = await listPending(sharedDb, "v1");
     expect(rows[0].mutation.kind).toBe("update-note");

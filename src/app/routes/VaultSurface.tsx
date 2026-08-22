@@ -48,7 +48,7 @@ import {
   isFiltersNonEmpty,
   searchParamsToFilters,
 } from "@/lib/views/all-notes";
-import { DEFAULT_VIEW_PATHS, type DefaultPageId, viewPathForName } from "@/lib/views/defaults";
+import { type DefaultPageId, viewNameCollides, viewPathForName } from "@/lib/views/defaults";
 import { useDefaultViewDef, useViewList } from "@/lib/views/queries";
 import { queryTags } from "@/lib/views/query";
 import { decodeViewDef } from "@/lib/views/schema";
@@ -1176,10 +1176,7 @@ function SaveViewDialog({
 }) {
   const [name, setName] = useState("");
   const trimmed = name.trim();
-  const candidatePath = viewPathForName(trimmed).toLowerCase();
-  const collides =
-    DEFAULT_VIEW_PATHS.some((path) => path.toLowerCase() === candidatePath) ||
-    existingNames.some((name) => viewPathForName(name).toLowerCase() === candidatePath);
+  const collides = viewNameCollides(trimmed, existingNames.map(viewPathForName));
   const canSave = trimmed.length > 0 && !collides && !isSaving;
 
   return (
