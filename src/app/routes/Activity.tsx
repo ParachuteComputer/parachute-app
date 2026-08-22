@@ -57,7 +57,7 @@ export function Activity() {
       {notes.isPending ? (
         <ActivitySkeleton />
       ) : notes.isError ? (
-        <ErrorBlock error={notes.error} />
+        <ErrorBlock error={notes.error} retry={() => notes.refetch()} />
       ) : events.length === 0 ? (
         <EmptyBlock />
       ) : (
@@ -156,7 +156,7 @@ function ActivitySkeleton() {
   );
 }
 
-function ErrorBlock({ error }: { error: Error }) {
+function ErrorBlock({ error, retry }: { error: Error; retry: () => void }) {
   const isAuth = error instanceof VaultAuthError;
   return (
     <ErrorState
@@ -167,7 +167,11 @@ function ErrorBlock({ error }: { error: Error }) {
           <Link to="/add" className="btn btn-primary">
             Reconnect vault
           </Link>
-        ) : undefined
+        ) : (
+          <button type="button" onClick={retry} className="btn btn-secondary">
+            Retry
+          </button>
+        )
       }
     />
   );
