@@ -24,7 +24,7 @@ export const useViewNote = useNote;
  * (no path prefix — tags are types, paths are filing, §6). Feeds the Rail
  * band; live-reconciled like every other note list.
  */
-export function useViewList(viewTag: string) {
+export function useViewList(viewTag: string, enabled = true) {
   const client = useActiveVaultClient();
   const activeId = useVaultStore((s) => s.activeVaultId);
 
@@ -36,11 +36,16 @@ export function useViewList(viewTag: string) {
   }, [viewTag]);
   const queryKey = useMemo(() => ["viewList", activeId, viewTag], [activeId, viewTag]);
 
-  const { isLive } = useLiveNotesQuery({ queryKey, params, client, enabled: !!viewTag });
+  const { isLive } = useLiveNotesQuery({
+    queryKey,
+    params,
+    client,
+    enabled: enabled && !!viewTag,
+  });
 
   return useQuery({
     queryKey,
-    enabled: !!client && !!viewTag,
+    enabled: enabled && !!client && !!viewTag,
     queryFn: () => client!.queryNotes(params),
     staleTime: isLive ? Number.POSITIVE_INFINITY : 30_000,
     refetchInterval: isLive ? false : 30_000,

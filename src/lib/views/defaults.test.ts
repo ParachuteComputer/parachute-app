@@ -7,6 +7,8 @@ import {
   builtInDefaultViewDef,
   defaultPagePath,
   resolveDefaultViewDef,
+  viewNameCollides,
+  viewPathForName,
 } from "./defaults";
 
 function note(overrides: Partial<Note>): Note {
@@ -39,6 +41,22 @@ describe("defaultPagePath", () => {
   it("points at the pack's canonical paths", () => {
     expect(defaultPagePath("pinned")).toBe(PINNED_VIEW_PATH);
     expect(defaultPagePath("archived")).toBe(ARCHIVE_VIEW_PATH);
+  });
+});
+
+describe("human view names", () => {
+  it("builds the canonical path and sanitizes path separators", () => {
+    expect(viewPathForName("  Weekly/Review  ")).toBe("Views/Weekly-Review");
+  });
+
+  it("detects default and saved-view collisions after sanitizing", () => {
+    expect(viewNameCollides("Recent", [])).toBe(true);
+    expect(viewNameCollides("a/b", ["Views/a-b"])).toBe(true);
+    expect(viewNameCollides("Projects", ["Views/projects"])).toBe(true);
+  });
+
+  it("excludes the view's current path during rename", () => {
+    expect(viewNameCollides("Projects", ["Views/Projects"], "Views/Projects")).toBe(false);
   });
 });
 

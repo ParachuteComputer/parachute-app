@@ -837,6 +837,13 @@ export function useUpdateNote(id: string | undefined) {
     },
     onSuccess: (updated) => {
       qc.setQueryData(["note", activeId, id], updated);
+      // View titles come from their path basename. Keep every mounted nav
+      // projection in sync immediately when the generic note mutation renames
+      // a view; the invalidation below then reconciles the authoritative list.
+      qc.setQueriesData<Note[]>({ queryKey: ["viewList", activeId] }, (current) =>
+        current?.map((note) => (note.id === id ? updated : note)),
+      );
+      qc.invalidateQueries({ queryKey: ["viewList", activeId] });
       qc.invalidateQueries({ queryKey: ["notes", activeId] });
       qc.invalidateQueries({ queryKey: ["notesForDateViews", activeId] });
       qc.invalidateQueries({ queryKey: ["tags", activeId] });

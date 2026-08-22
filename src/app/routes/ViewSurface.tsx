@@ -28,7 +28,7 @@ import {
   searchParamsToConfigDraft,
   withLens,
 } from "@/lib/views/config";
-import { viewPathForName } from "@/lib/views/defaults";
+import { viewNameCollides, viewPathForName } from "@/lib/views/defaults";
 import {
   type ResolvedField,
   singleQueryTag,
@@ -38,7 +38,13 @@ import {
 } from "@/lib/views/fields";
 import { useViewModifiedBar } from "@/lib/views/modified-bar";
 import { partitionPinned } from "@/lib/views/partition";
-import { defaultSaveMode, useMySub, useViewNote, useViewResults } from "@/lib/views/queries";
+import {
+  defaultSaveMode,
+  useMySub,
+  useViewList,
+  useViewNote,
+  useViewResults,
+} from "@/lib/views/queries";
 import {
   type BaseChip,
   type ViewRefinements,
@@ -53,7 +59,7 @@ import {
 import { type ViewDef, type ViewProblem, decodeViewDef } from "@/lib/views/schema";
 import type { QueryKey } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useParams, useSearchParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 
 // The rendering pipeline (VIEWS-RENDER-SPEC §2):
 //
@@ -291,6 +297,36 @@ export function ViewCanvas({
   const modified = hasConfigDraft(draft) || hasRefinements(refinements);
   const showModifiedBar = modified && canSave;
   const [showSave, setShowSave] = useState(false);
+  const [showRename, setShowRename] = useState(false);
+  // Collision data is already warm when a nav projection is mounted. Keep it
+  // disabled otherwise until the person actually opens Rename, so this small
+  // affordance adds no route-load request of its own.
+  const renameViewList = useViewList(roles.view, showRename);
+  const renameView = useUpdateNote(backingNote?.id);
+  const navigate = useNavigate();
+  const pushToast = useToastStore((s) => s.push);
+  const existingViewPaths = useMemo(
+    () => (renameViewList.data ?? []).flatMap((note) => (note.path ? [note.path] : [])),
+    [renameViewList.data],
+  );
+  const onRename = async (name: string) => {
+    if (!backingNote) return;
+    try {
+      const updated = await renameView.mutateAsync({
+        path: viewPathForName(name),
+        ...(backingNote.updatedAt ? { if_updated_at: backingNote.updatedAt } : { force: true }),
+      });
+      pushToast(`Renamed view to "${decodeViewDef(updated).title}".`, "success");
+      setShowRename(false);
+      // A vault may derive a new note id from a path move. Follow the returned
+      // identity so refresh/back remain valid in either id model.
+      if (updated.id !== backingNote.id) {
+        navigate(`/views/${encodeURIComponent(updated.id)}`, { replace: true });
+      }
+    } catch (err) {
+      pushToast(`Could not rename view: ${(err as Error).message}`, "error");
+    }
+  };
   // Revert discards the exploration — clear the URL, write nothing.
   const revert = () => setSearchParams(new URLSearchParams(), { replace: true });
 
@@ -345,7 +381,12 @@ export function ViewCanvas({
     <div className={wide ? "page page-wide" : "page"}>
       {nav}
       <article className={showModifiedBar ? "pb-20" : undefined}>
-        <ViewHeader def={effDef} backingNote={backingNote} count={headerCount} />
+        <ViewHeader
+          def={effDef}
+          backingNote={backingNote}
+          count={headerCount}
+          onRename={backingNote ? () => setShowRename(true) : undefined}
+        />
         {/* The controls row (polish V3): lens pill first (the view's identity),
           the organize-by pill second (board/calendar only — and it renders
           even with nothing to offer), Fields third. Each pill tints its
@@ -427,6 +468,18 @@ export function ViewCanvas({
             roles={roles}
             onClose={() => setShowSave(false)}
             onSaved={revert}
+          />
+        ) : null}
+        {showRename && backingNote ? (
+          <RenameViewDialog
+            currentName={def.title}
+            currentPath={backingNote.path}
+            existingPaths={existingViewPaths}
+            isChecking={renameViewList.isPending}
+            checkFailed={renameViewList.isError}
+            isRenaming={renameView.isPending}
+            onCancel={() => setShowRename(false)}
+            onRename={onRename}
           />
         ) : null}
         {/* The on-ramp's editor — the shipped Tags-page schema editor, mounted
@@ -511,12 +564,14 @@ function ViewHeader({
   def,
   backingNote,
   count,
+  onRename,
 }: {
   def: ViewDef;
   backingNote: Note | null;
   /** When set, the "size of what you're looking at" line under the title (a
       paged derived tag page passes the tag's note count). */
   count?: number;
+  onRename?: () => void;
 }) {
   return (
     <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-5">
@@ -535,12 +590,17 @@ function ViewHeader({
           tag page (`backingNote === null`) builds no edit link from its
           synthetic id — there's nothing there to open. */}
       {backingNote ? (
-        <Link
-          to={`/n/${encodeURIComponent(backingNote.id)}/edit`}
-          className="btn btn-secondary btn-touch"
-        >
-          Edit view note
-        </Link>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onRename} className="btn btn-secondary btn-touch">
+            Rename
+          </button>
+          <Link
+            to={`/n/${encodeURIComponent(backingNote.id)}/edit`}
+            className="btn btn-secondary btn-touch"
+          >
+            Edit view note
+          </Link>
+        </div>
       ) : null}
     </header>
   );
@@ -978,6 +1038,101 @@ function SortControl({
     >
       {value === "desc" ? "Newest first" : value === "asc" ? "Oldest first" : "Sort"}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rename — a name-level affordance that preserves the canonical Views/ path.
+// The raw note editor remains available for advanced edits, but nobody needs
+// to know the filing convention merely to change what the rail calls a view.
+// ---------------------------------------------------------------------------
+
+function RenameViewDialog({
+  currentName,
+  currentPath,
+  existingPaths,
+  isChecking,
+  checkFailed,
+  isRenaming,
+  onCancel,
+  onRename,
+}: {
+  currentName: string;
+  currentPath: string | undefined;
+  existingPaths: string[];
+  isChecking: boolean;
+  checkFailed: boolean;
+  isRenaming: boolean;
+  onCancel: () => void;
+  onRename: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState(currentName);
+  const trimmed = name.trim();
+  const candidatePath = viewPathForName(trimmed);
+  const unchanged = candidatePath.toLowerCase() === currentPath?.toLowerCase();
+  const collides = viewNameCollides(trimmed, existingPaths, currentPath);
+  const canRename =
+    trimmed.length > 0 && !unchanged && !collides && !isChecking && !checkFailed && !isRenaming;
+
+  return (
+    <div
+      className="dialog-overlay"
+      // biome-ignore lint/a11y/useSemanticElements: native <dialog> requires imperative showModal()/close(); this dialog is declarative
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rename-view-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isRenaming) onCancel();
+      }}
+    >
+      <div className="dialog-panel max-w-(--w-narrow)">
+        <h2 id="rename-view-title" className="mb-3 font-serif text-xl text-fg">
+          Rename view
+        </h2>
+        <label className="block text-sm">
+          <span className="mb-1 block text-fg-muted">Name</span>
+          <input
+            type="text"
+            value={name}
+            // biome-ignore lint/a11y/noAutofocus: dialog focus
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && canRename) void onRename(trimmed);
+              if (event.key === "Escape" && !isRenaming) onCancel();
+            }}
+            aria-label="View name"
+            className="input input-on-bg"
+          />
+        </label>
+        {isChecking ? <p className="mt-2 text-xs text-fg-dim">Checking existing views…</p> : null}
+        {checkFailed ? (
+          <p className="mt-2 text-xs text-danger">
+            Existing view names couldn't be checked. Close this dialog and try again.
+          </p>
+        ) : collides ? (
+          <p className="mt-2 text-xs text-danger">A view with that name already exists.</p>
+        ) : null}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isRenaming}
+            className="btn btn-secondary btn-touch"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => canRename && void onRename(trimmed)}
+            disabled={!canRename}
+            className="btn btn-primary btn-touch"
+          >
+            {isRenaming ? "Renaming…" : "Rename"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -33,6 +33,25 @@ export function viewPathForName(name: string): string {
   return `${VIEWS_PATH_PREFIX}${safe || "Untitled view"}`;
 }
 
+/**
+ * Whether a human view name resolves to an occupied canonical path. Compare
+ * AFTER `viewPathForName` sanitizes it so `a/b` cannot slip past an existing
+ * `a-b`. `currentPath` is excluded for rename flows; unchanged names are
+ * rejected separately by the dialog.
+ */
+export function viewNameCollides(
+  name: string,
+  existingPaths: readonly string[],
+  currentPath?: string,
+): boolean {
+  const candidate = viewPathForName(name).toLowerCase();
+  const current = currentPath?.toLowerCase();
+  return [...DEFAULT_VIEW_PATHS, ...existingPaths].some((path) => {
+    const normalized = path.toLowerCase();
+    return normalized === candidate && normalized !== current;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Default-page cutover (VIEWS-RENDER-SPEC §7, wave 2a) — the built-in
 // fallback ViewDefs for the Pinned + Archive default pages, and the pure

@@ -1,7 +1,7 @@
 import { ViewSurface } from "@/app/routes/ViewSurface";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,6 +46,7 @@ function seedStore(token = "pvt_abc") {
 interface FetchState {
   note: Record<string, unknown>;
   results: Record<string, unknown>[];
+  views?: Record<string, unknown>[];
 }
 
 function installFetch(state: FetchState) {
@@ -53,10 +54,12 @@ function installFetch(state: FetchState) {
     const url = typeof input === "string" ? input : input.toString();
     const method = (init?.method ?? "GET").toUpperCase();
     if (method === "PATCH") {
+      const payload = JSON.parse((init?.body as string) ?? "{}");
+      state.note = { ...state.note, ...payload };
       return {
         ok: true,
         status: 200,
-        json: async () => ({ ...state.note, ...JSON.parse((init?.body as string) ?? "{}") }),
+        json: async () => state.note,
         text: async () => "",
       } as Response;
     }
@@ -74,6 +77,14 @@ function installFetch(state: FetchState) {
         ok: true,
         status: 200,
         json: async () => [state.note],
+        text: async () => "",
+      } as Response;
+    }
+    if (url.includes("tag=view")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => state.views ?? [],
         text: async () => "",
       } as Response;
     }
@@ -302,6 +313,52 @@ describe("ViewSurface", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^save$/i }));
     await screen.findByRole("dialog", { name: /save this view/i });
     expect(screen.getByLabelText(/save as new view/i)).toBeChecked();
+  });
+
+  it("renames through a safe view name, blocking reserved and sanitized duplicate paths", async () => {
+    const note = {
+      id: "v1",
+      path: "Views/Active projects",
+      tags: ["view"],
+      updatedAt: "2026-07-17T00:00:00Z",
+      metadata: { kind: "list", query: JSON.stringify({ tag: "project" }) },
+    };
+    const fetchImpl = installFetch({
+      note,
+      views: [note, { ...note, id: "v2", path: "Views/a-b" }],
+      results: [],
+    });
+
+    renderViewSurface();
+    await screen.findByRole("heading", { name: "Active projects" });
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Rename view" });
+    const input = within(dialog).getByLabelText("View name");
+    await waitFor(() => {
+      expect(within(dialog).queryByText(/checking existing views/i)).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(input, { target: { value: "Recent" } });
+    expect(within(dialog).getByText(/already exists/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Rename" })).toBeDisabled();
+
+    // Compare after canonical sanitization: a/b resolves to the occupied a-b.
+    fireEvent.change(input, { target: { value: "a/b" } });
+    expect(within(dialog).getByText(/already exists/i)).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "Weekly review" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+
+    await screen.findByRole("heading", { name: "Weekly review" });
+    const patchCall = fetchImpl.mock.calls.find(
+      ([, init]) => (init?.method ?? "GET").toUpperCase() === "PATCH",
+    );
+    expect(patchCall).toBeTruthy();
+    expect(JSON.parse((patchCall?.[1]?.body as string) ?? "{}")).toMatchObject({
+      path: "Views/Weekly review",
+      if_updated_at: "2026-07-17T00:00:00Z",
+    });
   });
 
   // --- Wave 2b: the board / gallery / calendar kinds ---------------------
