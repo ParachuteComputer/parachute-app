@@ -139,6 +139,54 @@ describe("notes-list queries request the lean shape (include_content=false)", ()
     expect(result.current.error).toBeInstanceOf(DateViewOverflowError);
   });
 
+  it("wires overflow-aware polling and focus policies into the date-view query", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "a", createdAt: "2026-08-02T00:00:00Z" },
+              { id: "b", createdAt: "2026-08-01T00:00:00Z" },
+            ]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const { result } = renderHook(
+      () =>
+        useNotesForDateViews({
+          field: "created_at",
+          from: "2026-08-01T00:00:00.000Z",
+          limit: 2,
+        }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={qc}>
+            <BrowserRouter>{children}</BrowserRouter>
+          </QueryClientProvider>
+        ),
+      },
+    );
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(DateViewOverflowError));
+
+    const query = qc
+      .getQueryCache()
+      .getAll()
+      .find((candidate) => candidate.queryKey[0] === "notesForDateViews");
+    expect(query).toBeDefined();
+    const observer = query!.observers[0];
+    expect(observer).toBeDefined();
+    expect((observer!.options.refetchInterval as (candidate: typeof query) => unknown)(query)).toBe(
+      false,
+    );
+    expect(
+      (observer!.options.refetchOnWindowFocus as (candidate: typeof query) => unknown)(query),
+    ).toBe(false);
+  });
+
   // The switcher and the graph/link hooks are NOT plain NoteRow lists — they
   // read content (Cmd+K first-line matching) and links (the graph), so they
   // stay FULL. Pin that they did not get swept into the lean opt-in.

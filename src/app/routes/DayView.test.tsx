@@ -193,6 +193,29 @@ describe("DayView — single day (?date drill-in)", () => {
     expect(screen.queryByRole("link", { name: /^new note$/i })).not.toBeInTheDocument();
   });
 
+  it("retries both halves of the created-or-edited day union", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error("created failed"))
+      .mockRejectedValueOnce(new Error("updated failed"))
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => [],
+        text: async () => "",
+      } as Response);
+    vi.stubGlobal("fetch", fetchImpl);
+    render(
+      <Wrap initial="/today?date=2026-04-10">
+        <DayView />
+      </Wrap>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
+    await screen.findByText(/nothing on 2026-04-10/i);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
   it("prev/next links point to the neighbouring day", async () => {
     installFetch([]);
     render(
