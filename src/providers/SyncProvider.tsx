@@ -308,8 +308,14 @@ export function SyncProvider({ children }: { children: ReactNode }): ReactNode {
   // lock closes the window outright. This acquisition QUEUES rather than
   // skipping (`underMirrorVaultLock`, not the engine's `ifAvailable` variant):
   // a button the user pressed must never silently no-op, so the wipe waits out
-  // the in-flight drain — bounded by the drain's page cap — behind the Settings
-  // row's own busy state.
+  // the in-flight drain behind the Settings row's own busy state.
+  //
+  // That wait is DEADLINED (`MIRROR_LOCK_WAIT_MS`). A holder wedged on a fetch
+  // that never resolves would otherwise keep this promise pending forever, and
+  // with it `Settings.onClear`'s `finally` — pinning `busy` at "clear" and
+  // leaving the entire Offline section inert with nothing reported. Past the
+  // deadline the acquisition rejects, the wipe does NOT run, and the rejection
+  // propagates to the caller's catch: the user is told and can retry.
   const clearOffline = useCallback(async () => {
     if (!db || !activeVaultId) return;
     await underMirrorVaultLock(activeVaultId, async () => {

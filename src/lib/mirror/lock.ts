@@ -13,9 +13,10 @@
 // only the cross-tab window reopens, which is exactly the pre-lock behaviour.
 //
 // Neither is re-entrant: a body that acquires the same vault's lock again will
-// stall (queueing) or take the locked branch (ifAvailable). Keep nested
-// sections outside the locked region — that is why the engine runs its sweep
-// and eviction AFTER the drain's lock section rather than inside it.
+// deadlock until the queueing helper's deadline expires, or take the locked
+// branch (ifAvailable). Keep nested sections outside the locked region — that
+// is why the engine runs its sweep and eviction AFTER the drain's lock section
+// rather than inside it.
 
 /** The per-vault lock name. One definition; never inline the template. */
 export function mirrorLockName(vaultId: string): string {
@@ -49,16 +50,45 @@ export async function withMirrorVaultLock<T>(
 }
 
 /**
- * Run `fn` under the per-vault mirror lock, WAITING for the current holder.
+ * How long a user-initiated acquisition will queue before giving up.
+ *
+ * The wait must be BOUNDED IN TIME, not just in work. The drain's page cap
+ * (`MAX_DRAIN_PAGES`) bounds the number of round trips, but each one is a fetch
+ * with no timeout of its own, so a single TCP black hole — captive portal, VPN
+ * drop, sleeping hub, a backgrounded tab caught mid-drain — holds the lock
+ * indefinitely. Without a deadline the queued caller waits forever and, worse,
+ * so does the `try/finally` around it: `Settings.onClear` would leave `busy`
+ * pinned at "clear" and the whole Offline section inert until a page reload,
+ * with nothing shown to the user. A rejection is strictly better than that
+ * wedge — the caller reports it and the user can retry.
+ */
+export const MIRROR_LOCK_WAIT_MS = 15_000;
+
+/**
+ * Run `fn` under the per-vault mirror lock, WAITING for the current holder up
+ * to `timeoutMs`, then REJECTING.
  *
  * For USER-INITIATED work ("Clear offline copy"): skipping would silently
  * no-op a button the user pressed, and running anyway is the very race we're
- * closing — so this one queues. A drain is bounded (page cap + per-page commits),
- * so the wait is the length of at most one in-flight drain, spent behind the
- * caller's own busy state.
+ * closing — so this one queues. Normally the wait is at most one in-flight
+ * drain, spent behind the caller's own busy state; past the deadline the
+ * acquisition is abandoned and the rejection surfaces as the caller's error
+ * path. `fn` does NOT run in that case, so the abandoned attempt writes nothing.
+ *
+ * `signal` is mutually exclusive with `ifAvailable`, which is why only this
+ * helper carries a deadline — `withMirrorVaultLock` never queues in the first
+ * place, so it cannot wedge.
  */
-export async function underMirrorVaultLock<T>(vaultId: string, fn: () => Promise<T>): Promise<T> {
+export async function underMirrorVaultLock<T>(
+  vaultId: string,
+  fn: () => Promise<T>,
+  timeoutMs: number = MIRROR_LOCK_WAIT_MS,
+): Promise<T> {
   const locks = webLocks();
   if (!locks) return fn();
-  return locks.request(mirrorLockName(vaultId), async () => await fn()) as Promise<T>;
+  return locks.request(
+    mirrorLockName(vaultId),
+    { signal: AbortSignal.timeout(timeoutMs) },
+    async () => await fn(),
+  ) as Promise<T>;
 }

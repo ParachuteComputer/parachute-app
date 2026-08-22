@@ -19,7 +19,12 @@ export {
   mirrorRowBytes,
   planEviction,
 } from "./evict";
-export { mirrorLockName, underMirrorVaultLock, withMirrorVaultLock } from "./lock";
+export {
+  MIRROR_LOCK_WAIT_MS,
+  mirrorLockName,
+  underMirrorVaultLock,
+  withMirrorVaultLock,
+} from "./lock";
 export { readNote, readNotesList } from "./read";
 export {
   type MirrorDiff,
