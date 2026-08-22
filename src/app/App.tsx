@@ -152,7 +152,7 @@ function BootGate() {
   // (we don't yet know who they are).
   if (!decision) {
     return (
-      <RouteErrorBoundary>
+      <RouteErrorBoundary resetKey="boot-loading">
         <BootLoading />
       </RouteErrorBoundary>
     );
@@ -166,7 +166,7 @@ function BootGate() {
       );
     case "signed-in":
       return (
-        <RouteErrorBoundary>
+        <RouteErrorBoundary resetKey="boot-signed-in">
           <Landing
             signedIn={{
               email: decision.email,
@@ -178,13 +178,13 @@ function BootGate() {
       );
     case "net-error":
       return (
-        <RouteErrorBoundary>
+        <RouteErrorBoundary resetKey="boot-net-error">
           <Landing netError={decision.message} onRetry={run} />
         </RouteErrorBoundary>
       );
     default:
       return (
-        <RouteErrorBoundary>
+        <RouteErrorBoundary resetKey="boot-front-door">
           <Landing />
         </RouteErrorBoundary>
       );
