@@ -2,6 +2,7 @@ import type { LensDB } from "@/lib/sync/db";
 import { isLocalId } from "@/lib/sync/id-map";
 import type { VaultClient } from "@/lib/vault/client";
 import { MIRROR_CEILING_BYTES, type MirrorEvictResult, evictOverCeiling } from "./evict";
+import { withMirrorVaultLock } from "./lock";
 import { collectProtectedIds, diffMirror, makeIsProtected } from "./reconcile";
 import {
   clearMirrorCursor,
@@ -266,22 +267,16 @@ export class MirrorEngine {
     }
   }
 
-  // Only one tab operates on a given vault at a time. `ifAvailable` means a tab
-  // that can't get the lock (another holds it) skips instead of queuing behind
-  // it. Degrades to running directly where Web Locks is unavailable (older
-  // browsers, jsdom under tests). Generic so the drain and the sweep share the
-  // same per-vault lock name.
+  // Only one tab operates on a given vault at a time. The lock itself lives in
+  // `./lock` so every writer of this vault's mirror — the drain, the sweep, and
+  // SyncProvider's "Clear offline copy" — serializes against the SAME name;
+  // this stays a thin method so the call sites below read unchanged.
   private async withVaultLock<T>(
     vaultId: string,
     onLocked: () => T,
     fn: () => Promise<T>,
   ): Promise<T> {
-    const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
-    if (!locks?.request) return fn();
-    return locks.request(`mirror:${vaultId}`, { ifAvailable: true }, async (lock) => {
-      if (!lock) return onLocked();
-      return fn();
-    });
+    return withMirrorVaultLock(vaultId, onLocked, fn);
   }
 
   private async drainCursor(
