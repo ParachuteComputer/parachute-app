@@ -141,13 +141,23 @@ function BootGate() {
     return <Navigate to={`/add?${searchParams.toString()}`} replace />;
   }
   // A vault already lives on this device — the surface owns it, Recent lens.
-  if (activeVault) return <VaultSurface lens="recent" />;
+  if (activeVault) {
+    return (
+      <RouteErrorBoundary>
+        <VaultSurface lens="recent" />
+      </RouteErrorBoundary>
+    );
+  }
   // Resolving the session (brief) — a calm neutral loader, not "signing you in"
   // (we don't yet know who they are).
   if (!decision) return <BootLoading />;
   switch (decision.kind) {
     case "home":
-      return <VaultSurface lens="recent" />;
+      return (
+        <RouteErrorBoundary>
+          <VaultSurface lens="recent" />
+        </RouteErrorBoundary>
+      );
     case "signed-in":
       return (
         <Landing
@@ -394,7 +404,14 @@ function AppShell() {
                     declaration order (see App.test.tsx's "/settings wins"
                     guard), but the order stays literal/readable here too.
                   */}
-                <Route path="/notes" element={<VaultSurface />} />
+                <Route
+                  path="/notes"
+                  element={
+                    <RouteErrorBoundary>
+                      <VaultSurface />
+                    </RouteErrorBoundary>
+                  }
+                />
                 {/*
                     /all is the pre-W2-7 address — a shim to /notes,
                     preserving any query string. NAVIGATION.md: (a) redirect
