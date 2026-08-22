@@ -11,6 +11,7 @@ describe("date-view overflow query policy", () => {
     const error = new DateViewOverflowError(5000);
     expect(error.name).toBe("DateViewOverflowError");
     expect(error.message).toContain("5,000-note safety ceiling");
+    expect(error.message).toContain("Retry after narrowing");
     expect(isDateViewOverflowError(error)).toBe(true);
     expect(isDateViewOverflowError(new Error(error.message))).toBe(false);
   });

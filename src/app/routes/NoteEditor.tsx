@@ -394,8 +394,8 @@ function EditorSurface({ note }: { note: Note }) {
           ) : null}
           {isDefaultViewPath(draft.path) ? (
             <p className="mt-1 text-xs text-danger">
-              This path is reserved for a built-in view. A #view note saved here will not appear in
-              the Views rail.
+              This path is reserved for a built-in view. Notes saved here will not appear in the
+              Views rail.
             </p>
           ) : null}
         </header>
