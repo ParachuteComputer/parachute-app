@@ -54,10 +54,13 @@ function findMarkNode(
   return null;
 }
 
-// Every `nodeName` node whose range intersects [from, to) at all — including
-// a node only PARTIALLY covered by the selection. Used by the ragged-
-// selection path below; `findMarkNode` above only recognizes the clean,
-// node-aligned case.
+// Every `nodeName` or inline-code node whose range intersects [from, to) at
+// all — including a node only PARTIALLY covered by the selection. Used by
+// the ragged-selection path below; `findMarkNode` above only recognizes the
+// clean, node-aligned case. Inline code joins every normalization because
+// its parse precedence can swallow a newly inserted closing emphasis marker
+// when a selection ends inside it. Expanding through the whole code span
+// keeps its backticks paired before the outer marker is written.
 function findOverlappingMarks(
   state: EditorState,
   from: number,
@@ -69,7 +72,7 @@ function findOverlappingMarks(
     from,
     to,
     enter(nodeRef) {
-      if (nodeRef.name === nodeName) nodes.push(nodeRef.node);
+      if (nodeRef.name === nodeName || nodeRef.name === "InlineCode") nodes.push(nodeRef.node);
     },
   });
   return nodes;

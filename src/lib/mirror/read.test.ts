@@ -55,7 +55,55 @@ describe("readNotesList — faithful evaluator over the mirror", () => {
     await upsertMirrorNote(db, "v1", note("n1"));
     expect(await readNotesList(db, "v1", params({ expand: "subtypes" }))).toBeNull();
     expect(await readNotesList(db, "v1", params({ order_by: "updated_at" }))).toBeNull();
-    expect(await readNotesList(db, "v1", params({ exclude_tag: "#x" }))).toBeNull();
+  });
+
+  it("reproduces exclude_tag and bracket date filters offline", async () => {
+    await upsertMirrorNotes(db, "v1", [
+      note("old", {
+        tags: ["active"],
+        createdAt: "2026-07-01T00:00:00Z",
+        updatedAt: "2026-08-10T12:00:00Z",
+      }),
+      note("archived", {
+        tags: ["archived"],
+        createdAt: "2026-08-09T00:00:00Z",
+        updatedAt: "2026-08-11T12:00:00Z",
+      }),
+      note("stale", {
+        tags: ["active"],
+        createdAt: "2026-08-08T00:00:00Z",
+        updatedAt: "2026-07-20T12:00:00Z",
+      }),
+    ]);
+    const rows = await readNotesList(
+      db,
+      "v1",
+      params({
+        "meta[updated_at][gte]": "2026-08-01T00:00:00Z",
+        "meta[updated_at][lt]": "2026-09-01T00:00:00Z",
+        exclude_tag: "archived",
+        sort: "desc",
+        limit: "5000",
+      }),
+    );
+    expect(rows?.map((row) => row.id)).toEqual(["old"]);
+  });
+
+  it("refuses malformed or cross-column bracket date filters", async () => {
+    await upsertMirrorNote(db, "v1", note("n1"));
+    expect(
+      await readNotesList(db, "v1", params({ "meta[updated_at][gte]": "not-a-date" })),
+    ).toBeNull();
+    expect(
+      await readNotesList(
+        db,
+        "v1",
+        params({
+          "meta[created_at][gte]": "2026-08-01T00:00:00Z",
+          "meta[updated_at][lt]": "2026-09-01T00:00:00Z",
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("ignores include_content (shape-only) and serves the full row anyway", async () => {

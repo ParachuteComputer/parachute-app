@@ -37,6 +37,14 @@ export function shiftDay(key: string, delta: number): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+// REST date filters compare UTC timestamps, while the app's chronological
+// surfaces speak in local calendar days. Convert a local day boundary to its
+// exact UTC instant so a midnight offset (including DST) never moves a note
+// into the neighboring visible day.
+export function localDayBoundaryIso(key: string): string | null {
+  return parseDateKey(key)?.toISOString() ?? null;
+}
+
 export function currentMonthKey(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
 }

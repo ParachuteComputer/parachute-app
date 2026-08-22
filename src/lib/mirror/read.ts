@@ -32,12 +32,13 @@ export async function readNote(db: LensDB, vaultId: string, id: string): Promise
 // `include_content`, which only shapes the RESPONSE, and the mirror always
 // holds full bodies). `search` is handled explicitly (→ null: FTS can't be
 // reproduced client-side). Any param outside this set means a query shape we
-// can't guarantee fidelity for (expand / exclude_tag / meta[…] / near /
-// order_by / a future param) — so `readNotesList` returns null and the caller
+// can't guarantee fidelity for (expand / near / order_by / a future param) —
+// so `readNotesList` returns null and the caller
 // stays network-only rather than risk a divergent list.
 const FAITHFUL_PARAMS = new Set([
   "tag",
   "tag_match",
+  "exclude_tag",
   "path_prefix",
   "has_tags",
   "has_links",
@@ -50,7 +51,9 @@ const FAITHFUL_PARAMS = new Set([
 // Vault's default page size when `limit` is absent/non-numeric
 // (parachute-vault core `notes.ts`). The app's list hooks always send an
 // explicit limit, so this is only a backstop.
-const DEFAULT_LIMIT = 100;
+const DEFAULT_LIMIT = 50;
+
+const DATE_FILTER_PARAM = /^meta\[(created_at|updated_at)\]\[(gte|lt)\]$/;
 
 // Serve a list query from the mirror. Returns `null` when the query uses a
 // feature outside the faithful subset (notably `search`) — the caller then
@@ -94,7 +97,9 @@ export async function readNotesList(
   for (const key of params.keys()) {
     // `search` is a real query the app sends but FTS isn't reproducible
     // offline; every other non-faithful param is a shape we don't model.
-    if (key === "search" || !FAITHFUL_PARAMS.has(key)) return null;
+    if (key === "search" || (!FAITHFUL_PARAMS.has(key) && !DATE_FILTER_PARAM.test(key))) {
+      return null;
+    }
   }
 
   let rows = (await listMirrorNotes(db, vaultId)) as Note[];
@@ -115,6 +120,39 @@ export async function readNotesList(
         return all ? wanted.every((w) => tags.includes(w)) : wanted.some((w) => tags.includes(w));
       });
     }
+  }
+
+  // Excluded tags use the same comma-joined/repeatable list grammar as the
+  // server. Any matching tag removes the row.
+  const excludedTags = params
+    .getAll("exclude_tag")
+    .flatMap((value) => value.split(","))
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  if (excludedTags.length > 0) {
+    rows = rows.filter((note) => !excludedTags.some((tag) => note.tags?.includes(tag)));
+  }
+
+  // Bracket date filters lower to one real vault timestamp column. Preserve
+  // the half-open server contract: gte is inclusive, lt is exclusive. Reject
+  // malformed/duplicate/cross-column shapes rather than guessing offline.
+  const dateEntries = [...params.keys()]
+    .filter((key) => DATE_FILTER_PARAM.test(key))
+    .map((key) => ({ key, match: key.match(DATE_FILTER_PARAM)! }));
+  const dateFields = new Set(dateEntries.map(({ match }) => match[1]));
+  if (dateFields.size > 1) return null;
+  for (const { key, match } of dateEntries) {
+    const values = params.getAll(key);
+    if (values.length !== 1) return null;
+    const bound = Date.parse(values[0]!);
+    if (!Number.isFinite(bound)) return null;
+    const field = match[1] as "created_at" | "updated_at";
+    const op = match[2] as "gte" | "lt";
+    rows = rows.filter((note) => {
+      const raw = field === "created_at" ? note.createdAt : note.updatedAt;
+      const timestamp = raw ? Date.parse(raw) : Number.NaN;
+      return Number.isFinite(timestamp) && (op === "gte" ? timestamp >= bound : timestamp < bound);
+    });
   }
 
   const prefix = params.get("path_prefix");

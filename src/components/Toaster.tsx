@@ -29,10 +29,8 @@ export function Toaster() {
           key={t.id}
           className={`enter-rise pointer-events-auto flex max-w-md items-center gap-3 rounded-lg border px-4 py-2 text-sm shadow-lift backdrop-blur ${
             t.tone === "error"
-              ? // Parens form, not brackets: Tailwind's `[--foo]` bracket syntax takes the
-                // value literally (no var() wrap) — it was silently compiling to the invalid
-                // `color: --color-danger` on main. `(--foo)` is the CSS-var shorthand that
-                // does wrap (same form PR 1 already relies on for `duration-(--dur-move)`).
+              ? // Parenthesis form, not bare custom-property brackets: Tailwind otherwise takes the
+                // value literally (no var() wrap). The `(--foo)` shorthand does wrap it.
                 "border-(--color-danger-border) bg-(--color-danger-soft) text-(--color-danger)"
               : t.tone === "success"
                 ? "border-accent/40 bg-accent/10 text-accent"

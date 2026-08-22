@@ -92,7 +92,7 @@ describe("DayView — single day (?date drill-in)", () => {
   });
 
   it("buckets notes into 'created today' and 'edited today' sections", async () => {
-    installFetch([
+    const fetchImpl = installFetch([
       {
         id: "n1",
         path: "Morning.md",
@@ -125,6 +125,26 @@ describe("DayView — single day (?date drill-in)", () => {
     expect(screen.getByText("Earlier")).toBeInTheDocument();
     expect(screen.getByText(/edited today \(1\)/i)).toBeInTheDocument();
     expect(screen.queryByText("Unrelated")).not.toBeInTheDocument();
+    const queries = fetchImpl.mock.calls
+      .map(([input]) => new URL(String(input)).searchParams)
+      .filter(
+        (params) => params.has("meta[created_at][gte]") || params.has("meta[updated_at][gte]"),
+      );
+    expect(queries).toHaveLength(2);
+    expect(
+      queries
+        .map((params) => (params.has("meta[created_at][gte]") ? "created_at" : "updated_at"))
+        .sort(),
+    ).toEqual(["created_at", "updated_at"]);
+    for (const params of queries) {
+      expect(params.get("limit")).toBe("5000");
+      expect(params.get("meta[created_at][gte]") ?? params.get("meta[updated_at][gte]")).toBe(
+        new Date(2026, 3, 18).toISOString(),
+      );
+      expect(params.get("meta[created_at][lt]") ?? params.get("meta[updated_at][lt]")).toBe(
+        new Date(2026, 3, 19).toISOString(),
+      );
+    }
   });
 
   it("renders 'On <date>' header with date param", async () => {

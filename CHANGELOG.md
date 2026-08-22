@@ -1,3 +1,21 @@
+## [0.22.12] - 2026-08-21
+
+**The daily-driver batch: saved views appear where you look, formatting toggles stop silently failing, boot stops fetching 5,000 notes, and three chronic test flakes die.** Eight PRs, every one through an independent sandboxed review with mutation/live probes; three were bounced and re-verified before landing. (Bookkeeping note: 0.22.10 and 0.22.11 shipped without changelog entries — app#149 tracks the backfill; this entry covers only 0.22.12.)
+
+- **"Save view" writes the canonical shape the rail actually reads (#141, fixes #127).** The All-notes save wrote the legacy saved-view format, which the rail's Views band excludes — saved views were invisible where users look first. Now writes `#view` / `Views/<name>` (verified field-for-field against the band's query), preserves the active query including archived-exclusion, and seeds the view-list cache so the rail updates immediately. Existing legacy `UI/Views/` saved filters remain as notes but no longer appear anywhere in the UI (no migration — per the #127 scope cut); re-save from All notes. Follow-ups from review landed in #142: reserved default names and sanitized duplicates blocked in the dialog.
+
+- **Bold/italic across an inline-code span produces real formatting (#142, fixes #58).** Toggling bold over a selection spanning bold + italic + inline code inserted the closing `**` inside the code span — literal asterisks, zero effect. The ragged-selection union now expands through intersecting code spans; an exhaustive positional sweep found zero marker-parity violations. Known behavior note: a selection merely touching a code span absorbs the whole span into the toggled range, consistent with the editor's touch-a-mark convention. The symmetric gap in the code toggle is app#144.
+
+- **Date views request their real windows with an honest ceiling (#146, fixes #110).** Boot ran a `limit=5000` fetch-everything query on every visit. Recent/Activity/Calendar/Day now send exact local-midnight date brackets (DST-verified in four timezones) with an explicit 5,000-row safety ceiling that ERRORS loudly instead of truncating silently — the first cut of this fix dropped `limit` entirely and fell into the vault's default of 50, which review caught live (Recent's 419-note window came back as 50 rows). The offline mirror evaluates the same brackets edge-for-edge, and in-app edits/deletes now invalidate the date views. Behavior change: Activity lists the current + previous 29 local days, matching its "Last 30 days" header — older history is no longer listed.
+
+- **Tailwind `[--var]` utilities compile again (#145, fixes #41).** The bracket syntax emitted invalid CSS that was silently dropped — including the WCAG-AA on-accent text fix. The last live usage is repaired, the misleading guide corrected, and a source-level guard test fails the suite if the pattern returns (guard-coverage follow-up: app#147).
+
+- **meta.json in the npm tarball carries the real version (#139, fixes #136).** It was hand-maintained and stuck at 0.1.3 since forever; now derived from package.json at pack time, validated before write, with tarball assertions in both CI and the publish workflow.
+
+- **Three chronic flakes root-caused, not band-aided (#140, #143 — part of #57).** nav-history waited out a fixed 3.2s sleep for a 3s poll; now waits on the actual post-poll state. Rail's helper drains in-flight fetches; the markdown test waits on the rendered nodes it asserts. CI-log archaeology showed Rail never actually failed in the blamed runs — the real failures were the navLog race fixed in #137/#138 (#120 closed against them). #57 stays open: an AppFocusMode face was reproduced during review and remains uncharacterized.
+
+- **The sync queue sends `transcribe: false` instead of dropping it (#128).** Rode `next` since 08-14.
+
 ## [0.22.9] - 2026-07-27
 
 **A 26-minute voice memo used to render as three "Transcript pending" placeholders with only one transcript actually written back, out of order — while all three sat complete in attachment metadata. Nothing was lost; the write-back was broken.**

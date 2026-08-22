@@ -352,7 +352,7 @@ describe("the three-band navigation contract (notes#147, amended for tablet)", (
     expect(root?.className).not.toMatch(CLOSED_WIDTH);
     // No left-inset padding here: body single-pays it for every normal-flow
     // element on the page (including this sticky-in-flow drawer), so the
-    // drawer must not add its own `pl-[env(...)]` on top — that would
+    // drawer must not add its own safe-area padding on top — that would
     // double-pay the inset on a notched device in landscape.
     expect(root?.className).not.toMatch(/pl-\[env\(safe-area-inset-left\)\]/);
     // Docked = an in-flow flex sibling of the content column, so the content

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ViewSurface (views-wave-1, VIEWS-RENDER-SPEC): the rendering pipeline —
 // decode → (+ refinements) → execute → partition → list. Fetch-stub style
-// mirrors VaultSurface.savedViews.test.tsx: one fetchImpl differentiating
+// uses one fetchImpl differentiating
 // by URL shape, since `getNote` and `queryNotes` both hit `/api/notes` with
 // different query params.
 

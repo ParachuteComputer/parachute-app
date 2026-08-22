@@ -41,15 +41,6 @@ vi.mock("@/lib/vault", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/saved-views/queries", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/saved-views/queries")>();
-  return {
-    ...actual,
-    useSavedViews: () => ({ data: [], isPending: false, error: null }),
-    useSaveView: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  };
-});
-
 vi.mock("@/lib/path-tree", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/path-tree")>();
   return { ...actual, usePathTreeMode: () => ({ mode: "never", setMode: vi.fn() }) };

@@ -174,7 +174,7 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
   });
 
   it("leads with the vault name as the serif masthead (identity everywhere)", async () => {
-    installFetch(SEED_ONLY);
+    const fetchImpl = installFetch(SEED_ONLY);
     render(
       <Wrap>
         <VaultSurface lens="recent" />
@@ -184,6 +184,12 @@ describe("VaultSurface — the Recent lens (LZ-4, formerly Home)", () => {
     // identity threaded through the whole app.
     expect(await screen.findByRole("heading", { level: 1, name: "default" })).toBeInTheDocument();
     expect(screen.getByText(/everything here is yours/i)).toBeInTheDocument();
+    const dateQuery = fetchImpl.mock.calls
+      .map(([input]) => new URL(String(input)).searchParams)
+      .find((params) => params.has("meta[updated_at][gte]"));
+    expect(dateQuery).toBeDefined();
+    expect(dateQuery!.get("exclude_tag")).toBe("archived");
+    expect(dateQuery!.get("limit")).toBe("5000");
   });
 
   it("wears the lens label over the list — RECENT · what you've touched lately", async () => {

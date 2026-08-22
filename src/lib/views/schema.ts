@@ -8,8 +8,9 @@ import type { Note } from "@/lib/vault/types";
 //
 // The spec's §8 (a legacy `{kind:"saved-view",filters}` adapter for old
 // `UI/Views/` notes) is VOID — that feature is unused in practice (Aaron,
-// 2026-07-17); this module never decodes that shape. `src/lib/saved-views/`
-// stays untouched as dead code for now (a follow-up deletes it outright).
+// 2026-07-17); this module never decodes that shape. The old writer has been
+// retired; the predicate below only keeps already-existing notes out of the
+// canonical Views band.
 
 // "table" (views train D) is additive on the wire: any decoder that predates
 // it — old app versions included — hits the unknown-kind branch below and
