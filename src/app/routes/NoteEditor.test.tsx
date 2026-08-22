@@ -24,23 +24,30 @@ vi.mock("@/components/CodeMirrorEditor", async () => {
       },
       ref: React.Ref<{ insertAtCursor(s: string): void; focus(): void }>,
     ) {
-      const { value, onChange, onSave, onPasteFile } = props;
+      const { value, onChange, onSave, onCancel, onPasteFile } = props;
+      const textareaRef = React.useRef<HTMLTextAreaElement>(null);
       React.useImperativeHandle(
         ref,
         () => ({
           insertAtCursor(s: string) {
             onChange(value + s);
           },
-          focus() {},
+          focus() {
+            textareaRef.current?.focus();
+          },
         }),
         [value, onChange],
       );
       return (
         <>
           <textarea
+            ref={textareaRef}
             data-testid="cm-editor"
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") onCancel?.();
+            }}
           />
           {/* Stand-in for the ⌘S keybinding — CodeMirror wires it to onSave.
               Label deliberately avoids the word "save" so it doesn't collide
@@ -743,6 +750,21 @@ describe("NoteEditor — focus mode (EDITOR-STUDY §3.3)", () => {
       fireEvent.click(focusButton);
     });
     expect(useFocusMode.getState().on).toBe(true);
+  });
+
+  it("mouse-entry moves focus into the editor so Escape can still cancel (app#51)", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    const cm = await screen.findByTestId("cm-editor");
+
+    const focusButton = screen.getByRole("button", { name: /focus/i });
+    focusButton.focus();
+    expect(focusButton).toHaveFocus();
+    fireEvent.click(focusButton);
+
+    expect(cm).toHaveFocus();
+    fireEvent.keyDown(cm, { key: "Escape" });
+    expect(await screen.findByText("NoteViewPage:abc-123")).toBeInTheDocument();
   });
 
   it("collapses the header card (path input, tag editor, Save/Cancel/Revert) to the save-state whisper while on", async () => {

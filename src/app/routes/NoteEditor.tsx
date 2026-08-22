@@ -325,7 +325,13 @@ function EditorSurface({ note }: { note: Note }) {
               <DeleteNoteButton note={note} />
               <button
                 type="button"
-                onClick={() => setFocusOn(true)}
+                onClick={() => {
+                  // The button unmounts as focus mode collapses this header.
+                  // Hand focus to CodeMirror first so Escape still reaches
+                  // its cancel-edit binding instead of falling onto <body>.
+                  editorRef.current?.focus();
+                  setFocusOn(true);
+                }}
                 className="btn btn-ghost btn-touch"
                 title="Focus (⌘.)"
               >
