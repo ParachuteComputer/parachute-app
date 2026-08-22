@@ -150,7 +150,13 @@ function BootGate() {
   }
   // Resolving the session (brief) — a calm neutral loader, not "signing you in"
   // (we don't yet know who they are).
-  if (!decision) return <BootLoading />;
+  if (!decision) {
+    return (
+      <RouteErrorBoundary resetKey="boot-loading">
+        <BootLoading />
+      </RouteErrorBoundary>
+    );
+  }
   switch (decision.kind) {
     case "home":
       return (
@@ -160,14 +166,28 @@ function BootGate() {
       );
     case "signed-in":
       return (
-        <Landing
-          signedIn={{ email: decision.email, username: decision.username, vaults: decision.vaults }}
-        />
+        <RouteErrorBoundary resetKey="boot-signed-in">
+          <Landing
+            signedIn={{
+              email: decision.email,
+              username: decision.username,
+              vaults: decision.vaults,
+            }}
+          />
+        </RouteErrorBoundary>
       );
     case "net-error":
-      return <Landing netError={decision.message} onRetry={run} />;
+      return (
+        <RouteErrorBoundary resetKey="boot-net-error">
+          <Landing netError={decision.message} onRetry={run} />
+        </RouteErrorBoundary>
+      );
     default:
-      return <Landing />;
+      return (
+        <RouteErrorBoundary resetKey="boot-front-door">
+          <Landing />
+        </RouteErrorBoundary>
+      );
   }
 }
 

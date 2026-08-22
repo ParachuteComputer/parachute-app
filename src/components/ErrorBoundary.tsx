@@ -83,10 +83,20 @@ function RouteErrorCard({ error }: { error: Error }) {
  * even a repeat push to an identical URL), so it resets on strictly more
  * cases than any hand-assembled `pathname + search` string would.
  */
-export function RouteErrorBoundary({ children }: { children: ReactNode }) {
+export function RouteErrorBoundary({
+  children,
+  resetKey,
+}: {
+  children: ReactNode;
+  /** Override navigation-entry resets for stateful branches that own their lifecycle. */
+  resetKey?: string;
+}) {
   const location = useLocation();
   return (
-    <ErrorBoundary key={location.key} fallback={(error) => <RouteErrorCard error={error} />}>
+    <ErrorBoundary
+      key={resetKey ?? location.key}
+      fallback={(error) => <RouteErrorCard error={error} />}
+    >
       {children}
     </ErrorBoundary>
   );
