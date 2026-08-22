@@ -22,6 +22,7 @@ import { useToastStore } from "@/lib/toast/store";
 import { useNote, useUpdateNote, useVaultStore } from "@/lib/vault";
 import { type UpdateNotePayload, VaultAuthError, VaultConflictError } from "@/lib/vault/client";
 import type { Note, NoteAttachment } from "@/lib/vault/types";
+import { isDefaultViewPath } from "@/lib/views/defaults";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
@@ -390,6 +391,12 @@ function EditorSurface({ note }: { note: Note }) {
           </div>
           {pathChanged ? (
             <p className="mt-1 text-xs text-accent">Renaming moves the note — its id may change.</p>
+          ) : null}
+          {isDefaultViewPath(draft.path) ? (
+            <p className="mt-1 text-xs text-danger">
+              This path is reserved for a built-in view. A #view note saved here will not appear in
+              the Views rail.
+            </p>
           ) : null}
         </header>
       )}

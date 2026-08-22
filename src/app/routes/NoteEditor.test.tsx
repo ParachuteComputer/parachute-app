@@ -501,6 +501,20 @@ describe("NoteEditor route", () => {
     expect(screen.getByText(/renaming moves the note/i)).toBeInTheDocument();
   });
 
+  it("warns when a raw path edit would hide a view behind a reserved rail path", async () => {
+    installFetch({
+      "/api/notes": {
+        body: { ...baseNote, path: "Views/My view", tags: ["view"] },
+      },
+    });
+    renderAt("/n/abc-123/edit");
+
+    const pathInput = (await screen.findByLabelText(/note path/i)) as HTMLInputElement;
+    fireEvent.change(pathInput, { target: { value: "Views/Recent" } });
+    expect(screen.getByText(/reserved for a built-in view/i)).toBeInTheDocument();
+    expect(screen.getByText(/will not appear in the views rail/i)).toBeInTheDocument();
+  });
+
   it("drop file → uploads, inserts markdown, and links to the existing note", async () => {
     const fetchImpl = installFetch({
       "GET /api/notes": { body: baseNote },

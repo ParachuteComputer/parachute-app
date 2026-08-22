@@ -306,8 +306,16 @@ export function ViewCanvas({
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const existingViewPaths = useMemo(
-    () => (renameViewList.data ?? []).flatMap((note) => (note.path ? [note.path] : [])),
-    [renameViewList.data],
+    () =>
+      (renameViewList.data ?? [])
+        .filter((candidate) => candidate.id !== backingNote?.id)
+        .flatMap((candidate) => {
+          const titlePath = viewPathForName(decodeViewDef(candidate).title);
+          return candidate.path && candidate.path !== titlePath
+            ? [candidate.path, titlePath]
+            : [titlePath];
+        }),
+    [backingNote?.id, renameViewList.data],
   );
   const onRename = async (name: string) => {
     if (!backingNote) return;
@@ -1069,7 +1077,7 @@ function RenameViewDialog({
   const [name, setName] = useState(currentName);
   const trimmed = name.trim();
   const candidatePath = viewPathForName(trimmed);
-  const unchanged = candidatePath.toLowerCase() === currentPath?.toLowerCase();
+  const unchanged = candidatePath === currentPath;
   const collides = viewNameCollides(trimmed, existingPaths, currentPath);
   const canRename =
     trimmed.length > 0 && !unchanged && !collides && !isChecking && !checkFailed && !isRenaming;
