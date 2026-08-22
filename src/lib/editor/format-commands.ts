@@ -54,8 +54,9 @@ function findMarkNode(
   return null;
 }
 
-// Every `nodeName` or inline-code node whose range intersects [from, to) at
-// all — including a node only PARTIALLY covered by the selection. Used by
+// Every `nodeName`, inline-code node, or caller-supplied companion node whose
+// range intersects [from, to) at all — including a node only PARTIALLY covered
+// by the selection. Used by
 // the ragged-selection path below; `findMarkNode` above only recognizes the
 // clean, node-aligned case. Inline code joins every normalization because
 // its parse precedence can swallow a newly inserted closing emphasis marker
@@ -214,8 +215,8 @@ function makeToggleWrap(
   };
 }
 
-export const toggleBold = makeToggleWrap("StrongEmphasis", "EmphasisMark", "**");
-export const toggleItalic = makeToggleWrap("Emphasis", "EmphasisMark", "*");
+export const toggleBold = makeToggleWrap("StrongEmphasis", "EmphasisMark", "**", ["Strikethrough"]);
+export const toggleItalic = makeToggleWrap("Emphasis", "EmphasisMark", "*", ["Strikethrough"]);
 export const toggleStrikethrough = makeToggleWrap("Strikethrough", "StrikethroughMark", "~~");
 // Code's marker must also land outside any emphasis span a ragged selection
 // intersects. Otherwise an opening backtick can be inserted inside `**`/`*`
@@ -226,6 +227,7 @@ export const toggleStrikethrough = makeToggleWrap("Strikethrough", "Strikethroug
 export const toggleCode = makeToggleWrap("InlineCode", "CodeMark", "`", [
   "StrongEmphasis",
   "Emphasis",
+  "Strikethrough",
 ]);
 
 // Link is NOT toggle-aware (POLISH-WAVE PR 5b: "wraps [selection]() and
