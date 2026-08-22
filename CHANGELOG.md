@@ -58,6 +58,50 @@ Every new/changed assertion was watched failing first, including a scratch repro
 
 (Bookkeeping note, app#149: this heading is correctly labeled. #126's own merge commit (`eea0623`) is the `v0.22.9` tag target and is the sole commit that ever set `package.json` to `0.22.9`; npm published `0.22.9` ~18 minutes later. The 0.22.10 window (`v0.22.9..v0.22.10`) contains only #129 — #119/#121/#123 were already shipped and already have their own headings below, at 0.22.6/0.22.7/0.22.8. Those three intermediate versions were never tagged nor published individually — in that stretch only 0.22.5 and 0.22.9 ever reached npm, and only `v0.22.9` got a git tag — so npm's actual `0.22.9` tarball is the union of the 0.22.6–0.22.9 diffs even though each got its own changelog entry; this entry documents only the slice #126 itself added.)
 
+## [0.22.8] - 2026-07-27
+
+**The Filters panel no longer pushes the results list off the bottom of the
+screen — it's an overlay now, and the active filters stay visible when it's
+closed.**
+
+Aaron's complaint, second half: "how we're doing the filtering, how we're
+selecting the schemas... both in the filter and in the tag page." #119 fixed
+the tag picker; a schema-menus PR fixed GROUP BY/FIELDS. This is the part that
+actually explains why filtering "felt bad": the panel rendered in flow, so
+opening it pushed the whole list down by its own height.
+
+| | before | after |
+| --- | --- | --- |
+| Result rows visible, filter open, 1440×900 | **0** — first row landed at y=1174 | 5+ rows read clearly; the popover is a compact 26rem dropdown anchored under the trigger, list position on-screen is byte-for-byte unchanged (same DOM node, same coordinates) whether the panel is open or closed |
+| Phone filter UI height | 945px, in flow, on an 844px screen | a bottom sheet capped at 70dvh (591px) over a scrim; the list is still live directly behind it |
+| Active filters when the panel is closed | invisible (a bare "2" badge on the Filters button, no detail) | a chips row: `#tag ×`, `match any/all ▾` (2+ tags), `title: prefix ×`, `archived shown ×`, `oldest first ×`, trailing `Save as view…` |
+
+- **Overlay, not inline flow.** Lifted `FieldsControl`'s own scrim + `fixed`
+  bottom-sheet / `sm:absolute` popover dual verbatim — the same pattern
+  already shipping elsewhere in this app, not a second overlay idiom. Escape
+  and outside-tap close it, same as `FieldsControl`.
+- **Chips row replaces the badge.** Presence depends only on filter state,
+  never on whether the panel is open, so it can't itself cause the list to
+  shift. Reuses `RefinementChip` (now shared between this surface and
+  `ViewSurface`'s own refinement bar) rather than inventing a second
+  dismissable-filter affordance.
+- **Saved views, retired as a manager on this surface.** The per-row
+  rename/update/delete menu is gone from the Filters panel — "a Filters panel
+  shouldn't also be a view manager." What's left is a quiet, closed-by-default
+  "Saved filters ▸" disclosure: click a name to load it, same links as today.
+  Nothing about the vault notes themselves changed; managing them is a
+  different surface's job.
+- **Panel contents are otherwise the same** — Refine (sort, archived, title
+  prefix, Untagged/Orphaned), the tag browser + match mode, the lazy Folders
+  accordion (fetch-on-open unchanged) — just stacked in a single column now
+  that the popover is 26rem instead of the old 52rem-wide inline section.
+
+State model and URL params are untouched — `searchParamsToFilters` round-trips
+exactly as before, so old links and legacy saved views keep working.
+Presentation only, same discipline as #119. No live result count anywhere
+(vault#626 still tracks the real one) — the pager's "Showing 1–50 of 50+"
+stays the only number.
+
 ## [0.22.7] - 2026-07-27
 
 **GROUP BY and FIELDS now explain what a field's TYPE means for the menu, instead of offering 9 bare names and letting you find out the hard way.**
@@ -106,50 +150,6 @@ Filter state, URL params, and the save format are untouched — presentation
 only. Every new test was watched failing before the fix (stub the type
 dispatch, the exclusion, the preview, or the section/hint rendering out;
 confirm each goes red for the stated reason; restore).
-
-## [0.22.8] - 2026-07-27
-
-**The Filters panel no longer pushes the results list off the bottom of the
-screen — it's an overlay now, and the active filters stay visible when it's
-closed.**
-
-Aaron's complaint, second half: "how we're doing the filtering, how we're
-selecting the schemas... both in the filter and in the tag page." #119 fixed
-the tag picker; a schema-menus PR fixed GROUP BY/FIELDS. This is the part that
-actually explains why filtering "felt bad": the panel rendered in flow, so
-opening it pushed the whole list down by its own height.
-
-| | before | after |
-| --- | --- | --- |
-| Result rows visible, filter open, 1440×900 | **0** — first row landed at y=1174 | 5+ rows read clearly; the popover is a compact 26rem dropdown anchored under the trigger, list position on-screen is byte-for-byte unchanged (same DOM node, same coordinates) whether the panel is open or closed |
-| Phone filter UI height | 945px, in flow, on an 844px screen | a bottom sheet capped at 70dvh (591px) over a scrim; the list is still live directly behind it |
-| Active filters when the panel is closed | invisible (a bare "2" badge on the Filters button, no detail) | a chips row: `#tag ×`, `match any/all ▾` (2+ tags), `title: prefix ×`, `archived shown ×`, `oldest first ×`, trailing `Save as view…` |
-
-- **Overlay, not inline flow.** Lifted `FieldsControl`'s own scrim + `fixed`
-  bottom-sheet / `sm:absolute` popover dual verbatim — the same pattern
-  already shipping elsewhere in this app, not a second overlay idiom. Escape
-  and outside-tap close it, same as `FieldsControl`.
-- **Chips row replaces the badge.** Presence depends only on filter state,
-  never on whether the panel is open, so it can't itself cause the list to
-  shift. Reuses `RefinementChip` (now shared between this surface and
-  `ViewSurface`'s own refinement bar) rather than inventing a second
-  dismissable-filter affordance.
-- **Saved views, retired as a manager on this surface.** The per-row
-  rename/update/delete menu is gone from the Filters panel — "a Filters panel
-  shouldn't also be a view manager." What's left is a quiet, closed-by-default
-  "Saved filters ▸" disclosure: click a name to load it, same links as today.
-  Nothing about the vault notes themselves changed; managing them is a
-  different surface's job.
-- **Panel contents are otherwise the same** — Refine (sort, archived, title
-  prefix, Untagged/Orphaned), the tag browser + match mode, the lazy Folders
-  accordion (fetch-on-open unchanged) — just stacked in a single column now
-  that the popover is 26rem instead of the old 52rem-wide inline section.
-
-State model and URL params are untouched — `searchParamsToFilters` round-trips
-exactly as before, so old links and legacy saved views keep working.
-Presentation only, same discipline as #119. No live result count anywhere
-(vault#626 still tracks the real one) — the pager's "Showing 1–50 of 50+"
-stays the only number.
 
 ## [0.22.6] - 2026-07-27
 
