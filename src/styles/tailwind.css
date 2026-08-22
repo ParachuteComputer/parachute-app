@@ -1,0 +1,8 @@
+/* Tailwind's default discovery starts at the project root, so prose examples
+   in CHANGELOG/README/docs can accidentally emit dead utilities. Set its base
+   to src/ so the compiler boundary matches executable application inputs.
+
+   Biome 1.9 parses Tailwind's source() extension as a CSS media query, so this
+   tiny, exact-content shim is excluded in biome.json and pinned by
+   tailwind-custom-properties.test.ts. */
+@import "tailwindcss" source("../");
