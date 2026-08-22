@@ -20,6 +20,11 @@ import {
 } from "./client";
 import { useLiveNotesQuery } from "./live-query";
 import { type NoteQueryState, buildNoteQueryParams } from "./note-query";
+import {
+  DateViewOverflowError,
+  dateViewRefetchInterval,
+  isDateViewOverflowError,
+} from "./query-errors";
 import { useVaultReachabilityStore } from "./reachability-store";
 import { forceRefresh } from "./refresh";
 import { loadToken } from "./storage";
@@ -436,12 +441,7 @@ export interface DateViewWindow {
 
 export const DATE_VIEW_QUERY_LIMIT = 5000;
 
-export class DateViewOverflowError extends Error {
-  constructor(limit: number) {
-    super(`This date window reached its ${limit.toLocaleString()}-note safety ceiling.`);
-    this.name = "DateViewOverflowError";
-  }
-}
+export { DateViewOverflowError } from "./query-errors";
 
 // Fetch exactly the timestamp window a chronological surface can display.
 // The bracket filters lower to vault's indexed created_at / updated_at date
@@ -493,8 +493,11 @@ export function useNotesForDateViews({
       return rows;
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
+    // Overflow is deterministic for this window. Keep the error visible
+    // without downloading another full ceiling-sized page every minute or on
+    // every focus. Explicit retry and query invalidation still refetch.
+    refetchInterval: (query) => dateViewRefetchInterval(query.state.error),
+    refetchOnWindowFocus: (query) => !isDateViewOverflowError(query.state.error),
     // Flag on: cold-launch seed from the mirror (Recent / Calendar paint
     // instantly); flag off: unchanged (no placeholderData).
     placeholderData: mirrorOn ? (prev) => prev ?? seed : undefined,
