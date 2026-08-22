@@ -1,5 +1,6 @@
 import { MirrorEngine } from "@/lib/mirror/engine";
 import { isMirrorEnabled } from "@/lib/mirror/flag";
+import { underMirrorVaultLock } from "@/lib/mirror/lock";
 import {
   clearMirrorCursor,
   clearMirrorForVault,
@@ -298,11 +299,24 @@ export function SyncProvider({ children }: { children: ReactNode }): ReactNode {
   // `pending`, `id_map`, `blob_path_map`, or `blobs`, which hold un-synced user
   // work. Invalidate the mirror-seeded read caches so any placeholder painted
   // from the mirror clears.
+  //
+  // The wipe runs UNDER the engine's per-vault Web Lock (#79 item 2). Without
+  // it, a drain in flight (this tab's poll or ANOTHER tab's) can commit its
+  // `lastSyncedAt` watermark AFTER the meta wipe, leaving the offline read gate
+  // OPEN over a mirror whose rows were just deleted — a "synced, last updated
+  // just now" vault with nothing in it. It self-heals on the next sweep, but the
+  // lock closes the window outright. This acquisition QUEUES rather than
+  // skipping (`underMirrorVaultLock`, not the engine's `ifAvailable` variant):
+  // a button the user pressed must never silently no-op, so the wipe waits out
+  // the in-flight drain — bounded by the drain's page cap — behind the Settings
+  // row's own busy state.
   const clearOffline = useCallback(async () => {
     if (!db || !activeVaultId) return;
-    await clearMirrorForVault(db, activeVaultId);
-    await clearMirrorCursor(db, activeVaultId);
-    await clearMirrorMeta(db, activeVaultId);
+    await underMirrorVaultLock(activeVaultId, async () => {
+      await clearMirrorForVault(db, activeVaultId);
+      await clearMirrorCursor(db, activeVaultId);
+      await clearMirrorMeta(db, activeVaultId);
+    });
     setMirrorPhase(undefined);
     setMirrorProgress(undefined);
     setMirrorLastSyncedAt(null);
