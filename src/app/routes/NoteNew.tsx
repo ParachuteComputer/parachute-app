@@ -470,7 +470,17 @@ export function NoteNew() {
       } catch (error) {
         // Nothing references these blobs yet, so best-effort rollback is safe
         // and avoids leaving successfully staged earlier segments orphaned.
-        await Promise.allSettled(storedBlobIds.map((blobId) => blobStore.delete(blobId)));
+        const rollbackResults = await Promise.allSettled(
+          storedBlobIds.map((blobId) => blobStore.delete(blobId)),
+        );
+        rollbackResults.forEach((result, index) => {
+          if (result.status === "rejected") {
+            console.warn(
+              `Could not roll back staged voice blob ${storedBlobIds[index]}; it may need cleanup.`,
+              result.reason,
+            );
+          }
+        });
         throw error;
       }
 

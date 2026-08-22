@@ -85,13 +85,16 @@ interface FakeController {
 
 const fakeState = {
   controller: null as FakeController | null,
+  emitBytes: null as ((bytes: number) => void) | null,
   requestMic: vi.fn(async () => ({ getTracks: () => [] }) as unknown as MediaStream),
   pickResult: "audio/webm;codecs=opus" as string | null,
 };
 
 const blobStoreFailure = vi.hoisted(() => ({
   failOnPut: null as number | null,
+  failOnDelete: null as number | null,
   putCalls: 0,
+  deleteCalls: 0,
 }));
 
 vi.mock("@/lib/sync/blob-store", async () => {
@@ -111,7 +114,13 @@ vi.mock("@/lib/sync/blob-store", async () => {
           await store.put(...args);
         },
         get: (...args: Parameters<typeof store.get>) => store.get(...args),
-        delete: (...args: Parameters<typeof store.delete>) => store.delete(...args),
+        async delete(...args: Parameters<typeof store.delete>) {
+          blobStoreFailure.deleteCalls += 1;
+          if (blobStoreFailure.deleteCalls === blobStoreFailure.failOnDelete) {
+            throw new Error("synthetic blob rollback failure");
+          }
+          await store.delete(...args);
+        },
       };
     },
   };
@@ -124,7 +133,7 @@ vi.mock("@/lib/capture/recorder", async () => {
     ...actual,
     pickMimeType: () => fakeState.pickResult,
     requestMic: () => fakeState.requestMic(),
-    createRecorder: (opts: { mimeType: string }) => {
+    createRecorder: (opts: { mimeType: string; onData?: (bytes: number) => void }) => {
       const c: FakeController = {
         state: "idle",
         mimeType: opts.mimeType,
@@ -150,6 +159,7 @@ vi.mock("@/lib/capture/recorder", async () => {
         },
       };
       fakeState.controller = c;
+      fakeState.emitBytes = opts.onData ?? null;
       return c;
     },
   };
@@ -300,10 +310,13 @@ describe("NoteNew route — unified create surface", () => {
     useToastStore.setState({ toasts: [] });
     seedStore();
     fakeState.controller = null;
+    fakeState.emitBytes = null;
     fakeState.pickResult = "audio/webm;codecs=opus";
     fakeState.requestMic = vi.fn(async () => ({ getTracks: () => [] }) as unknown as MediaStream);
     blobStoreFailure.failOnPut = null;
+    blobStoreFailure.failOnDelete = null;
     blobStoreFailure.putCalls = 0;
+    blobStoreFailure.deleteCalls = 0;
     vi.spyOn(window, "confirm").mockImplementation(() => true);
     vi.stubGlobal(
       "URL",
@@ -779,10 +792,13 @@ describe("NoteNew — voice affordance", () => {
     useToastStore.setState({ toasts: [] });
     seedStore();
     fakeState.controller = null;
+    fakeState.emitBytes = null;
     fakeState.pickResult = "audio/webm;codecs=opus";
     fakeState.requestMic = vi.fn(async () => ({ getTracks: () => [] }) as unknown as MediaStream);
     blobStoreFailure.failOnPut = null;
+    blobStoreFailure.failOnDelete = null;
     blobStoreFailure.putCalls = 0;
+    blobStoreFailure.deleteCalls = 0;
     vi.spyOn(window, "confirm").mockImplementation(() => true);
     vi.stubGlobal(
       "URL",
@@ -1000,6 +1016,43 @@ describe("NoteNew — voice affordance", () => {
     });
     expect(screen.queryByText("NoteViewPage")).toBeNull();
 
+    const db = await openLensDB();
+    const pending = await listPending(db, "dev");
+    db.close();
+    expect(pending).toEqual([]);
+  });
+
+  it("logs a failed blob rollback after a later segment fails to stage", async () => {
+    installFetch({});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    blobStoreFailure.failOnPut = 2;
+    blobStoreFailure.failOnDelete = 1;
+    renderAt("/new");
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /record voice memo/i }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fakeState.emitBytes?.(20 * 1024 * 1024);
+      await Promise.resolve();
+      tapStop();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await screen.findByText(/recorded\s+/i);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/synthetic blob-store failure/i);
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Could not roll back staged voice blob"),
+      expect.any(Error),
+    );
     const db = await openLensDB();
     const pending = await listPending(db, "dev");
     db.close();
