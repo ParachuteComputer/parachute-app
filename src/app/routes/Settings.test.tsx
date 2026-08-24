@@ -138,6 +138,46 @@ describe("Settings route", () => {
     await waitFor(() => expect(clearOffline).toHaveBeenCalledTimes(1));
   });
 
+  // #79 item 2 review: `clearOffline` takes a QUEUEING Web Lock, so it can fail
+  // — the acquisition has a deadline and rejects if a wedged holder never lets
+  // go. That must land in the error path, not leave the section stuck: `busy`
+  // pinned at "clear" disables every control here until a page reload, with
+  // nothing shown to the user. This pins the recovery.
+  it("reports and re-enables the Offline controls when clearing rejects", async () => {
+    const clearOffline = vi.fn(async () => {
+      throw new DOMException("signal timed out", "TimeoutError");
+    });
+    mirrorOn({ state: "synced", clearOffline });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderSettings();
+    const clear = screen.getByRole("button", { name: /clear offline copy/i });
+
+    fireEvent.click(clear);
+    await waitFor(() => expect(clearOffline).toHaveBeenCalledTimes(1));
+
+    // The user is told, rather than left watching a dead button.
+    await waitFor(() =>
+      expect(
+        useToastStore
+          .getState()
+          .toasts.some(
+            (t) => t.tone === "error" && /couldn't clear the offline copy/i.test(t.message),
+          ),
+      ).toBe(true),
+    );
+    // `busy` released: the label is back and nothing in the section is disabled.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /clear offline copy/i })).not.toBeDisabled(),
+    );
+    expect(screen.getByRole("button", { name: /sync now/i })).not.toBeDisabled();
+    expect(screen.queryByRole("button", { name: /clearing/i })).not.toBeInTheDocument();
+
+    // And it is genuinely retryable, not just cosmetically re-enabled.
+    fireEvent.click(screen.getByRole("button", { name: /clear offline copy/i }));
+    await waitFor(() => expect(clearOffline).toHaveBeenCalledTimes(2));
+  });
+
   it("does not render a scribe section — transcription is vault-level", () => {
     renderSettings();
     expect(screen.queryByRole("heading", { name: /transcription/i })).not.toBeInTheDocument();

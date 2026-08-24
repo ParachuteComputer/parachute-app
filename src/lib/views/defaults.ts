@@ -23,6 +23,13 @@ export const DEFAULT_VIEW_PATHS: readonly string[] = [
   ARCHIVE_VIEW_PATH,
 ];
 
+export function isDefaultViewPath(path: string | null | undefined): boolean {
+  const normalized = path?.toLowerCase();
+  return (
+    normalized !== undefined && DEFAULT_VIEW_PATHS.some((item) => item.toLowerCase() === normalized)
+  );
+}
+
 // The canonical path prefix new views are created under (VIEWS-RENDER-SPEC
 // §6 creation flow). The old `UI/Views/` saved-filter writer was retired;
 // every human creation path now writes this shape.
@@ -31,6 +38,25 @@ export const VIEWS_PATH_PREFIX = "Views/";
 export function viewPathForName(name: string): string {
   const safe = name.trim().replace(/[/\\]/g, "-");
   return `${VIEWS_PATH_PREFIX}${safe || "Untitled view"}`;
+}
+
+/**
+ * Whether a human view name resolves to an occupied canonical path. Compare
+ * AFTER `viewPathForName` sanitizes it so `a/b` cannot slip past an existing
+ * `a-b`. `currentPath` is excluded for rename flows; unchanged names are
+ * rejected separately by the dialog.
+ */
+export function viewNameCollides(
+  name: string,
+  existingPaths: readonly string[],
+  currentPath?: string,
+): boolean {
+  const candidate = viewPathForName(name).toLowerCase();
+  const current = currentPath?.toLowerCase();
+  return [...DEFAULT_VIEW_PATHS, ...existingPaths].some((path) => {
+    const normalized = path.toLowerCase();
+    return normalized === candidate && normalized !== current;
+  });
 }
 
 // ---------------------------------------------------------------------------

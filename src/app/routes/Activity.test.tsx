@@ -144,6 +144,28 @@ describe("Activity route", () => {
     expect(screen.getByRole("link", { name: /new note/i })).toBeInTheDocument();
   });
 
+  it("offers an explicit retry after a date-window failure", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error("window failed"))
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => [],
+        text: async () => "",
+      } as Response);
+    vi.stubGlobal("fetch", fetchImpl);
+    render(
+      <Wrap>
+        <Activity />
+      </Wrap>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
+    await screen.findByText(/no activity in the last 30 days/i);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("paginates with Load more and reveals the next 50", async () => {
     // 60 distinct notes inside the 30-day window — first 50 shown, 10 hidden
     // until the user clicks Load more.

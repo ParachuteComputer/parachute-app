@@ -173,6 +173,76 @@ describe("toggleItalic / toggleStrikethrough / toggleCode", () => {
   });
 });
 
+describe("toggleCode — ragged selection crossing emphasis (#144)", () => {
+  it("expands through the complete strong-emphasis span before adding backticks", () => {
+    const doc = "a **bold** b `code` d";
+    const { state } = apply(toggleCode, doc, {
+      anchor: doc.indexOf("bold") + 1,
+      head: doc.indexOf("code") + 2,
+    });
+
+    expect(state.doc.toString()).toBe("a `**bold** b code` d");
+    expect(syntaxTree(state).topNode.getChild("Paragraph")?.getChild("InlineCode")).not.toBeNull();
+  });
+
+  it("does the same across italic emphasis", () => {
+    const doc = "a *italic* b `code` d";
+    const { state } = apply(toggleCode, doc, {
+      anchor: doc.indexOf("italic") + 1,
+      head: doc.indexOf("code") + 2,
+    });
+
+    expect(state.doc.toString()).toBe("a `*italic* b code` d");
+    expect(syntaxTree(state).topNode.getChild("Paragraph")?.getChild("InlineCode")).not.toBeNull();
+  });
+
+  it("expands through strikethrough in both command directions", () => {
+    const doc = "a ~~strike~~ b `code` d";
+    const selection = {
+      anchor: doc.indexOf("strike") + 1,
+      head: doc.indexOf("code") + 2,
+    };
+
+    const code = apply(toggleCode, doc, selection).state;
+    expect(code.doc.toString()).toBe("a `~~strike~~ b code` d");
+    expect(syntaxTree(code).topNode.getChild("Paragraph")?.getChild("InlineCode")).not.toBeNull();
+
+    const strike = apply(toggleStrikethrough, doc, selection).state;
+    expect(strike.doc.toString()).toBe("a ~~strike b `code`~~ d");
+    expect(
+      syntaxTree(strike).topNode.getChild("Paragraph")?.getChild("Strikethrough"),
+    ).not.toBeNull();
+  });
+
+  it("documents boundary-touch absorption: a selection ending at an emphasis edge includes that span", () => {
+    const doc = "plain **bold** after";
+    const { state } = apply(toggleCode, doc, {
+      anchor: 0,
+      head: doc.indexOf("**"),
+    });
+
+    expect(state.doc.toString()).toBe("`plain **bold**` after");
+  });
+});
+
+describe("emphasis toggles — ragged selection crossing strikethrough (#153)", () => {
+  it.each([
+    ["bold", toggleBold, "**"],
+    ["italic", toggleItalic, "*"],
+  ] as const)(
+    "keeps strikethrough delimiters balanced when toggling %s",
+    (_name, command, marker) => {
+      const doc = "a plain b ~~strike~~ d";
+      const { state } = apply(command, doc, {
+        anchor: doc.indexOf("plain") + 1,
+        head: doc.indexOf("strike") + 2,
+      });
+
+      expect(state.doc.toString()).toBe(`a p${marker}lain b ~~strike~~${marker} d`);
+    },
+  );
+});
+
 describe("wrapLink", () => {
   it("wraps a selection as [text]() and parks the cursor inside the parens", () => {
     const { state } = apply(wrapLink, "see docs here", { anchor: 4, head: 8 });

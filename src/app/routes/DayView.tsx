@@ -155,7 +155,12 @@ function SingleDay({ dateParam }: { dateParam: string }) {
       {notesPending ? (
         <TimelineSkeleton />
       ) : notesError && !notes ? (
-        <ErrorBlock error={notesError} />
+        <ErrorBlock
+          error={notesError}
+          retry={() => {
+            void Promise.all([createdNotes.refetch(), updatedNotes.refetch()]);
+          }}
+        />
       ) : buckets.created.length === 0 && buckets.edited.length === 0 ? (
         <EmptyBlock isToday={isToday} targetKey={targetKey} />
       ) : (
@@ -223,7 +228,7 @@ function TimelineSkeleton() {
   );
 }
 
-function ErrorBlock({ error }: { error: Error }) {
+function ErrorBlock({ error, retry }: { error: Error; retry: () => void }) {
   const isAuth = error instanceof VaultAuthError;
   return (
     <ErrorState
@@ -234,7 +239,11 @@ function ErrorBlock({ error }: { error: Error }) {
           <Link to="/add" className="btn btn-primary">
             Reconnect vault
           </Link>
-        ) : undefined
+        ) : (
+          <button type="button" onClick={retry} className="btn btn-secondary">
+            Retry
+          </button>
+        )
       }
     />
   );

@@ -1,7 +1,7 @@
 import { Calendar } from "@/app/routes/Calendar";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -145,6 +145,30 @@ describe("Calendar route", () => {
     await screen.findByLabelText(/2026-04-18 — 8 notes/i);
     // 8 notes - 5 visible dots = +3 more.
     expect(screen.getByText("+3")).toBeInTheDocument();
+  });
+
+  it("offers an explicit retry after a date-window failure", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error("window failed"))
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => [],
+        text: async () => "",
+      } as Response);
+    vi.stubGlobal("fetch", fetchImpl);
+    render(
+      <Wrap initial="/calendar?month=2026-04">
+        <Calendar />
+      </Wrap>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
+    expect(
+      await screen.findAllByRole("link", { name: /\d{4}-\d{2}-\d{2} — \d+ notes/ }),
+    ).toHaveLength(42);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("prev/next month links use shifted YYYY-MM keys", async () => {

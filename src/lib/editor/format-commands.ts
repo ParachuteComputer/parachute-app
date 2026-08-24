@@ -54,8 +54,9 @@ function findMarkNode(
   return null;
 }
 
-// Every `nodeName` or inline-code node whose range intersects [from, to) at
-// all — including a node only PARTIALLY covered by the selection. Used by
+// Every `nodeName`, inline-code node, or caller-supplied companion node whose
+// range intersects [from, to) at all — including a node only PARTIALLY covered
+// by the selection. Used by
 // the ragged-selection path below; `findMarkNode` above only recognizes the
 // clean, node-aligned case. Inline code joins every normalization because
 // its parse precedence can swallow a newly inserted closing emphasis marker
@@ -66,13 +67,15 @@ function findOverlappingMarks(
   from: number,
   to: number,
   nodeName: string,
+  additionalNodeNames: readonly string[] = [],
 ): SyntaxNode[] {
   const nodes: SyntaxNode[] = [];
+  const overlapNames = new Set([nodeName, "InlineCode", ...additionalNodeNames]);
   syntaxTree(state).iterate({
     from,
     to,
     enter(nodeRef) {
-      if (nodeRef.name === nodeName || nodeRef.name === "InlineCode") nodes.push(nodeRef.node);
+      if (overlapNames.has(nodeRef.name)) nodes.push(nodeRef.node);
     },
   });
   return nodes;
@@ -145,7 +148,12 @@ function wrapWithNormalization(
 
 // One factory for bold/italic/strikethrough/code — each is "wrap the
 // selection in `marker` on both sides, or unwrap if it's already wrapped."
-function makeToggleWrap(nodeName: string, markChildName: string, marker: string): StateCommand {
+function makeToggleWrap(
+  nodeName: string,
+  markChildName: string,
+  marker: string,
+  additionalOverlapNodeNames: readonly string[] = [],
+): StateCommand {
   return (target) => {
     if (isComposing(target)) return false;
     const { state, dispatch } = target;
@@ -183,7 +191,13 @@ function makeToggleWrap(nodeName: string, markChildName: string, marker: string)
       // Ragged selection crossing a mark boundary — see
       // wrapWithNormalization's own comment for why this can't be a plain
       // wrap.
-      const overlapping = findOverlappingMarks(state, from, to, nodeName);
+      const overlapping = findOverlappingMarks(
+        state,
+        from,
+        to,
+        nodeName,
+        additionalOverlapNodeNames,
+      );
       if (overlapping.length > 0) {
         return wrapWithNormalization(state, from, to, overlapping, markChildName, marker);
       }
@@ -201,10 +215,20 @@ function makeToggleWrap(nodeName: string, markChildName: string, marker: string)
   };
 }
 
-export const toggleBold = makeToggleWrap("StrongEmphasis", "EmphasisMark", "**");
-export const toggleItalic = makeToggleWrap("Emphasis", "EmphasisMark", "*");
+export const toggleBold = makeToggleWrap("StrongEmphasis", "EmphasisMark", "**", ["Strikethrough"]);
+export const toggleItalic = makeToggleWrap("Emphasis", "EmphasisMark", "*", ["Strikethrough"]);
 export const toggleStrikethrough = makeToggleWrap("Strikethrough", "StrikethroughMark", "~~");
-export const toggleCode = makeToggleWrap("InlineCode", "CodeMark", "`");
+// Code's marker must also land outside any emphasis span a ragged selection
+// intersects. Otherwise an opening backtick can be inserted inside `**`/`*`
+// while its closing partner lands after the emphasis close, swallowing that
+// delimiter into the code span and leaving broken Markdown (#144). Unlike
+// normalization of the command's own mark type, these emphasis delimiters
+// stay in the selected bytes; the new outer code span renders them literally.
+export const toggleCode = makeToggleWrap("InlineCode", "CodeMark", "`", [
+  "StrongEmphasis",
+  "Emphasis",
+  "Strikethrough",
+]);
 
 // Link is NOT toggle-aware (POLISH-WAVE PR 5b: "wraps [selection]() and
 // parks the cursor inside the parens") — always wraps, cursor lands ready

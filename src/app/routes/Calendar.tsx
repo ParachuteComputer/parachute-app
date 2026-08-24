@@ -105,7 +105,7 @@ export function Calendar() {
       </header>
 
       {notes.isError ? (
-        <ErrorBlock error={notes.error} />
+        <ErrorBlock error={notes.error} retry={() => notes.refetch()} />
       ) : (
         <div className="rounded-md border border-border bg-card" aria-busy={notes.isPending}>
           <div className="grid grid-cols-7 border-b border-border text-xs uppercase tracking-wider text-fg-dim">
@@ -174,7 +174,7 @@ function DayDots({ count }: { count: number }) {
   );
 }
 
-function ErrorBlock({ error }: { error: Error }) {
+function ErrorBlock({ error, retry }: { error: Error; retry: () => void }) {
   const isAuth = error instanceof VaultAuthError;
   return (
     <div className="rounded-md border border-red-500/30 bg-red-500/5 p-6">
@@ -189,7 +189,11 @@ function ErrorBlock({ error }: { error: Error }) {
         >
           Reconnect vault
         </Link>
-      ) : null}
+      ) : (
+        <button type="button" onClick={retry} className="btn btn-secondary">
+          Retry
+        </button>
+      )}
     </div>
   );
 }

@@ -1,3 +1,20 @@
+## [0.22.13] - 2026-08-21
+
+**The round-two quality batch: saved views can be renamed in place, a crashed route recovers instead of taking the app down, code toggles stop leaving orphaned markers, Tailwind stops shipping dead CSS, and boot's own crash containment gets its re-key bug fixed before anyone hit it.** Twelve PRs since 0.22.12 — the original six independently reviewed pre-merge with zero must-fix escapes; the six added here each gated on watch-fail evidence plus full `bun run test` / `typecheck` / `lint`.
+
+- **CHANGELOG entries for 0.22.10 and 0.22.11 land, reconstructed from npm publish timestamps and the release bump commits (#151, fixes #149).** Provable archaeology: an evidence table backs every date and commit range. Also confirms the existing 0.22.9 heading is correctly labeled — PR #126's own merge commit is the sole commit that ever set `package.json` to 0.22.9 — and documents why #119/#121/#123 (already headed at 0.22.6–0.22.8) aren't also owed entries under 0.22.10.
+- **Toggling code across a bold/italic selection produces a real code span instead of orphaned `**` (#152, fixes #144).** The symmetric gap left by 0.22.12's bold/italic-across-code fix: the code-toggle selection now expands through overlapping strong/emphasis marks and preserves their delimiters as literal content inside the new span, covering both editor modes and the real `Mod-e` keymap.
+- **Tailwind source discovery is rooted at `src/`, so prose text can't compile into CSS (#154, fixes #147).** The v4 scanner previously walked the whole repo, and CHANGELOG.md/STYLE.md prose that happened to look like utility classes silently emitted dead rules. A new `src/styles/tailwind.css` shim scopes discovery to `src/`; review measured 15 prose-derived dead rules plus the `--color-white` theme var removed from dist — every one verified dead, every real utility (including SpeedDial's group-hover variants) verified still present. The #145 bare-`[--var]` guard test tightens to the same boundary so it stops false-positiving on `arr[--i]`.
+- **Date-view overflow stops retrying, polling, and refetching on focus (#155, fixes #148).** `DateViewOverflowError` is now a deterministic ceiling signal to the global retry policy rather than just another transient error, so an overflowed view isn't hammered with the same doomed request every 60 seconds or on every window focus. Explicit retries and invalidation-driven refetches still work — recovery via narrowing the query or changing the underlying data was verified through both paths.
+- **Saved views get a first-class Rename action in the view header (#157, fixes #124).** Previously renaming meant editing the raw path by hand. Rename now turns the human-entered name into the canonical `Views/<name>` path via a same-note PATCH, blocks default/sanitized-duplicate collisions with the same helper the Save dialog already enforces, follows a returned ID change, and updates mounted Views navigation in place — optimistic concurrency throughout.
+- **A render crash inside `/notes` or either BootGate path now shows a recovery card instead of taking the whole app down (#158, fixes #54).** The eager `/notes` VaultSurface and both BootGate paths that render the Recent VaultSurface (local active vault, session-resolved home) are wrapped in `RouteErrorBoundary`. A three-path integration test proves the crash stays contained: the route recovery card appears, app chrome survives where an active vault exists, and the full-page Reload fallback no longer takes over.
+- **CHANGELOG version order restored — 0.22.8 sits above 0.22.7 again (#162, fixes #125).** A pure block swap verified by a heading scan, no content changes; the drift survived four releases before backlog triage caught it.
+- **Strikethrough survives overlapping format-command toggles instead of leaving orphaned markers (#163, fixes #153).** Strikethrough joins the overlap set alongside bold, italic, and inline code — toggling in either direction now preserves and normalizes overlapping markers instead of emitting malformed markdown. Three new overlap cases reproduced the bug against unmodified `next`; boundary-touch and cross-format regression coverage added.
+- **Landing and both boot-route paths are contained in an error boundary, and the boundary now re-keys on the boot decision rather than the URL (#164, fixes #160).** BootLoading and every Landing branch are wrapped in `RouteErrorBoundary`, so a front-door crash leaves the surrounding app shell alive instead of falling through to the app-level Reload boundary. The reset key changes from `location.key` to the boot decision itself: Landing form state now survives same-path history-key churn, while the boundary still clears when the boot decision actually changes. (Known dead end, out of scope here: with no active vault, the recovery card's "Back to notes" action lands back on `/` via VaultSurface's existing no-vault guard.)
+- **Date-view overflow and error surfaces get a Retry action, and the no-retry/no-poll/no-focus-refetch policy is pinned through the real QueryClient (#165, fixes #156).** Activity, Calendar, and Day's overflow/error states can now be retried explicitly; Day's created/updated union refetches both halves together. `DateViewOverflowError`'s policy is now asserted against the actual QueryClient and observer options rather than just the error class, closing the verification gap #155 left open.
+- **Saved-view rename closes its remaining edge cases (#166, fixes #159).** Case-only renames are now allowed, built-in paths compare case-insensitively in the rail, duplicate visible labels are rejected even when the colliding `#view` note lives outside `Views/`, and a raw path that reserves a built-in view name now warns instead of silently colliding.
+- **Voice-note blobs are staged before the note is queued, with rollback on failure (#167, fixes #62).** Every voice-segment blob is staged before the note — or any attachment mutation — is enqueued; if a later staging write fails, earlier staged blobs for the same note roll back and the sync queue is left empty, closing the long-open gap where a blob-store failure could leave a partial note queued for a later, orphaned sync.
+
 ## [0.22.12] - 2026-08-21
 
 **The daily-driver batch: saved views appear where you look, formatting toggles stop silently failing, boot stops fetching 5,000 notes, and three chronic test flakes die.** Eight PRs, every one through an independent sandboxed review with mutation/live probes; three were bounced and re-verified before landing. (Bookkeeping note: 0.22.10 and 0.22.11 shipped without changelog entries — app#149 tracks the backfill; this entry covers only 0.22.12.)
@@ -16,6 +33,23 @@
 
 - **The sync queue sends `transcribe: false` instead of dropping it (#128).** Rode `next` since 08-14.
 
+## [0.22.11] - 2026-08-14
+
+**A pinned-notes sub-list, honest fallback titles, tablet gets its own nav drawer, and releases stop depending on a human remembering to push a tag.** Four PRs, tag-triggered publish retired in favor of publish-on-merge.
+
+- **Up to five pinned notes render under the Pinned rail row (#131).** Desktop Rail only, newest first, each linking to its note; hidden when there are none, no vault is active, or the rail is collapsed. The fetch is local to `Rail.tsx` rather than joining the shared `useNavBands()` derivation, and deliberately non-live (`live:false`) so a 5-note window isn't clobbered by a live subscription that ignores `limit` (app#109) — pin/unpin still updates immediately via query invalidation, cross-device converges on the existing poll/focus refetch. Mobile NavSheet parity is deferred, tangled with the tablet-nav work in #134.
+- **Untitled notes fall back to their first content line, else a human-readable date/time (#132).** Covers voice notes and quick notes together through one shared `displayTitle()` helper, so every title surface (rows, cards, board/calendar/table, quick-switch) behaves the same by construction. Transcription-status markers (`_Transcript pending._`, `_Transcription unavailable._`, the monthly-limit marker, segmented `(part N)` variants), bare attachment embeds, and content that just repeats the note's own path/ULID are never headlined — whole-line matching only, so a real first line that merely contains marker text still titles the note.
+- **Releases publish on merge to `main`, the tag push kept as an override (#133).** Ports hub's publish-on-merge pattern (hub#790): a `plan` job reads `package.json`'s version against the npm registry and publishes when that exact version isn't there yet — skip if already published, refuse rather than guess on an ambiguous registry response, refuse if publishing would move the `rc`/`latest` dist-tag backwards. Also fixes the dist-tag-from-ref bug hub hit for real (hub#792): the tag now derives from `package.json`'s own version rather than `GITHUB_REF_NAME`, which on a merge-triggered run is just `"main"` and would have sent every publish-on-merge to `@latest` regardless of prerelease status. This is the last release in this repo to ship via the old tag-triggered path (0.22.10, PR #130) — 0.22.11 itself published by merging its own bump PR (#135).
+- **A third nav breakpoint band (768–1023px) gets a proper drawer instead of stretched phone chrome (#134).** Phone keeps the bottom-sheet nav below 768px, desktop rail is untouched at ≥1024px. The drawer force-closes via `matchMedia` when the viewport leaves its band in either direction (e.g. an iPad rotating across 1023.98px) and closes on pathname change only, never on the search string, since `VaultSurface` mirrors live filters into `?search=&tag=` and closing on full location would dismiss it per keystroke. The same force-close-at-band-edge protection was added to the phone `NavSheet`, fixing a real strand: rotating a phone to landscape (≥768px) with the sheet open used to leave a scroll-locked page with keyboard nav dead.
+
+## [0.22.10] - 2026-08-10
+
+**Three measured UI defects, fixed together: a toggle knob that rendered outside its own track, a retention prompt that interrupted recording mid-take, and an attachments panel that leaked raw internals.** One PR (#129), published the old tag-triggered way (release PR #130 bumped the version; the `v0.22.10` tag was pushed separately to trigger the npm publish) — the last release before #133 switched this repo to publish-on-merge.
+
+- **The toggle knob now sits inside its track (#129).** It was absolutely positioned with no `left`, so it rendered ~20px outside the track — in `NoteNew`'s `TranscribeToggle` and both Settings toggles alike (the same latent bug, unnoticed in three places). The `NoteNew` wrapper also swaps `justify-between` for `gap-3`, since the label sat hundreds of pixels from its switch.
+- **The first-voice-capture retention prompt now gates on `hasAudio` (#129).** It used to render the moment the mic engaged, interrupting the take with a choice before there was anything to keep; it now appears once recording stops, when the question makes sense. A failed PATCH still re-offers it on the next capture, and Create is never blocked on it.
+- **In-flight attachments show a skeleton + "Processing…" instead of a bare ULID and "(no URL)" (#129).** Known tradeoff, flagged in review: a permanently URL-less attachment (an old failed upload) now shows an indefinite "Processing…" rather than the raw fallback — politer, but not a terminal state; a recency gate can follow if that shows up in practice.
+
 ## [0.22.9] - 2026-07-27
 
 **A 26-minute voice memo used to render as three "Transcript pending" placeholders with only one transcript actually written back, out of order — while all three sat complete in attachment metadata. Nothing was lost; the write-back was broken.**
@@ -27,6 +61,52 @@ Root cause: the app sent `segment_index` nested under a `metadata` object; both 
 - **Segment rollover moved from 10 to 30 minutes, with a 20 MB size cap that preempts it.** Aaron's walks run 20–30 minutes, so he hit the old boundary every time. At the intended 32 kbps a 30-minute segment is ~6.9 MB — 3.6x under the Cloud ceiling and 2x under the ~60-minute Whisper inference wall (a duration limit no bitrate change moves — the reason not to push this past 45). But `audioBitsPerSecond` is only a hint: if a browser ignores it, a full 30 minutes at the un-honored ~128.8 kbps default is ~27.6 MB — **over** the Cloud ceiling, reproducing this same PR's bug from a new cause. Rolling early at 20 MB (whichever ceiling — time or size — hits first) keeps every segment safe unconditionally, regardless of whether the hint took effect.
 
 Every new/changed assertion was watched failing first, including a scratch reproduction of the real bug against pre-fix `queue.ts` (confirmed it actually sent `{ metadata: { segment_index: 0 } }`, not `{ segment_index: 0 }`, before any production code changed), and the size-cap test against pre-fix `segmented-recorder.ts` (confirmed it could not roll early at all).
+
+(Bookkeeping note, app#149: this heading is correctly labeled. #126's own merge commit (`eea0623`) is the `v0.22.9` tag target and is the sole commit that ever set `package.json` to `0.22.9`; npm published `0.22.9` ~18 minutes later. The 0.22.10 window (`v0.22.9..v0.22.10`) contains only #129 — #119/#121/#123 were already shipped and already have their own headings below, at 0.22.6/0.22.7/0.22.8. Those three intermediate versions were never tagged nor published individually — in that stretch only 0.22.5 and 0.22.9 ever reached npm, and only `v0.22.9` got a git tag — so npm's actual `0.22.9` tarball is the union of the 0.22.6–0.22.9 diffs even though each got its own changelog entry; this entry documents only the slice #126 itself added.)
+
+## [0.22.8] - 2026-07-27
+
+**The Filters panel no longer pushes the results list off the bottom of the
+screen — it's an overlay now, and the active filters stay visible when it's
+closed.**
+
+Aaron's complaint, second half: "how we're doing the filtering, how we're
+selecting the schemas... both in the filter and in the tag page." #119 fixed
+the tag picker; a schema-menus PR fixed GROUP BY/FIELDS. This is the part that
+actually explains why filtering "felt bad": the panel rendered in flow, so
+opening it pushed the whole list down by its own height.
+
+| | before | after |
+| --- | --- | --- |
+| Result rows visible, filter open, 1440×900 | **0** — first row landed at y=1174 | 5+ rows read clearly; the popover is a compact 26rem dropdown anchored under the trigger, list position on-screen is byte-for-byte unchanged (same DOM node, same coordinates) whether the panel is open or closed |
+| Phone filter UI height | 945px, in flow, on an 844px screen | a bottom sheet capped at 70dvh (591px) over a scrim; the list is still live directly behind it |
+| Active filters when the panel is closed | invisible (a bare "2" badge on the Filters button, no detail) | a chips row: `#tag ×`, `match any/all ▾` (2+ tags), `title: prefix ×`, `archived shown ×`, `oldest first ×`, trailing `Save as view…` |
+
+- **Overlay, not inline flow.** Lifted `FieldsControl`'s own scrim + `fixed`
+  bottom-sheet / `sm:absolute` popover dual verbatim — the same pattern
+  already shipping elsewhere in this app, not a second overlay idiom. Escape
+  and outside-tap close it, same as `FieldsControl`.
+- **Chips row replaces the badge.** Presence depends only on filter state,
+  never on whether the panel is open, so it can't itself cause the list to
+  shift. Reuses `RefinementChip` (now shared between this surface and
+  `ViewSurface`'s own refinement bar) rather than inventing a second
+  dismissable-filter affordance.
+- **Saved views, retired as a manager on this surface.** The per-row
+  rename/update/delete menu is gone from the Filters panel — "a Filters panel
+  shouldn't also be a view manager." What's left is a quiet, closed-by-default
+  "Saved filters ▸" disclosure: click a name to load it, same links as today.
+  Nothing about the vault notes themselves changed; managing them is a
+  different surface's job.
+- **Panel contents are otherwise the same** — Refine (sort, archived, title
+  prefix, Untagged/Orphaned), the tag browser + match mode, the lazy Folders
+  accordion (fetch-on-open unchanged) — just stacked in a single column now
+  that the popover is 26rem instead of the old 52rem-wide inline section.
+
+State model and URL params are untouched — `searchParamsToFilters` round-trips
+exactly as before, so old links and legacy saved views keep working.
+Presentation only, same discipline as #119. No live result count anywhere
+(vault#626 still tracks the real one) — the pager's "Showing 1–50 of 50+"
+stays the only number.
 
 ## [0.22.7] - 2026-07-27
 
@@ -76,50 +156,6 @@ Filter state, URL params, and the save format are untouched — presentation
 only. Every new test was watched failing before the fix (stub the type
 dispatch, the exclusion, the preview, or the section/hint rendering out;
 confirm each goes red for the stated reason; restore).
-
-## [0.22.8] - 2026-07-27
-
-**The Filters panel no longer pushes the results list off the bottom of the
-screen — it's an overlay now, and the active filters stay visible when it's
-closed.**
-
-Aaron's complaint, second half: "how we're doing the filtering, how we're
-selecting the schemas... both in the filter and in the tag page." #119 fixed
-the tag picker; a schema-menus PR fixed GROUP BY/FIELDS. This is the part that
-actually explains why filtering "felt bad": the panel rendered in flow, so
-opening it pushed the whole list down by its own height.
-
-| | before | after |
-| --- | --- | --- |
-| Result rows visible, filter open, 1440×900 | **0** — first row landed at y=1174 | 5+ rows read clearly; the popover is a compact 26rem dropdown anchored under the trigger, list position on-screen is byte-for-byte unchanged (same DOM node, same coordinates) whether the panel is open or closed |
-| Phone filter UI height | 945px, in flow, on an 844px screen | a bottom sheet capped at 70dvh (591px) over a scrim; the list is still live directly behind it |
-| Active filters when the panel is closed | invisible (a bare "2" badge on the Filters button, no detail) | a chips row: `#tag ×`, `match any/all ▾` (2+ tags), `title: prefix ×`, `archived shown ×`, `oldest first ×`, trailing `Save as view…` |
-
-- **Overlay, not inline flow.** Lifted `FieldsControl`'s own scrim + `fixed`
-  bottom-sheet / `sm:absolute` popover dual verbatim — the same pattern
-  already shipping elsewhere in this app, not a second overlay idiom. Escape
-  and outside-tap close it, same as `FieldsControl`.
-- **Chips row replaces the badge.** Presence depends only on filter state,
-  never on whether the panel is open, so it can't itself cause the list to
-  shift. Reuses `RefinementChip` (now shared between this surface and
-  `ViewSurface`'s own refinement bar) rather than inventing a second
-  dismissable-filter affordance.
-- **Saved views, retired as a manager on this surface.** The per-row
-  rename/update/delete menu is gone from the Filters panel — "a Filters panel
-  shouldn't also be a view manager." What's left is a quiet, closed-by-default
-  "Saved filters ▸" disclosure: click a name to load it, same links as today.
-  Nothing about the vault notes themselves changed; managing them is a
-  different surface's job.
-- **Panel contents are otherwise the same** — Refine (sort, archived, title
-  prefix, Untagged/Orphaned), the tag browser + match mode, the lazy Folders
-  accordion (fetch-on-open unchanged) — just stacked in a single column now
-  that the popover is 26rem instead of the old 52rem-wide inline section.
-
-State model and URL params are untouched — `searchParamsToFilters` round-trips
-exactly as before, so old links and legacy saved views keep working.
-Presentation only, same discipline as #119. No live result count anywhere
-(vault#626 still tracks the real one) — the pager's "Showing 1–50 of 50+"
-stays the only number.
 
 ## [0.22.6] - 2026-07-27
 
@@ -1830,39 +1866,17 @@ at 6 digits with navigation, paste-with-context digit extraction, no-submit-befo
 wrong-code error state (field cleared, no navigation) — 11 tests total (was 6). Full suite: 158 test
 files / 1778 tests, ×2 clean; `typecheck` clean; `lint` clean (2 pre-existing warnings remain in
 `src/lib/vault/live-query.ts`, untouched by this PR).
-## [0.20.9] - 2026-07-17
 
-**Views Wave 2a — the first default-pages cutover (Pinned + Archive).** VIEWS-RENDER-SPEC §7's
-ratified direction ("the pack is an override, never a dependency") lands for the two smallest
-lenses: `/notes?view=pinned` and `/notes?view=archived` now resolve their tag filter from a
-`ViewDef` instead of a hardcoded literal, while everything else about those pages — search,
-Filters panel, pagination, `NoteRowList` rendering — is unchanged.
+## [0.20.11] - 2026-07-17
 
-- **`src/lib/views/defaults.ts`** — `builtInDefaultViewDef(pageId, roles)`: the app's own
-  fallback `ViewDef` for Pinned/Archive, mirroring the `starter-ontology` pack's own queries
-  (`{tag: "pinned"}` / `{tag: "archived"}`, `core/src/seed-packs.ts`) byte-for-intent but through
-  `roles.pinned`/`roles.archived` — a vault that renamed those tags still gets a correct default.
-  `resolveDefaultViewDef(pageId, packNote, roles)`: the pure resolver — a `Views/Pinned` or
-  `Views/Archive` note wins when it's present, tagged `#view`, and its query parses
-  (authoring-time-explicit); anything else (no note, wrong tag, unparseable query) falls back to
-  the built-in instantly. A default page is load-bearing navigation, not a place to show "this
-  view is broken" over someone else's corrupted note — that honesty stays scoped to `/views/:id`.
-  Also lifted the pack's four view paths to named constants (`PINNED_VIEW_PATH`, etc.) so
-  `DEFAULT_VIEW_PATHS` and the new page-path lookup can't drift from each other.
-- **`src/lib/views/queries.ts`** — `useDefaultViewDef(pageId, roles)`: looks up the pack note at
-  its canonical path (exact `path=` match, not `path_prefix`) via TanStack Query, then resolves
-  through the pure function above. `pageId === null` skips the lookup (every other preset).
-- **`VaultSurface.tsx`** — `SearchableLenses`'s `effectiveTags` for the pinned/archived presets
-  now reads `queryTags(resolvedDef.query)` (unioned with whatever the Filters panel's TagBrowser
-  adds) instead of inlining `roles.pinned`/`roles.archived` directly. Resolution never blocks or
-  blanks the page: the built-in def is available synchronously on first render, and the query
-  quietly upgrades if/when a pack note resolves.
-
-Tests: `defaults.test.ts` (10, pure — built-in query shape, role indirection, pack-wins,
-malformed-note fallback, non-`#view`-tagged decoy ignored), `VaultSurface.defaultViews.test.tsx`
-(5, integration — no-pack-note is byte-equivalent to today's hardcoded `tag=pinned`/`tag=archived`
-query, a well-formed pack note's tag wins, a malformed pack note falls back without blanking the
-page). All-notes + Recent are unaffected (wave 2b).
+**Bookkeeping only: this version was reserved during parallel branch work but never existed as a
+release.** PR #53's draft said it would take 0.20.11 after the sibling 0.20.9/0.20.10 branches,
+but its merge commit (`8b5abdb`) actually set `package.json` to 0.20.10. The next first-parent
+commit that changed the version (`c2bcb45`, PR #56) moved directly to 0.20.12. No reachable commit
+ever set `package.json` to 0.20.11, no `v0.20.11` tag exists, and neither historical npm package
+published a 0.20.11 artifact. There are therefore no release contents to reconstruct for this
+heading; it records the intentional evidence-backed gap rather than assigning a later PR to a
+version it did not ship as.
 
 ## [0.20.10] - 2026-07-17
 
@@ -1905,6 +1919,40 @@ the class of bug remained). Display-only, small.
   (a mocked lazy route throws → card + chrome-stays-alive + Back to notes recovers) and
   `App.error-boundary.chrome.test.tsx` (a mocked `Header` throws → the top-level net's full-page
   card, no route chrome survives).
+
+## [0.20.9] - 2026-07-17
+
+**Views Wave 2a — the first default-pages cutover (Pinned + Archive).** VIEWS-RENDER-SPEC §7's
+ratified direction ("the pack is an override, never a dependency") lands for the two smallest
+lenses: `/notes?view=pinned` and `/notes?view=archived` now resolve their tag filter from a
+`ViewDef` instead of a hardcoded literal, while everything else about those pages — search,
+Filters panel, pagination, `NoteRowList` rendering — is unchanged.
+
+- **`src/lib/views/defaults.ts`** — `builtInDefaultViewDef(pageId, roles)`: the app's own
+  fallback `ViewDef` for Pinned/Archive, mirroring the `starter-ontology` pack's own queries
+  (`{tag: "pinned"}` / `{tag: "archived"}`, `core/src/seed-packs.ts`) byte-for-intent but through
+  `roles.pinned`/`roles.archived` — a vault that renamed those tags still gets a correct default.
+  `resolveDefaultViewDef(pageId, packNote, roles)`: the pure resolver — a `Views/Pinned` or
+  `Views/Archive` note wins when it's present, tagged `#view`, and its query parses
+  (authoring-time-explicit); anything else (no note, wrong tag, unparseable query) falls back to
+  the built-in instantly. A default page is load-bearing navigation, not a place to show "this
+  view is broken" over someone else's corrupted note — that honesty stays scoped to `/views/:id`.
+  Also lifted the pack's four view paths to named constants (`PINNED_VIEW_PATH`, etc.) so
+  `DEFAULT_VIEW_PATHS` and the new page-path lookup can't drift from each other.
+- **`src/lib/views/queries.ts`** — `useDefaultViewDef(pageId, roles)`: looks up the pack note at
+  its canonical path (exact `path=` match, not `path_prefix`) via TanStack Query, then resolves
+  through the pure function above. `pageId === null` skips the lookup (every other preset).
+- **`VaultSurface.tsx`** — `SearchableLenses`'s `effectiveTags` for the pinned/archived presets
+  now reads `queryTags(resolvedDef.query)` (unioned with whatever the Filters panel's TagBrowser
+  adds) instead of inlining `roles.pinned`/`roles.archived` directly. Resolution never blocks or
+  blanks the page: the built-in def is available synchronously on first render, and the query
+  quietly upgrades if/when a pack note resolves.
+
+Tests: `defaults.test.ts` (10, pure — built-in query shape, role indirection, pack-wins,
+malformed-note fallback, non-`#view`-tagged decoy ignored), `VaultSurface.defaultViews.test.tsx`
+(5, integration — no-pack-note is byte-equivalent to today's hardcoded `tag=pinned`/`tag=archived`
+query, a well-formed pack note's tag wins, a malformed pack note falls back without blanking the
+page). All-notes + Recent are unaffected (wave 2b).
 
 ## [0.20.8] - 2026-07-17
 

@@ -111,6 +111,17 @@ for (const mode of [
       expect(view.state.doc.toString()).toBe("`hello` world");
     });
 
+    it("Mod-e expands a ragged selection through complete emphasis delimiters (#144)", () => {
+      const doc = "a **bold** b `code` d";
+      const view = makeEditor(
+        doc,
+        { anchor: doc.indexOf("bold") + 1, head: doc.indexOf("code") + 2 },
+        mode.livePreview,
+      );
+      pressMod(view, "e");
+      expect(view.state.doc.toString()).toBe("a `**bold** b code` d");
+    });
+
     it("Mod-Enter creates a to-do from a caret on a plain line", () => {
       const view = makeEditor("buy milk", { anchor: 0 }, mode.livePreview);
       pressMod(view, "Enter");
