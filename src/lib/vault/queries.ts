@@ -69,7 +69,13 @@ export function useActiveVaultClient(): VaultClient | null {
     if (!token) return null;
     const key = activeClientKey(activeId, vaultUrl);
     const existing = activeClients.get(key);
-    if (existing) return existing;
+    if (existing) {
+      // Remount / reconnect at the same id+url must pick up a rotated
+      // token. Leaving the cached client on the previous accessToken
+      // waits for a 401; setAccessToken is a no-op when unchanged.
+      existing.setAccessToken(token.accessToken);
+      return existing;
+    }
     const client = new VaultClient({
       vaultUrl,
       accessToken: token.accessToken,

@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useActiveVaultClient } from "./queries";
 import { saveToken } from "./storage";
 import { useVaultStore } from "./store";
@@ -101,5 +101,47 @@ describe("useActiveVaultClient identity (app#110)", () => {
     localStorage.clear();
     const { result } = renderHook(() => useActiveVaultClient());
     expect(result.current).toBeNull();
+  });
+
+  it("removeVault drops the cached client", () => {
+    const { result } = renderHook(() => useActiveVaultClient());
+    expect(result.current).not.toBeNull();
+    act(() => {
+      useVaultStore.getState().removeVault("v1");
+    });
+    expect(result.current).toBeNull();
+  });
+
+  it("a URL rewrite at the same id yields a different client", () => {
+    const { result } = renderHook(() => useActiveVaultClient());
+    const first = result.current;
+    expect(first).not.toBeNull();
+    act(() => {
+      const existing = useVaultStore.getState().vaults.v1!;
+      useVaultStore.setState({
+        vaults: { v1: { ...existing, url: "https://other.test/vault/v1" } },
+      });
+    });
+    expect(result.current).not.toBeNull();
+    expect(result.current).not.toBe(first);
+  });
+
+  it("a remount at the same id+url pushes a rotated token onto the cached client", () => {
+    const first = renderHook(() => useActiveVaultClient());
+    const held = first.result.current;
+    expect(held).not.toBeNull();
+    const spy = vi.spyOn(held!, "setAccessToken");
+    first.unmount();
+
+    saveToken("v1", {
+      accessToken: "tok-rotated",
+      scope: "full",
+      vault: "https://example.test/vault/v1",
+    });
+    const second = renderHook(() => useActiveVaultClient());
+    expect(second.result.current).toBe(held);
+    expect(spy).toHaveBeenCalledWith("tok-rotated");
+    second.unmount();
+    spy.mockRestore();
   });
 });
