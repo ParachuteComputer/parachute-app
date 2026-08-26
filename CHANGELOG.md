@@ -1,3 +1,19 @@
+## [0.22.14-rc.1] - 2026-08-26
+
+**Client identity pin + live-list registry.** Three commits on `next` after
+0.22.13.
+
+- **One `VaultClient` per `(vaultId, url)` (#177, towards #110).**
+  `useActiveVaultClient` no longer mints a new client when the vault record
+  object identity changes (rename/touch/store rewrite) or per hook instance.
+  Remount pushes a rotated token onto the cached instance. Finding 2 of #110
+  (`limit=5000` date-views) was already resolved. Does not close #110 —
+  production-build re-measure of `tag=view` still outstanding.
+- **Pin `@openparachute/surface-client` to `0.3.7-rc.1` (#178).** That
+  package is the refcounted live-list registry (surface#205). Exact pin, not
+  `^0.3.6`. npm `@rc` is 0.3.7-rc.1; `@latest` stays 0.3.6.
+- **CI Bun 1.4 floor (#176).**
+
 ## [0.22.13] - 2026-08-21
 
 **The round-two quality batch: saved views can be renamed in place, a crashed route recovers instead of taking the app down, code toggles stop leaving orphaned markers, Tailwind stops shipping dead CSS, and boot's own crash containment gets its re-key bug fixed before anyone hit it.** Twelve PRs since 0.22.12 — the original six independently reviewed pre-merge with zero must-fix escapes; the six added here each gated on watch-fail evidence plus full `bun run test` / `typecheck` / `lint`.
