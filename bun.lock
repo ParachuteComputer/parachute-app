@@ -14,7 +14,7 @@
         "@fontsource-variable/figtree": "^5.2.10",
         "@fontsource-variable/fraunces": "^5.2.9",
         "@lezer/highlight": "^1.2.3",
-        "@openparachute/surface-client": "^0.3.6",
+        "@openparachute/surface-client": "0.3.7-rc.1",
         "@openparachute/surface-render": "^0.3.0",
         "@tanstack/react-query": "^5",
         "highlight.js": "^11.11.1",
@@ -424,7 +424,7 @@
 
     "@marijn/find-cluster-break": ["@marijn/find-cluster-break@1.0.3", "", {}, "sha512-FY+MKLBoTsLNJF/eLWaOsXGdz6uh3Iu1axjPf6TUq92IYumcTcXWHoS747JARLkcdlJ/Waiaxc5wQfFO8jC6NA=="],
 
-    "@openparachute/surface-client": ["@openparachute/surface-client@0.3.6", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-LhRQ/ALIGksKu8uKixMcv4iCu0DWn684uCnF0eNqJQyohIxiqtwamEtoLjx5nljZqIIX6cEQw1xiST8pXLSEtA=="],
+    "@openparachute/surface-client": ["@openparachute/surface-client@0.3.7-rc.1", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-qHUNyuC8IxpT9OzIknTDA0c/n25D/2tDO3d6sT5XWZizXIaxoUPuIaXVxXPyaunN5qNkRyp3Gn342z+A+K8MkA=="],
 
     "@openparachute/surface-render": ["@openparachute/surface-render@0.3.0", "", { "dependencies": { "@openparachute/surface-client": "^0.3.3" }, "peerDependencies": { "react": "^18 || ^19", "react-dom": "^18 || ^19", "react-markdown": "^9 || ^10", "rehype-highlight": "^7", "remark-breaks": "^4", "remark-gfm": "^4" }, "optionalPeers": ["rehype-highlight"] }, "sha512-pYWowWetE1pbilfdNY1kfvOZYik5LrtwkRGxbFe7uB4a78JerxksUT5NRkVNC75XsbUWXAW5lAvMP/ueW0bBEw=="],
 
@@ -1571,6 +1571,8 @@
     "@babel/helper-create-regexp-features-plugin/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "@babel/preset-env/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
+
+    "@openparachute/surface-render/@openparachute/surface-client": ["@openparachute/surface-client@0.3.6", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-LhRQ/ALIGksKu8uKixMcv4iCu0DWn684uCnF0eNqJQyohIxiqtwamEtoLjx5nljZqIIX6cEQw1xiST8pXLSEtA=="],
 
     "@rollup/pluginutils/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
 
