@@ -38,15 +38,46 @@ import type {
   TranscriptionCapability,
 } from "./types";
 
+// app#110: one VaultClient per (vaultId, url). Selecting the VaultRecord
+// object minted a new client on every rename/touch (and each hook instance
+// had its own), so live-query effects re-opened duplicate sockets.
+const activeClients = new Map<string, VaultClient>();
+
+function activeClientKey(vaultId: string, url: string): string {
+  return `${vaultId}\0${url}`;
+}
+
+useVaultStore.subscribe((state) => {
+  for (const key of [...activeClients.keys()]) {
+    const sep = key.indexOf("\0");
+    const id = key.slice(0, sep);
+    const url = key.slice(sep + 1);
+    const rec = state.vaults[id];
+    if (!rec || rec.url !== url) activeClients.delete(key);
+  }
+});
+
 export function useActiveVaultClient(): VaultClient | null {
-  const vault = useVaultStore((s) => s.getActiveVault());
   const activeId = useVaultStore((s) => s.activeVaultId);
+  const vaultUrl = useVaultStore((s) => {
+    const id = s.activeVaultId;
+    return id ? (s.vaults[id]?.url ?? null) : null;
+  });
   return useMemo(() => {
-    if (!vault || !activeId) return null;
+    if (!activeId || !vaultUrl) return null;
     const token = loadToken(activeId);
     if (!token) return null;
-    return new VaultClient({
-      vaultUrl: vault.url,
+    const key = activeClientKey(activeId, vaultUrl);
+    const existing = activeClients.get(key);
+    if (existing) {
+      // Remount / reconnect at the same id+url must pick up a rotated
+      // token. Leaving the cached client on the previous accessToken
+      // waits for a 401; setAccessToken is a no-op when unchanged.
+      existing.setAccessToken(token.accessToken);
+      return existing;
+    }
+    const client = new VaultClient({
+      vaultUrl,
       accessToken: token.accessToken,
       onAuthError: () => forceRefresh(activeId),
       onAuthRevoked: (status) =>
@@ -56,7 +87,9 @@ export function useActiveVaultClient(): VaultClient | null {
       onReachability: (signal, reason) =>
         useVaultReachabilityStore.getState().reportSignal(activeId, signal, reason),
     });
-  }, [vault, activeId]);
+    activeClients.set(key, client);
+    return client;
+  }, [activeId, vaultUrl]);
 }
 
 // ---------- Mirror read-path (Wave 3, flag-gated) ----------
