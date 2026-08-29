@@ -116,7 +116,10 @@ jobs:
         with:
           bun-version: 1.4
       - id: app
-        run: bun scripts/release-plan.ts . @openparachute/app
+        # `--tag-push` on tag triggers, same as hub's plan step — without it
+        # the planner's documented rc-tag override never fires and a
+        # deliberate rc re-release is skipped as already-published.
+        run: bun scripts/release-plan.ts . @openparachute/app ${{ github.ref_type == 'tag' && '--tag-push' || '' }}
 
   test:
     name: test
