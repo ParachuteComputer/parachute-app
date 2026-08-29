@@ -73,29 +73,32 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /**
- * The decision. `isTagPush` short-circuits every check but the shape one — an
- * explicit tag is a human saying "release this", including a deliberate
- * re-release of something older.
+ * The decision. `isTagPush` short-circuits the registry guards for **rc**
+ * versions — an explicit rc tag is a human saying "release this". It does
+ * **not** short-circuit the stable-from-main gate: a write token can push a
+ * tag, and that is not the same as merging to `main`.
  */
 export function decidePublish(
   version: string,
   registry: RegistryView | { ambiguous: true },
   opts: { isTagPush?: boolean; branch?: string } = {},
 ): PublishDecision {
+  // Stables publish from `main` only. Checked first so a tag push of
+  // `vX.Y.Z` (or a suffix-drop merged to `next`) cannot promote `@latest`.
+  // Unlike hub, this function has no matchingRcVersions()/suffix-drop check,
+  // so this gate is the only thing stopping a stable on `next` from going
+  // straight to `@latest`.
+  if (distTagFor(version) !== "rc") {
+    const fromMain = !opts.isTagPush && opts.branch === "main";
+    if (!fromMain) {
+      return {
+        publish: false,
+        reason: `${version} is a stable version — stable promotions publish from main only (not next, not a tag push)`,
+      };
+    }
+  }
   if (opts.isTagPush) {
     return { publish: true, reason: `explicit tag push for ${version}` };
-  }
-  // `next` only ever cuts rc's. Unlike hub's decidePublish(), this function
-  // has no matchingRcVersions()/suffix-drop check gating a stable publish on
-  // an existing rc — so without this, a stable version merged to `next` (by
-  // mistake, or a PR mistargeted mid-promotion) would publish straight to
-  // `@latest`, bypassing `main` entirely. `main` is unaffected: it still
-  // publishes rc OR stable, whatever's in package.json, same as before.
-  if (opts.branch === "next" && distTagFor(version) !== "rc") {
-    return {
-      publish: false,
-      reason: `${version} is a stable version pushed to next — stable promotions publish from main only`,
-    };
   }
   if ("ambiguous" in registry) {
     return {

@@ -62,7 +62,7 @@ describe("decidePublish", () => {
   });
 
   test("first-ever release of a package publishes", () => {
-    const d = decidePublish("0.1.0", { versionExists: false });
+    const d = decidePublish("0.1.0", { versionExists: false }, { branch: "main" });
     expect(d).toMatchObject({ publish: true });
   });
 
@@ -92,12 +92,12 @@ describe("decidePublish", () => {
   test("an ambiguous registry REFUSES rather than guessing", () => {
     // A false "not published" double-publishes; a false "published" drops a
     // release. Guessing is worse than failing loudly.
-    const d = decidePublish("0.22.9", { ambiguous: true });
+    const d = decidePublish("0.22.9", { ambiguous: true }, { branch: "main" });
     expect(d).toMatchObject({ refuse: true });
     expect("refuse" in d && d.reason).toMatch(/refusing to guess/);
   });
 
-  test("an explicit tag push overrides every check — a human said release this", () => {
+  test("an explicit rc tag push overrides the registry checks — a human said release this rc", () => {
     const d = decidePublish(
       "0.22.0-rc.1",
       {
@@ -109,12 +109,12 @@ describe("decidePublish", () => {
     expect(d).toMatchObject({ publish: true });
   });
 
-  test("a tag push even overrides ambiguity", () => {
-    const d = decidePublish("0.22.9", { ambiguous: true }, { isTagPush: true });
+  test("an rc tag push even overrides ambiguity", () => {
+    const d = decidePublish("0.22.9-rc.1", { ambiguous: true }, { isTagPush: true });
     expect(d).toMatchObject({ publish: true });
   });
 
-  test("next skips a stable version — this repo has no suffix-drop gate like hub's, so next must only ever cut rc's", () => {
+  test("next skips a stable version — stables publish from main only", () => {
     const d = decidePublish("0.22.9", { versionExists: false }, { branch: "next" });
     expect(d).toMatchObject({ publish: false });
     expect("reason" in d && d.reason).toMatch(/stable promotions publish from main only/);
@@ -129,18 +129,25 @@ describe("decidePublish", () => {
     expect(d).toMatchObject({ publish: true });
   });
 
-  test("main is unaffected by the next-guard — stable publishes as before", () => {
+  test("main is unaffected — stable publishes as before", () => {
     const d = decidePublish("0.22.9", { versionExists: false }, { branch: "main" });
     expect(d).toMatchObject({ publish: true });
   });
 
-  test("a tag push on next still overrides the stable-skip guard", () => {
+  test("a tag push of a stable does NOT override the main-only gate", () => {
     const d = decidePublish(
       "0.22.9",
       { versionExists: false },
       { branch: "next", isTagPush: true },
     );
-    expect(d).toMatchObject({ publish: true });
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/from main only/);
+  });
+
+  test("a stable with no branch is refused — fail closed, don't guess the trigger", () => {
+    const d = decidePublish("0.22.9", { versionExists: false });
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/from main only/);
   });
 });
 
