@@ -1,3 +1,10 @@
+## [0.22.14-rc.2] - 2026-08-29
+
+**Release workflow now publishes rc's directly from `next`** (app#182,
+`parachute-hub#911`'s sibling) — no more `next`→`main` PR just to fire the
+publish trigger. `main` is unaffected; stable promotion still requires its
+own PR there. This rc exists to exercise that new trigger end-to-end.
+
 ## [0.22.14-rc.1] - 2026-08-26
 
 **Client identity pin + live-list registry.** Three commits on `next` after
