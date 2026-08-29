@@ -1,4 +1,16 @@
-# Release workflow — publishes on merge to main.
+# Release workflow — publishes on merge to `next` or `main`.
+#
+# ## Why `next` was added (2026-08-29, parachute-hub#911's sibling)
+#
+# Same bottleneck hub had: an rc cut needed a version-bump PR into `next`,
+# then a SECOND `next`→`main` PR just to fire this trigger. Adding `next`
+# removes that hop for rc's. `decidePublish()` in `scripts/release-plan.ts`
+# now takes the trigger branch and refuses to publish a stable (non-`-rc.`)
+# version pushed to `next` — this repo's decidePublish() was ported from
+# hub#790, before hub added the matchingRcVersions()/suffix-drop gate that
+# makes hub's own trigger safe to leave branch-agnostic, so the guard has to
+# live here instead. `main` is unchanged: still publishes rc OR stable,
+# whatever's in package.json.
 #
 # Publishes ONE package: @openparachute/app — the super-surface
 # SPA. Unlike the library packages in the ecosystem, what ships here is a
@@ -39,10 +51,13 @@
 #   - stable: v<X>.<Y>.<Z>          (e.g. v0.21.0)       → dist-tag `latest`
 #
 # Release flow:
-#   1. Bump `version` in package.json in a release PR (governance rule 2 —
-#      feature PRs don't touch it).
-#   2. Merge to main. CI runs the gates, `plan` decides the version isn't on
-#      npm yet, and publish runs automatically — no tag to remember.
+#   1. Cutting an rc: bump `version` to an `-rc.N` shape in a release PR
+#      (governance rule 2 — feature PRs don't touch it), targeting `next`
+#      directly — no `next`→`main` hop needed just to publish an rc.
+#      Promoting to stable: same shape, PR targets `main`, drops `-rc.N`.
+#   2. Merge it. CI runs the gates, `plan` decides whether to publish (see
+#      the `next`-guard above), and publish runs automatically — no tag to
+#      remember.
 #   (An explicit `git tag v$(...) && git push --tags` still works for a
 #   deliberate re-release, same as before.)
 #
@@ -61,6 +76,11 @@ on:
   push:
     branches:
       - main
+      - next
+    # paths has no effect on tag pushes (GitHub only evaluates it for
+    # branch pushes), so the manual re-tag/re-release path is unaffected.
+    paths:
+      - 'package.json'
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'

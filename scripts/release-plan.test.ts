@@ -113,6 +113,35 @@ describe("decidePublish", () => {
     const d = decidePublish("0.22.9", { ambiguous: true }, { isTagPush: true });
     expect(d).toMatchObject({ publish: true });
   });
+
+  test("next skips a stable version — this repo has no suffix-drop gate like hub's, so next must only ever cut rc's", () => {
+    const d = decidePublish("0.22.9", { versionExists: false }, { branch: "next" });
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/stable promotions publish from main only/);
+  });
+
+  test("next still publishes an rc", () => {
+    const d = decidePublish(
+      "0.22.9-rc.1",
+      { versionExists: false, currentDistTagVersion: "0.22.8-rc.5" },
+      { branch: "next" },
+    );
+    expect(d).toMatchObject({ publish: true });
+  });
+
+  test("main is unaffected by the next-guard — stable publishes as before", () => {
+    const d = decidePublish("0.22.9", { versionExists: false }, { branch: "main" });
+    expect(d).toMatchObject({ publish: true });
+  });
+
+  test("a tag push on next still overrides the stable-skip guard", () => {
+    const d = decidePublish(
+      "0.22.9",
+      { versionExists: false },
+      { branch: "next", isTagPush: true },
+    );
+    expect(d).toMatchObject({ publish: true });
+  });
 });
 
 describe("readRegistry", () => {
