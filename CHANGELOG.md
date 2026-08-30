@@ -1,3 +1,15 @@
+## [0.22.14] - 2026-08-30
+
+**Stable promotion of 0.22.14-rc.4.** No new code. Suffix-drop only. npm `@rc` is 0.22.14-rc.4; this is the matching `@latest`.
+
+The 0.22.14 line (rc.1–rc.4):
+
+- **Vault-scoped deep links `/v/<vault>/n/<id>` (#190, closes #186).** Shareable URL pins the vault. Redirect-not-render; unknown vault never falls back to current-vault; `/n/<id>` unchanged. Additive Copy-link.
+- **First-publish skip (#189).** Never-published package skips on a branch push (OIDC cannot create a package).
+- **Surface pins onto stable (#187).** `@openparachute/surface-client@0.3.7`, `@openparachute/surface-render@^0.3.1`.
+- **Rc's publish from `next` (#182); stables publish from `main` only (#184); plan `--tag-push` on tag triggers (#185).**
+- **One `VaultClient` per `(vaultId, url)` (#177, towards #110)** — still does not close #110.
+
 ## [0.22.14-rc.4] - 2026-08-30
 
 **Vault-scoped links + first-publish skip.** Two PRs on `next` after rc.3.
