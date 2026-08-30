@@ -1,3 +1,12 @@
+## [0.22.14-rc.3] - 2026-08-30
+
+**Surface packages onto stable.** client 0.3.7 + render 0.3.1 suffix-dropped to npm `@latest` today; this rc picks them up.
+
+- **Pin `@openparachute/surface-client` to `0.3.7` and `@openparachute/surface-render` to `^0.3.1` (#187).** Off the `0.3.7-rc.1` / `^0.3.0` pins. Lockfile collapses the nested 0.3.6 client duplicate (render 0.3.1 depends on exact 0.3.7).
+- Also on `next` since rc.2, shipping with this cut: stables publish from `main` only (#184); plan step passes `--tag-push` on tag triggers (#185).
+
+Do not suffix-drop 0.22.14 until this rc has lived. app#186 (vault-scoped `/v/` links) may still land as rc.4 cargo — no stable PR from this cut.
+
 ## [0.22.14-rc.2] - 2026-08-29
 
 **Release workflow now publishes rc's directly from `next`** (app#182,
