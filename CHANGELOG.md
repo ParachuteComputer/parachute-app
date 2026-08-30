@@ -1,3 +1,12 @@
+## [0.22.14-rc.4] - 2026-08-30
+
+**Vault-scoped links + first-publish skip.** Two PRs on `next` after rc.3.
+
+- **Vault-scoped deep links `/v/<vault>/n/<id>` (#190, closes #186).** Shareable URL pins the vault. Redirect-not-render into `/n/<id>` after the switch; unknown vault never falls back to current-vault; `/n/<id>` current-vault semantics unchanged. Additive Copy-link. `/v` is unreserved on the hub — no hub change.
+- **First-publish skip (#189).** `readRegistry` now plumbs `publishedVersions`; a never-published package skips on a branch push (OIDC cannot create a package). `{ambiguous:true}` still refuses above that skip; rc tag-push still tries.
+
+Do not suffix-drop 0.22.14 until this rc has lived. The app stable PR should anchor this rc.
+
 ## [0.22.14-rc.3] - 2026-08-30
 
 **Surface packages onto stable.** client 0.3.7 + render 0.3.1 suffix-dropped to npm `@latest` today; this rc picks them up.
