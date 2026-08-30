@@ -24,6 +24,17 @@
  * `@rc` would silently DOWNGRADE. We refuse to move a dist-tag backwards.
  * (Re-publishing an older version deliberately is still possible via an
  * explicit tag push, which takes the tag branch below.)
+ *
+ * **A first publish out of a merge.** npm trusted publishing (OIDC) cannot
+ * CREATE a package — it can only publish a new version of one that already
+ * exists and already trusts this workflow. A package with nothing on npm
+ * used to read as "not published → publish", and the job 404'd at the
+ * registry (surface#220, `@openparachute/account-client@0.1.0`; same hole
+ * here). A never-published package SKIPS on a branch push. An explicit
+ * **rc tag push** still short-circuits — a human pushing a tag is the
+ * deliberate act. This app currently ships one already-published package
+ * (`@openparachute/app`); the skip is so a second package, or a forgotten
+ * `publishedVersions` plumbing, cannot 404 the Release run.
  */
 
 /** Where a version stands relative to what's already published. */
@@ -37,6 +48,15 @@ export interface RegistryView {
   versionExists: boolean;
   /** Current version behind the dist-tag we'd move (`rc` or `latest`). */
   currentDistTagVersion?: string;
+  /**
+   * Every version currently on npm. When it is empty AND no dist-tag
+   * resolves, the package has never been published at all (surface#220).
+   * Omitted is treated as empty, which means "never published" and skips.
+   * That is the safe direction for a plumbing mistake: a forgotten list can
+   * only cost a skip, never an attempted first-publish npm will 404. An
+   * unreadable registry is `{ ambiguous: true }`, not an empty list.
+   */
+  publishedVersions?: readonly string[];
 }
 
 /** `rc` for a prerelease, `latest` otherwise. */
@@ -111,6 +131,17 @@ export function decidePublish(
   if (registry.versionExists) {
     return { publish: false, reason: `${version} is already on npm` };
   }
+  // Nothing on npm under this name AT ALL — not "this version is new", but
+  // "this package does not exist". Trusted publishing cannot create it, so a
+  // merge-driven run would 404 (surface#220). Distinct from `ambiguous`
+  // above: that is a registry we couldn't read, this is a registry that
+  // answered 404. Only the second one is knowledge.
+  if ((registry.publishedVersions ?? []).length === 0 && !registry.currentDistTagVersion) {
+    return {
+      publish: false,
+      reason: `nothing is published under this name yet, and ${version} would be its first release — a first publish is a deliberate act, not a merge side-effect. npm trusted publishing cannot create a package, only add versions to one that already trusts this workflow. Publish once by hand (or push an explicit rc tag), wire up the trusted publisher, and merge-driven releases take over from the second version on.`,
+    };
+  }
   const current = registry.currentDistTagVersion;
   if (current && compareVersions(version, current) < 0) {
     return {
@@ -131,8 +162,9 @@ export async function readRegistry(
   try {
     const res = await fetchImpl(`https://registry.npmjs.org/${encoded}`);
     if (res.status === 404) {
-      // Package has never been published at all — first release.
-      return { versionExists: false };
+      // Package does not exist. publishedVersions: [] (present-and-empty)
+      // is what decidePublish reads as never-published (surface#220).
+      return { versionExists: false, publishedVersions: [] };
     }
     if (!res.ok) return { ambiguous: true };
     const body = (await res.json()) as {
@@ -142,6 +174,7 @@ export async function readRegistry(
     return {
       versionExists: Boolean(body.versions?.[version]),
       currentDistTagVersion: body["dist-tags"]?.[distTagFor(version)],
+      publishedVersions: Object.keys(body.versions ?? {}),
     };
   } catch {
     return { ambiguous: true };
