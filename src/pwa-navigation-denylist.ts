@@ -63,6 +63,16 @@ export const navigationDenylist: readonly RegExp[] = [
   /^\/u\//,
 ];
 
+// NOT denied, and that is the point: `/v/<vault>/n/<id>` (app#186's vault-scoped
+// deep link) is an SPA route, so it must fall THROUGH to the cached shell exactly
+// like `/n/<id>` does — an installed PWA has to open a shared note link offline.
+// No entry above can match it (`/^\/vault\//` needs the full word `vault`; every
+// other prefix is anchored on a different first segment), so this needed no code
+// change — only the guard: `pwa-navigation-denylist.test.ts` pins `/v/...` in the
+// SPA-owned list, INCLUDING the ceremony-word cases (`/v/login/n/x`,
+// `/v/aaron/n/login`). Those are the shapes that would break if anyone ever
+// relaxed an entry's anchor to a bare substring test.
+
 // True when `pathname` matches some server-owned ceremony prefix above. This is
 // the exact predicate workbox applies for `navigateFallbackDenylist` (tested
 // against `url.pathname + url.search`), exported so the SPA route table can ask

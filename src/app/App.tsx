@@ -21,12 +21,14 @@ import { NavBandsProvider, isCeremonyPath } from "@/lib/nav/model";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useVaultStore } from "@/lib/vault";
 import { useCrossTabVaultSync } from "@/lib/vault/cross-tab-sync";
+import { findVaultByName } from "@/lib/vault/deep-link";
 import { useActiveVaultClient } from "@/lib/vault/queries";
 import { useReachabilityProbe } from "@/lib/vault/reachability-probe";
+import { switchVault } from "@/lib/vault/switch";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { SyncProvider } from "@/providers/SyncProvider";
 import { matchesNavigationDenylist } from "@/pwa-navigation-denylist";
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BrowserRouter,
   Link,
@@ -253,6 +255,84 @@ function NoteIdRedirect({ suffix = "" }: { suffix?: string }) {
   return <Navigate to={`/n/${encodeURIComponent(id)}${suffix}`} replace />;
 }
 
+// Vault-scoped deep links (app#186): `/v/<vault>/n/<id>` (+ `/edit`).
+//
+// The canonical `/n/<id>` names a note but not the vault to resolve it in, so a
+// link shared out of the app (an agent report, a channel message) only lands on
+// the right note if the reader happens to be sitting in the right vault. This
+// route pins the vault into the address: resolve `<vault>` by NAME against the
+// vaults connected on this device, switch to it, then hand off to the ordinary
+// `/n/<id>` route — one note-resolution/rendering path, not two.
+//
+// The handoff is a redirect, deliberately. Once the vault context has been
+// switched, `/v/<vault>/n/<id>` has said everything it has to say; the note now
+// lives at its canonical in-app address, and every downstream consumer of the
+// pathname (focus mode's `isFocusablePath`, the nav model's Recent-lens match,
+// NoteView's own `/n/<id>/edit` link, the error boundary's route key) keeps
+// working unchanged instead of needing a parallel `/v`-aware copy. NAVIGATION.md
+// classes this as (b) one-shot param consumption — the vault name is consumed on
+// arrival — so it replaces rather than pushes: Back from the note goes wherever
+// the reader came from, not into a shim that would re-switch the vault.
+//
+// `/v` and not `/vault`: `/vault/<name>/*` is the hub's per-vault proxy AND the
+// my.-phase vault worker's data plane (see the RESERVED PATH-SPACE note in the
+// router below). `src/lib/vault/deep-link.ts` carries the full collision check.
+function VaultScopedNoteRedirect({ suffix = "" }: { suffix?: string }) {
+  const { vault: vaultName, id } = useParams<{ vault: string; id: string }>();
+  const vaults = useVaultStore((s) => s.vaults);
+  const activeVaultId = useVaultStore((s) => s.activeVaultId);
+  const target = useMemo(() => findVaultByName(vaults, vaultName), [vaults, vaultName]);
+  const targetId = target?.id ?? null;
+
+  useEffect(() => {
+    // DESIGN-SPEC §4.4 (the switch-confirmation rule): every path that changes
+    // the active vault confirms with "Now in {vault}". `switchVault` no-ops the
+    // toast when the named vault is ALREADY active — the common case of a link
+    // to the vault you're in stays silent.
+    if (targetId) switchVault(targetId);
+  }, [targetId]);
+
+  if (!vaultName || !id) return <Navigate to="/" replace />;
+  // Not connected on this device — a real state at the address the reader
+  // landed on, never a blank screen or a silent bounce into the wrong vault.
+  if (!target) return <VaultNotConnected name={vaultName} />;
+  // One tick while the effect above flips the active vault. Redirecting before
+  // the switch lands would resolve the note against the OUTGOING vault and
+  // flash its not-found state.
+  if (activeVaultId !== target.id) return <RouteFallback />;
+  return <Navigate to={`/n/${encodeURIComponent(id)}${suffix}`} replace />;
+}
+
+// The unknown-vault state for a vault-scoped deep link. A link naming a vault
+// this device has never connected is a genuinely different situation from a
+// dead note id: the address is well-formed, the note may well exist, and the
+// fix is a connect — so it gets its own copy and points at `/add` (the existing
+// "Connect your own vault" ceremony) plus `/vaults` for the ones already here.
+function VaultNotConnected({ name }: { name: string }) {
+  return (
+    <div className="page">
+      <EmptyState
+        title={
+          <span className="font-serif text-xl text-fg">
+            Vault <span className="font-mono">{name}</span> is not connected here
+          </span>
+        }
+        description="This link names a vault that isn't on this device yet. Connect it and the link will open the note."
+        action={
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link to="/add" className="btn btn-primary btn-touch">
+              Connect a vault
+            </Link>
+            <Link to="/vaults" className="btn btn-secondary btn-touch">
+              Your vaults
+            </Link>
+          </div>
+        }
+      />
+    </div>
+  );
+}
+
 // W2-7 route renames (`/all`→`/notes`, `/graph`→`/map`): the old address
 // becomes a shim to the new one, preserving any query string (a bookmark to
 // `/all?view=pinned` must land on `/notes?view=pinned`, not just `/notes`).
@@ -399,6 +479,12 @@ function AppShell() {
                     App.test.tsx's "reserved path-space" cases pin that a
                     `/vault/<name>` or `/u/<handle>` navigation lands on the
                     `*` catch-all, not on NoteView.
+
+                    app#186's vault-scoped deep links therefore live under
+                    `/v/<vault>/...`, NOT `/vault/<name>/...` — a one-letter
+                    prefix that is unclaimed by the hub's route table, by
+                    `ROOT_SERVE_RESERVED_PREFIXES`, and by the reservation
+                    above. `src/lib/vault/deep-link.ts` carries the check.
                   */}
             <Suspense fallback={<RouteFallback />}>
               <Routes>
@@ -589,6 +675,18 @@ function AppShell() {
                       <NoteEditor />
                     </RouteErrorBoundary>
                   }
+                />
+                {/*
+                    app#186 — the vault-scoped forms of the two routes above.
+                    Four/five segments, so they can't be reached by the
+                    single-segment `/:id` shim; `/v` is unclaimed by both doors
+                    (hub route table + my. reserved path-space) and by the PWA
+                    navigation denylist. See `VaultScopedNoteRedirect`.
+                  */}
+                <Route path="/v/:vault/n/:id" element={<VaultScopedNoteRedirect />} />
+                <Route
+                  path="/v/:vault/n/:id/edit"
+                  element={<VaultScopedNoteRedirect suffix="/edit" />}
                 />
                 <Route path="/:id" element={<NoteIdRedirect />} />
                 <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />

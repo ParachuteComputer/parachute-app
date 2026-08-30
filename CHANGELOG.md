@@ -1,3 +1,40 @@
+## [0.22.14] - 2026-08-30
+
+**Stable promotion of 0.22.14-rc.4.** No new code. Suffix-drop only. npm `@rc` is 0.22.14-rc.4; this is the matching `@latest`.
+
+The 0.22.14 line (rc.1–rc.4):
+
+- **Vault-scoped deep links `/v/<vault>/n/<id>` (#190, closes #186).** Shareable URL pins the vault. Redirect-not-render; unknown vault never falls back to current-vault; `/n/<id>` unchanged. Additive Copy-link.
+- **First-publish skip (#189).** Never-published package skips on a branch push (OIDC cannot create a package).
+- **Surface pins onto stable (#187).** `@openparachute/surface-client@0.3.7`, `@openparachute/surface-render@^0.3.1`.
+- **Rc's publish from `next` (#182); stables publish from `main` only (#184); plan `--tag-push` on tag triggers (#185).**
+- **One `VaultClient` per `(vaultId, url)` (#177, towards #110)** — still does not close #110.
+
+## [0.22.14-rc.4] - 2026-08-30
+
+**Vault-scoped links + first-publish skip.** Two PRs on `next` after rc.3.
+
+- **Vault-scoped deep links `/v/<vault>/n/<id>` (#190, closes #186).** Shareable URL pins the vault. Redirect-not-render into `/n/<id>` after the switch; unknown vault never falls back to current-vault; `/n/<id>` current-vault semantics unchanged. Additive Copy-link. `/v` is unreserved on the hub — no hub change.
+- **First-publish skip (#189).** `readRegistry` now plumbs `publishedVersions`; a never-published package skips on a branch push (OIDC cannot create a package). `{ambiguous:true}` still refuses above that skip; rc tag-push still tries.
+
+Do not suffix-drop 0.22.14 until this rc has lived. The app stable PR should anchor this rc.
+
+## [0.22.14-rc.3] - 2026-08-30
+
+**Surface packages onto stable.** client 0.3.7 + render 0.3.1 suffix-dropped to npm `@latest` today; this rc picks them up.
+
+- **Pin `@openparachute/surface-client` to `0.3.7` and `@openparachute/surface-render` to `^0.3.1` (#187).** Off the `0.3.7-rc.1` / `^0.3.0` pins. Lockfile collapses the nested 0.3.6 client duplicate (render 0.3.1 depends on exact 0.3.7).
+- Also on `next` since rc.2, shipping with this cut: stables publish from `main` only (#184); plan step passes `--tag-push` on tag triggers (#185).
+
+Do not suffix-drop 0.22.14 until this rc has lived. app#186 (vault-scoped `/v/` links) may still land as rc.4 cargo — no stable PR from this cut.
+
+## [0.22.14-rc.2] - 2026-08-29
+
+**Release workflow now publishes rc's directly from `next`** (app#182,
+`parachute-hub#911`'s sibling) — no more `next`→`main` PR just to fire the
+publish trigger. `main` is unaffected; stable promotion still requires its
+own PR there. This rc exists to exercise that new trigger end-to-end.
+
 ## [0.22.14-rc.1] - 2026-08-26
 
 **Client identity pin + live-list registry.** Three commits on `next` after

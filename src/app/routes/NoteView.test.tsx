@@ -257,6 +257,45 @@ describe("NoteView route", () => {
     expect(writeText).toHaveBeenLastCalledWith("Canon/Aaron");
   });
 
+  // app#186 — "Copy link" is the SHAREABLE address (absolute + vault-scoped),
+  // distinct from "Copy reference" right below it (the vault-internal path an
+  // AI agent wants). A bare `/n/<id>` in a channel message only opens the right
+  // note for a reader who happens to be in the right vault; `/v/<vault>/n/<id>`
+  // pins it.
+  it("Copy link copies the absolute, VAULT-SCOPED URL — not the bare /n/<id>", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T04:30:54.177Z",
+          content: "Teacher and builder.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    // The mount base is read off `window.location` (not the MemoryRouter), so
+    // stand the document at the root mount for a deterministic expectation.
+    window.history.replaceState({}, "", "/");
+
+    renderAt("/n/abc-123");
+    await screen.findByText("Teacher and builder.");
+
+    fireEvent.click(screen.getByRole("button", { name: /copy a shareable link to this note/i }));
+    await waitFor(() =>
+      // `dev` is the seeded active vault's name.
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/v/dev/n/abc-123`),
+    );
+    // Explicitly NOT the bare current-vault address.
+    const copied = String(writeText.mock.lastCall ?? "");
+    expect(copied).not.toBe(`${window.location.origin}/n/abc-123`);
+    expect(copied).toContain("/v/dev/");
+  });
+
   // views-wave-1's half of the §2 bridge: a #view-tagged note (canonical or
   // legacy saved-view) offers a trip into ViewSurface.
   it("shows 'Open as view' on a #view-tagged note, linking to /views/:id", async () => {

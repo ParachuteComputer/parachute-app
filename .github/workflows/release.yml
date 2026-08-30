@@ -1,4 +1,15 @@
-# Release workflow — publishes on merge to main.
+# Release workflow — publishes on merge to `next` or `main`.
+#
+# ## Why `next` was added (2026-08-29, parachute-hub#911's sibling)
+#
+# Same bottleneck hub had: an rc cut needed a version-bump PR into `next`,
+# then a SECOND `next`→`main` PR just to fire this trigger. Adding `next`
+# removes that hop for rc's. `decidePublish()` in `scripts/release-plan.ts`
+# now takes the trigger branch and refuses to publish a stable (non-`-rc.`)
+# unless that trigger is a branch push of `main`. A tag push of a stable is
+# also refused — a write token can push a tag; it cannot merge to `main`.
+# `main` is unchanged: still publishes rc OR stable, whatever's in
+# package.json. Rc tag-pushes still override the registry guards.
 #
 # Publishes ONE package: @openparachute/app — the super-surface
 # SPA. Unlike the library packages in the ecosystem, what ships here is a
@@ -29,20 +40,23 @@
 # (unit-tested — release logic that can double-publish or silently drop a
 # release shouldn't be untested shell in a `run:` block).
 #
-# The tag-push path is UNCHANGED and still works: an explicit tag still
-# publishes, and still overrides every check (including a deliberate
-# re-release of an older version), because a tag is a human saying "release
-# this".
+# The rc tag-push path is unchanged: an explicit rc tag still publishes,
+# and still overrides the registry checks (including a deliberate
+# re-release of an older rc), because an rc tag is a human saying "release
+# this rc". A tag push of a stable is skipped.
 #
 # Tag conventions (governance rule 2):
 #   - rc:     v<X>.<Y>.<Z>-rc.<N>   (e.g. v0.21.0-rc.1)  → dist-tag `rc`
 #   - stable: v<X>.<Y>.<Z>          (e.g. v0.21.0)       → dist-tag `latest`
 #
 # Release flow:
-#   1. Bump `version` in package.json in a release PR (governance rule 2 —
-#      feature PRs don't touch it).
-#   2. Merge to main. CI runs the gates, `plan` decides the version isn't on
-#      npm yet, and publish runs automatically — no tag to remember.
+#   1. Cutting an rc: bump `version` to an `-rc.N` shape in a release PR
+#      (governance rule 2 — feature PRs don't touch it), targeting `next`
+#      directly — no `next`→`main` hop needed just to publish an rc.
+#      Promoting to stable: same shape, PR targets `main`, drops `-rc.N`.
+#   2. Merge it. CI runs the gates, `plan` decides whether to publish (see
+#      the `next`-guard above), and publish runs automatically — no tag to
+#      remember.
 #   (An explicit `git tag v$(...) && git push --tags` still works for a
 #   deliberate re-release, same as before.)
 #
@@ -61,6 +75,11 @@ on:
   push:
     branches:
       - main
+      - next
+    # paths has no effect on tag pushes (GitHub only evaluates it for
+    # branch pushes), so the manual re-tag/re-release path is unaffected.
+    paths:
+      - 'package.json'
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
@@ -82,10 +101,9 @@ jobs:
   # session with no tags, so nothing published and nobody noticed until an
   # operator asked why their box was stale.
   #
-  # Note the tag-push path is unchanged: an explicit tag still publishes, and
-  # still overrides every check, because a tag is a human saying "release
-  # this". On a tag push this job's own verdict isn't consulted by
-  # `publish-npm` below (same as hub's workflow) — the tag alone decides.
+  # Plan is consulted on tag pushes too. An rc tag still publishes (the
+  # version is an rc, so the main-only gate doesn't fire). A tag push of a
+  # stable is skipped — stables publish from `main` only.
   # ---------------------------------------------------------------------------
   plan:
     name: plan
@@ -98,7 +116,10 @@ jobs:
         with:
           bun-version: 1.4
       - id: app
-        run: bun scripts/release-plan.ts . @openparachute/app
+        # `--tag-push` on tag triggers, same as hub's plan step — without it
+        # the planner's documented rc-tag override never fires and a
+        # deliberate rc re-release is skipped as already-published.
+        run: bun scripts/release-plan.ts . @openparachute/app ${{ github.ref_type == 'tag' && '--tag-push' || '' }}
 
   test:
     name: test
@@ -120,10 +141,10 @@ jobs:
   publish-npm:
     name: publish to npm
     needs: [plan, test]
-    # A tag push always publishes (a human said release this). A branch push
-    # (i.e. a merge to main) publishes only when `plan` decided the version
-    # isn't on npm yet.
-    if: ${{ github.ref_type == 'tag' || (github.ref_type != 'tag' && needs.plan.outputs.should_publish == 'true') }}
+    # Plan is the only publish signal — including on a tag push. A tag used
+    # to bypass plan entirely, which is how a write-token tag of a stable
+    # would ship `@latest` without a main merge.
+    if: ${{ needs.plan.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -61,9 +61,73 @@ describe("decidePublish", () => {
     expect(d).toMatchObject({ publish: false });
   });
 
-  test("first-ever release of a package publishes", () => {
-    const d = decidePublish("0.1.0", { versionExists: false });
+  test("a never-published package SKIPS on a branch push — a first publish is deliberate", () => {
+    // surface#220 / hub#930: a 404 package used to read "0.1.0 is not on npm"
+    // → should_publish=true, and the OIDC publish 404'd.
+    const d = decidePublish(
+      "0.1.0",
+      { versionExists: false, publishedVersions: [] },
+      { branch: "main" },
+    );
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/first publish is a deliberate act/);
+    expect("reason" in d && d.reason).toMatch(/cannot create a package/);
+  });
+
+  test("an rc of a never-published package skips too — it's the package, not the channel", () => {
+    const d = decidePublish(
+      "0.1.0-rc.1",
+      { versionExists: false, publishedVersions: [] },
+      { branch: "next" },
+    );
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/nothing is published under this name yet/);
+  });
+
+  test("omitted publishedVersions with no dist-tag reads as never-published — skip, don't publish", () => {
+    const d = decidePublish("0.1.0-rc.1", { versionExists: false });
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/nothing is published under this name yet/);
+  });
+
+  test("a never-published package on an rc TAG PUSH still tries — a human said release this", () => {
+    const d = decidePublish(
+      "0.1.0-rc.1",
+      { versionExists: false, publishedVersions: [] },
+      { isTagPush: true },
+    );
     expect(d).toMatchObject({ publish: true });
+    expect("reason" in d && d.reason).toMatch(/explicit tag push/);
+  });
+
+  test("a never-published STABLE on a tag push is still refused by the from-main gate", () => {
+    const d = decidePublish(
+      "0.1.0",
+      { versionExists: false, publishedVersions: [] },
+      { isTagPush: true },
+    );
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/from main only/);
+  });
+
+  test("an existing package is unaffected — one published version is enough", () => {
+    const d = decidePublish(
+      "0.1.0-rc.2",
+      {
+        versionExists: false,
+        currentDistTagVersion: "0.1.0-rc.1",
+        publishedVersions: ["0.1.0-rc.1"],
+      },
+      { branch: "next" },
+    );
+    expect(d).toMatchObject({ publish: true });
+    expect("reason" in d && d.reason).toMatch(/is not on npm/);
+  });
+
+  test("an unreadable registry is still a REFUSAL, not a never-published skip", () => {
+    const ambiguous = decidePublish("0.1.0-rc.1", { ambiguous: true }, { branch: "next" });
+    expect(ambiguous).toMatchObject({ refuse: true });
+    expect("refuse" in ambiguous && ambiguous.reason).toMatch(/refusing to guess/);
   });
 
   test("REFUSES to move a dist-tag backwards — the parallel-merge hazard", () => {
@@ -92,12 +156,12 @@ describe("decidePublish", () => {
   test("an ambiguous registry REFUSES rather than guessing", () => {
     // A false "not published" double-publishes; a false "published" drops a
     // release. Guessing is worse than failing loudly.
-    const d = decidePublish("0.22.9", { ambiguous: true });
+    const d = decidePublish("0.22.9", { ambiguous: true }, { branch: "main" });
     expect(d).toMatchObject({ refuse: true });
     expect("refuse" in d && d.reason).toMatch(/refusing to guess/);
   });
 
-  test("an explicit tag push overrides every check — a human said release this", () => {
+  test("an explicit rc tag push overrides the registry checks — a human said release this rc", () => {
     const d = decidePublish(
       "0.22.0-rc.1",
       {
@@ -109,9 +173,53 @@ describe("decidePublish", () => {
     expect(d).toMatchObject({ publish: true });
   });
 
-  test("a tag push even overrides ambiguity", () => {
-    const d = decidePublish("0.22.9", { ambiguous: true }, { isTagPush: true });
+  test("an rc tag push even overrides ambiguity", () => {
+    const d = decidePublish("0.22.9-rc.1", { ambiguous: true }, { isTagPush: true });
     expect(d).toMatchObject({ publish: true });
+  });
+
+  test("next skips a stable version — stables publish from main only", () => {
+    const d = decidePublish("0.22.9", { versionExists: false }, { branch: "next" });
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/stable promotions publish from main only/);
+  });
+
+  test("next still publishes an rc", () => {
+    const d = decidePublish(
+      "0.22.9-rc.1",
+      { versionExists: false, currentDistTagVersion: "0.22.8-rc.5" },
+      { branch: "next" },
+    );
+    expect(d).toMatchObject({ publish: true });
+  });
+
+  test("main is unaffected — stable publishes as before", () => {
+    const d = decidePublish(
+      "0.22.9",
+      {
+        versionExists: false,
+        currentDistTagVersion: "0.22.8",
+        publishedVersions: ["0.22.8"],
+      },
+      { branch: "main" },
+    );
+    expect(d).toMatchObject({ publish: true });
+  });
+
+  test("a tag push of a stable does NOT override the main-only gate", () => {
+    const d = decidePublish(
+      "0.22.9",
+      { versionExists: false },
+      { branch: "next", isTagPush: true },
+    );
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/from main only/);
+  });
+
+  test("a stable with no branch is refused — fail closed, don't guess the trigger", () => {
+    const d = decidePublish("0.22.9", { versionExists: false });
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/from main only/);
   });
 });
 
@@ -138,10 +246,33 @@ describe("readRegistry", () => {
     expect(v).toMatchObject({ currentDistTagVersion: "0.22.8" });
   });
 
-  test("a never-published package is not ambiguous — it's a first release", async () => {
+  test("a never-published package is not ambiguous — a 404 is knowledge", async () => {
     const v = await readRegistry("@openparachute/new", "0.1.0", (() =>
       json({}, 404)) as unknown as typeof fetch);
-    expect(v).toMatchObject({ versionExists: false });
+    expect(v).toMatchObject({ versionExists: false, publishedVersions: [] });
+  });
+
+  test("the 404 view composes into a skip — the two halves of surface#220 line up", async () => {
+    const v = await readRegistry("@openparachute/new", "0.1.0", (() =>
+      json({}, 404)) as unknown as typeof fetch);
+    expect("ambiguous" in v).toBe(false);
+    if ("ambiguous" in v) return;
+    const d = decidePublish("0.1.0", v, { branch: "main" });
+    expect(d).toMatchObject({ publish: false });
+    expect("reason" in d && d.reason).toMatch(/first publish is a deliberate act/);
+  });
+
+  test("a populated registry returns publishedVersions", async () => {
+    const v = await readRegistry("@openparachute/app", "0.22.9-rc.3", (() =>
+      json({
+        versions: { "0.22.9-rc.1": {}, "0.22.9-rc.2": {} },
+        "dist-tags": { rc: "0.22.9-rc.2", latest: "0.22.8" },
+      })) as unknown as typeof fetch);
+    expect(v).toMatchObject({
+      versionExists: false,
+      currentDistTagVersion: "0.22.9-rc.2",
+      publishedVersions: ["0.22.9-rc.1", "0.22.9-rc.2"],
+    });
   });
 
   test("a 5xx is ambiguous", async () => {
