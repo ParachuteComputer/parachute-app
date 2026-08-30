@@ -29,6 +29,7 @@ import {
   useVaultStore,
 } from "@/lib/vault";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
+import { noteShareUrl } from "@/lib/vault/deep-link";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
 import { isViewNote } from "@/lib/views/schema";
@@ -284,9 +285,40 @@ function MetadataPanel({ note }: { note: Note }) {
           />
         ))}
       </dl>
+      <CopyLinkButton noteId={note.id} />
       {note.path ? <CopyReferenceButton path={note.path} /> : null}
       <ProvenanceBadge note={note} variant="detail" className="mt-3" />
     </section>
+  );
+}
+
+// "Copy link" — the shareable ADDRESS of this note, as opposed to the
+// "Copy reference" button below it, which copies the note's vault-internal path
+// for handing to an AI agent. app#186: the copied URL is the VAULT-SCOPED form
+// (`/v/<vault>/n/<id>`), never the bare `/n/<id>` — a link that travels out of
+// this app into a channel message or a report has to say which vault to resolve
+// the note in, or it only works for a reader who happens to be sitting in the
+// same vault. In-app navigation (every `<Link to="/n/…">` in this codebase)
+// deliberately keeps the short current-vault form: it's already in a vault
+// context, and pinning the name into every internal href would just make the
+// history stack noisier without pinning anything that could drift.
+//
+// Rendered only with an active vault (the whole route is guarded on one), so
+// the vault's name is always available to scope with.
+function CopyLinkButton({ noteId }: { noteId: string }) {
+  const vault = useVaultStore((s) => s.getActiveVault());
+  const { copied, copy } = useCopyToClipboard();
+  if (!vault?.name) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => copy(noteShareUrl(vault.name, noteId))}
+      className="btn btn-secondary btn-touch mt-3 w-full"
+      aria-label="Copy a shareable link to this note"
+    >
+      {copied ? "Copied ✓" : "Copy link"}
+    </button>
   );
 }
 

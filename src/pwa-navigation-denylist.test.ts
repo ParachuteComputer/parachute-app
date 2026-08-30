@@ -86,6 +86,24 @@ describe("PWA navigation denylist", () => {
     // unlike /admin, /billing, etc. above, which ARE ceremonies bare.
     "/vault",
     "/u",
+    // app#186: vault-scoped deep links are SPA routes — an installed PWA must
+    // serve the cached shell for them (offline included), exactly as it does
+    // for the canonical `/n/<id>` pair above. The `/v` prefix is deliberately
+    // NOT `/vault` (which IS denied, two entries up) precisely so these can be
+    // SPA-owned without touching the reserved data-plane namespace.
+    "/v/aaron/n/abc123",
+    "/v/aaron/n/abc123/edit",
+    "/v/aaron/n/abc123?highlight=x",
+    // The ceremony-word cases, both positions: a vault named `login` and a note
+    // named `login`. Neither may be swallowed by `/^\/login/` — the prefixes are
+    // anchored at the start of the pathname, and these pin that they stay so.
+    "/v/login/n/abc123",
+    "/v/aaron/n/login",
+    "/v/admin/n/billing",
+    // Under a sub-mount the whole thing shifts below the mount prefix and is
+    // still SPA-owned.
+    "/notes/v/aaron/n/abc123",
+    "/surface/parachute/v/aaron/n/abc123",
   ];
   it.each(spaRoutes)("serves the SPA shell for %s", (path) => {
     expect(isDenied(path)).toBe(false);

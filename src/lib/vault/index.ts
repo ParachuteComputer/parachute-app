@@ -2,6 +2,7 @@ export * from "./audio-retention";
 export * from "./auth-halt-store";
 export * from "./client";
 export * from "./cross-tab-sync";
+export * from "./deep-link";
 export * from "./discovery";
 export * from "./graph";
 export * from "./hub-discovery";
