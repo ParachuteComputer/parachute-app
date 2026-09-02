@@ -6,7 +6,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-// app#186 — `/v/<vault>/n/<id>`: a note link that names its own vault.
+// app#186 / app#194 — `/v/<vault>/n/<note>`: a note link that names its own
+// vault. Both segments take a name OR an id, and the note half may be a path.
 //
 // The mount base is detected from `window.location.pathname` at render time
 // (`detectMountBase`), so this file exercises BOTH deploy shapes without a
@@ -42,7 +43,7 @@ function seedTwoVaults() {
   });
 }
 
-describe("App — vault-scoped deep links (app#186)", () => {
+describe("App — vault-scoped deep links (app#186, app#194)", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -197,6 +198,136 @@ describe("App — vault-scoped deep links (app#186)", () => {
       window.history.replaceState({}, "", "/notes/v/beta/n/abc123");
       render(<App />);
       expect(await screen.findByText(/is not connected here/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("the note reference — id or path (app#194)", () => {
+    it("resolves a ULID note id", async () => {
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta/n/01JBQZ0Q2M8T9V5X7YB3KD4WEN");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/n/01JBQZ0Q2M8T9V5X7YB3KD4WEN");
+      });
+    });
+
+    it("takes a multi-segment PATH as the note reference", async () => {
+      // The hand-written form. A note is addressable by path, and a path has
+      // slashes — the splat route takes the whole remainder of the URL and the
+      // canonical address re-encodes it into one segment.
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta/n/Projects/2026/Roadmap");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/n/Projects%2F2026%2FRoadmap");
+      });
+    });
+
+    it("carries the /edit tail on a multi-segment path", async () => {
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta/n/Projects/2026/Roadmap/edit");
+      render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/notes/n/Projects%2F2026%2FRoadmap/edit");
+      });
+    });
+
+    it("a path and its percent-encoded form land on the SAME canonical address", async () => {
+      // The two spellings of one address must not drift: whichever a reader
+      // pastes, NoteView receives the identical reference.
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta/n/Projects%2FREADME");
+      const encoded = render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/notes/n/Projects%2FREADME");
+      });
+      encoded.unmount();
+
+      useVaultStore.setState({ activeVaultId: "v-alpha" });
+      window.history.replaceState({}, "", "/notes/v/beta/n/Projects/README");
+      render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/notes/n/Projects%2FREADME");
+      });
+    });
+
+    it("an empty note reference lands on that vault's notes, not a dead end", async () => {
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta/n/");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/notes");
+      });
+    });
+  });
+
+  describe("the vault reference — name or id (app#194)", () => {
+    it("resolves the vault by its id", async () => {
+      // `vaultIdFromUrl` is derived from the vault URL, so this form resolves on
+      // every device that connected the same vault — even one whose local label
+      // was renamed away from the server slug (app#191).
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/v-beta/n/abc123");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/n/abc123");
+      });
+    });
+
+    it("resolves a locally renamed vault by id when its name no longer matches", async () => {
+      useVaultStore.setState({
+        vaults: { "v-alpha": vault("v-alpha", "alpha"), "v-beta": vault("v-beta", "Beta Redux") },
+        activeVaultId: "v-alpha",
+      });
+      window.history.replaceState({}, "", "/notes/v/v-beta/n/abc123");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/n/abc123");
+      });
+    });
+  });
+
+  describe("the bare /v/<vault> address", () => {
+    it("switches to the vault and lands on its notes", async () => {
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/notes");
+      });
+    });
+
+    it("shows the not-connected state for an unknown vault", async () => {
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/gamma");
+      render(<App />);
+      expect(await screen.findByText(/is not connected here/i)).toBeInTheDocument();
+      expect(useVaultStore.getState().activeVaultId).toBe("v-alpha");
+    });
+  });
+
+  describe("an unresolvable vault is a dead end at every note-reference shape", () => {
+    it.each([
+      ["a ULID id", "/notes/v/gamma/n/01JBQZ0Q2M8T9V5X7YB3KD4WEN"],
+      ["a multi-segment path", "/notes/v/gamma/n/Projects/2026/Roadmap"],
+      ["a path with an /edit tail", "/notes/v/gamma/n/Projects/2026/Roadmap/edit"],
+      ["an empty note reference", "/notes/v/gamma/n/"],
+    ])("%s", async (_label, path) => {
+      // The access boundary: an address naming a vault this device does not hold
+      // never borrows the ACTIVE vault's session to resolve the note. Same
+      // response the single-segment form already gives.
+      seedTwoVaults();
+      window.history.replaceState({}, "", path);
+      render(<App />);
+      expect(await screen.findByText(/is not connected here/i)).toBeInTheDocument();
+      expect(useVaultStore.getState().activeVaultId).toBe("v-alpha");
+      expect(window.location.pathname).toBe(path);
     });
   });
 
