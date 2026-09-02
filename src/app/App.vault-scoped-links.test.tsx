@@ -234,6 +234,17 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       });
     });
 
+    it("keeps an encoded single-segment path ending in /edit as the note reference", async () => {
+      // The encoded slash keeps this on the higher-ranked `:id` route. The
+      // literal `edit` belongs to the note path, not the editor-route suffix.
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta/n/Notes%2Fedit");
+      render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/notes/n/Notes%2Fedit");
+      });
+    });
+
     it("a path and its percent-encoded form land on the SAME canonical address", async () => {
       // The two spellings of one address must not drift: whichever a reader
       // pastes, NoteView receives the identical reference.

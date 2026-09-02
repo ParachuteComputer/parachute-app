@@ -262,10 +262,12 @@ function NoteIdRedirect({ suffix = "" }: { suffix?: string }) {
 // link shared out of the app (an agent report, a channel message) only lands on
 // the right note if the reader happens to be sitting in the right vault. This
 // route pins the vault into the address: resolve `<vault>` — by name OR by id,
-// see `resolveVaultRef` — against the vaults connected on this device, switch to
-// it, then hand off to the ordinary `/n/<note>` route: one note-resolution and
-// rendering path, not two. `<note>` is whatever the vault's `?id=` accepts, a
-// ULID or a path, in one encoded segment or spread across several.
+// see `resolveVaultRef` and its name-before-id tie-break in
+// `src/lib/vault/deep-link.ts` — against the vaults connected on this device,
+// switch to it, then hand off to the ordinary `/n/<note>` route: one
+// note-resolution and rendering path, not two. `<note>` is whatever the vault's
+// `?id=` accepts, a ULID or a path, in one encoded segment or spread across
+// several.
 //
 // It grants nothing. The vault must already be connected on this device with a
 // live grant, exactly as `/n/<id>` requires; an address naming a vault this
