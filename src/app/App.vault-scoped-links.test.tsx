@@ -173,9 +173,11 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       window.history.replaceState({}, "", "/notes/v/gamma/n/abc123");
       render(<App />);
       await screen.findByText(/is not connected here/i);
+      // The connect link carries the address that failed, so finishing the
+      // connect returns here and resolves it (app B/6 — own describe below).
       expect(screen.getByRole("link", { name: /connect a vault/i })).toHaveAttribute(
         "href",
-        "/notes/add",
+        "/notes/add?redirect=%2Fv%2Fgamma%2Fn%2Fabc123",
       );
       expect(screen.getByRole("link", { name: /your vaults/i })).toHaveAttribute(
         "href",
@@ -356,5 +358,78 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       expect(screen.queryByText(/now in/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/is not connected here/i)).not.toBeInTheDocument();
     });
+  });
+});
+
+// app B/6 — the vault-scoped shape of the logged-out deep link. `/v/<vault>/n/<id>`
+// never reaches NoteView when the vault isn't here: it stops at the
+// not-connected card, which is the RIGHT screen (the fix is a connect) but used
+// to send the reader into `/add` with the address gone, so finishing the connect
+// dropped them on the landing. The card's connect link now carries the whole
+// `/v/...` address as `?redirect=` — the same channel `/n/<id>` uses — so the
+// return re-enters THIS route, resolves the now-connected vault, and hands off
+// to the note.
+describe("App — a vault-scoped deep link survives the connect (app B/6)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem(MIRROR_FLAG_KEY, "false");
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    window.history.replaceState({}, "", "/");
+    stubFetch();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("the not-connected card's connect link carries the full /v/ address (root mount)", async () => {
+    // No vaults at all — the logged-out reader who was handed a share link.
+    window.history.replaceState({}, "", "/v/beta/n/abc123");
+    render(<App />);
+
+    await screen.findByText(/is not connected here/i);
+    expect(screen.getByRole("link", { name: /connect a vault/i })).toHaveAttribute(
+      "href",
+      "/add?redirect=%2Fv%2Fbeta%2Fn%2Fabc123",
+    );
+  });
+
+  it("carries a multi-segment note path and the /edit tail through unchanged", async () => {
+    window.history.replaceState({}, "", "/v/beta/n/Projects/2026/Roadmap/edit");
+    render(<App />);
+
+    await screen.findByText(/is not connected here/i);
+    const href = screen.getByRole("link", { name: /connect a vault/i }).getAttribute("href");
+    expect(new URLSearchParams(href!.slice(href!.indexOf("?"))).get("redirect")).toBe(
+      "/v/beta/n/Projects/2026/Roadmap/edit",
+    );
+  });
+
+  it("is mount-aware: the href is prefixed, the return target is not (the /notes/notes bug)", async () => {
+    // `withReturnTo` is handed the ROUTER-relative path (what OAuthCallback's
+    // navigate() wants); only the Link itself gets the basename. Spelling the
+    // mount into the param would double it on the way back.
+    window.history.replaceState({}, "", "/notes/v/beta/n/abc123");
+    render(<App />);
+
+    await screen.findByText(/is not connected here/i);
+    expect(screen.getByRole("link", { name: /connect a vault/i })).toHaveAttribute(
+      "href",
+      "/notes/add?redirect=%2Fv%2Fbeta%2Fn%2Fabc123",
+    );
+  });
+
+  it("a vault this device DOES hold is unaffected — no card, no redirect param", async () => {
+    // The control: the card (and its link) only exist on the unresolvable path.
+    seedTwoVaults();
+    window.history.replaceState({}, "", "/notes/v/beta/n/abc123");
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/notes/n/abc123"));
+    expect(window.location.search).toBe("");
+    expect(screen.queryByText(/is not connected here/i)).not.toBeInTheDocument();
   });
 });

@@ -25,6 +25,7 @@ import { parseNoteRef, resolveVaultRef } from "@/lib/vault/deep-link";
 import { useActiveVaultClient } from "@/lib/vault/queries";
 import { useReachabilityProbe } from "@/lib/vault/reachability-probe";
 import { switchVault } from "@/lib/vault/switch";
+import { withReturnTo } from "@/lib/vault/url";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { SyncProvider } from "@/providers/SyncProvider";
 import { matchesNavigationDenylist } from "@/pwa-navigation-denylist";
@@ -344,7 +345,16 @@ interface VaultScopedRedirectProps {
 // dead note id: the address is well-formed, the note may well exist, and the
 // fix is a connect — so it gets its own copy and points at `/add` (the existing
 // "Connect your own vault" ceremony) plus `/vaults` for the ones already here.
+//
+// The connect link carries the address the reader arrived on as `?redirect=`,
+// so the flow returns them to the note they were sent rather than the default
+// landing — the same return channel the `/n/<id>` guard in NoteView uses
+// (`withReturnTo` → `/add` → `beginOAuth` → `OAuthCallback`). The FULL `/v/...`
+// address is what returns: once the vault is connected this route resolves it
+// and hands off to `/n/<note>` exactly as it would have the first time.
 function VaultNotConnected({ name }: { name: string }) {
+  const location = useLocation();
+  const connectHref = withReturnTo("/add", `${location.pathname}${location.search}`);
   return (
     <div className="page">
       <EmptyState
@@ -356,7 +366,7 @@ function VaultNotConnected({ name }: { name: string }) {
         description="This link names a vault that isn't on this device yet. Connect it and the link will open the note."
         action={
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link to="/add" className="btn btn-primary btn-touch">
+            <Link to={connectHref} className="btn btn-primary btn-touch">
               Connect a vault
             </Link>
             <Link to="/vaults" className="btn btn-secondary btn-touch">
