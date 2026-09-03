@@ -217,7 +217,10 @@ function makeToggleWrap(
 
 export const toggleBold = makeToggleWrap("StrongEmphasis", "EmphasisMark", "**", ["Strikethrough"]);
 export const toggleItalic = makeToggleWrap("Emphasis", "EmphasisMark", "*", ["Strikethrough"]);
-export const toggleStrikethrough = makeToggleWrap("Strikethrough", "StrikethroughMark", "~~");
+export const toggleStrikethrough = makeToggleWrap("Strikethrough", "StrikethroughMark", "~~", [
+  "StrongEmphasis",
+  "Emphasis",
+]);
 // Code's marker must also land outside any emphasis span a ragged selection
 // intersects. Otherwise an opening backtick can be inserted inside `**`/`*`
 // while its closing partner lands after the emphasis close, swallowing that
