@@ -44,3 +44,26 @@ export function safeInternalRedirect(raw: string | null | undefined): string | u
     return raw;
   }
 }
+
+/**
+ * Carry the address a reader was actually trying to reach into a connect-flow
+ * entry point, so signing in returns them THERE instead of the default landing.
+ *
+ * The return channel already exists end to end: `?redirect=` is read at `/add`
+ * (`AddVault`), rides the OAuth pending state through sessionStorage
+ * (`beginOAuth`'s `redirect` option), and is spent by `OAuthCallback`, which
+ * re-sanitizes before it navigates. What was missing is the FIRST hop — a
+ * logged-out `/n/<id>` bounced to `/` and dropped the id on the floor. This is
+ * the one place that param is written, so every guard that turns a deep link
+ * away spells it the same way.
+ *
+ * `path` is sanitized here with the same {@link safeInternalRedirect} the
+ * consumers use, so an unusable target is DROPPED and `base` comes back
+ * unchanged — a bad address degrades to the old behaviour (land on `base`)
+ * rather than becoming an open redirect. `base` may already carry a query.
+ */
+export function withReturnTo(base: string, path: string | null | undefined): string {
+  const target = safeInternalRedirect(path);
+  if (!target) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}redirect=${encodeURIComponent(target)}`;
+}

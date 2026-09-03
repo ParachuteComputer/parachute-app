@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeInternalRedirect } from "./url";
+import { safeInternalRedirect, withReturnTo } from "./url";
 
 // notes#63 — `safeInternalRedirect` guards the post-connect redirect target
 // that the hub `/account` "Import notes" deep-link rides through `/add` into
@@ -58,5 +58,44 @@ describe("safeInternalRedirect", () => {
     expect(safeInternalRedirect(null)).toBeUndefined();
     expect(safeInternalRedirect(undefined)).toBeUndefined();
     expect(safeInternalRedirect("")).toBeUndefined();
+  });
+});
+
+// app B/6 — `withReturnTo` writes the SAME `?redirect=` param the sanitizer
+// above guards, at the one hop that used to drop it: a route guard turning a
+// logged-out reader away from a note deep link.
+describe("withReturnTo", () => {
+  it("appends the return target, encoded, to a base with no query", () => {
+    expect(withReturnTo("/", "/n/abc123")).toBe("/?redirect=%2Fn%2Fabc123");
+    expect(withReturnTo("/add", "/v/beta/n/abc123")).toBe("/add?redirect=%2Fv%2Fbeta%2Fn%2Fabc123");
+  });
+
+  it("appends with `&` when the base already carries a query", () => {
+    expect(withReturnTo("/add?url=https%3A%2F%2Fv.example", "/n/abc")).toBe(
+      "/add?url=https%3A%2F%2Fv.example&redirect=%2Fn%2Fabc",
+    );
+  });
+
+  it("encodes a target that carries its own query string", () => {
+    // The whole target is one param value — its `?` and `=` must not leak into
+    // the outer query and become separate params.
+    const out = withReturnTo("/", "/n/abc?view=raw");
+    expect(out).toBe("/?redirect=%2Fn%2Fabc%3Fview%3Draw");
+    expect(new URLSearchParams(out.slice(2)).get("redirect")).toBe("/n/abc?view=raw");
+  });
+
+  it("DROPS an off-origin target — the base comes back untouched", () => {
+    // The open-redirect case: a guard must degrade to the plain landing, never
+    // carry a value that could steer navigate() off-origin later.
+    expect(withReturnTo("/", "https://evil.example/phish")).toBe("/");
+    expect(withReturnTo("/", "//evil.example")).toBe("/");
+    expect(withReturnTo("/", "/\\evil.com")).toBe("/");
+    expect(withReturnTo("/add", "javascript:alert(1)")).toBe("/add");
+  });
+
+  it("returns the base unchanged for an empty / nullish target", () => {
+    expect(withReturnTo("/", null)).toBe("/");
+    expect(withReturnTo("/", undefined)).toBe("/");
+    expect(withReturnTo("/add", "")).toBe("/add");
   });
 });
