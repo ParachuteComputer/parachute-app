@@ -23,6 +23,19 @@
  * spread across segments (`/n/Projects/2026/Roadmap` — what a human writes).
  * Both land on the note; the multi-segment form is parsed by {@link parseNoteRef}.
  *
+ * ## The complete address table (app#194)
+ *
+ * | Address | Lands on |
+ * |---|---|
+ * | `/v/<vault>/n/<ULID>` (+ `/edit`) | that note in that vault |
+ * | `/v/<vault>/n/<Path%2FEncoded>` (+ `/edit`) | same, one segment — what the app emits |
+ * | `/v/<vault>/n/<Path>/<In>/<Segments>` (+ `/edit`) | same, hand-written form |
+ * | `/v/<vault>` and `/v/<vault>/n` | that vault's note list |
+ * | `/v/<unconnected>`, any note shape | the "not connected here" state, at that address |
+ * | `/v` | `/vaults` — the namespace named no vault, so pick one |
+ *
+ * `<vault>` is a name or an id in every row; the routing lives in `App.tsx`.
+ *
  * ## Why `/v`, not `/vault`
  *
  * `/vault/<name>/...` is already spoken for, twice over, and both claims sit
