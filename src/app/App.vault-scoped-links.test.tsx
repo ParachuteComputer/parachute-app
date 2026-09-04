@@ -291,6 +291,32 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       });
     });
 
+    it("resolves the vault by a case-folded id", async () => {
+      // The id form is as hand-typeable as the name form, so it gets the same
+      // case tolerance — `resolveVaultRef`'s fourth pass, through the router.
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/V-BETA/n/abc123");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/n/abc123");
+      });
+    });
+
+    it("takes an id vault AND a multi-segment note path in one address", async () => {
+      // Both halves of Aaron's `/v/{vaultnameorid}/n/{notenameorid}` at their
+      // widest, together: the id spelling of the vault reaches the SPLAT route,
+      // not just the `:id` one. Each half is pinned alone above; nothing pinned
+      // them meeting.
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/v-beta/n/Projects/2026/Roadmap");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/n/Projects%2F2026%2FRoadmap");
+      });
+    });
+
     it("resolves a locally renamed vault by id when its name no longer matches", async () => {
       useVaultStore.setState({
         vaults: { "v-alpha": vault("v-alpha", "alpha"), "v-beta": vault("v-beta", "Beta Redux") },
@@ -322,6 +348,63 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       expect(await screen.findByText(/is not connected here/i)).toBeInTheDocument();
       expect(useVaultStore.getState().activeVaultId).toBe("v-alpha");
+    });
+
+    it("tolerates a trailing slash", async () => {
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta/");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/notes");
+      });
+    });
+
+    it("lands on the notes list for `/v/<vault>/n` with nothing after it", async () => {
+      // The splat matches an EMPTY remainder too, so the note-less `/n` shape
+      // reaches `parseNoteRef` as null and takes the same landing as `/v/<vault>`.
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/v/beta/n");
+      render(<App />);
+      await waitFor(() => {
+        expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
+        expect(window.location.pathname).toBe("/notes/notes");
+      });
+    });
+  });
+
+  describe("the bare `/v` prefix names no vault (app#194)", () => {
+    // Regression: with no `/v` route the prefix fell to `/:id` and was read as a
+    // NOTE named `v`, resolved against whatever vault was active — the precise
+    // cross-vault ambiguity this namespace exists to remove, reached by nothing
+    // more exotic than a link truncated in a chat client. It must never resolve
+    // a note, and it must never touch the active vault.
+    it.each([
+      ["under the /notes mount", "/notes/v", "/notes/vaults"],
+      ["with a trailing slash", "/notes/v/", "/notes/vaults"],
+      ["at the root mount", "/v", "/vaults"],
+    ])("%s it lands on the vault list", async (_label, from, to) => {
+      seedTwoVaults();
+      window.history.replaceState({}, "", from);
+      render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toBe(to);
+      });
+      // Never the note-id reading, and never a silent vault switch.
+      expect(window.location.pathname).not.toContain("/n/v");
+      expect(useVaultStore.getState().activeVaultId).toBe("v-alpha");
+    });
+
+    it("does not shadow /vaults, which needs the whole word", async () => {
+      // Control: `/v` is a prefix of `/vaults` as a STRING, but React Router
+      // matches whole segments — the guard above must not have swallowed the
+      // real vault-list route.
+      seedTwoVaults();
+      window.history.replaceState({}, "", "/notes/vaults");
+      render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/notes/vaults");
+      });
     });
   });
 

@@ -751,6 +751,19 @@ function AppShell() {
                     match when nothing follows the vault segment.
                   */}
                 <Route path="/v/:vault" element={<VaultScopedRedirect />} />
+                {/*
+                    app#194 — `/v` with no vault after it. Without this route the
+                    bare prefix falls to `/:id` below and is read as a NOTE named
+                    `v`, resolved in whatever vault happens to be active: the
+                    exact cross-vault ambiguity the `/v` namespace exists to
+                    remove, reached by a link that got truncated on the way. `/v`
+                    names the vault namespace without naming a vault, so the
+                    honest answer is the list of vaults this device holds — the
+                    same door `VaultNotConnected` offers. A static segment
+                    outranks `/:id` regardless of order, and `/vaults` keeps its
+                    own route because React Router matches whole segments.
+                  */}
+                <Route path="/v" element={<Navigate to="/vaults" replace />} />
                 <Route path="/:id" element={<NoteIdRedirect />} />
                 <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
                 <Route

@@ -32,7 +32,8 @@ or misleading state (a consumed compose form, a session that no longer exists).
 | Any rail / tab / sheet / footer / card link | **push** | user-initiated |
 | Redirect shims: `/all→/notes` (W2-7, query-preserving), `/graph→/map` (W2-7, query-preserving), `/pinned`/`/archived`/`/untagged`/`/orphaned`→`/notes?view=`, `/capture→/new`, `/:id→/n/:id`, `/today`(no-param — post-W2-3), `/welcome?new=1→/add-vault/create` (W2-6), `/add-vault/ready` with no `?vault=`→`/add-vault`, catch-all `*→/` (+toast) | **replace** | (a) shims leave no trace |
 | BootGate `?add=` → `/add` | replace | (b) one-shot param |
-| Vault-scoped deep links (app#186, app#194): `/v/<vault>/n/<note>`(+`/edit`, + the multi-segment path form) → `/n/<note>`; `/v/<vault>` → `/notes` | **replace** | (b) the vault name is consumed on arrival — Back from the note goes where the reader came from, not into a shim that would re-switch the vault |
+| Vault-scoped deep links (app#186, app#194) — `<vault>` is a NAME or an id, `<note>` is a ULID or a path (one encoded segment or several): `/v/<vault>/n/<note>`(+`/edit`) → `/n/<note>`; `/v/<vault>` and `/v/<vault>/n` → `/notes` | **replace** | (b) the vault name is consumed on arrival — Back from the note goes where the reader came from, not into a shim that would re-switch the vault |
+| `/v` with no vault after it → `/vaults` (app#194) | **replace** | (a) a shim; without it the bare prefix falls to `/:id` and reads as a note named `v` in whatever vault is active — the cross-vault ambiguity `/v` exists to remove |
 | All-lens filter writeback (`setSearchParams(…, { replace: true })` — VaultSurface mirrors the active search/tag filters into `?search=&tag=…` as they change) | **replace** | state mirroring, not a place change |
 | Landing: submit email → `/check-email` | **push** | user-initiated |
 | CheckEmail poll success → `/welcome` | replace | (c) auto-advance; returning to a consumed check-email would be wrong |
