@@ -26,6 +26,23 @@ describe("safeInternalRedirect", () => {
     expect(safeInternalRedirect("//evil.example")).toBeUndefined();
   });
 
+  it("rejects a tab (WHATWG URL strips it, turning `/\\t/evil.com` into `https://evil.com/`)", () => {
+    expect(safeInternalRedirect("/\t/evil.com")).toBeUndefined();
+    // Confirm the premise this guards against: a bare URL parse strips the
+    // tab and reads the rest as an authority.
+    expect(new URL("/\t/evil.com", "https://example.test").href).toBe("https://evil.com/");
+  });
+
+  it("rejects embedded newline and carriage return", () => {
+    expect(safeInternalRedirect("/\n/evil.com")).toBeUndefined();
+    expect(safeInternalRedirect("/\r/evil.com")).toBeUndefined();
+    expect(safeInternalRedirect("/import\n")).toBeUndefined();
+  });
+
+  it("rejects a NUL byte", () => {
+    expect(safeInternalRedirect("/import\x00")).toBeUndefined();
+  });
+
   it("rejects a backslash-authority form (`/\\` open-redirect bypass)", () => {
     // The WHATWG URL parser normalizes a backslash to a forward slash, so
     // `new URL('/\\evil.com', base)` resolves to `http://evil.com/`. A naive

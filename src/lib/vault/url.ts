@@ -20,16 +20,22 @@ export { isLegacyVaultUrl } from "./types";
  * Only an in-app, same-origin path is allowed — react-router `navigate()`
  * treats its argument as an internal location, so a value like
  * `https://evil.example` or an authority-relative form must never round-trip
- * into it. We require a single leading slash and reject the two
- * authority-relative prefixes the WHATWG URL parser treats as the start of a
- * host: `//` (protocol-relative) AND `/\` — browsers normalize a backslash to
- * a forward slash, so `new URL('/\\evil.com', base)` resolves to
- * `http://evil.com/`. We also reject anything that otherwise parses as an
- * absolute URL (has a scheme). Returns `undefined` for anything that doesn't
- * pass, so callers fall back to the default landing (`/`).
+ * into it. We reject ASCII control characters (tab, CR, LF included) FIRST —
+ * a WHATWG `URL` parser strips them, so `/\t/evil.com` reads as a safe
+ * in-app path here but resolves to `https://evil.com/` once something
+ * downstream parses it as a URL. We require a single leading slash and
+ * reject the two authority-relative prefixes the WHATWG URL parser treats as
+ * the start of a host: `//` (protocol-relative) AND `/\` — browsers
+ * normalize a backslash to a forward slash, so `new URL('/\\evil.com',
+ * base)` resolves to `http://evil.com/`. We also reject anything that
+ * otherwise parses as an absolute URL (has a scheme). Returns `undefined`
+ * for anything that doesn't pass, so callers fall back to the default
+ * landing (`/`).
  */
 export function safeInternalRedirect(raw: string | null | undefined): string | undefined {
   if (!raw) return undefined;
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the whole point is to catch them.
+  if (/[\x00-\x1f\x7f]/.test(raw)) return undefined;
   // Must be an app-internal absolute path: one leading slash, not an
   // authority-relative form. `//host` (protocol-relative) and `/\host` (the
   // backslash is normalized to `/`, so it's also read as an authority start)
