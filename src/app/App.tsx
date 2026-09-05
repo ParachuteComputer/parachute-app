@@ -764,6 +764,15 @@ function AppShell() {
                     own route because React Router matches whole segments.
                   */}
                 <Route path="/v" element={<Navigate to="/vaults" replace />} />
+                {/*
+                    Bare `/n` — no note after it. Without this route the
+                    prefix falls to `/:id` below and is read as a NOTE named
+                    `n`, the same shape of collision `/v` was fixed for above.
+                    `/n` names the note namespace without naming a note, so
+                    the honest answer is the notes list, consistent with the
+                    `/v` shim just above.
+                  */}
+                <Route path="/n" element={<Navigate to="/notes" replace />} />
                 <Route path="/:id" element={<NoteIdRedirect />} />
                 <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
                 <Route
