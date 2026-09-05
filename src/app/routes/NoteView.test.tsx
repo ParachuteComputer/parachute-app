@@ -297,6 +297,42 @@ describe("NoteView route", () => {
     expect(copied).toContain("/v/dev/");
   });
 
+  // app#191 — `renameVault` lets this device's label drift off the vault's
+  // server slug. The copied link is for OTHER devices, so it has to carry the
+  // canonical identifier; a link scoped by a private label resolves nowhere but
+  // here.
+  it("Copy link carries the server slug, not this device's rename (app#191)", async () => {
+    useVaultStore.setState((s) => ({
+      vaults: {
+        dev: { ...s.vaults.dev, url: "http://localhost:1940/vault/dev", name: "Aaron's stuff" },
+      },
+    }));
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T04:30:54.177Z",
+          content: "Teacher and builder.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    window.history.replaceState({}, "", "/");
+
+    renderAt("/n/abc-123");
+    await screen.findByText("Teacher and builder.");
+
+    fireEvent.click(screen.getByRole("button", { name: /copy a shareable link to this note/i }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/v/dev/n/abc-123`),
+    );
+  });
+
   // views-wave-1's half of the §2 bridge: a #view-tagged note (canonical or
   // legacy saved-view) offers a trip into ViewSurface.
   it("shows 'Open as view' on a #view-tagged note, linking to /views/:id", async () => {

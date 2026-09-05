@@ -15,7 +15,7 @@
  *
  * | Segment  | Accepts |
  * |----------|---------|
- * | `<vault>` | the vault NAME (`aaron`) or its id (`box.example_vault_aaron`) — {@link resolveVaultRef} |
+ * | `<vault>` | the vault's server SLUG (`aaron`, what "Copy link" emits — {@link vaultShareRef}), its local NAME, or its id (`box.example_vault_aaron`) — {@link resolveVaultRef} |
  * | `<note>`  | the note's ULID id (`01JB…`) or its PATH (`Projects/2026/Roadmap`) — the vault's `GET /api/notes?id=` resolves either |
  *
  * A path contains `/`, so it can arrive either percent-encoded into one segment
@@ -77,6 +77,10 @@ export function vaultScopedNotePath(vaultName: string, noteId: string, suffix = 
  * Mount-aware via `withMount`: the same note is `/v/aaron/n/<id>` on the
  * root-hosted app and `/surface/parachute/v/aaron/n/<id>` under a surface
  * mount, and only the mount-prefixed form survives a paste into another tab.
+ *
+ * `vaultName` is a vault REFERENCE, not necessarily the local label: callers
+ * sharing a connected vault pass {@link vaultShareRef}, which prefers the
+ * server slug so the link means the same vault on another device (app#191).
  */
 export function noteShareUrl(
   vaultName: string,
@@ -87,11 +91,60 @@ export function noteShareUrl(
 }
 
 /**
+ * The vault's **server slug** — the name the vault answers to on its own
+ * origin, read back off the URL this device connected to
+ * (`https://box.example/vault/aaron` → `aaron`).
+ *
+ * This is the only canonical, server-side spelling of a vault that survives on
+ * the client: `VaultRecord.name` is seeded from the token's `vault` claim but
+ * `renameVault` lets it drift to any local label, and nothing re-reads the
+ * server's name afterwards. The URL, by contrast, is what the record is keyed
+ * on — it cannot drift without becoming a different vault.
+ *
+ * Returns `null` when the URL carries no `/vault/<slug>` segment — a
+ * standalone-vault record whose URL is the bare issuer origin has no slug to
+ * read, and the caller falls back to the local name. (`/vaults/<slug>` is the
+ * pre-vault-PR-7 spelling; see `isLegacyVaultUrl`.)
+ */
+export function vaultServerSlug(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const match = /(?:^|\/)vaults?\/([^/]+)\/*$/.exec(new URL(url).pathname);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The `<vault>` segment to SHARE this vault under (app#191) — its server slug
+ * when the URL yields one, otherwise the local name.
+ *
+ * A copied link is for other devices, so the segment it carries has to mean the
+ * same vault there. `vault.name` does not: `renameVault` is local-only, so a
+ * device that relabelled its vault "Aaron's stuff" used to copy
+ * `/v/Aaron's%20stuff/n/<id>`, which resolves on exactly one device in the
+ * world — the one that did the renaming. The slug is what every un-renamed
+ * device already calls the vault, and {@link resolveVaultRef} matches it
+ * explicitly, so the link also opens on a device that renamed differently.
+ *
+ * Not the vault **id**: it is equally rename-proof but derived from the whole
+ * URL including the host, so it differs between devices that reach the same
+ * vault by different spellings (`localhost:1940` vs the tailnet name). The slug
+ * is stable across both, and it keeps the copied link readable — for an
+ * un-renamed vault this emits exactly what it always did.
+ */
+export function vaultShareRef(vault: Pick<VaultRecord, "url" | "name">): string {
+  return vaultServerSlug(vault.url) ?? vault.name;
+}
+
+/**
  * Resolve the `<vault>` segment of a deep link against the vaults connected on
  * this device. The segment is a vault **reference**: its NAME (`/v/aaron/...`,
  * the readable form the app emits) or its **id** (`/v/box.example_vault_aaron/...`,
  * the `vaultIdFromUrl` form — ugly, but derived from the vault URL and therefore
- * identical on every device, so it survives a local `renameVault`, app#191).
+ * identical on every device that connected that URL, so it survives a local
+ * `renameVault`, app#191).
  *
  * Resolution order, most-specific first:
  *
@@ -101,6 +154,14 @@ export function noteShareUrl(
  *                          as likely to be hand-typed as generated ("Aaron" must
  *                          find `aaron`)
  *   4. case-folded id    — same tolerance for the id form
+ *   5. server slug       — the vault's name on its own origin, read off the
+ *                          record's URL ({@link vaultServerSlug}). This is what
+ *                          "Copy link" emits (app#191), so a shared link still
+ *                          resolves on a device that renamed its own copy —
+ *                          the pass that makes the canonical form self-hosting.
+ *                          Last, so it can never outrank a name or an id; two
+ *                          vaults sharing a slug on different hosts break by id
+ *                          order like every other pass.
  *
  * A name beats an id at the same specificity: the readable form is what the app
  * emits and what a human types, so a (pathological) vault whose NAME equals
@@ -125,6 +186,7 @@ export function resolveVaultRef(
     records.find((v) => v.id === wanted) ??
     records.find((v) => v.name?.toLowerCase() === folded) ??
     records.find((v) => v.id?.toLowerCase() === folded) ??
+    records.find((v) => vaultServerSlug(v.url)?.toLowerCase() === folded) ??
     null
   );
 }
