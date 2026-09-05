@@ -770,6 +770,28 @@ describe("NoteEditor — focus mode (EDITOR-STUDY §3.3)", () => {
     expect(await screen.findByText("NoteViewPage:abc-123")).toBeInTheDocument();
   });
 
+  it("keyboard entry from the collapsing header hands focus to the editor (app#175)", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    const cm = await screen.findByTestId("cm-editor");
+
+    // The caret sits in the path input — one of the controls focus mode is
+    // about to unmount. ⌘. runs through FocusModeMount (not mounted in this
+    // route-only harness), which does nothing but flip this shared store, so
+    // the store flip IS the keyboard entry transition.
+    const pathInput = screen.getByLabelText(/note path/i);
+    pathInput.focus();
+    expect(pathInput).toHaveFocus();
+
+    act(() => {
+      useFocusMode.getState().setOn(true);
+    });
+
+    expect(cm).toHaveFocus();
+    fireEvent.keyDown(cm, { key: "Escape" });
+    expect(await screen.findByText("NoteViewPage:abc-123")).toBeInTheDocument();
+  });
+
   it("collapses the header card (path input, tag editor, Save/Cancel/Revert) to the save-state whisper while on", async () => {
     installFetch({ "/api/notes": { body: baseNote } });
     renderAt("/n/abc-123/edit");
