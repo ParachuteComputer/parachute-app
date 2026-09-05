@@ -29,13 +29,14 @@ import {
   useVaultStore,
 } from "@/lib/vault";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
-import { noteShareUrl } from "@/lib/vault/deep-link";
+import { noteShareUrl, vaultShareRef } from "@/lib/vault/deep-link";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
+import { withReturnTo } from "@/lib/vault/url";
 import { isViewNote } from "@/lib/views/schema";
 import { useSync } from "@/providers/SyncProvider";
 import { type SVGProps, useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useParams } from "react-router";
+import { Link, Navigate, useLocation, useParams } from "react-router";
 
 export function NoteView() {
   // `:id` arrives ALREADY decoded (the router decodes params); a second
@@ -43,6 +44,9 @@ export function NoteView() {
   // for the full framing. Decode once, at the boundary. (app#113)
   const { id: decodedId } = useParams<{ id: string }>();
   const activeVault = useVaultStore((s) => s.getActiveVault());
+  // The address this render was asked for — kept so the no-vault guard below
+  // can hand it to the connect flow instead of discarding it.
+  const location = useLocation();
   const note = useNote(decodedId);
   // Voice Wave 1: hold ONE live subscription for the open note so a transcript
   // (or its failure/limit marker) lands without a manual refresh — the socket
@@ -53,8 +57,17 @@ export function NoteView() {
     if (activeVault && decodedId) pushRecent(activeVault.id, decodedId);
   }, [activeVault, decodedId]);
 
-  // NAVIGATION.md: route guard, no active vault — replace.
-  if (!activeVault) return <Navigate to="/" replace />;
+  // NAVIGATION.md: route guard, no active vault — still `/`, still replace.
+  // But a note deep link is the one address where WHICH page you were turned
+  // away from matters: a `/n/<id>` handed to someone who hasn't connected a
+  // vault yet used to land them on the front door with the id gone, and there
+  // was no way back to it. Carry it as `?redirect=` — the front door hands the
+  // param to the connect flow, `beginOAuth` stores it on the pending state, and
+  // `OAuthCallback` spends it, so signing in returns to THIS note.
+  // `withReturnTo` sanitizes, so a hostile path degrades to a plain `/`.
+  if (!activeVault) {
+    return <Navigate to={withReturnTo("/", `${location.pathname}${location.search}`)} replace />;
+  }
 
   return (
     <div className="page">
@@ -304,16 +317,24 @@ function MetadataPanel({ note }: { note: Note }) {
 // history stack noisier without pinning anything that could drift.
 //
 // Rendered only with an active vault (the whole route is guarded on one), so
-// the vault's name is always available to scope with.
+// there is always a vault to scope with.
+//
+// The scope is `vaultShareRef` — the vault's SERVER SLUG, not the local
+// `vault.name` (app#191). `renameVault` is a device-local relabel, and a link
+// scoped by a private label opens on no other device; the slug is what the
+// vault is called on its own origin, so it means the same vault everywhere.
+// For a vault nobody renamed the two are identical, so the copied string is
+// unchanged.
 function CopyLinkButton({ noteId }: { noteId: string }) {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { copied, copy } = useCopyToClipboard();
-  if (!vault?.name) return null;
+  const shareRef = vault ? vaultShareRef(vault) : "";
+  if (!shareRef) return null;
 
   return (
     <button
       type="button"
-      onClick={() => copy(noteShareUrl(vault.name, noteId))}
+      onClick={() => copy(noteShareUrl(shareRef, noteId))}
       className="btn btn-secondary btn-touch mt-3 w-full"
       aria-label="Copy a shareable link to this note"
     >

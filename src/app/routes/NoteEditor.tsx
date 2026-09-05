@@ -265,6 +265,21 @@ function EditorSurface({ note }: { note: Note }) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty]);
 
+  // Entering focus mode collapses the whole header card (below), unmounting
+  // whatever inside it held the caret — the Focus button, the path input, the
+  // tag input. DOM focus then falls onto <body> and Escape reaches no handler
+  // (app#175). Hand focus to CodeMirror on the false->true edge, so this holds
+  // for EVERY door in — the toolbar button and ⌘. (FocusModeMount, which only
+  // flips this shared store) alike — instead of one patch per trigger (app#51).
+  const wasFocusOn = useRef(focusOn);
+  useEffect(() => {
+    const entering = focusOn && !wasFocusOn.current;
+    wasFocusOn.current = focusOn;
+    // Re-focusing an already-focused editor is a no-op, so no guard is needed
+    // for entry that happens with the caret already in the pane.
+    if (entering) editorRef.current?.focus();
+  }, [focusOn]);
+
   const pathChanged = draft.path !== baseline.path;
 
   const addTag = (raw: string) => {
@@ -325,13 +340,7 @@ function EditorSurface({ note }: { note: Note }) {
               <DeleteNoteButton note={note} />
               <button
                 type="button"
-                onClick={() => {
-                  // The button unmounts as focus mode collapses this header.
-                  // Hand focus to CodeMirror first so Escape still reaches
-                  // its cancel-edit binding instead of falling onto <body>.
-                  editorRef.current?.focus();
-                  setFocusOn(true);
-                }}
+                onClick={() => setFocusOn(true)}
                 className="btn btn-ghost btn-touch"
                 title="Focus (⌘.)"
               >

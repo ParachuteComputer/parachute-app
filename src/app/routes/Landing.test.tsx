@@ -6,6 +6,7 @@ import { beginOAuth } from "@/lib/vault/oauth";
 import { probeForIssuer } from "@/lib/vault/probe";
 import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -470,5 +471,129 @@ describe("Landing — the trial claim", () => {
       await screen.findByRole("button", { name: /open your parachute/i });
       expect(screen.queryByText(/free, no card/i)).not.toBeInTheDocument();
     });
+  });
+});
+
+// app B/6 — the front door is the middle hop of the note-deep-link return. A
+// logged-out `/n/<id>` bounces here carrying `?redirect=/n/<id>` (NoteView's
+// route guard, `withReturnTo`); every affordance on this screen that STARTS a
+// connect has to hand the param on, or the address dies here — which is exactly
+// what used to happen. The far end is already pinned: AddVault.test.tsx stores
+// it on the pending OAuth state, OAuthCallback.test.tsx spends it.
+describe("Landing — a bounced note deep link returns through the front door (app B/6)", () => {
+  const DEEP_LINK = "/?redirect=%2Fn%2Fabc123";
+
+  // Same shape as `renderLanding`, plus the note route the return actually
+  // lands on, so the last hop is asserted against a real match.
+  function renderFrontDoor(ui: ReactElement, initial: string, navLog?: NavLogEntry[]) {
+    return render(
+      <MemoryRouter initialEntries={[initial]}>
+        {navLog ? <NavTypeLog log={navLog} /> : null}
+        <Routes>
+          <Route path="/" element={ui} />
+          <Route path="/add" element={<div>Add form</div>} />
+          <Route path="/n/:id" element={<div>NoteView</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
+    vi.mocked(peekDoorDescriptor).mockReset().mockReturnValue(null);
+    vi.mocked(getDoorDescriptor).mockReset().mockResolvedValue(null);
+    vi.mocked(openHostedVault).mockReset().mockResolvedValue("v1");
+    vi.mocked(beginOAuth)
+      .mockReset()
+      .mockResolvedValue({
+        authorizeUrl: "https://hub.example/authorize?x=1",
+        pending: {} as never,
+      });
+    vi.mocked(probeForIssuer).mockReset().mockResolvedValue("https://hub.example");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("neutral door: the 'Sign in' link carries the return target into /add", async () => {
+    renderFrontDoor(<Landing />, DEEP_LINK);
+    expect(await screen.findByRole("link", { name: /^sign in/i })).toHaveAttribute(
+      "href",
+      "/add?redirect=%2Fn%2Fabc123",
+    );
+  });
+
+  it("cloud door: the self-hosted side door carries it too", async () => {
+    vi.mocked(getDoorDescriptor).mockResolvedValue({ door: "cloud" });
+    renderFrontDoor(<Landing />, DEEP_LINK);
+    expect(await screen.findByRole("link", { name: /connect your own vault/i })).toHaveAttribute(
+      "href",
+      "/add?redirect=%2Fn%2Fabc123",
+    );
+  });
+
+  it("hub door: 'Open your parachute' begins OAuth WITH the return target on the pending state", async () => {
+    vi.mocked(getDoorDescriptor).mockResolvedValue({
+      door: "hub",
+      auth: { methods: ["password"], signin_path: "/login" },
+    });
+    vi.stubGlobal("location", {
+      ...window.location,
+      origin: "https://hub.example.com",
+      assign: vi.fn(),
+    });
+
+    renderFrontDoor(<Landing />, DEEP_LINK);
+    fireEvent.click(await screen.findByRole("button", { name: /open your parachute/i }));
+    // The one call that carries the note address across the OAuth hop.
+    await waitFor(() =>
+      expect(beginOAuth).toHaveBeenCalledWith("https://hub.example", undefined, undefined, {
+        redirect: "/n/abc123",
+      }),
+    );
+  });
+
+  it("signed in but the vault wasn't on this device: Open {vault} lands on the note, not `/`", async () => {
+    // The hosted shape of the same failure — the session is live, the vault
+    // just isn't on THIS device, so opening it is the step the link was
+    // missing. Still a PUSH (user-initiated, NAVIGATION.md), now to the note.
+    const navLog: NavLogEntry[] = [];
+    renderFrontDoor(
+      <Landing signedIn={{ email: "ag@unforced.org", vaults: [{ name: "moss" }] }} />,
+      DEEP_LINK,
+      navLog,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /open moss/i }));
+    await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
+    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/n/abc123" }));
+    expect(screen.getByText("NoteView")).toBeInTheDocument();
+  });
+
+  it("REJECTS an off-origin return target at every affordance (open-redirect guard)", async () => {
+    // The param is attacker-controllable — it arrives in a URL someone else
+    // wrote. A hostile value must degrade to the plain connect entry, never
+    // ride the OAuth hop and come back out of navigate() as an origin change.
+    vi.mocked(getDoorDescriptor).mockResolvedValue({
+      door: "hub",
+      auth: { methods: ["password"], signin_path: "/login" },
+    });
+    vi.stubGlobal("location", {
+      ...window.location,
+      origin: "https://hub.example.com",
+      assign: vi.fn(),
+    });
+
+    renderFrontDoor(<Landing />, "/?redirect=https%3A%2F%2Fevil.example%2Fphish");
+    expect(await screen.findByRole("link", { name: /connect your own vault/i })).toHaveAttribute(
+      "href",
+      "/add",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /open your parachute/i }));
+    // Called with the bare issuer — no options object, so nothing off-origin
+    // reaches the pending state OAuthCallback later spends.
+    await waitFor(() => expect(beginOAuth).toHaveBeenCalledWith("https://hub.example"));
   });
 });

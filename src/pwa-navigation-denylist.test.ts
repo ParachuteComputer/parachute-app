@@ -104,6 +104,15 @@ describe("PWA navigation denylist", () => {
     // still SPA-owned.
     "/notes/v/aaron/n/abc123",
     "/surface/parachute/v/aaron/n/abc123",
+    // app#194: the note reference may be a PATH, spread across segments — the
+    // deepest shape this app asks the service worker to shell. Including one
+    // whose path segments are ceremony words, and the bare vault address.
+    "/v/aaron/n/Projects/2026/Roadmap",
+    "/v/aaron/n/Projects/2026/Roadmap/edit",
+    "/v/aaron/n/admin/billing/login",
+    "/notes/v/aaron/n/Projects/2026/Roadmap",
+    "/v/aaron",
+    "/v/v-aaron-id",
   ];
   it.each(spaRoutes)("serves the SPA shell for %s", (path) => {
     expect(isDenied(path)).toBe(false);

@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   VAULT_SCOPE_PREFIX,
-  findVaultByName,
   noteShareUrl,
+  parseNoteRef,
+  resolveVaultRef,
   vaultScopedNotePath,
+  vaultServerSlug,
+  vaultShareRef,
 } from "./deep-link";
 import type { VaultRecord } from "./types";
 
@@ -20,48 +23,71 @@ function vault(id: string, name: string): VaultRecord {
   };
 }
 
-describe("findVaultByName", () => {
+describe("resolveVaultRef", () => {
   const vaults = {
     "v-beta": vault("v-beta", "beta"),
     "v-alpha": vault("v-alpha", "alpha"),
   };
 
   it("finds a vault by exact name", () => {
-    expect(findVaultByName(vaults, "alpha")?.id).toBe("v-alpha");
-    expect(findVaultByName(vaults, "beta")?.id).toBe("v-beta");
+    expect(resolveVaultRef(vaults, "alpha")?.id).toBe("v-alpha");
+    expect(resolveVaultRef(vaults, "beta")?.id).toBe("v-beta");
   });
 
   it("falls back to a case-insensitive match", () => {
     // Server-side vault names are lowercase slugs, but a link is as likely to be
     // hand-typed as generated, and `renameVault` lets the local label drift.
-    expect(findVaultByName(vaults, "Alpha")?.id).toBe("v-alpha");
-    expect(findVaultByName(vaults, "BETA")?.id).toBe("v-beta");
+    expect(resolveVaultRef(vaults, "Alpha")?.id).toBe("v-alpha");
+    expect(resolveVaultRef(vaults, "BETA")?.id).toBe("v-beta");
   });
 
   it("prefers an exact match over a case-folded one", () => {
     const mixed = { a: vault("a", "Aaron"), b: vault("b", "aaron") };
-    expect(findVaultByName(mixed, "aaron")?.id).toBe("b");
-    expect(findVaultByName(mixed, "Aaron")?.id).toBe("a");
+    expect(resolveVaultRef(mixed, "aaron")?.id).toBe("b");
+    expect(resolveVaultRef(mixed, "Aaron")?.id).toBe("a");
   });
 
   it("tolerates surrounding whitespace", () => {
-    expect(findVaultByName(vaults, " alpha ")?.id).toBe("v-alpha");
+    expect(resolveVaultRef(vaults, " alpha ")?.id).toBe("v-alpha");
   });
 
   it("returns null for an unknown, empty, or absent name", () => {
-    expect(findVaultByName(vaults, "gamma")).toBeNull();
-    expect(findVaultByName(vaults, "")).toBeNull();
-    expect(findVaultByName(vaults, "   ")).toBeNull();
-    expect(findVaultByName(vaults, undefined)).toBeNull();
-    expect(findVaultByName({}, "alpha")).toBeNull();
+    expect(resolveVaultRef(vaults, "gamma")).toBeNull();
+    expect(resolveVaultRef(vaults, "")).toBeNull();
+    expect(resolveVaultRef(vaults, "   ")).toBeNull();
+    expect(resolveVaultRef(vaults, undefined)).toBeNull();
+    expect(resolveVaultRef({}, "alpha")).toBeNull();
+  });
+
+  it("finds a vault by its id — the form that survives a local rename (app#191)", () => {
+    // `vaultIdFromUrl` derives the id from the vault URL, so it is identical on
+    // every device that connected the same vault; `name` is locally editable.
+    // A link written with the id therefore resolves even where the label drifted.
+    const renamed = { box_vault_aaron: vault("box_vault_aaron", "Aaron's stuff") };
+    expect(resolveVaultRef(renamed, "box_vault_aaron")?.id).toBe("box_vault_aaron");
+    expect(resolveVaultRef(renamed, "BOX_VAULT_AARON")?.id).toBe("box_vault_aaron");
+    // …and the drifted label still works on the device that drifted it.
+    expect(resolveVaultRef(renamed, "Aaron's stuff")?.id).toBe("box_vault_aaron");
+  });
+
+  it("prefers a NAME match over another vault's id", () => {
+    // The readable form is what the app emits and what a human types, so when a
+    // reference is both (pathologically) it resolves to the vault it NAMES.
+    const clash = { a: vault("beta", "alpha"), b: vault("b-id", "beta") };
+    expect(resolveVaultRef(clash, "beta")?.id).toBe("b-id");
+  });
+
+  it("prefers an exact id over a case-folded name", () => {
+    const clash = { a: vault("aaron", "zeta"), b: vault("z-id", "AARON") };
+    expect(resolveVaultRef(clash, "aaron")?.id).toBe("aaron");
   });
 
   it("is deterministic when two vaults case-fold to the same name", () => {
     // Key insertion order must not decide the answer — id order does.
     const one = { z: vault("z", "Aaron"), a: vault("a", "AARON") };
     const two = { a: vault("a", "AARON"), z: vault("z", "Aaron") };
-    expect(findVaultByName(one, "aaron")?.id).toBe(findVaultByName(two, "aaron")?.id);
-    expect(findVaultByName(one, "aaron")?.id).toBe("a");
+    expect(resolveVaultRef(one, "aaron")?.id).toBe(resolveVaultRef(two, "aaron")?.id);
+    expect(resolveVaultRef(one, "aaron")?.id).toBe("a");
   });
 });
 
@@ -118,5 +144,122 @@ describe("noteShareUrl", () => {
   it("defaults to the current origin", () => {
     window.history.replaceState({}, "", "/n/abc123");
     expect(noteShareUrl("aaron", "abc123")).toBe(`${window.location.origin}/v/aaron/n/abc123`);
+  });
+});
+
+describe("vaultServerSlug", () => {
+  it("reads the slug off a vault URL on either door", () => {
+    expect(vaultServerSlug("https://box.example/vault/aaron")).toBe("aaron");
+    expect(vaultServerSlug("http://localhost:1940/vault/default")).toBe("default");
+    expect(vaultServerSlug("https://u.parachute.computer/vault/fieldnotes/")).toBe("fieldnotes");
+    // Pre-vault-PR-7 records still say `/vaults/`.
+    expect(vaultServerSlug("https://box.example/vaults/aaron")).toBe("aaron");
+    // …and a vault behind a path prefix is still read.
+    expect(vaultServerSlug("https://box.example/hub/vault/aaron")).toBe("aaron");
+  });
+
+  it("is null when the URL carries no vault segment to read", () => {
+    // A standalone-vault record's URL is the bare issuer origin — nothing
+    // canonical to read, so the caller keeps the local name.
+    expect(vaultServerSlug("http://localhost:1940")).toBeNull();
+    expect(vaultServerSlug("https://box.example/vault/aaron/api")).toBeNull();
+    expect(vaultServerSlug("not a url")).toBeNull();
+    expect(vaultServerSlug("")).toBeNull();
+    expect(vaultServerSlug(undefined)).toBeNull();
+  });
+});
+
+describe("a copied share link survives a local rename (app#191)", () => {
+  // Two devices hold the SAME vault. This one renamed it to a label that is not
+  // the server slug; the other never renamed. A link copied HERE has to open
+  // THERE — the copied address is for other devices, so it cannot carry this
+  // device's private label.
+  const server = "https://box.example/vault/aaron";
+  const id = "box.example_vault_aaron";
+  const renamedHere: VaultRecord = { ...vault(id, "aaron"), url: server, name: "Aaron's stuff" };
+  const otherDevice = { [id]: { ...vault(id, "aaron"), url: server } };
+
+  it("copies the server slug, not the local label", () => {
+    expect(vaultShareRef(renamedHere)).toBe("aaron");
+    expect(noteShareUrl(vaultShareRef(renamedHere), "abc123", "https://box.example")).toBe(
+      "https://box.example/v/aaron/n/abc123",
+    );
+  });
+
+  it("resolves on a device that did not rename it", () => {
+    const url = noteShareUrl(vaultShareRef(renamedHere), "abc123", "https://box.example");
+    const segment = decodeURIComponent(new URL(url).pathname.split("/")[2]);
+    expect(resolveVaultRef(otherDevice, segment)?.id).toBe(id);
+  });
+
+  it("resolves on the device that DID rename it — the slug pass", () => {
+    // Without it the emitting device could not open its own copied link: the
+    // segment matches neither its label nor its id.
+    const segment = vaultShareRef(renamedHere);
+    expect(resolveVaultRef({ [id]: renamedHere }, segment)?.id).toBe(id);
+  });
+
+  it("keeps the local name when the URL has no slug to read", () => {
+    // Standalone-vault record (URL is the bare issuer origin) — unchanged.
+    const standalone: VaultRecord = {
+      ...vault("localhost_1940", "dev"),
+      url: "http://localhost:1940",
+    };
+    expect(vaultShareRef(standalone)).toBe("dev");
+  });
+
+  it("does not let the slug pass outrank a name or an id", () => {
+    // The slug is the LAST pass: a reference that exactly names or ids one
+    // vault still resolves to that vault, not to whoever's URL spells it.
+    const byName = { a: { ...vault("a", "beta"), url: "https://box.example/vault/alpha" } };
+    const collide = {
+      ...byName,
+      b: { ...vault("b", "zeta"), url: "https://box.example/vault/beta" },
+    };
+    expect(resolveVaultRef(collide, "beta")?.id).toBe("a");
+  });
+});
+
+describe("parseNoteRef", () => {
+  it("takes the whole multi-segment remainder as the note path", () => {
+    // A note is addressable by path, and a path has slashes. `/v/aaron/n/` +
+    // `Projects/2026/Roadmap` is the hand-written form of the same address the
+    // app emits percent-encoded.
+    expect(parseNoteRef("Projects/2026/Roadmap")).toEqual({
+      ref: "Projects/2026/Roadmap",
+      suffix: "",
+    });
+  });
+
+  it("passes a single-segment reference (a ULID id) straight through", () => {
+    expect(parseNoteRef("01JBQZ0Q2M8T9V5X7YB3KD4WEN")).toEqual({
+      ref: "01JBQZ0Q2M8T9V5X7YB3KD4WEN",
+      suffix: "",
+    });
+  });
+
+  it("claims a trailing /edit as the editor tail", () => {
+    expect(parseNoteRef("Projects/2026/Roadmap/edit")).toEqual({
+      ref: "Projects/2026/Roadmap",
+      suffix: "/edit",
+    });
+    expect(parseNoteRef("Projects/edit")).toEqual({ ref: "Projects", suffix: "/edit" });
+    // But a note literally NAMED `edit` is one segment — it is the reference,
+    // not a tail. (It never reaches this parser in the router: one segment
+    // matches the higher-ranked `:id` route. Pinned so the two agree.)
+    expect(parseNoteRef("edit")).toEqual({ ref: "edit", suffix: "" });
+  });
+
+  it("tolerates leading and trailing slashes on the splat", () => {
+    expect(parseNoteRef("/Projects/Roadmap/")).toEqual({ ref: "Projects/Roadmap", suffix: "" });
+  });
+
+  it("returns null when there is no reference left to resolve", () => {
+    // `/v/<vault>/n/` — the caller decides where an empty note address goes
+    // (that vault's list, not a 404).
+    expect(parseNoteRef("")).toBeNull();
+    expect(parseNoteRef("/")).toBeNull();
+    expect(parseNoteRef(undefined)).toBeNull();
+    expect(parseNoteRef(null)).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import { type LensDB, openLensDB } from "@/lib/sync/db";
 import { newLocalId, recordIdMap } from "@/lib/sync/id-map";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
+import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -294,6 +295,42 @@ describe("NoteView route", () => {
     const copied = String(writeText.mock.lastCall ?? "");
     expect(copied).not.toBe(`${window.location.origin}/n/abc-123`);
     expect(copied).toContain("/v/dev/");
+  });
+
+  // app#191 — `renameVault` lets this device's label drift off the vault's
+  // server slug. The copied link is for OTHER devices, so it has to carry the
+  // canonical identifier; a link scoped by a private label resolves nowhere but
+  // here.
+  it("Copy link carries the server slug, not this device's rename (app#191)", async () => {
+    useVaultStore.setState((s) => ({
+      vaults: {
+        dev: { ...s.vaults.dev, url: "http://localhost:1940/vault/dev", name: "Aaron's stuff" },
+      },
+    }));
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T04:30:54.177Z",
+          content: "Teacher and builder.",
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    window.history.replaceState({}, "", "/");
+
+    renderAt("/n/abc-123");
+    await screen.findByText("Teacher and builder.");
+
+    fireEvent.click(screen.getByRole("button", { name: /copy a shareable link to this note/i }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/v/dev/n/abc-123`),
+    );
   });
 
   // views-wave-1's half of the §2 bridge: a #view-tagged note (canonical or
@@ -981,5 +1018,90 @@ describe("route-param decoding (app#113)", () => {
       .find((u) => u.includes("include_content=true"));
     expect(noteUrl).toBeDefined();
     expect(new URL(noteUrl!).searchParams.get("id")).toBe("100%");
+  });
+});
+
+// app B/6 — the logged-out note deep link. A `/n/<id>` pasted into a channel is
+// the app's share format, so it lands as often on someone with no vault
+// connected as on someone with one. The guard still bounces to `/` (NAVIGATION.md
+// keeps the destination), but the address now rides along as `?redirect=`: the
+// front door forwards it into the connect flow, `beginOAuth` stores it on the
+// pending state (AddVault.test.tsx) and `OAuthCallback` spends it
+// (OAuthCallback.test.tsx), so signing in returns to the note instead of
+// stranding the reader on the landing with nothing to go back to.
+describe("NoteView route — a note deep link survives the logged-out bounce (app B/6)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    // The state under test: no vault on this device at all.
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    installFetch({});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function renderGuarded(path: string, log: NavLogEntry[]) {
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <NavTypeLog log={log} />
+        <Routes>
+          <Route path="/n/:id" element={<NoteView />} />
+          <Route path="/" element={<div>FrontDoor</div>} />
+        </Routes>
+      </MemoryRouter>,
+      { wrapper: Wrapper },
+    );
+  }
+
+  it("bounces to `/` carrying the note address as ?redirect= (still a replace)", async () => {
+    const log: NavLogEntry[] = [];
+    renderGuarded("/n/abc-123", log);
+
+    expect(await screen.findByText("FrontDoor")).toBeInTheDocument();
+    // The proving assertion: the id is still in the URL, so login can return to it.
+    expect(log.at(-1)).toEqual({ type: "REPLACE", pathname: "/?redirect=%2Fn%2Fabc-123" });
+    // And it round-trips as the exact in-app path OAuthCallback will navigate to.
+    expect(new URLSearchParams(log.at(-1)!.pathname.slice(2)).get("redirect")).toBe("/n/abc-123");
+  });
+
+  it("keeps an encoded note PATH whole (the `%2F` form the app itself emits)", async () => {
+    const log: NavLogEntry[] = [];
+    renderGuarded("/n/Projects%2F2026%2FRoadmap", log);
+
+    await screen.findByText("FrontDoor");
+    // Double-encoded on the way out — the param decodes back to the SAME
+    // single-segment address, `%2F` intact, so the note resolves on return
+    // rather than splitting into path segments.
+    const returned = new URLSearchParams(log.at(-1)!.pathname.slice(2)).get("redirect");
+    expect(returned).toBe("/n/Projects%2F2026%2FRoadmap");
+  });
+
+  it("still lands on the note (no bounce at all) once a vault is connected", async () => {
+    // The control: the guard fires ONLY on the no-vault state, and this is the
+    // same address the two tests above were turned away from.
+    seedStore();
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "abc-123",
+          path: "Canon/Aaron",
+          createdAt: "2026-04-16T04:30:54.177Z",
+          updatedAt: "2026-04-17T00:05:07.721Z",
+          content: "# Aaron Gabriel\n\nTeacher and builder.",
+          metadata: {},
+          tags: [],
+          links: [],
+          attachments: [],
+        },
+      },
+    });
+    const log: NavLogEntry[] = [];
+    renderGuarded("/n/abc-123", log);
+
+    expect(await screen.findByText("Aaron Gabriel")).toBeInTheDocument();
+    expect(screen.queryByText("FrontDoor")).not.toBeInTheDocument();
+    expect(log.every((e) => e.pathname === "/n/abc-123")).toBe(true);
   });
 });

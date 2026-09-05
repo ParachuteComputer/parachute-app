@@ -1,12 +1,40 @@
 /**
- * Vault-scoped deep links (app#186) — `/v/<vault>/n/<id>`.
+ * Vault-scoped deep links (app#186, app#194) — `/v/<vault>/n/<note>`.
  *
  * The canonical note address is `/n/<id>`: it names a note but NOT the vault to
  * resolve it in, so a link pasted into a channel message or an agent report only
  * lands on the right note if the reader's app happens to be sitting in the right
- * vault. `/v/<vault>/n/<id>` pins the vault into the address — the app resolves
+ * vault. `/v/<vault>/n/<note>` pins the vault into the address — the app resolves
  * `<vault>` against the vaults connected on THIS device, switches to it, and then
- * hands off to the ordinary `/n/<id>` resolution.
+ * hands off to the ordinary `/n/<note>` resolution.
+ *
+ * ## What each segment accepts
+ *
+ * Both segments take the same pair of forms the vault's own API does — "name or
+ * id" on each side (Aaron, 2026-09-02: `/v/{vaultnameorid}/n/{notenameorid}`):
+ *
+ * | Segment  | Accepts |
+ * |----------|---------|
+ * | `<vault>` | the vault's server SLUG (`aaron`, what "Copy link" emits — {@link vaultShareRef}), its local NAME, or its id (`box.example_vault_aaron`) — {@link resolveVaultRef} |
+ * | `<note>`  | the note's ULID id (`01JB…`) or its PATH (`Projects/2026/Roadmap`) — the vault's `GET /api/notes?id=` resolves either |
+ *
+ * A path contains `/`, so it can arrive either percent-encoded into one segment
+ * (`/n/Projects%2F2026%2FRoadmap` — what the app emits, and unambiguous) or
+ * spread across segments (`/n/Projects/2026/Roadmap` — what a human writes).
+ * Both land on the note; the multi-segment form is parsed by {@link parseNoteRef}.
+ *
+ * ## The complete address table (app#194)
+ *
+ * | Address | Lands on |
+ * |---|---|
+ * | `/v/<vault>/n/<ULID>` (+ `/edit`) | that note in that vault |
+ * | `/v/<vault>/n/<Path%2FEncoded>` (+ `/edit`) | same, one segment — what the app emits |
+ * | `/v/<vault>/n/<Path>/<In>/<Segments>` (+ `/edit`) | same, hand-written form |
+ * | `/v/<vault>` and `/v/<vault>/n` | that vault's note list |
+ * | `/v/<unconnected>`, any note shape | the "not connected here" state, at that address |
+ * | `/v` | `/vaults` — the namespace named no vault, so pick one |
+ *
+ * `<vault>` is a name or an id in every row; the routing lives in `App.tsx`.
  *
  * ## Why `/v`, not `/vault`
  *
@@ -34,36 +62,6 @@ import type { VaultRecord } from "./types";
 export const VAULT_SCOPE_PREFIX = "/v";
 
 /**
- * Resolve a vault NAME (as it appears in a deep link) against the vaults
- * connected on this device.
- *
- * Exact match wins. Failing that we fall back to a case-insensitive match:
- * Parachute vault names are lowercase slugs server-side, but a `VaultRecord`'s
- * `name` is locally editable (`renameVault`) and a link is just as likely to be
- * hand-typed as generated, so "Aaron" must still find `aaron`. Ties under the
- * case-insensitive pass are broken by id order so the result is deterministic
- * rather than dependent on object key insertion.
- *
- * Returns `null` for an unknown name — the caller shows the "not connected
- * here" state rather than silently resolving the note in whatever vault
- * happens to be active (which is exactly the ambiguity this route exists to
- * remove).
- */
-export function findVaultByName(
-  vaults: Record<string, VaultRecord>,
-  name: string | null | undefined,
-): VaultRecord | null {
-  if (!name) return null;
-  const wanted = name.trim();
-  if (!wanted) return null;
-  const records = Object.values(vaults).sort((a, b) => a.id.localeCompare(b.id));
-  const exact = records.find((v) => v.name === wanted);
-  if (exact) return exact;
-  const folded = wanted.toLowerCase();
-  return records.find((v) => v.name?.toLowerCase() === folded) ?? null;
-}
-
-/**
  * The in-app (router-relative, mount-stripped) path for a note pinned to a
  * vault. `suffix` carries the editor's `/edit` tail, mirroring the shape of the
  * canonical `/n/<id>` pair.
@@ -79,6 +77,10 @@ export function vaultScopedNotePath(vaultName: string, noteId: string, suffix = 
  * Mount-aware via `withMount`: the same note is `/v/aaron/n/<id>` on the
  * root-hosted app and `/surface/parachute/v/aaron/n/<id>` under a surface
  * mount, and only the mount-prefixed form survives a paste into another tab.
+ *
+ * `vaultName` is a vault REFERENCE, not necessarily the local label: callers
+ * sharing a connected vault pass {@link vaultShareRef}, which prefers the
+ * server slug so the link means the same vault on another device (app#191).
  */
 export function noteShareUrl(
   vaultName: string,
@@ -86,4 +88,156 @@ export function noteShareUrl(
   origin: string = typeof window !== "undefined" && window.location ? window.location.origin : "",
 ): string {
   return `${origin}${withMount(vaultScopedNotePath(vaultName, noteId))}`;
+}
+
+/**
+ * The vault's **server slug** — the name the vault answers to on its own
+ * origin, read back off the URL this device connected to
+ * (`https://box.example/vault/aaron` → `aaron`).
+ *
+ * This is the only canonical, server-side spelling of a vault that survives on
+ * the client: `VaultRecord.name` is seeded from the token's `vault` claim but
+ * `renameVault` lets it drift to any local label, and nothing re-reads the
+ * server's name afterwards. The URL, by contrast, is what the record is keyed
+ * on — it cannot drift without becoming a different vault.
+ *
+ * Returns `null` when the URL carries no `/vault/<slug>` segment — a
+ * standalone-vault record whose URL is the bare issuer origin has no slug to
+ * read, and the caller falls back to the local name. (`/vaults/<slug>` is the
+ * pre-vault-PR-7 spelling; see `isLegacyVaultUrl`.)
+ */
+export function vaultServerSlug(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const match = /(?:^|\/)vaults?\/([^/]+)\/*$/.exec(new URL(url).pathname);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The `<vault>` segment to SHARE this vault under (app#191) — its server slug
+ * when the URL yields one, otherwise the local name.
+ *
+ * A copied link is for other devices, so the segment it carries has to mean the
+ * same vault there. `vault.name` does not: `renameVault` is local-only, so a
+ * device that relabelled its vault "Aaron's stuff" used to copy
+ * `/v/Aaron's%20stuff/n/<id>`, which resolves on exactly one device in the
+ * world — the one that did the renaming. The slug is what every un-renamed
+ * device already calls the vault, and {@link resolveVaultRef} matches it
+ * explicitly, so the link also opens on a device that renamed differently.
+ *
+ * Not the vault **id**: it is equally rename-proof but derived from the whole
+ * URL including the host, so it differs between devices that reach the same
+ * vault by different spellings (`localhost:1940` vs the tailnet name). The slug
+ * is stable across both, and it keeps the copied link readable — for an
+ * un-renamed vault this emits exactly what it always did.
+ */
+export function vaultShareRef(vault: Pick<VaultRecord, "url" | "name">): string {
+  return vaultServerSlug(vault.url) ?? vault.name;
+}
+
+/**
+ * Resolve the `<vault>` segment of a deep link against the vaults connected on
+ * this device. The segment is a vault **reference**: its NAME (`/v/aaron/...`,
+ * the readable form the app emits) or its **id** (`/v/box.example_vault_aaron/...`,
+ * the `vaultIdFromUrl` form — ugly, but derived from the vault URL and therefore
+ * identical on every device that connected that URL, so it survives a local
+ * `renameVault`, app#191).
+ *
+ * Resolution order, most-specific first:
+ *
+ *   1. exact name        — the ordinary case
+ *   2. exact id          — the rename-proof form
+ *   3. case-folded name  — names are lowercase slugs server-side, but a link is
+ *                          as likely to be hand-typed as generated ("Aaron" must
+ *                          find `aaron`)
+ *   4. case-folded id    — same tolerance for the id form
+ *   5. server slug       — the vault's name on its own origin, read off the
+ *                          record's URL ({@link vaultServerSlug}). This is what
+ *                          "Copy link" emits (app#191), so a shared link still
+ *                          resolves on a device that renamed its own copy —
+ *                          the pass that makes the canonical form self-hosting.
+ *                          Last, so it can never outrank a name or an id; two
+ *                          vaults sharing a slug on different hosts break by id
+ *                          order like every other pass.
+ *
+ * A name beats an id at the same specificity: the readable form is what the app
+ * emits and what a human types, so a (pathological) vault whose NAME equals
+ * another vault's id resolves to the one you named. Ties WITHIN a pass are
+ * broken by id order, so the answer never depends on object key insertion.
+ *
+ * Returns `null` for an unresolvable reference — the caller shows the "not
+ * connected here" state rather than silently resolving the note in whatever
+ * vault happens to be active (exactly the ambiguity this route removes).
+ */
+export function resolveVaultRef(
+  vaults: Record<string, VaultRecord>,
+  ref: string | null | undefined,
+): VaultRecord | null {
+  if (!ref) return null;
+  const wanted = ref.trim();
+  if (!wanted) return null;
+  const records = Object.values(vaults).sort((a, b) => a.id.localeCompare(b.id));
+  const folded = wanted.toLowerCase();
+  return (
+    records.find((v) => v.name === wanted) ??
+    records.find((v) => v.id === wanted) ??
+    records.find((v) => v.name?.toLowerCase() === folded) ??
+    records.find((v) => v.id?.toLowerCase() === folded) ??
+    records.find((v) => vaultServerSlug(v.url)?.toLowerCase() === folded) ??
+    null
+  );
+}
+
+/** The editor tail a note address may carry, mirroring `/n/<id>/edit`. */
+const EDIT_SUFFIX = "/edit";
+
+/** A parsed note reference: what to resolve, and whether to open the editor. */
+export interface ParsedNoteRef {
+  /** The note id or path, fully decoded — hand this to `/n/<ref>`. */
+  ref: string;
+  /** `"/edit"` when the address named the editor, `""` otherwise. */
+  suffix: string;
+}
+
+/**
+ * Parse the note portion of `/v/<vault>/n/<note...>` when it arrived as a SPLAT
+ * — i.e. it spans more than one URL segment, which is how a note **path** is
+ * written by hand: `/v/aaron/n/Projects/2026/Roadmap`.
+ *
+ * Why a splat at all: a vault addresses a note by ULID id *or* by path, and a
+ * path contains `/`. The app's own share links percent-encode the whole
+ * reference into ONE segment (`/n/Projects%2F2026%2FRoadmap`), which the
+ * `:id` route matches and is unambiguous — but a link written by a human, an
+ * agent, or a shell that helpfully un-escapes `%2F` arrives split across
+ * segments, and must still land on the note.
+ *
+ * `rest` is the raw splat (React Router has already decoded each segment and
+ * turned `%2F` back into `/`, so separators and encoded slashes are level here
+ * — which is fine, because the whole remainder IS the reference).
+ *
+ * **The `/edit` tail is claimed.** A trailing `/edit` segment opens the editor,
+ * the same as `/n/<id>/edit`. That makes a note whose path literally ends in
+ * `/edit` unaddressable in this multi-segment form — address it with the
+ * single-segment encoded form (`/v/<vault>/n/Notes%2Fedit`), which never
+ * consults this parser. The trade is deliberate: `/edit` on a shared link is
+ * overwhelmingly the editor, and the escape hatch is what the app emits anyway.
+ *
+ * Returns `null` when there is no reference left to resolve (`/v/<vault>/n/`) —
+ * the caller decides where an empty address goes.
+ */
+export function parseNoteRef(rest: string | null | undefined): ParsedNoteRef | null {
+  if (!rest) return null;
+  // A splat can arrive with leading/trailing slashes (`/v/a/n/x/`); neither is
+  // part of the reference.
+  const trimmed = rest.replace(/^\/+/, "").replace(/\/+$/, "");
+  if (!trimmed) return null;
+  // `endsWith` needs a leading `/`, and the trim above removed those, so a
+  // lone "edit" is a note NAMED edit — a reference, not a tail.
+  if (trimmed.endsWith(EDIT_SUFFIX)) {
+    return { ref: trimmed.slice(0, -EDIT_SUFFIX.length), suffix: EDIT_SUFFIX };
+  }
+  return { ref: trimmed, suffix: "" };
 }
