@@ -5,6 +5,8 @@ import {
   parseNoteRef,
   resolveVaultRef,
   vaultScopedNotePath,
+  vaultServerSlug,
+  vaultShareRef,
 } from "./deep-link";
 import type { VaultRecord } from "./types";
 
@@ -142,6 +144,79 @@ describe("noteShareUrl", () => {
   it("defaults to the current origin", () => {
     window.history.replaceState({}, "", "/n/abc123");
     expect(noteShareUrl("aaron", "abc123")).toBe(`${window.location.origin}/v/aaron/n/abc123`);
+  });
+});
+
+describe("vaultServerSlug", () => {
+  it("reads the slug off a vault URL on either door", () => {
+    expect(vaultServerSlug("https://box.example/vault/aaron")).toBe("aaron");
+    expect(vaultServerSlug("http://localhost:1940/vault/default")).toBe("default");
+    expect(vaultServerSlug("https://u.parachute.computer/vault/fieldnotes/")).toBe("fieldnotes");
+    // Pre-vault-PR-7 records still say `/vaults/`.
+    expect(vaultServerSlug("https://box.example/vaults/aaron")).toBe("aaron");
+    // …and a vault behind a path prefix is still read.
+    expect(vaultServerSlug("https://box.example/hub/vault/aaron")).toBe("aaron");
+  });
+
+  it("is null when the URL carries no vault segment to read", () => {
+    // A standalone-vault record's URL is the bare issuer origin — nothing
+    // canonical to read, so the caller keeps the local name.
+    expect(vaultServerSlug("http://localhost:1940")).toBeNull();
+    expect(vaultServerSlug("https://box.example/vault/aaron/api")).toBeNull();
+    expect(vaultServerSlug("not a url")).toBeNull();
+    expect(vaultServerSlug("")).toBeNull();
+    expect(vaultServerSlug(undefined)).toBeNull();
+  });
+});
+
+describe("a copied share link survives a local rename (app#191)", () => {
+  // Two devices hold the SAME vault. This one renamed it to a label that is not
+  // the server slug; the other never renamed. A link copied HERE has to open
+  // THERE — the copied address is for other devices, so it cannot carry this
+  // device's private label.
+  const server = "https://box.example/vault/aaron";
+  const id = "box.example_vault_aaron";
+  const renamedHere: VaultRecord = { ...vault(id, "aaron"), url: server, name: "Aaron's stuff" };
+  const otherDevice = { [id]: { ...vault(id, "aaron"), url: server } };
+
+  it("copies the server slug, not the local label", () => {
+    expect(vaultShareRef(renamedHere)).toBe("aaron");
+    expect(noteShareUrl(vaultShareRef(renamedHere), "abc123", "https://box.example")).toBe(
+      "https://box.example/v/aaron/n/abc123",
+    );
+  });
+
+  it("resolves on a device that did not rename it", () => {
+    const url = noteShareUrl(vaultShareRef(renamedHere), "abc123", "https://box.example");
+    const segment = decodeURIComponent(new URL(url).pathname.split("/")[2]);
+    expect(resolveVaultRef(otherDevice, segment)?.id).toBe(id);
+  });
+
+  it("resolves on the device that DID rename it — the slug pass", () => {
+    // Without it the emitting device could not open its own copied link: the
+    // segment matches neither its label nor its id.
+    const segment = vaultShareRef(renamedHere);
+    expect(resolveVaultRef({ [id]: renamedHere }, segment)?.id).toBe(id);
+  });
+
+  it("keeps the local name when the URL has no slug to read", () => {
+    // Standalone-vault record (URL is the bare issuer origin) — unchanged.
+    const standalone: VaultRecord = {
+      ...vault("localhost_1940", "dev"),
+      url: "http://localhost:1940",
+    };
+    expect(vaultShareRef(standalone)).toBe("dev");
+  });
+
+  it("does not let the slug pass outrank a name or an id", () => {
+    // The slug is the LAST pass: a reference that exactly names or ids one
+    // vault still resolves to that vault, not to whoever's URL spells it.
+    const byName = { a: { ...vault("a", "beta"), url: "https://box.example/vault/alpha" } };
+    const collide = {
+      ...byName,
+      b: { ...vault("b", "zeta"), url: "https://box.example/vault/beta" },
+    };
+    expect(resolveVaultRef(collide, "beta")?.id).toBe("a");
   });
 });
 

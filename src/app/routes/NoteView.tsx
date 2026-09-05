@@ -29,7 +29,7 @@ import {
   useVaultStore,
 } from "@/lib/vault";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
-import { noteShareUrl } from "@/lib/vault/deep-link";
+import { noteShareUrl, vaultShareRef } from "@/lib/vault/deep-link";
 import { useTagRoles } from "@/lib/vault/settings";
 import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
 import { withReturnTo } from "@/lib/vault/url";
@@ -317,16 +317,24 @@ function MetadataPanel({ note }: { note: Note }) {
 // history stack noisier without pinning anything that could drift.
 //
 // Rendered only with an active vault (the whole route is guarded on one), so
-// the vault's name is always available to scope with.
+// there is always a vault to scope with.
+//
+// The scope is `vaultShareRef` — the vault's SERVER SLUG, not the local
+// `vault.name` (app#191). `renameVault` is a device-local relabel, and a link
+// scoped by a private label opens on no other device; the slug is what the
+// vault is called on its own origin, so it means the same vault everywhere.
+// For a vault nobody renamed the two are identical, so the copied string is
+// unchanged.
 function CopyLinkButton({ noteId }: { noteId: string }) {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { copied, copy } = useCopyToClipboard();
-  if (!vault?.name) return null;
+  const shareRef = vault ? vaultShareRef(vault) : "";
+  if (!shareRef) return null;
 
   return (
     <button
       type="button"
-      onClick={() => copy(noteShareUrl(vault.name, noteId))}
+      onClick={() => copy(noteShareUrl(shareRef, noteId))}
       className="btn btn-secondary btn-touch mt-3 w-full"
       aria-label="Copy a shareable link to this note"
     >
