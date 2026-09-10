@@ -225,13 +225,13 @@ describe("toggleCode — ragged selection crossing emphasis (#144)", () => {
   });
 });
 
-describe("emphasis toggles — ragged selection crossing strikethrough (#153)", () => {
+describe("emphasis/strikethrough overlap matrix (#153, #170)", () => {
   it.each([
-    ["bold", toggleBold, "**"],
-    ["italic", toggleItalic, "*"],
+    ["bold across strikethrough", toggleBold, "**", "StrongEmphasis"],
+    ["italic across strikethrough", toggleItalic, "*", "Emphasis"],
   ] as const)(
-    "keeps strikethrough delimiters balanced when toggling %s",
-    (_name, command, marker) => {
+    "keeps strikethrough delimiters parseable when toggling %s",
+    (_name, command, marker, nodeName) => {
       const doc = "a plain b ~~strike~~ d";
       const { state } = apply(command, doc, {
         anchor: doc.indexOf("plain") + 1,
@@ -239,8 +239,22 @@ describe("emphasis toggles — ragged selection crossing strikethrough (#153)", 
       });
 
       expect(state.doc.toString()).toBe(`a p${marker}lain b ~~strike~~${marker} d`);
+      expect(syntaxTree(state).topNode.getChild("Paragraph")?.getChild(nodeName)).not.toBeNull();
     },
   );
+
+  it("forms a strikethrough node across bold instead of only balancing marker bytes", () => {
+    const doc = "a **bold** b plain d";
+    const { state } = apply(toggleStrikethrough, doc, {
+      anchor: doc.indexOf("bold") + 1,
+      head: doc.indexOf("plain") + 2,
+    });
+
+    expect(state.doc.toString()).toBe("a ~~**bold** b pl~~ain d");
+    expect(
+      syntaxTree(state).topNode.getChild("Paragraph")?.getChild("Strikethrough"),
+    ).not.toBeNull();
+  });
 });
 
 describe("wrapLink", () => {

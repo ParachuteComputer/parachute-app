@@ -13,6 +13,7 @@ import { withMount } from "@/lib/base-url";
 import { beginOAuth } from "@/lib/vault/oauth";
 import { probeForIssuer } from "@/lib/vault/probe";
 import { announceVaultSwitch } from "@/lib/vault/switch";
+import { safeInternalRedirect, withReturnTo } from "@/lib/vault/url";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
@@ -69,13 +70,19 @@ function Shell({ children }: { children: React.ReactNode }) {
 // The self-hosted side door — SYNTHESIS #1's one quiet alternative. Stays on
 // BOTH front-door branches (magic-link and password), byte-identical either
 // way, so it's factored out once rather than duplicated.
+//
+// It forwards a `?redirect=` return target when the front door was reached by a
+// deep link that bounced (a logged-out `/n/<id>` — see NoteView's route guard),
+// so connecting a vault lands the reader on the note they were sent. Sanitized
+// by `withReturnTo`; without one the link is the plain `/add` it always was.
 function SelfHostSideDoor() {
+  const [params] = useSearchParams();
   return (
     <div className="mt-8 border-t border-border pt-6">
       <p className="font-round text-sm text-fg-muted">
         Self-hosting?{" "}
         <Link
-          to="/add"
+          to={withReturnTo("/add", params.get("redirect"))}
           className="font-semibold hover:underline"
           style={{ color: "var(--color-sky)" }}
         >
@@ -214,6 +221,7 @@ function FrontDoor() {
 // surface-mount (app at `/surface/<slug>` on a descriptor-less host) gets,
 // instead of being mis-onboarded into cloud.
 function NeutralFrontDoor() {
+  const [params] = useSearchParams();
   return (
     <Shell>
       <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
@@ -223,7 +231,7 @@ function NeutralFrontDoor() {
       </h1>
       <p className="mx-auto mb-6 max-w-sm text-fg-muted">Sign in to your parachute.</p>
       <Link
-        to="/add"
+        to={withReturnTo("/add", params.get("redirect"))}
         className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
       >
         Sign in →
@@ -361,8 +369,11 @@ function HubFrontDoor({
   signupPath?: string;
 }) {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [connecting, setConnecting] = useState(false);
   const host = typeof window !== "undefined" ? window.location.host : "";
+  // Where to land after the connect, when a bounced deep link put us here.
+  const returnTo = safeInternalRedirect(params.get("redirect"));
 
   async function openYourParachute() {
     if (connecting) return;
@@ -372,14 +383,18 @@ function HubFrontDoor({
       // loopback) exactly as `/add` does, then begin OAuth directly. No
       // hostname assumptions: everything is relative to the serving origin.
       const issuer = (await probeForIssuer(window.location.origin)) ?? window.location.origin;
-      const { authorizeUrl } = await beginOAuth(issuer);
+      // With a return target the flow carries it on the pending state, exactly
+      // as `/add?redirect=` does; without one the call shape is unchanged.
+      const { authorizeUrl } = returnTo
+        ? await beginOAuth(issuer, undefined, undefined, { redirect: returnTo })
+        : await beginOAuth(issuer);
       window.location.assign(authorizeUrl);
     } catch {
       // Discovery / PKCE / insecure-context failure — hand off to the full
       // `/add` form, which prefills the serving origin and surfaces the
-      // insecure-context remediation.
+      // insecure-context remediation (and keeps the return target).
       setConnecting(false);
-      navigate("/add");
+      navigate(withReturnTo("/add", returnTo));
     }
   }
 
@@ -458,8 +473,13 @@ function AlreadySignedIn({
   vaults: AccountVault[];
 }) {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [busy, setBusy] = useState(false);
   const one = vaults.length === 1 ? vaults[0] : null;
+  // A deep link that bounced here (signed in, but the vault wasn't on THIS
+  // device yet) — opening the vault is the whole reason the link failed, so
+  // land on the note rather than the default `/`.
+  const returnTo = safeInternalRedirect(params.get("redirect"));
 
   async function open() {
     if (!one || busy) return;
@@ -471,7 +491,7 @@ function AlreadySignedIn({
       announceVaultSwitch(one.name);
       // NAVIGATION.md: "Landing 'already signed in' card: Open {vault} → /"
       // — user-initiated, push.
-      navigate("/");
+      navigate(returnTo ?? "/");
     } catch {
       // NAVIGATION.md: (c) fall back to the dispatcher, which surfaces
       // weather — re-entering a transient screen, not a new place, so

@@ -21,10 +21,11 @@ import { NavBandsProvider, isCeremonyPath } from "@/lib/nav/model";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useVaultStore } from "@/lib/vault";
 import { useCrossTabVaultSync } from "@/lib/vault/cross-tab-sync";
-import { findVaultByName } from "@/lib/vault/deep-link";
+import { parseNoteRef, resolveVaultRef } from "@/lib/vault/deep-link";
 import { useActiveVaultClient } from "@/lib/vault/queries";
 import { useReachabilityProbe } from "@/lib/vault/reachability-probe";
 import { switchVault } from "@/lib/vault/switch";
+import { withReturnTo } from "@/lib/vault/url";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { SyncProvider } from "@/providers/SyncProvider";
 import { matchesNavigationDenylist } from "@/pwa-navigation-denylist";
@@ -255,14 +256,24 @@ function NoteIdRedirect({ suffix = "" }: { suffix?: string }) {
   return <Navigate to={`/n/${encodeURIComponent(id)}${suffix}`} replace />;
 }
 
-// Vault-scoped deep links (app#186): `/v/<vault>/n/<id>` (+ `/edit`).
+// Vault-scoped deep links (app#186, app#194): `/v/<vault>/n/<note>` (+ `/edit`),
+// and `/v/<vault>` for the vault on its own.
 //
 // The canonical `/n/<id>` names a note but not the vault to resolve it in, so a
 // link shared out of the app (an agent report, a channel message) only lands on
 // the right note if the reader happens to be sitting in the right vault. This
-// route pins the vault into the address: resolve `<vault>` by NAME against the
-// vaults connected on this device, switch to it, then hand off to the ordinary
-// `/n/<id>` route — one note-resolution/rendering path, not two.
+// route pins the vault into the address: resolve `<vault>` — by name OR by id,
+// see `resolveVaultRef` and its name-before-id tie-break in
+// `src/lib/vault/deep-link.ts` — against the vaults connected on this device,
+// switch to it, then hand off to the ordinary `/n/<note>` route: one
+// note-resolution and rendering path, not two. `<note>` is whatever the vault's
+// `?id=` accepts, a ULID or a path, in one encoded segment or spread across
+// several.
+//
+// It grants nothing. The vault must already be connected on this device with a
+// live grant, exactly as `/n/<id>` requires; an address naming a vault this
+// device doesn't hold renders the not-connected state instead of borrowing the
+// active vault's session.
 //
 // The handoff is a redirect, deliberately. Once the vault context has been
 // switched, `/v/<vault>/n/<id>` has said everything it has to say; the note now
@@ -277,12 +288,23 @@ function NoteIdRedirect({ suffix = "" }: { suffix?: string }) {
 // `/v` and not `/vault`: `/vault/<name>/*` is the hub's per-vault proxy AND the
 // my.-phase vault worker's data plane (see the RESERVED PATH-SPACE note in the
 // router below). `src/lib/vault/deep-link.ts` carries the full collision check.
-function VaultScopedNoteRedirect({ suffix = "" }: { suffix?: string }) {
-  const { vault: vaultName, id } = useParams<{ vault: string; id: string }>();
+function VaultScopedRedirect({ suffix = "", splat = false }: VaultScopedRedirectProps) {
+  const params = useParams<{ vault: string; id?: string; "*"?: string }>();
+  const vaultRef = params.vault;
+  const { id: idRef, "*": splatRef } = params;
   const vaults = useVaultStore((s) => s.vaults);
   const activeVaultId = useVaultStore((s) => s.activeVaultId);
-  const target = useMemo(() => findVaultByName(vaults, vaultName), [vaults, vaultName]);
+  const target = useMemo(() => resolveVaultRef(vaults, vaultRef), [vaults, vaultRef]);
   const targetId = target?.id ?? null;
+
+  // The note this address names, if any. The single-segment routes hand it over
+  // in `:id` (already decoded, `%2F` included — so an encoded path arrives whole);
+  // the splat route hands over the raw remainder of the URL, which IS the path
+  // when a human wrote it out across segments. `/v/<vault>` alone parses to null.
+  const note = useMemo(() => {
+    if (splat) return parseNoteRef(splatRef);
+    return idRef ? { ref: idRef, suffix } : null;
+  }, [splat, idRef, splatRef, suffix]);
 
   useEffect(() => {
     // DESIGN-SPEC §4.4 (the switch-confirmation rule): every path that changes
@@ -292,15 +314,30 @@ function VaultScopedNoteRedirect({ suffix = "" }: { suffix?: string }) {
     if (targetId) switchVault(targetId);
   }, [targetId]);
 
-  if (!vaultName || !id) return <Navigate to="/" replace />;
+  if (!vaultRef) return <Navigate to="/" replace />;
   // Not connected on this device — a real state at the address the reader
   // landed on, never a blank screen or a silent bounce into the wrong vault.
-  if (!target) return <VaultNotConnected name={vaultName} />;
+  // Checked BEFORE the note reference so an unresolvable vault reads as an
+  // unresolvable vault even when the note half of the address is empty too.
+  if (!target) return <VaultNotConnected name={vaultRef} />;
   // One tick while the effect above flips the active vault. Redirecting before
   // the switch lands would resolve the note against the OUTGOING vault and
   // flash its not-found state.
   if (activeVaultId !== target.id) return <RouteFallback />;
-  return <Navigate to={`/n/${encodeURIComponent(id)}${suffix}`} replace />;
+  // `/v/<vault>` with no note (or `/v/<vault>/n/` with nothing after it): the
+  // vault was the whole message. Land on its note list — Aaron, 2026-08-30:
+  // "so that we can link to an appropriate vault as well".
+  if (!note) return <Navigate to="/notes" replace />;
+  // Always ONE segment on the canonical side: a note path is encoded whole, so
+  // `/n/:id` matches it and NoteView receives the path intact.
+  return <Navigate to={`/n/${encodeURIComponent(note.ref)}${note.suffix}`} replace />;
+}
+
+interface VaultScopedRedirectProps {
+  /** The editor tail for the single-segment routes; the splat carries its own. */
+  suffix?: string;
+  /** Read the note reference from the splat (`*`) instead of `:id`. */
+  splat?: boolean;
 }
 
 // The unknown-vault state for a vault-scoped deep link. A link naming a vault
@@ -308,7 +345,16 @@ function VaultScopedNoteRedirect({ suffix = "" }: { suffix?: string }) {
 // dead note id: the address is well-formed, the note may well exist, and the
 // fix is a connect — so it gets its own copy and points at `/add` (the existing
 // "Connect your own vault" ceremony) plus `/vaults` for the ones already here.
+//
+// The connect link carries the address the reader arrived on as `?redirect=`,
+// so the flow returns them to the note they were sent rather than the default
+// landing — the same return channel the `/n/<id>` guard in NoteView uses
+// (`withReturnTo` → `/add` → `beginOAuth` → `OAuthCallback`). The FULL `/v/...`
+// address is what returns: once the vault is connected this route resolves it
+// and hands off to `/n/<note>` exactly as it would have the first time.
 function VaultNotConnected({ name }: { name: string }) {
+  const location = useLocation();
+  const connectHref = withReturnTo("/add", `${location.pathname}${location.search}`);
   return (
     <div className="page">
       <EmptyState
@@ -320,7 +366,7 @@ function VaultNotConnected({ name }: { name: string }) {
         description="This link names a vault that isn't on this device yet. Connect it and the link will open the note."
         action={
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link to="/add" className="btn btn-primary btn-touch">
+            <Link to={connectHref} className="btn btn-primary btn-touch">
               Connect a vault
             </Link>
             <Link to="/vaults" className="btn btn-secondary btn-touch">
@@ -681,13 +727,52 @@ function AppShell() {
                     Four/five segments, so they can't be reached by the
                     single-segment `/:id` shim; `/v` is unclaimed by both doors
                     (hub route table + my. reserved path-space) and by the PWA
-                    navigation denylist. See `VaultScopedNoteRedirect`.
+                    navigation denylist. See `VaultScopedRedirect`.
                   */}
-                <Route path="/v/:vault/n/:id" element={<VaultScopedNoteRedirect />} />
+                <Route path="/v/:vault/n/:id" element={<VaultScopedRedirect />} />
                 <Route
                   path="/v/:vault/n/:id/edit"
-                  element={<VaultScopedNoteRedirect suffix="/edit" />}
+                  element={<VaultScopedRedirect suffix="/edit" />}
                 />
+                {/*
+                    app#194 — the multi-segment note reference. A note is
+                    addressable by ULID id OR by PATH, and a path contains `/`:
+                    `/v/aaron/n/Projects/2026/Roadmap`. The two routes above are
+                    ranked ABOVE this one by React Router (static and dynamic
+                    segments outscore a splat), so a single-segment id — and the
+                    percent-encoded single-segment path the app itself emits —
+                    never reaches the splat. `parseNoteRef` claims a trailing
+                    `/edit` here the same way `:id/edit` does above.
+                  */}
+                <Route path="/v/:vault/n/*" element={<VaultScopedRedirect splat />} />
+                {/*
+                    app#194 — the vault on its own. Switches and lands on that
+                    vault's notes; registered AFTER the note forms so it can only
+                    match when nothing follows the vault segment.
+                  */}
+                <Route path="/v/:vault" element={<VaultScopedRedirect />} />
+                {/*
+                    app#194 — `/v` with no vault after it. Without this route the
+                    bare prefix falls to `/:id` below and is read as a NOTE named
+                    `v`, resolved in whatever vault happens to be active: the
+                    exact cross-vault ambiguity the `/v` namespace exists to
+                    remove, reached by a link that got truncated on the way. `/v`
+                    names the vault namespace without naming a vault, so the
+                    honest answer is the list of vaults this device holds — the
+                    same door `VaultNotConnected` offers. A static segment
+                    outranks `/:id` regardless of order, and `/vaults` keeps its
+                    own route because React Router matches whole segments.
+                  */}
+                <Route path="/v" element={<Navigate to="/vaults" replace />} />
+                {/*
+                    Bare `/n` — no note after it. Without this route the
+                    prefix falls to `/:id` below and is read as a NOTE named
+                    `n`, the same shape of collision `/v` was fixed for above.
+                    `/n` names the note namespace without naming a note, so
+                    the honest answer is the notes list, consistent with the
+                    `/v` shim just above.
+                  */}
+                <Route path="/n" element={<Navigate to="/notes" replace />} />
                 <Route path="/:id" element={<NoteIdRedirect />} />
                 <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
                 <Route

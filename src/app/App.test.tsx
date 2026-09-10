@@ -338,6 +338,36 @@ describe("App", () => {
     expect(window.location.pathname).toBe("/notes/notes");
   });
 
+  it("bare /n redirects to /notes rather than falling to the /:id deep-link shim (app#194 follow-up)", async () => {
+    useVaultStore.setState({
+      vaults: {
+        v1: {
+          id: "v1",
+          url: "http://localhost:1940",
+          name: "default",
+          issuer: "http://localhost:1940",
+          clientId: "c",
+          scope: "full",
+          addedAt: "2026-04-20T00:00:00.000Z",
+          lastUsedAt: "2026-04-20T00:00:00.000Z",
+        },
+      },
+      activeVaultId: "v1",
+    });
+    // Mirrors the `/v` shim from #201/app#194: without a dedicated `/n`
+    // route, the bare prefix falls to the `/:id` bookmark shim below it and
+    // is read as a NOTE named "n" — /notes/n/n instead of the notes list.
+    window.history.replaceState({}, "", "/notes/n");
+    const baseline = window.history.length;
+    render(<App />);
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/notes/notes");
+    });
+    expect(window.location.pathname).not.toContain("/n/n");
+    // replace, not push — same rule as every other redirect shim (NAVIGATION.md).
+    expect(window.history.length).toBe(baseline);
+  });
+
   it("bare-path note that spells a ceremony word still resolves under the /notes mount (no false-bail, #189)", async () => {
     // Mount-awareness guard: `/notes/login` is NOT the origin ceremony
     // `/login`, so the bare-path shim keeps redirecting it to the canonical
