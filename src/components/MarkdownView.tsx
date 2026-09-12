@@ -65,6 +65,12 @@ function NotesLink({ href, className, children }: LinkComponentProps) {
       </Link>
     );
   }
+  if (href.startsWith("/v/"))
+    return (
+      <a href={href} className="text-accent hover:underline">
+        {children}
+      </a>
+    );
   if (href.startsWith("/") || href.startsWith("#")) {
     return (
       <Link to={href} className="text-accent hover:underline">

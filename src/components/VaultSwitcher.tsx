@@ -5,6 +5,8 @@ import { isHostedVaultRecord, openHostedVault } from "@/lib/account/hosted-vault
 import { useAccountSessionStore } from "@/lib/account/store";
 import type { AccountVault } from "@/lib/account/types";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
+import { detectMountBase } from "@/lib/base-url";
+import { useAbsoluteNavigate } from "@/lib/nav/vault-router";
 import {
   type HubVaultEntry,
   type VaultRecord,
@@ -14,8 +16,9 @@ import {
   normalizeVaultUrl,
   useVaultStore,
 } from "@/lib/vault";
+import { vaultShareRef } from "@/lib/vault/deep-link";
 import { InsecureContextError } from "@/lib/vault/pkce";
-import { announceVaultSwitch, switchVault, vaultDisplayLabel } from "@/lib/vault/switch";
+import { announceVaultSwitch, vaultDisplayLabel } from "@/lib/vault/switch";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -332,14 +335,18 @@ function SwitcherPanel({
   // Trial ambience (decision b / F4): only when the door reports a number.
   const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
 
+  const absoluteNavigate = useAbsoluteNavigate();
   const onSwitch = useCallback(
     (row: DeviceRow) => {
       // §4.4: every switch confirms with "Now in {vault}". Clicking the current
       // vault just closes — nothing changed, nothing to announce.
-      if (!row.isActive) switchVault(row.id, { toast: true });
+      if (!row.isActive)
+        absoluteNavigate(
+          `${detectMountBase()}/v/${encodeURIComponent(vaultShareRef(vaults[row.id]!))}`,
+        );
       onAfterAction();
     },
-    [onAfterAction],
+    [onAfterAction, absoluteNavigate, vaults],
   );
 
   // Open an account vault that isn't on this device (the cloud door): mint a
@@ -351,7 +358,10 @@ function SwitcherPanel({
       setOpeningName(row.name);
       setOpenError(null);
       try {
-        await openHostedVault(row.name);
+        const id = await openHostedVault(row.name);
+        absoluteNavigate(
+          `${detectMountBase()}/v/${encodeURIComponent(vaultShareRef(useVaultStore.getState().vaults[id]!))}`,
+        );
         announceVaultSwitch(row.name);
         onAfterAction();
       } catch (err) {
@@ -361,7 +371,7 @@ function SwitcherPanel({
         setOpeningName(null);
       }
     },
-    [openingName, onAfterAction],
+    [openingName, onAfterAction, absoluteNavigate],
   );
 
   const onConnect = useCallback(async (row: HubRow) => {

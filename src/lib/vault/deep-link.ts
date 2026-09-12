@@ -58,7 +58,8 @@
 import { withMount } from "@/lib/base-url";
 import type { VaultRecord } from "./types";
 
-/** The one place the `/v` prefix is spelled. */
+/** Canonical addresses use `/v/<slug>` both in-app and when shared.
+ * Resolution still accepts the server slug, local name, or vault id. */
 export const VAULT_SCOPE_PREFIX = "/v";
 
 /**

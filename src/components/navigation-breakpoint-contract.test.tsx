@@ -1,3 +1,5 @@
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
+const { Provider: AbsoluteNavigateProvider } = absoluteNavigateHarness();
 import { BottomTabBar } from "@/components/BottomTabBar";
 import { LensStrip } from "@/components/LensStrip";
 import { NavDrawer } from "@/components/NavDrawer";
@@ -143,7 +145,9 @@ async function renderWithClient(ui: ReactNode): Promise<RenderResult> {
     result = render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <NavBandsProvider>{ui}</NavBandsProvider>
+          <AbsoluteNavigateProvider>
+            <NavBandsProvider>{ui}</NavBandsProvider>
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -423,10 +427,12 @@ describe("the three-band navigation contract (notes#147, amended for tablet)", (
       result = render(
         <QueryClientProvider client={client}>
           <MemoryRouter initialEntries={["/"]}>
-            <NavBandsProvider>
-              <NavDrawer />
-            </NavBandsProvider>
-            <GoElsewhere to="/tags" />
+            <AbsoluteNavigateProvider>
+              <NavBandsProvider>
+                <NavDrawer />
+              </NavBandsProvider>
+              <GoElsewhere to="/tags" />
+            </AbsoluteNavigateProvider>
           </MemoryRouter>
         </QueryClientProvider>,
       );
@@ -455,10 +461,12 @@ describe("the three-band navigation contract (notes#147, amended for tablet)", (
       result = render(
         <QueryClientProvider client={client}>
           <MemoryRouter initialEntries={["/notes"]}>
-            <NavBandsProvider>
-              <NavDrawer />
-            </NavBandsProvider>
-            <GoElsewhere to="/notes?search=foo&tag=bar" />
+            <AbsoluteNavigateProvider>
+              <NavBandsProvider>
+                <NavDrawer />
+              </NavBandsProvider>
+              <GoElsewhere to="/notes?search=foo&tag=bar" />
+            </AbsoluteNavigateProvider>
           </MemoryRouter>
         </QueryClientProvider>,
       );
@@ -884,10 +892,12 @@ describe("one nav-model derivation, N projections (app#110)", () => {
     const ui = (open: boolean) => (
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <NavBandsProvider>
-            <Rail />
-            <NavSheet open={open} onClose={() => {}} />
-          </NavBandsProvider>
+          <AbsoluteNavigateProvider>
+            <NavBandsProvider>
+              <Rail />
+              <NavSheet open={open} onClose={() => {}} />
+            </NavBandsProvider>
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>
     );
@@ -916,7 +926,9 @@ describe("one nav-model derivation, N projections (app#110)", () => {
     const outside = (ui: ReactNode) =>
       render(
         <QueryClientProvider client={client}>
-          <MemoryRouter>{ui}</MemoryRouter>
+          <MemoryRouter>
+            <AbsoluteNavigateProvider>{ui}</AbsoluteNavigateProvider>
+          </MemoryRouter>
         </QueryClientProvider>,
       );
     expect(() => outside(<Rail />)).toThrow(/NavBandsProvider/);

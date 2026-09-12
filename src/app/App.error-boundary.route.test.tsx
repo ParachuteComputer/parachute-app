@@ -75,7 +75,7 @@ describe("RouteErrorBoundary wired into App", () => {
 
     fireEvent.click(screen.getByRole("link", { name: /back to notes/i }));
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/notes");
+      expect(window.location.pathname).toBe("/v/default/notes");
     });
     expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument();
   });

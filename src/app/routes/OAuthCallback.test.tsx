@@ -1,9 +1,12 @@
+const { Provider: AbsoluteNavigateProvider, navigate: absoluteNavigate } =
+  absoluteNavigateHarness();
 import { OAuthCallback } from "@/app/routes/OAuthCallback";
 import { useToastStore } from "@/lib/toast/store";
 import { useAuthHaltStore } from "@/lib/vault/auth-halt-store";
 import { savePendingOAuth } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
 import type { PendingOAuthState, VaultRecord } from "@/lib/vault/types";
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,17 +39,20 @@ function mockTokenResponse(response: { ok?: boolean; status?: number; body: stri
 function renderCallback() {
   return render(
     <MemoryRouter initialEntries={["/oauth/callback?code=auth-code&state=state-xyz"]}>
-      <Routes>
-        <Route path="/oauth/callback" element={<OAuthCallback />} />
-        <Route path="/add" element={<div>Add vault page</div>} />
-        <Route path="/" element={<div>Home page</div>} />
-      </Routes>
+      <AbsoluteNavigateProvider>
+        <Routes>
+          <Route path="/oauth/callback" element={<OAuthCallback />} />
+          <Route path="/add" element={<div>Add vault page</div>} />
+          <Route path="/" element={<div>Home page</div>} />
+        </Routes>
+      </AbsoluteNavigateProvider>
     </MemoryRouter>,
   );
 }
 
 describe("OAuthCallback pending-approval rendering", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     sessionStorage.clear();
     localStorage.clear();
   });
@@ -177,6 +183,7 @@ function mockSuccessfulTokenResponse(body: {
 
 describe("OAuthCallback vault URL resolution (notes#121)", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     sessionStorage.clear();
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
@@ -261,6 +268,7 @@ describe("OAuthCallback vault URL resolution (notes#121)", () => {
 // default `/`, and must reject any non-same-origin value defensively.
 describe("OAuthCallback post-connect redirect (notes#63)", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     sessionStorage.clear();
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
@@ -274,11 +282,13 @@ describe("OAuthCallback post-connect redirect (notes#63)", () => {
   function renderCallbackWithImport() {
     return render(
       <MemoryRouter initialEntries={["/oauth/callback?code=auth-code&state=state-xyz"]}>
-        <Routes>
-          <Route path="/oauth/callback" element={<OAuthCallback />} />
-          <Route path="/import" element={<div>Import page</div>} />
-          <Route path="/" element={<div>Home page</div>} />
-        </Routes>
+        <AbsoluteNavigateProvider>
+          <Routes>
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
+            <Route path="/import" element={<div>Import page</div>} />
+            <Route path="/" element={<div>Home page</div>} />
+          </Routes>
+        </AbsoluteNavigateProvider>
       </MemoryRouter>,
     );
   }
@@ -293,7 +303,7 @@ describe("OAuthCallback post-connect redirect (notes#63)", () => {
     renderCallbackWithImport();
 
     await waitFor(() => {
-      expect(screen.getByText("Import page")).toBeInTheDocument();
+      expect(absoluteNavigate).toHaveBeenCalledWith("/import", { replace: true });
     });
     expect(screen.queryByText("Home page")).not.toBeInTheDocument();
   });
@@ -308,7 +318,7 @@ describe("OAuthCallback post-connect redirect (notes#63)", () => {
     renderCallbackWithImport();
 
     await waitFor(() => {
-      expect(screen.getByText("Home page")).toBeInTheDocument();
+      expect(absoluteNavigate).toHaveBeenCalledWith("/", { replace: true });
     });
   });
 
@@ -322,7 +332,7 @@ describe("OAuthCallback post-connect redirect (notes#63)", () => {
     renderCallbackWithImport();
 
     await waitFor(() => {
-      expect(screen.getByText("Home page")).toBeInTheDocument();
+      expect(absoluteNavigate).toHaveBeenCalledWith("/", { replace: true });
     });
   });
 });
@@ -335,6 +345,7 @@ describe("OAuthCallback post-connect redirect (notes#63)", () => {
 // the halt on the old id would otherwise be orphaned in localStorage.
 describe("OAuthCallback auth-halt clearing on successful reconnect (notes#148)", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     sessionStorage.clear();
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
@@ -440,6 +451,7 @@ describe("OAuthCallback switch-confirmation toast (§4.4 / W2-4)", () => {
   }
 
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     sessionStorage.clear();
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
@@ -503,6 +515,7 @@ describe("OAuthCallback switch-confirmation toast (§4.4 / W2-4)", () => {
 // `error_description` when the issuer sends one.
 describe("OAuthCallback error rendering", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     sessionStorage.clear();
     localStorage.clear();
   });
@@ -515,10 +528,12 @@ describe("OAuthCallback error rendering", () => {
   function renderWithError(query: string) {
     return render(
       <MemoryRouter initialEntries={[`/oauth/callback?${query}`]}>
-        <Routes>
-          <Route path="/oauth/callback" element={<OAuthCallback />} />
-          <Route path="/add" element={<div>Add vault page</div>} />
-        </Routes>
+        <AbsoluteNavigateProvider>
+          <Routes>
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
+            <Route path="/add" element={<div>Add vault page</div>} />
+          </Routes>
+        </AbsoluteNavigateProvider>
       </MemoryRouter>,
     );
   }

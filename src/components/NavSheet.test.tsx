@@ -1,3 +1,5 @@
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
+const { Provider: AbsoluteNavigateProvider } = absoluteNavigateHarness();
 import { NavSheet } from "@/components/NavSheet";
 import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
@@ -40,9 +42,11 @@ async function renderSheet(
     result = render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[path]}>
-          <NavBandsProvider>
-            <NavSheet open onClose={() => {}} {...props} />
-          </NavBandsProvider>
+          <AbsoluteNavigateProvider>
+            <NavBandsProvider>
+              <NavSheet open onClose={() => {}} {...props} />
+            </NavBandsProvider>
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -76,9 +80,11 @@ describe("NavSheet (mobile projection, W2-5)", () => {
     const { container } = render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <NavBandsProvider>
-            <NavSheet open={false} onClose={() => {}} />
-          </NavBandsProvider>
+          <AbsoluteNavigateProvider>
+            <NavBandsProvider>
+              <NavSheet open={false} onClose={() => {}} />
+            </NavBandsProvider>
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );

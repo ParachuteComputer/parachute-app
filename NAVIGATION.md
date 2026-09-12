@@ -32,7 +32,7 @@ or misleading state (a consumed compose form, a session that no longer exists).
 | Any rail / tab / sheet / footer / card link | **push** | user-initiated |
 | Redirect shims: `/all→/notes` (W2-7, query-preserving), `/graph→/map` (W2-7, query-preserving), `/pinned`/`/archived`/`/untagged`/`/orphaned`→`/notes?view=`, `/capture→/new`, `/:id→/n/:id`, `/today`(no-param — post-W2-3), `/welcome?new=1→/add-vault/create` (W2-6), `/add-vault/ready` with no `?vault=`→`/add-vault`, catch-all `*→/` (+toast) | **replace** | (a) shims leave no trace |
 | BootGate `?add=` → `/add` | replace | (b) one-shot param |
-| Vault-scoped deep links (app#186, app#194) — `<vault>` is the server SLUG (what "Copy link" emits — app#191), a local NAME, or an id, `<note>` is a ULID or a path (one encoded segment or several): `/v/<vault>/n/<note>`(+`/edit`) → `/n/<note>`; `/v/<vault>` and `/v/<vault>/n` → `/notes` | **replace** | (b) the vault name is consumed on arrival — Back from the note goes where the reader came from, not into a shim that would re-switch the vault |
+| Vault-scoped addresses (app#207): `/v/<slug>/n/<note>` (+ `/edit`) remain canonical; bare vault routes replace INTO that prefix. `/v/<vault>` renders vault home; name/id prefixes normalize to the server slug. | **replace** for aliases; none for canonical arrival | (a) shims leave no extra Back step |
 | `/v` with no vault after it → `/vaults` (app#194) | **replace** | (a) a shim; without it the bare prefix falls to `/:id` and reads as a note named `v` in whatever vault is active — the cross-vault ambiguity `/v` exists to remove |
 | `/n` with no note after it → `/notes` | **replace** | (a) a shim; without it the bare prefix falls to `/:id` and reads as a note named `n` — same collision as the bare `/v` row above, for the note namespace instead of the vault one |
 | All-lens filter writeback (`setSearchParams(…, { replace: true })` — VaultSurface mirrors the active search/tag filters into `?search=&tag=…` as they change) | **replace** | state mirroring, not a place change |
@@ -40,7 +40,7 @@ or misleading state (a consumed compose form, a session that no longer exists).
 | CheckEmail poll success → `/welcome` | replace | (c) auto-advance; returning to a consumed check-email would be wrong |
 | `/welcome` dispatcher → any branch destination (first-vault → `/add-vault/create?first=1` / welcome-back / picker / net-error) | replace | (c) the dispatcher is transient |
 | Welcome-back beat (auto-opens the account's one vault) → `/` | replace | (d) the single post-auth landing |
-| Landing "already signed in" card: Open {vault} → `/` | **push** | user-initiated |
+| Landing "already signed in" card: Open {vault} → absolute return target (or `/`) | **replace** | return-target consumption (app#207) |
 | Landing "already signed in" card: Open fails → `/welcome` (fallback to dispatcher) | replace | (c) dispatcher re-entry, not a new place |
 | Sign out → `/` | replace | session context is gone; Back into a signed-in page would lie |
 | Picker: user picks a vault → `/` | **push** | user-initiated (Back to the picker is harmless and useful) |

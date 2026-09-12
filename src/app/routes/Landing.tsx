@@ -10,6 +10,7 @@ import { openHostedVault } from "@/lib/account/hosted-vault";
 import { clearAccountToken, loadLastSigninEmail, saveLastSigninEmail } from "@/lib/account/store";
 import type { AccountVault, DoorPlan } from "@/lib/account/types";
 import { withMount } from "@/lib/base-url";
+import { useAbsoluteNavigate } from "@/lib/nav/vault-router";
 import { beginOAuth } from "@/lib/vault/oauth";
 import { probeForIssuer } from "@/lib/vault/probe";
 import { announceVaultSwitch } from "@/lib/vault/switch";
@@ -473,6 +474,7 @@ function AlreadySignedIn({
   vaults: AccountVault[];
 }) {
   const navigate = useNavigate();
+  const absoluteNavigate = useAbsoluteNavigate();
   const [params] = useSearchParams();
   const [busy, setBusy] = useState(false);
   const one = vaults.length === 1 ? vaults[0] : null;
@@ -489,9 +491,9 @@ function AlreadySignedIn({
       await openHostedVault(one.name);
       // §4.4 switch-confirmation: "Now in {vault}".
       announceVaultSwitch(one.name);
-      // NAVIGATION.md: "Landing 'already signed in' card: Open {vault} → /"
-      // — user-initiated, push.
-      navigate(returnTo ?? "/");
+      // Consume the return target through the absolute channel so a supplied
+      // vault prefix is not appended to the current router basename.
+      absoluteNavigate(withMount(returnTo ?? "/"), { replace: true });
     } catch {
       // NAVIGATION.md: (c) fall back to the dispatcher, which surfaces
       // weather — re-entering a transient screen, not a new place, so

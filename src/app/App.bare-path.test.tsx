@@ -72,7 +72,7 @@ describe("App — bare-path note shim at the root mount (#189, Phase 1)", () => 
     window.history.replaceState({}, "", "/MyNote");
     render(<App />);
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/n/MyNote");
+      expect(window.location.pathname).toBe("/v/default/n/MyNote");
     });
   });
 });

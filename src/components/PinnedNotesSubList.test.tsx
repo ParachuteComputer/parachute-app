@@ -1,3 +1,5 @@
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
+const { Provider: AbsoluteNavigateProvider } = absoluteNavigateHarness();
 import { NavDrawer } from "@/components/NavDrawer";
 import { NavSheet } from "@/components/NavSheet";
 import { Rail } from "@/components/Rail";
@@ -100,7 +102,9 @@ async function renderIn(ui: ReactNode, client?: QueryClient): Promise<RenderResu
     result = render(
       <QueryClientProvider client={qc}>
         <MemoryRouter>
-          <NavBandsProvider>{ui}</NavBandsProvider>
+          <AbsoluteNavigateProvider>
+            <NavBandsProvider>{ui}</NavBandsProvider>
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
