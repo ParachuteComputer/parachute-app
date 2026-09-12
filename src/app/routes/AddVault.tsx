@@ -1,13 +1,15 @@
 import { InsecureContextBanner } from "@/components/InsecureContextBanner";
 import { ParachuteMark } from "@/components/ParachuteMark";
 import { WizardShell } from "@/components/WizardShell";
+import { withMount } from "@/lib/base-url";
+import { useAbsoluteNavigate } from "@/lib/nav/vault-router";
 import { beginOAuth, normalizeVaultUrl, useOriginVaultProbe } from "@/lib/vault";
 import { InsecureContextError } from "@/lib/vault/pkce";
 import { useVaultStore } from "@/lib/vault/store";
 import { switchVault } from "@/lib/vault/switch";
 import { safeInternalRedirect, vaultIdFromUrl } from "@/lib/vault/url";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 
 /**
  * The live hostname for the announced hop (SYNTHESIS #11) — recomputed on
@@ -28,7 +30,7 @@ function liveHostFromInput(raw: string): string | null {
 
 export function AddVault() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
+  const absoluteNavigate = useAbsoluteNavigate();
   const queryUrl = searchParams.get("url") ?? "";
   // `?add=<vault url>` — the cloud console's "Open in Notes" deep link
   // (NotesIndex forwards a root-path `/?add=…` here). An alias of the
@@ -153,12 +155,21 @@ export function AddVault() {
       switchVault(existing.id, { toast: true });
       // NAVIGATION.md: this consumes the ?add= auto-begin one-shot param
       // (already stripped from history above) — replace.
-      navigate(redirect ?? "/", { replace: true });
+      absoluteNavigate(withMount(redirect ?? "/"), { replace: true });
       return;
     }
 
     void connect(normalized);
-  }, [addUrl, addUrlIsHttp, queryUrl, redirect, searchParams, setSearchParams, navigate, connect]);
+  }, [
+    addUrl,
+    addUrlIsHttp,
+    queryUrl,
+    redirect,
+    searchParams,
+    setSearchParams,
+    absoluteNavigate,
+    connect,
+  ]);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();

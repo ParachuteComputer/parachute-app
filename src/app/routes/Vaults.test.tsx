@@ -1,8 +1,11 @@
+const { Provider: AbsoluteNavigateProvider, navigate: absoluteNavigate } =
+  absoluteNavigateHarness();
 import { Vaults } from "@/app/routes/Vaults";
 import { HOSTED_CLIENT_ID } from "@/lib/account";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault";
 import type { VaultRecord } from "@/lib/vault/types";
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -27,12 +30,15 @@ function vaultRecord(over: Partial<VaultRecord>): VaultRecord {
 function renderVaults() {
   return render(
     <MemoryRouter>
-      <Vaults />
+      <AbsoluteNavigateProvider>
+        <Vaults />
+      </AbsoluteNavigateProvider>
     </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
+  absoluteNavigate.mockClear();
   useVaultStore.setState({ vaults: {}, activeVaultId: null });
   useToastStore.setState({ toasts: [] });
 });
@@ -92,8 +98,8 @@ describe("Vaults — Make active confirms the switch", () => {
     });
     renderVaults();
     fireEvent.click(screen.getByRole("button", { name: /make active/i }));
-    expect(useVaultStore.getState().activeVaultId).toBe("2");
-    expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Now in fieldnotes");
+    expect(absoluteNavigate).toHaveBeenCalledWith("/v/fieldnotes");
+    expect(useVaultStore.getState().activeVaultId).toBe("1");
   });
 });
 

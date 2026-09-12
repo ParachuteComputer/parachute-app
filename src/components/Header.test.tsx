@@ -1,3 +1,5 @@
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
+const { Provider: AbsoluteNavigateProvider } = absoluteNavigateHarness();
 import { Header } from "@/components/Header";
 import { NavBandsProvider } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault/store";
@@ -73,11 +75,13 @@ function renderHeader() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        {/* The ☰ opens the NavSheet, which reads the nav model from
+        <AbsoluteNavigateProvider>
+          {/* The ☰ opens the NavSheet, which reads the nav model from
             context (app#110). */}
-        <NavBandsProvider>
-          <Header />
-        </NavBandsProvider>
+          <NavBandsProvider>
+            <Header />
+          </NavBandsProvider>
+        </AbsoluteNavigateProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -193,9 +197,11 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={["/add"]}>
-          <NavBandsProvider>
-            <Header />
-          </NavBandsProvider>
+          <AbsoluteNavigateProvider>
+            <NavBandsProvider>
+              <Header />
+            </NavBandsProvider>
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -269,10 +275,12 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={["/"]}>
-          <NavBandsProvider>
-            <Header />
-          </NavBandsProvider>
-          <GoElsewhere to="/tags" />
+          <AbsoluteNavigateProvider>
+            <NavBandsProvider>
+              <Header />
+            </NavBandsProvider>
+            <GoElsewhere to="/tags" />
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );

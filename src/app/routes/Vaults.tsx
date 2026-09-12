@@ -1,8 +1,12 @@
 import { vaultProvenance } from "@/lib/account";
-import { isLegacyVaultUrl, switchVault, useVaultStore } from "@/lib/vault";
+import { detectMountBase } from "@/lib/base-url";
+import { useAbsoluteNavigate } from "@/lib/nav/vault-router";
+import { isLegacyVaultUrl, useVaultStore } from "@/lib/vault";
+import { vaultShareRef } from "@/lib/vault/deep-link";
 import { Link } from "react-router";
 
 export function Vaults() {
+  const absoluteNavigate = useAbsoluteNavigate();
   const vaults = useVaultStore((s) => s.vaults);
   const activeVaultId = useVaultStore((s) => s.activeVaultId);
   const removeVault = useVaultStore((s) => s.removeVault);
@@ -60,7 +64,11 @@ export function Vaults() {
                       <button
                         type="button"
                         // §4.4 switch-confirmation: "Now in {vault}".
-                        onClick={() => switchVault(vault.id, { toast: true })}
+                        onClick={() =>
+                          absoluteNavigate(
+                            `${detectMountBase()}/v/${encodeURIComponent(vaultShareRef(vault))}`,
+                          )
+                        }
                         className="focus-ring text-fg-muted hover:text-accent"
                       >
                         Make active

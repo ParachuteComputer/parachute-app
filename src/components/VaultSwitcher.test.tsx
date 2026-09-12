@@ -1,3 +1,5 @@
+const { Provider: AbsoluteNavigateProvider, navigate: absoluteNavigate } =
+  absoluteNavigateHarness();
 import { VaultSwitcher, buildVaultSwitcherRows } from "@/components/VaultSwitcher";
 import * as accountClient from "@/lib/account/client";
 import * as hostedVaultModule from "@/lib/account/hosted-vault";
@@ -9,6 +11,7 @@ import * as oauthModule from "@/lib/vault/oauth";
 import { InsecureContextError } from "@/lib/vault/pkce";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -225,6 +228,7 @@ function LocationProbe() {
 
 describe("VaultSwitcher (component)", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     useToastStore.setState({ toasts: [] });
     vi.restoreAllMocks();
@@ -261,10 +265,12 @@ describe("VaultSwitcher (component)", () => {
     return render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <VaultSwitcher variant="rail" />
-          <Routes>
-            <Route path="*" element={<LocationProbe />} />
-          </Routes>
+          <AbsoluteNavigateProvider>
+            <VaultSwitcher variant="rail" />
+            <Routes>
+              <Route path="*" element={<LocationProbe />} />
+            </Routes>
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -306,9 +312,9 @@ describe("VaultSwitcher (component)", () => {
     renderSwitcher();
     fireEvent.click(screen.getByRole("button", { name: /active vault/i }));
     fireEvent.click(await screen.findByRole("button", { name: "techne" }));
-    expect(useVaultStore.getState().activeVaultId).toBe("b");
+    expect(absoluteNavigate).toHaveBeenCalledWith("/v/techne");
     // WALK-manager #2 — activation honesty: the switch is confirmed.
-    expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Now in techne");
+    expect(useVaultStore.getState().activeVaultId).toBe("a");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
@@ -679,7 +685,9 @@ describe("VaultSwitcher (component)", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <VaultSwitcher variant="sheet" />
+          <AbsoluteNavigateProvider>
+            <VaultSwitcher variant="sheet" />
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -705,13 +713,15 @@ describe("VaultSwitcher (component)", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <VaultSwitcher variant="sheet" onAction={onAction} />
+          <AbsoluteNavigateProvider>
+            <VaultSwitcher variant="sheet" onAction={onAction} />
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
     fireEvent.click(await screen.findByText("techne"));
     expect(onAction).toHaveBeenCalledTimes(1);
-    expect(useVaultStore.getState().activeVaultId).toBe("b");
+    expect(absoluteNavigate).toHaveBeenCalledWith("/v/techne");
   });
 
   it("header variant owns no panel — the pill delegates to the NavSheet", () => {
@@ -721,7 +731,9 @@ describe("VaultSwitcher (component)", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <VaultSwitcher variant="header" onOpenNavSheet={onOpenNavSheet} />
+          <AbsoluteNavigateProvider>
+            <VaultSwitcher variant="header" onOpenNavSheet={onOpenNavSheet} />
+          </AbsoluteNavigateProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
