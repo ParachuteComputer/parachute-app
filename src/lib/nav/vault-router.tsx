@@ -9,11 +9,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { Router, UNSAFE_createBrowserHistory } from "react-router";
+import { type Location, Router, UNSAFE_createBrowserHistory } from "react-router";
 
 export function vaultPrefixOf(pathname: string, mount: string): string {
   const match = /^\/v\/([^/]+)(?=\/|$)/.exec(pathname.slice(mount.length));
   return match ? `${mount}/v/${match[1]}` : mount;
+}
+
+export const RenderedLocationContext = createContext<Location | null>(null);
+export function useRenderedLocation(): Location {
+  const location = useContext(RenderedLocationContext);
+  if (!location) throw new Error("useRenderedLocation requires VaultScopedBrowserRouter");
+  return location;
 }
 
 type AbsoluteNavigate = (to: string, opts?: { replace?: boolean }) => void;
@@ -47,14 +54,19 @@ export function VaultScopedBrowserRouter({ children }: { children: ReactNode }) 
   );
   return (
     <AbsoluteNavigateContext.Provider value={absoluteNavigate}>
-      <Router
-        basename={vaultPrefixOf(state.location.pathname, detectMountBase())}
-        location={state.location}
-        navigationType={state.action}
-        navigator={history}
-      >
-        {children}
-      </Router>
+      <RenderedLocationContext.Provider value={state.location}>
+        <Router
+          basename={vaultPrefixOf(
+            state.location.pathname,
+            detectMountBase(state.location.pathname),
+          )}
+          location={state.location}
+          navigationType={state.action}
+          navigator={history}
+        >
+          {children}
+        </Router>
+      </RenderedLocationContext.Provider>
     </AbsoluteNavigateContext.Provider>
   );
 }

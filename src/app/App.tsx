@@ -18,7 +18,11 @@ import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account
 import { detectMountBase } from "@/lib/base-url";
 import { isFocusablePath, useFocusMode } from "@/lib/focus-mode";
 import { NavBandsProvider, isCeremonyPath } from "@/lib/nav/model";
-import { VaultScopedBrowserRouter, useAbsoluteNavigate } from "@/lib/nav/vault-router";
+import {
+  VaultScopedBrowserRouter,
+  useAbsoluteNavigate,
+  useRenderedLocation,
+} from "@/lib/nav/vault-router";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useVaultStore } from "@/lib/vault";
 import { useCrossTabVaultSync } from "@/lib/vault/cross-tab-sync";
@@ -279,8 +283,9 @@ function VaultPrefixGate({ children }: { children: React.ReactNode }) {
   const absoluteNavigate = useAbsoluteNavigate();
   const vaults = useVaultStore((s) => s.vaults);
   const activeVaultId = useVaultStore((s) => s.activeVaultId);
-  const mount = detectMountBase();
-  const raw = window.location.pathname.slice(mount.length);
+  const renderedLocation = useRenderedLocation();
+  const mount = detectMountBase(renderedLocation.pathname);
+  const raw = renderedLocation.pathname.slice(mount.length);
   const prefix = /^\/v\/([^/]+)(?=\/|$)/.exec(raw);
   let seg = prefix?.[1] ?? null;
   if (seg !== null) {
@@ -300,10 +305,12 @@ function VaultPrefixGate({ children }: { children: React.ReactNode }) {
     destination = `${mount}/v/${encodeURIComponent(vaultShareRef(target))}${raw.slice(prefix[0].length)}${tail}`;
   }
   const addPrefix =
-    !prefix && active && !accountPath && !matchesNavigationDenylist(window.location.pathname);
+    !prefix && active && !accountPath && !matchesNavigationDenylist(renderedLocation.pathname);
   const switchTargetId = prefix && !accountPath ? target?.id : undefined;
   // Match the original gate: react to the URL's target, not an unrelated
   // store activation before a hosted-open continuation changes the address.
+  // Any code that activates a vault must also navigate to its address, or
+  // this gate remains on RouteFallback waiting for the URL target to match.
   useEffect(() => {
     if (switchTargetId) switchVault(switchTargetId);
   }, [switchTargetId]);
@@ -341,8 +348,9 @@ function NoteRefNormalizer() {
 // address is what returns: once the vault is connected this route resolves it
 // and opens the note at the same canonical vault-scoped address.
 function VaultNotConnected({ name }: { name: string }) {
-  const mount = detectMountBase();
-  const raw = `${window.location.pathname.slice(mount.length)}${window.location.search}`;
+  const renderedLocation = useRenderedLocation();
+  const mount = detectMountBase(renderedLocation.pathname);
+  const raw = `${renderedLocation.pathname.slice(mount.length)}${renderedLocation.search}`;
   const connectHref = `${mount}/add?redirect=${encodeURIComponent(raw)}`;
   return (
     <div className="page">

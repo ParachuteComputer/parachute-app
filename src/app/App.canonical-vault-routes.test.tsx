@@ -233,4 +233,17 @@ describe("canonical vault routes", () => {
       useToastStore.getState().toasts.filter((t) => t.message === "Now in gamma"),
     ).toHaveLength(1);
   }, 15000);
+  it("P23: gate uses rendered location when the browser address changes without popstate", async () => {
+    seed("alpha");
+    arrive("/v/alpha/n/x");
+    await screen.findAllByText(/Synthetic x/, {}, { timeout: 4000 });
+    const toasts = useToastStore.getState().toasts;
+    await act(async () => {
+      window.history.replaceState({}, "", "/vaults");
+      useVaultStore.setState((state) => ({ vaults: { ...state.vaults } }));
+    });
+    expect(window.location.pathname).toBe("/vaults");
+    expect(useToastStore.getState().toasts).toEqual(toasts);
+    expect(useVaultStore.getState().activeVaultId).toBe("alpha");
+  });
 });

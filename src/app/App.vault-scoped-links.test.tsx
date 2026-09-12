@@ -1,8 +1,10 @@
+import { MarkdownView } from "@/components/MarkdownView";
 import { MIRROR_FLAG_KEY } from "@/lib/mirror/flag";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -62,6 +64,17 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
   });
 
   describe("under the /notes mount", () => {
+    it("P16-mount: cross-vault Markdown anchors preserve the deployment mount", async () => {
+      render(
+        <MemoryRouter>
+          <MarkdownView content="[Other vault](/v/other/n/y)" />
+        </MemoryRouter>,
+      );
+      const link = await screen.findByRole("link", { name: "Other vault" });
+      expect(link).toHaveAttribute("href", "/notes/v/other/n/y");
+      expect(link.getAttribute("href")?.match(/\/v\//g)).toHaveLength(1);
+    });
+
     it("switches to the named vault and preserves its canonical vault-scoped address", async () => {
       seedTwoVaults();
       window.history.replaceState({}, "", "/notes/v/beta/n/abc123");

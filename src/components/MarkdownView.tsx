@@ -1,3 +1,4 @@
+import { withMount } from "@/lib/base-url";
 import { useActiveVaultClient } from "@/lib/vault/queries";
 import type { Note } from "@/lib/vault/types";
 import {
@@ -67,7 +68,7 @@ function NotesLink({ href, className, children }: LinkComponentProps) {
   }
   if (href.startsWith("/v/"))
     return (
-      <a href={href} className="text-accent hover:underline">
+      <a href={withMount(href)} className="text-accent hover:underline">
         {children}
       </a>
     );
