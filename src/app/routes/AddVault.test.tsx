@@ -1,7 +1,10 @@
+const { Provider: AbsoluteNavigateProvider, navigate: absoluteNavigate } =
+  absoluteNavigateHarness();
 import { AddVault } from "@/app/routes/AddVault";
 import { loadPendingOAuth } from "@/lib/vault/storage";
 import { useVaultStore } from "@/lib/vault/store";
 import { vaultIdFromUrl } from "@/lib/vault/url";
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -76,25 +79,28 @@ function LocationEcho() {
 function renderAddVault(initialPath = "/add") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <Routes>
-        <Route
-          path="/add"
-          element={
-            <>
-              <AddVault />
-              <LocationEcho />
-            </>
-          }
-        />
-        <Route path="/" element={<div>Recent timeline</div>} />
-        <Route path="/import" element={<div>Import wizard</div>} />
-      </Routes>
+      <AbsoluteNavigateProvider>
+        <Routes>
+          <Route
+            path="/add"
+            element={
+              <>
+                <AddVault />
+                <LocationEcho />
+              </>
+            }
+          />
+          <Route path="/" element={<div>Recent timeline</div>} />
+          <Route path="/import" element={<div>Import wizard</div>} />
+        </Routes>
+      </AbsoluteNavigateProvider>
     </MemoryRouter>,
   );
 }
 
 describe("AddVault URL prefill", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
   });
 
@@ -134,6 +140,7 @@ describe("AddVault URL prefill", () => {
 // side-effects; these assert on the copy/DOM the restyle actually changed).
 describe("AddVault self-hosted restyle (SYNTHESIS #11)", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
   });
 
@@ -202,6 +209,7 @@ describe("AddVault self-hosted restyle (SYNTHESIS #11)", () => {
 // the real beginOAuth reaches savePendingOAuth, then read it back.
 describe("AddVault post-connect redirect plumbing (notes#63)", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     sessionStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     // AddVault calls window.location.assign after beginOAuth succeeds;
@@ -259,6 +267,7 @@ describe("AddVault post-connect redirect plumbing (notes#63)", () => {
 
 describe("AddVault insecure-context handling", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
   });
 
@@ -338,6 +347,7 @@ describe("AddVault ?add= connect deep link", () => {
   const cloudVaultUrl = "https://u.parachute.computer/vault/aaron";
 
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     sessionStorage.clear();
     localStorage.clear();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
@@ -464,7 +474,7 @@ describe("AddVault ?add= connect deep link", () => {
 
     // No redirect companion → lands on the index route (the connected
     // vault's home), no OAuth.
-    expect(await screen.findByText("Recent timeline")).toBeInTheDocument();
+    await waitFor(() => expect(absoluteNavigate).toHaveBeenCalledWith("/", { replace: true }));
     expect(useVaultStore.getState().activeVaultId).toBe(id);
     expect(window.location.assign).not.toHaveBeenCalled();
     expect(loadPendingOAuth()).toBeNull();
@@ -480,7 +490,9 @@ describe("AddVault ?add= connect deep link", () => {
 
     renderAddVault(`/add?add=${encodeURIComponent(cloudVaultUrl)}&redirect=%2Fimport`);
 
-    expect(await screen.findByText("Import wizard")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(absoluteNavigate).toHaveBeenCalledWith("/import", { replace: true }),
+    );
     expect(useVaultStore.getState().activeVaultId).toBe(id);
     expect(window.location.assign).not.toHaveBeenCalled();
     expect(loadPendingOAuth()).toBeNull();

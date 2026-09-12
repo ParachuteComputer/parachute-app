@@ -1,5 +1,7 @@
 import { ParachuteMark } from "@/components/ParachuteMark";
 import { WizardShell } from "@/components/WizardShell";
+import { withMount } from "@/lib/base-url";
+import { useAbsoluteNavigate } from "@/lib/nav/vault-router";
 import {
   PendingApprovalError,
   completeOAuth,
@@ -33,6 +35,7 @@ function hostFromUrl(raw: string): string {
 export function OAuthCallback() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const absoluteNavigate = useAbsoluteNavigate();
   const addVault = useVaultStore((s) => s.addVault);
   const [status, setStatus] = useState<Status>({ kind: "working" });
   const ranRef = useRef(false);
@@ -134,7 +137,7 @@ export function OAuthCallback() {
         }
         // NAVIGATION.md: "OAuth callback → target" — (b) one-shot params,
         // replace.
-        navigate(dest, { replace: true });
+        absoluteNavigate(withMount(dest), { replace: true });
       } catch (err) {
         if (err instanceof PendingApprovalError) {
           setStatus({
@@ -146,7 +149,7 @@ export function OAuthCallback() {
         setStatus({ kind: "error", message: (err as Error).message });
       }
     })();
-  }, [params, navigate, addVault]);
+  }, [params, absoluteNavigate, addVault]);
 
   if (status.kind === "working") {
     return (

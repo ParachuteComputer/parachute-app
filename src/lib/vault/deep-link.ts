@@ -1,12 +1,12 @@
 /**
  * Vault-scoped deep links (app#186, app#194) — `/v/<vault>/n/<note>`.
  *
- * The canonical note address is `/n/<id>`: it names a note but NOT the vault to
- * resolve it in, so a link pasted into a channel message or an agent report only
- * lands on the right note if the reader's app happens to be sitting in the right
- * vault. `/v/<vault>/n/<note>` pins the vault into the address — the app resolves
- * `<vault>` against the vaults connected on THIS device, switches to it, and then
- * hands off to the ordinary `/n/<note>` resolution.
+ * The canonical note address is `/v/<vault>/n/<id>` (app#208). The app
+ * resolves `<vault>` against this device's connected vaults and activates it,
+ * keeping the vault-scoped address. The prefix lives in the router basename,
+ * so downstream routes see `/n/<note>` while links retain the vault prefix.
+ * Slug, local name, and id references resolve and normalise to the server slug.
+ * Bare `/n/<id>` links gain the active vault's canonical prefix.
  *
  * ## What each segment accepts
  *
@@ -23,18 +23,20 @@
  * spread across segments (`/n/Projects/2026/Roadmap` — what a human writes).
  * Both land on the note; the multi-segment form is parsed by {@link parseNoteRef}.
  *
- * ## The complete address table (app#194)
+ * ## The complete address table (app#194, app#208)
  *
  * | Address | Lands on |
  * |---|---|
  * | `/v/<vault>/n/<ULID>` (+ `/edit`) | that note in that vault |
  * | `/v/<vault>/n/<Path%2FEncoded>` (+ `/edit`) | same, one segment — what the app emits |
  * | `/v/<vault>/n/<Path>/<In>/<Segments>` (+ `/edit`) | same, hand-written form |
- * | `/v/<vault>` and `/v/<vault>/n` | that vault's note list |
+ * | `/v/<vault>` | that vault's home |
+ * | `/v/<vault>/n` | that vault's note list |
  * | `/v/<unconnected>`, any note shape | the "not connected here" state, at that address |
  * | `/v` | `/vaults` — the namespace named no vault, so pick one |
  *
- * `<vault>` is a name or an id in every row; the routing lives in `App.tsx`.
+ * `<vault>` accepts a slug, local name, or id in every row. The router
+ * basename is defined in `vault-router.tsx`; the gate lives in `App.tsx`.
  *
  * ## Why `/v`, not `/vault`
  *
@@ -58,7 +60,8 @@
 import { withMount } from "@/lib/base-url";
 import type { VaultRecord } from "./types";
 
-/** The one place the `/v` prefix is spelled. */
+/** Canonical addresses use `/v/<slug>` both in-app and when shared.
+ * Resolution still accepts the server slug, local name, or vault id. */
 export const VAULT_SCOPE_PREFIX = "/v";
 
 /**

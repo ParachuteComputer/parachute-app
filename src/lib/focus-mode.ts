@@ -25,7 +25,7 @@ export const useFocusMode = create<FocusModeState>((set) => ({
 // Focus mode is scoped to the reading/writing rooms only (POLISH-WAVE PR 4
 // §"Spec": "only /n/:id and /n/:id/edit may enter") — not a global mode.
 // Matched against `useLocation().pathname`, which React Router has already
-// stripped of the mount `basename`, so this holds under any mount base
+// stripped of the mount and vault prefix in `basename`, so this holds under any mount base
 // (/notes/, /surface/<slug>/, …) without threading the base through here.
 const FOCUSABLE_PATH = /^\/n\/[^/]+(\/edit)?$/;
 

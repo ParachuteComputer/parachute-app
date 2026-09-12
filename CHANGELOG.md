@@ -1,3 +1,10 @@
+## [0.22.15-rc.2] - 2026-09-12
+
+**`/v/<vault>/…` is the canonical in-app address.** Two PRs on `next` after 0.22.15-rc.1.
+
+- **The vault-scoped address stays in the address bar, and in-app navigation keeps it (#208, closes #207).** Arriving at `/v/<vault>/n/<id>` used to switch the vault and then redirect to bare `/n/<id>`, so the address bar and "Copy link" disagreed and a copied URL only opened on a device already sitting in that vault. The vault prefix now lives in React Router's `basename`, computed from the location the router is rendering (a local copy of RR 7.18.1's `BrowserRouter` body with one edit), so the route table, every `useParams`, every pathname reader and all ~193 `Link`/`navigate` sites keep working on the un-prefixed path unchanged. A `VaultPrefixGate` above `<Routes>` resolves the vault (slug, local name or id), switches with the one toast, normalises the spelling to the server slug, replaces bare `/n/<id>` and `/` INTO the active vault's prefix, and keeps account and ceremony pages bare. Vault switching from the sidebar and the vault list is now a navigation, so the URL stays the single source of truth; the three channels that could double a prefix (note content, `?redirect=`, the not-connected card) go through an absolute navigator. Review caught two spec errors before merge, both fixed on the PR: note-body `/v/` links carry the deployment mount, and the gate reads the router's rendered location rather than `window.location`, which runs ahead of a transition. 22 new pins; the existing not-connected, toast and `/v`→`/vaults` controls are unchanged.
+- **Docs follow the canonical model (#210, closes #209).** `deep-link.ts`'s header and the NAVIGATION.md not-connected-card row describe the prefix-in-basename model and the card's absolute anchor instead of the old redirect.
+
 ## [0.22.15-rc.1] - 2026-09-05
 
 **Vault-scoped addressing finished, and a note deep link that survives login.** Nine PRs on `next` after 0.22.14. First cut of the 0.22.15 line: 0.22.14 went stable on 2026-08-30, so a further `0.22.14-rc.N` would sort BELOW the released 0.22.14 and leave npm `@rc` older than `@latest`.

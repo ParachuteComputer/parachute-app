@@ -73,7 +73,7 @@ describe("W2-7 route-rename shims — /all→/notes, /graph→/map", () => {
     const baseline = window.history.length;
     render(<App />);
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/notes");
+      expect(window.location.pathname).toBe("/v/default/notes");
       expect(window.location.search).toBe("?view=pinned");
     });
     // replace, not push — the shim leaves no trace in history.
@@ -85,7 +85,7 @@ describe("W2-7 route-rename shims — /all→/notes, /graph→/map", () => {
     const baseline = window.history.length;
     render(<App />);
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/map");
+      expect(window.location.pathname).toBe("/v/default/map");
       expect(window.location.search).toBe("?focus=abc");
     });
     expect(window.history.length).toBe(baseline);
@@ -101,7 +101,7 @@ describe("W2-7 route-rename shims — /all→/notes, /graph→/map", () => {
     const baseline = window.history.length;
     render(<App />);
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/notes");
+      expect(window.location.pathname).toBe("/v/default/notes");
     });
     expect(window.history.length).toBe(baseline);
   });
@@ -111,7 +111,7 @@ describe("W2-7 route-rename shims — /all→/notes, /graph→/map", () => {
     const baseline = window.history.length;
     render(<App />);
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/map");
+      expect(window.location.pathname).toBe("/v/default/map");
       expect(window.location.search).toBe("");
     });
     expect(window.history.length).toBe(baseline);

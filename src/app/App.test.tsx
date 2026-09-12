@@ -307,7 +307,7 @@ describe("App", () => {
     // would start swallowing real internal pages.
     return waitFor(() => {
       expect(screen.getByRole("heading", { level: 1, name: /settings/i })).toBeInTheDocument();
-      expect(window.location.pathname).toBe("/notes/settings");
+      expect(window.location.pathname).toBe("/notes/v/default/settings");
     });
   });
 
@@ -335,7 +335,7 @@ describe("App", () => {
     window.history.replaceState({}, "", "/notes/notes");
     render(<App />);
     expect(await screen.findByLabelText(/search notes/i)).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/notes/notes");
+    expect(window.location.pathname).toBe("/notes/v/default/notes");
   });
 
   it("bare /n redirects to /notes rather than falling to the /:id deep-link shim (app#194 follow-up)", async () => {
@@ -361,7 +361,7 @@ describe("App", () => {
     const baseline = window.history.length;
     render(<App />);
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/notes/notes");
+      expect(window.location.pathname).toBe("/notes/v/default/notes");
     });
     expect(window.location.pathname).not.toContain("/n/n");
     // replace, not push — same rule as every other redirect shim (NAVIGATION.md).
@@ -393,7 +393,7 @@ describe("App", () => {
     window.history.replaceState({}, "", "/notes/login");
     render(<App />);
     return waitFor(() => {
-      expect(window.location.pathname).toBe("/notes/n/login");
+      expect(window.location.pathname).toBe("/notes/v/default/n/login");
     });
   });
 });

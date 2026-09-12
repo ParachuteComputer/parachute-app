@@ -1,8 +1,10 @@
+import { MarkdownView } from "@/components/MarkdownView";
 import { MIRROR_FLAG_KEY } from "@/lib/mirror/flag";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -62,7 +64,18 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
   });
 
   describe("under the /notes mount", () => {
-    it("switches to the named vault and hands off to the canonical /n/<id>", async () => {
+    it("P16-mount: cross-vault Markdown anchors preserve the deployment mount", async () => {
+      render(
+        <MemoryRouter>
+          <MarkdownView content="[Other vault](/v/other/n/y)" />
+        </MemoryRouter>,
+      );
+      const link = await screen.findByRole("link", { name: "Other vault" });
+      expect(link).toHaveAttribute("href", "/notes/v/other/n/y");
+      expect(link.getAttribute("href")?.match(/\/v\//g)).toHaveLength(1);
+    });
+
+    it("switches to the named vault and preserves its canonical vault-scoped address", async () => {
       seedTwoVaults();
       window.history.replaceState({}, "", "/notes/v/beta/n/abc123");
       render(<App />);
@@ -71,11 +84,9 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
       });
-      // …and the note resolves at its canonical address under the mount. The
-      // `/v/...` shim has said everything it has to say once the context is
-      // switched, so it doesn't linger in the address bar.
+      // …and the note keeps the vault prefix in its canonical address.
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/abc123");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/abc123");
       });
       // Never double-prefixed (the /notes/notes class of bug).
       expect(window.location.pathname.startsWith("/notes/notes")).toBe(false);
@@ -93,7 +104,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       window.history.replaceState({}, "", "/notes/v/alpha/n/abc123");
       render(<App />);
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/abc123");
+        expect(window.location.pathname).toBe("/notes/v/alpha/n/abc123");
       });
       expect(useVaultStore.getState().activeVaultId).toBe("v-alpha");
       expect(screen.queryByText(/now in/i)).not.toBeInTheDocument();
@@ -105,7 +116,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/n/abc123/edit");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/abc123/edit");
       });
     });
 
@@ -115,7 +126,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/n/abc123");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/abc123");
       });
     });
 
@@ -124,7 +135,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       window.history.replaceState({}, "", "/notes/v/beta/n/Projects%2FREADME");
       render(<App />);
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/Projects%2FREADME");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/Projects%2FREADME");
       });
     });
 
@@ -136,7 +147,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       window.history.replaceState({}, "", "/notes/v/beta/n/login");
       render(<App />);
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/login");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/login");
       });
     });
   });
@@ -149,7 +160,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/n/abc123");
+        expect(window.location.pathname).toBe("/v/beta/n/abc123");
       });
     });
   });
@@ -210,7 +221,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/n/01JBQZ0Q2M8T9V5X7YB3KD4WEN");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/01JBQZ0Q2M8T9V5X7YB3KD4WEN");
       });
     });
 
@@ -223,7 +234,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/n/Projects%2F2026%2FRoadmap");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/Projects%2F2026%2FRoadmap");
       });
     });
 
@@ -232,7 +243,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       window.history.replaceState({}, "", "/notes/v/beta/n/Projects/2026/Roadmap/edit");
       render(<App />);
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/Projects%2F2026%2FRoadmap/edit");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/Projects%2F2026%2FRoadmap/edit");
       });
     });
 
@@ -243,7 +254,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       window.history.replaceState({}, "", "/notes/v/beta/n/Notes%2Fedit");
       render(<App />);
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/Notes%2Fedit");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/Notes%2Fedit");
       });
     });
 
@@ -254,7 +265,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       window.history.replaceState({}, "", "/notes/v/beta/n/Projects%2FREADME");
       const encoded = render(<App />);
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/Projects%2FREADME");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/Projects%2FREADME");
       });
       encoded.unmount();
 
@@ -262,7 +273,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       window.history.replaceState({}, "", "/notes/v/beta/n/Projects/README");
       render(<App />);
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/Projects%2FREADME");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/Projects%2FREADME");
       });
     });
 
@@ -272,7 +283,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/notes");
+        expect(window.location.pathname).toBe("/notes/v/beta/notes");
       });
     });
   });
@@ -287,7 +298,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/n/abc123");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/abc123");
       });
     });
 
@@ -299,7 +310,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/n/abc123");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/abc123");
       });
     });
 
@@ -313,7 +324,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/n/Projects%2F2026%2FRoadmap");
+        expect(window.location.pathname).toBe("/notes/v/beta/n/Projects%2F2026%2FRoadmap");
       });
     });
 
@@ -326,19 +337,19 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/n/abc123");
+        expect(window.location.pathname).toBe("/notes/v/Beta%20Redux/n/abc123");
       });
     });
   });
 
   describe("the bare /v/<vault> address", () => {
-    it("switches to the vault and lands on its notes", async () => {
+    it("switches to the vault and keeps its home address", async () => {
       seedTwoVaults();
       window.history.replaceState({}, "", "/notes/v/beta");
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/notes");
+        expect(window.location.pathname).toBe("/notes/v/beta");
       });
     });
 
@@ -356,7 +367,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/notes");
+        expect(window.location.pathname).toBe("/notes/v/beta/");
       });
     });
 
@@ -368,7 +379,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       render(<App />);
       await waitFor(() => {
         expect(useVaultStore.getState().activeVaultId).toBe("v-beta");
-        expect(window.location.pathname).toBe("/notes/notes");
+        expect(window.location.pathname).toBe("/notes/v/beta/notes");
       });
     });
   });
@@ -427,7 +438,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
     });
   });
 
-  describe("the canonical /n/<id> is unchanged", () => {
+  describe("bare note aliases retain their current-vault semantics", () => {
     it("keeps current-vault semantics and does not touch the active vault", async () => {
       seedTwoVaults();
       window.history.replaceState({}, "", "/notes/n/abc123");
@@ -435,7 +446,7 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
       // The control for the switch assertions above: a bare `/n/<id>` neither
       // switches the vault nor announces anything.
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/notes/n/abc123");
+        expect(window.location.pathname).toBe("/notes/v/alpha/n/abc123");
       });
       expect(useVaultStore.getState().activeVaultId).toBe("v-alpha");
       expect(screen.queryByText(/now in/i)).not.toBeInTheDocument();
@@ -450,8 +461,8 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
 // to send the reader into `/add` with the address gone, so finishing the connect
 // dropped them on the landing. The card's connect link now carries the whole
 // `/v/...` address as `?redirect=` — the same channel `/n/<id>` uses — so the
-// return re-enters THIS route, resolves the now-connected vault, and hands off
-// to the note.
+// return re-enters THIS route, resolves the now-connected vault, and opens
+// the note at that same address.
 describe("App — a vault-scoped deep link survives the connect (app B/6)", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -511,7 +522,7 @@ describe("App — a vault-scoped deep link survives the connect (app B/6)", () =
     window.history.replaceState({}, "", "/notes/v/beta/n/abc123");
     render(<App />);
 
-    await waitFor(() => expect(window.location.pathname).toBe("/notes/n/abc123"));
+    await waitFor(() => expect(window.location.pathname).toBe("/notes/v/beta/n/abc123"));
     expect(window.location.search).toBe("");
     expect(screen.queryByText(/is not connected here/i)).not.toBeInTheDocument();
   });

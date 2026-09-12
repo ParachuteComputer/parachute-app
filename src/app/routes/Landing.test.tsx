@@ -1,9 +1,12 @@
+const { Provider: AbsoluteNavigateProvider, navigate: absoluteNavigate } =
+  absoluteNavigateHarness();
 import { Landing, trialLine } from "@/app/routes/Landing";
 import { getSession, requestMagicLink } from "@/lib/account/client";
 import { getDoorDescriptor, peekDoorDescriptor } from "@/lib/account/descriptor";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { beginOAuth } from "@/lib/vault/oauth";
 import { probeForIssuer } from "@/lib/vault/probe";
+import { absoluteNavigateHarness } from "@/test/absolute-navigate";
 import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -55,19 +58,22 @@ const CLOUD_DESCRIPTOR = { door: "cloud" as const };
 function renderLanding(ui = <Landing />, initial = "/", navLog?: NavLogEntry[]) {
   return render(
     <MemoryRouter initialEntries={[initial]}>
-      {navLog ? <NavTypeLog log={navLog} /> : null}
-      <Routes>
-        <Route path="/" element={ui} />
-        <Route path="/add" element={<div>Add form</div>} />
-        <Route path="/check-email" element={<div>Check email screen</div>} />
-        <Route path="/welcome" element={<div>Welcome dispatcher</div>} />
-      </Routes>
+      <AbsoluteNavigateProvider>
+        {navLog ? <NavTypeLog log={navLog} /> : null}
+        <Routes>
+          <Route path="/" element={ui} />
+          <Route path="/add" element={<div>Add form</div>} />
+          <Route path="/check-email" element={<div>Check email screen</div>} />
+          <Route path="/welcome" element={<div>Welcome dispatcher</div>} />
+        </Routes>
+      </AbsoluteNavigateProvider>
     </MemoryRouter>,
   );
 }
 
 describe("Landing — the front door (confirmed cloud)", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     localStorage.clear();
     // Re-establish the factory defaults each run (mockClear alone would leave a
     // prior test's override in place; restoreAllMocks would wipe the impl).
@@ -171,7 +177,7 @@ describe("Landing — the front door (confirmed cloud)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /open moss/i }));
     await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
-    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/" }));
+    await waitFor(() => expect(absoluteNavigate).toHaveBeenCalledWith("/", { replace: true }));
   });
 
   // NAVIGATION.md: "Sign out → /" — replace; the session context is gone, so
@@ -211,6 +217,7 @@ describe("Landing — the front door (confirmed cloud)", () => {
 // hub HYBRID card, and the preserved cloud onboarding.
 describe("Landing — front door, door descriptor fork", () => {
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     localStorage.clear();
     vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
     vi.mocked(requestMagicLink).mockReset().mockResolvedValue(undefined);
@@ -432,6 +439,7 @@ describe("Landing — the trial claim", () => {
 
   describe("rendered on the cloud front door", () => {
     beforeEach(() => {
+      absoluteNavigate.mockClear();
       localStorage.clear();
       vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
       vi.mocked(requestMagicLink).mockReset().mockResolvedValue(undefined);
@@ -488,17 +496,20 @@ describe("Landing — a bounced note deep link returns through the front door (a
   function renderFrontDoor(ui: ReactElement, initial: string, navLog?: NavLogEntry[]) {
     return render(
       <MemoryRouter initialEntries={[initial]}>
-        {navLog ? <NavTypeLog log={navLog} /> : null}
-        <Routes>
-          <Route path="/" element={ui} />
-          <Route path="/add" element={<div>Add form</div>} />
-          <Route path="/n/:id" element={<div>NoteView</div>} />
-        </Routes>
+        <AbsoluteNavigateProvider>
+          {navLog ? <NavTypeLog log={navLog} /> : null}
+          <Routes>
+            <Route path="/" element={ui} />
+            <Route path="/add" element={<div>Add form</div>} />
+            <Route path="/n/:id" element={<div>NoteView</div>} />
+          </Routes>
+        </AbsoluteNavigateProvider>
       </MemoryRouter>,
     );
   }
 
   beforeEach(() => {
+    absoluteNavigate.mockClear();
     localStorage.clear();
     vi.mocked(getSession).mockReset().mockResolvedValue({ signed_in: false, csrf: "csrf-123" });
     vi.mocked(peekDoorDescriptor).mockReset().mockReturnValue(null);
@@ -567,8 +578,9 @@ describe("Landing — a bounced note deep link returns through the front door (a
     );
     fireEvent.click(screen.getByRole("button", { name: /open moss/i }));
     await waitFor(() => expect(openHostedVault).toHaveBeenCalledWith("moss"));
-    await waitFor(() => expect(navLog.at(-1)).toEqual({ type: "PUSH", pathname: "/n/abc123" }));
-    expect(screen.getByText("NoteView")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(absoluteNavigate).toHaveBeenCalledWith("/n/abc123", { replace: true }),
+    );
   });
 
   it("REJECTS an off-origin return target at every affordance (open-redirect guard)", async () => {

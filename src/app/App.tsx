@@ -18,25 +18,29 @@ import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account
 import { detectMountBase } from "@/lib/base-url";
 import { isFocusablePath, useFocusMode } from "@/lib/focus-mode";
 import { NavBandsProvider, isCeremonyPath } from "@/lib/nav/model";
+import {
+  VaultScopedBrowserRouter,
+  useAbsoluteNavigate,
+  useRenderedLocation,
+} from "@/lib/nav/vault-router";
 import { applyTextSize, readStoredTextSize } from "@/lib/text-size";
 import { useVaultStore } from "@/lib/vault";
 import { useCrossTabVaultSync } from "@/lib/vault/cross-tab-sync";
-import { parseNoteRef, resolveVaultRef } from "@/lib/vault/deep-link";
+import { parseNoteRef, resolveVaultRef, vaultShareRef } from "@/lib/vault/deep-link";
 import { useActiveVaultClient } from "@/lib/vault/queries";
 import { useReachabilityProbe } from "@/lib/vault/reachability-probe";
 import { switchVault } from "@/lib/vault/switch";
-import { withReturnTo } from "@/lib/vault/url";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { SyncProvider } from "@/providers/SyncProvider";
 import { matchesNavigationDenylist } from "@/pwa-navigation-denylist";
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
-  BrowserRouter,
   Link,
   Navigate,
   Route,
   Routes,
   useLocation,
+  useNavigate,
   useParams,
   useSearchParams,
 } from "react-router";
@@ -256,88 +260,79 @@ function NoteIdRedirect({ suffix = "" }: { suffix?: string }) {
   return <Navigate to={`/n/${encodeURIComponent(id)}${suffix}`} replace />;
 }
 
-// Vault-scoped deep links (app#186, app#194): `/v/<vault>/n/<note>` (+ `/edit`),
-// and `/v/<vault>` for the vault on its own.
-//
-// The canonical `/n/<id>` names a note but not the vault to resolve it in, so a
-// link shared out of the app (an agent report, a channel message) only lands on
-// the right note if the reader happens to be sitting in the right vault. This
-// route pins the vault into the address: resolve `<vault>` — by name OR by id,
-// see `resolveVaultRef` and its name-before-id tie-break in
-// `src/lib/vault/deep-link.ts` — against the vaults connected on this device,
-// switch to it, then hand off to the ordinary `/n/<note>` route: one
-// note-resolution and rendering path, not two. `<note>` is whatever the vault's
-// `?id=` accepts, a ULID or a path, in one encoded segment or spread across
-// several.
-//
-// It grants nothing. The vault must already be connected on this device with a
-// live grant, exactly as `/n/<id>` requires; an address naming a vault this
-// device doesn't hold renders the not-connected state instead of borrowing the
-// active vault's session.
-//
-// The handoff is a redirect, deliberately. Once the vault context has been
-// switched, `/v/<vault>/n/<id>` has said everything it has to say; the note now
-// lives at its canonical in-app address, and every downstream consumer of the
-// pathname (focus mode's `isFocusablePath`, the nav model's Recent-lens match,
-// NoteView's own `/n/<id>/edit` link, the error boundary's route key) keeps
-// working unchanged instead of needing a parallel `/v`-aware copy. NAVIGATION.md
-// classes this as (b) one-shot param consumption — the vault name is consumed on
-// arrival — so it replaces rather than pushes: Back from the note goes wherever
-// the reader came from, not into a shim that would re-switch the vault.
-//
-// `/v` and not `/vault`: `/vault/<name>/*` is the hub's per-vault proxy AND the
-// my.-phase vault worker's data plane (see the RESERVED PATH-SPACE note in the
-// router below). `src/lib/vault/deep-link.ts` carries the full collision check.
-function VaultScopedRedirect({ suffix = "", splat = false }: VaultScopedRedirectProps) {
-  const params = useParams<{ vault: string; id?: string; "*"?: string }>();
-  const vaultRef = params.vault;
-  const { id: idRef, "*": splatRef } = params;
+// Canonical vault addresses keep their prefix in the router basename. The
+// gate resolves the vault while downstream routes see their usual /n/:id.
+// Account/ceremony paths escape first; bare vault paths replace into a prefix.
+// /v is SPA-owned; /vault and /u remain the doors' reserved data-plane paths.
+const UNPREFIXED_PATHS = new Set([
+  "/add",
+  "/add-vault",
+  "/add-vault/create",
+  "/add-vault/ready",
+  "/welcome",
+  "/check-email",
+  "/oauth/callback",
+  "/vaults",
+  "/account",
+  "/v",
+]);
+
+function VaultPrefixGate({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const absoluteNavigate = useAbsoluteNavigate();
   const vaults = useVaultStore((s) => s.vaults);
   const activeVaultId = useVaultStore((s) => s.activeVaultId);
-  const target = useMemo(() => resolveVaultRef(vaults, vaultRef), [vaults, vaultRef]);
-  const targetId = target?.id ?? null;
-
-  // The note this address names, if any. The single-segment routes hand it over
-  // in `:id` (already decoded, `%2F` included — so an encoded path arrives whole);
-  // the splat route hands over the raw remainder of the URL, which IS the path
-  // when a human wrote it out across segments. `/v/<vault>` alone parses to null.
-  const note = useMemo(() => {
-    if (splat) return parseNoteRef(splatRef);
-    return idRef ? { ref: idRef, suffix } : null;
-  }, [splat, idRef, splatRef, suffix]);
-
+  const renderedLocation = useRenderedLocation();
+  const mount = detectMountBase(renderedLocation.pathname);
+  const raw = renderedLocation.pathname.slice(mount.length);
+  const prefix = /^\/v\/([^/]+)(?=\/|$)/.exec(raw);
+  let seg = prefix?.[1] ?? null;
+  if (seg !== null) {
+    try {
+      seg = decodeURIComponent(seg);
+    } catch {
+      /* Preserve malformed references, as React Router does. */
+    }
+  }
+  const target = resolveVaultRef(vaults, seg);
+  const active = activeVaultId ? vaults[activeVaultId] : undefined;
+  const accountPath = UNPREFIXED_PATHS.has(location.pathname.replace(/\/$/, "") || "/");
+  const tail = `${location.search}${location.hash}`;
+  let destination: string | null = null;
+  if (prefix && accountPath) destination = `${mount}${location.pathname}${tail}`;
+  else if (prefix && target && activeVaultId === target.id && seg !== vaultShareRef(target)) {
+    destination = `${mount}/v/${encodeURIComponent(vaultShareRef(target))}${raw.slice(prefix[0].length)}${tail}`;
+  }
+  const addPrefix =
+    !prefix && active && !accountPath && !matchesNavigationDenylist(renderedLocation.pathname);
+  const switchTargetId = prefix && !accountPath ? target?.id : undefined;
+  // Match the original gate: react to the URL's target, not an unrelated
+  // store activation before a hosted-open continuation changes the address.
+  // Any code that activates a vault must also navigate to its address, or
+  // this gate remains on RouteFallback waiting for the URL target to match.
   useEffect(() => {
-    // DESIGN-SPEC §4.4 (the switch-confirmation rule): every path that changes
-    // the active vault confirms with "Now in {vault}". `switchVault` no-ops the
-    // toast when the named vault is ALREADY active — the common case of a link
-    // to the vault you're in stays silent.
-    if (targetId) switchVault(targetId);
-  }, [targetId]);
-
-  if (!vaultRef) return <Navigate to="/" replace />;
-  // Not connected on this device — a real state at the address the reader
-  // landed on, never a blank screen or a silent bounce into the wrong vault.
-  // Checked BEFORE the note reference so an unresolvable vault reads as an
-  // unresolvable vault even when the note half of the address is empty too.
-  if (!target) return <VaultNotConnected name={vaultRef} />;
-  // One tick while the effect above flips the active vault. Redirecting before
-  // the switch lands would resolve the note against the OUTGOING vault and
-  // flash its not-found state.
-  if (activeVaultId !== target.id) return <RouteFallback />;
-  // `/v/<vault>` with no note (or `/v/<vault>/n/` with nothing after it): the
-  // vault was the whole message. Land on its note list — Aaron, 2026-08-30:
-  // "so that we can link to an appropriate vault as well".
-  if (!note) return <Navigate to="/notes" replace />;
-  // Always ONE segment on the canonical side: a note path is encoded whole, so
-  // `/n/:id` matches it and NoteView receives the path intact.
-  return <Navigate to={`/n/${encodeURIComponent(note.ref)}${note.suffix}`} replace />;
+    if (switchTargetId) switchVault(switchTargetId);
+  }, [switchTargetId]);
+  useEffect(() => {
+    if (destination !== null) absoluteNavigate(destination, { replace: true });
+    else if (addPrefix) {
+      const path = location.pathname === "/" ? "" : location.pathname;
+      navigate(`/v/${encodeURIComponent(vaultShareRef(active))}${path}${tail}`, { replace: true });
+    }
+  }, [destination, absoluteNavigate, addPrefix, active, location.pathname, tail, navigate]);
+  if (destination !== null || addPrefix) return <RouteFallback />;
+  if (prefix && !target) return <VaultNotConnected name={seg ?? ""} />;
+  if (prefix && target?.id !== activeVaultId) return <RouteFallback />;
+  return children;
 }
 
-interface VaultScopedRedirectProps {
-  /** The editor tail for the single-segment routes; the splat carries its own. */
-  suffix?: string;
-  /** Read the note reference from the splat (`*`) instead of `:id`. */
-  splat?: boolean;
+function NoteRefNormalizer() {
+  const { "*": splat } = useParams();
+  const note = parseNoteRef(splat);
+  return (
+    <Navigate to={note ? `/n/${encodeURIComponent(note.ref)}${note.suffix}` : "/notes"} replace />
+  );
 }
 
 // The unknown-vault state for a vault-scoped deep link. A link naming a vault
@@ -351,10 +346,12 @@ interface VaultScopedRedirectProps {
 // landing — the same return channel the `/n/<id>` guard in NoteView uses
 // (`withReturnTo` → `/add` → `beginOAuth` → `OAuthCallback`). The FULL `/v/...`
 // address is what returns: once the vault is connected this route resolves it
-// and hands off to `/n/<note>` exactly as it would have the first time.
+// and opens the note at the same canonical vault-scoped address.
 function VaultNotConnected({ name }: { name: string }) {
-  const location = useLocation();
-  const connectHref = withReturnTo("/add", `${location.pathname}${location.search}`);
+  const renderedLocation = useRenderedLocation();
+  const mount = detectMountBase(renderedLocation.pathname);
+  const raw = `${renderedLocation.pathname.slice(mount.length)}${renderedLocation.search}`;
+  const connectHref = `${mount}/add?redirect=${encodeURIComponent(raw)}`;
   return (
     <div className="page">
       <EmptyState
@@ -366,12 +363,12 @@ function VaultNotConnected({ name }: { name: string }) {
         description="This link names a vault that isn't on this device yet. Connect it and the link will open the note."
         action={
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link to={connectHref} className="btn btn-primary btn-touch">
+            <a href={connectHref} className="btn btn-primary btn-touch">
               Connect a vault
-            </Link>
-            <Link to="/vaults" className="btn btn-secondary btn-touch">
+            </a>
+            <a href={`${mount}/vaults`} className="btn btn-secondary btn-touch">
               Your vaults
-            </Link>
+            </a>
           </div>
         }
       />
@@ -533,17 +530,18 @@ function AppShell() {
                     above. `src/lib/vault/deep-link.ts` carries the check.
                   */}
             <Suspense fallback={<RouteFallback />}>
-              <Routes>
-                <Route path="/" element={<BootGate />} />
-                <Route
-                  path="/check-email"
-                  element={
-                    <RouteErrorBoundary>
-                      <CheckEmail />
-                    </RouteErrorBoundary>
-                  }
-                />
-                {/*
+              <VaultPrefixGate>
+                <Routes>
+                  <Route path="/" element={<BootGate />} />
+                  <Route
+                    path="/check-email"
+                    element={
+                      <RouteErrorBoundary>
+                        <CheckEmail />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  {/*
                     /notes is the ONE SURFACE over the vault (LZ-3): the
                     VaultSurface, wearing the lens `?view=` names (All by
                     default; pinned/archived; the untagged/orphaned
@@ -556,133 +554,142 @@ function AppShell() {
                     declaration order (see App.test.tsx's "/settings wins"
                     guard), but the order stays literal/readable here too.
                   */}
-                <Route
-                  path="/notes"
-                  element={
-                    <RouteErrorBoundary>
-                      <VaultSurface />
-                    </RouteErrorBoundary>
-                  }
-                />
-                {/*
+                  <Route
+                    path="/notes"
+                    element={
+                      <RouteErrorBoundary>
+                        <VaultSurface />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  {/*
                     /all is the pre-W2-7 address — a shim to /notes,
                     preserving any query string. NAVIGATION.md: (a) redirect
                     shim — replace.
                   */}
-                <Route path="/all" element={<ShimPreservingQuery to="/notes" />} />
-                {/*
+                  <Route path="/all" element={<ShimPreservingQuery to="/notes" />} />
+                  {/*
                     The four built-in views are filters inside /notes now (a
                     ?view= chip), not their own routes. Old bookmarks redirect
                     into the filtered list so links keep working.
                     NAVIGATION.md: (a) redirect shims — replace throughout.
                   */}
-                <Route path="/pinned" element={<Navigate to="/notes?view=pinned" replace />} />
-                <Route path="/archived" element={<Navigate to="/notes?view=archived" replace />} />
-                <Route path="/untagged" element={<Navigate to="/notes?view=untagged" replace />} />
-                <Route path="/orphaned" element={<Navigate to="/notes?view=orphaned" replace />} />
-                <Route
-                  path="/tags"
-                  element={
-                    <RouteErrorBoundary>
-                      <Tags />
-                    </RouteErrorBoundary>
-                  }
-                />
-                {/*
+                  <Route path="/pinned" element={<Navigate to="/notes?view=pinned" replace />} />
+                  <Route
+                    path="/archived"
+                    element={<Navigate to="/notes?view=archived" replace />}
+                  />
+                  <Route
+                    path="/untagged"
+                    element={<Navigate to="/notes?view=untagged" replace />}
+                  />
+                  <Route
+                    path="/orphaned"
+                    element={<Navigate to="/notes?view=orphaned" replace />}
+                  />
+                  <Route
+                    path="/tags"
+                    element={
+                      <RouteErrorBoundary>
+                        <Tags />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  {/*
                     The derived tag page (tag-page wave): `/tags/:name` renders
                     a view derived from the tag's own schema — a typed tag opens
                     as a table, a plain tag as a list. Two-segment, so it never
                     collides with the single-segment `/:id` bare-path shim
                     below; `/tags` stays the tag directory.
                   */}
-                <Route
-                  path="/tags/:name"
-                  element={
-                    <RouteErrorBoundary>
-                      <TagPage />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/new"
-                  element={
-                    <RouteErrorBoundary>
-                      <NoteNew />
-                    </RouteErrorBoundary>
-                  }
-                />
-                {/*
+                  <Route
+                    path="/tags/:name"
+                    element={
+                      <RouteErrorBoundary>
+                        <TagPage />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/new"
+                    element={
+                      <RouteErrorBoundary>
+                        <NoteNew />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  {/*
                     Capture and New were split surfaces pre-2026-05-27. Unified
                     into NoteNew per Aaron's "serious pass": one creation
                     screen with title up front, voice as an affordance.
                     Legacy `/capture` bookmarks redirect into the new flow.
                     NAVIGATION.md: (a) redirect shim — replace.
                   */}
-                <Route path="/capture" element={<Navigate to="/new" replace />} />
-                <Route
-                  path="/import"
-                  element={
-                    <RouteErrorBoundary>
-                      <Import />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/export"
-                  element={
-                    <RouteErrorBoundary>
-                      <Export />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/connect"
-                  element={
-                    <RouteErrorBoundary>
-                      <ConnectAI />
-                    </RouteErrorBoundary>
-                  }
-                />
-                {/*
+                  <Route path="/capture" element={<Navigate to="/new" replace />} />
+                  <Route
+                    path="/import"
+                    element={
+                      <RouteErrorBoundary>
+                        <Import />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/export"
+                    element={
+                      <RouteErrorBoundary>
+                        <Export />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/connect"
+                    element={
+                      <RouteErrorBoundary>
+                        <ConnectAI />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  {/*
                     W2-7: /map is the canonical Map room (label "Map" matches
                     address; earned-gated on both projections, §2.2). /graph
                     is the pre-W2-7 address — a shim to /map, preserving any
                     query string. NAVIGATION.md: (a) redirect shim — replace.
                   */}
-                <Route
-                  path="/map"
-                  element={
-                    <RouteErrorBoundary>
-                      <VaultGraph />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route path="/graph" element={<ShimPreservingQuery to="/map" />} />
-                <Route
-                  path="/today"
-                  element={
-                    <RouteErrorBoundary>
-                      <DayView />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/calendar"
-                  element={
-                    <RouteErrorBoundary>
-                      <Calendar />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/activity"
-                  element={
-                    <RouteErrorBoundary>
-                      <Activity />
-                    </RouteErrorBoundary>
-                  }
-                />
-                {/*
+                  <Route
+                    path="/map"
+                    element={
+                      <RouteErrorBoundary>
+                        <VaultGraph />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route path="/graph" element={<ShimPreservingQuery to="/map" />} />
+                  <Route
+                    path="/today"
+                    element={
+                      <RouteErrorBoundary>
+                        <DayView />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/calendar"
+                    element={
+                      <RouteErrorBoundary>
+                        <Calendar />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/activity"
+                    element={
+                      <RouteErrorBoundary>
+                        <Activity />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  {/*
                     views-wave-1 (VIEWS-RENDER-SPEC §2/§6): the view organ.
                     `/views/new` is registered before the `:id` route so the
                     literal "new" segment can never be swallowed as an id
@@ -690,68 +697,39 @@ function AppShell() {
                     but the order stays literal/readable here too — same
                     convention as `/notes` above the `/:id` bare-path shim).
                   */}
-                <Route
-                  path="/views/new"
-                  element={
-                    <RouteErrorBoundary>
-                      <ViewNew />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/views/:id"
-                  element={
-                    <RouteErrorBoundary>
-                      <ViewSurface />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/n/:id"
-                  element={
-                    <RouteErrorBoundary>
-                      <NoteView />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/n/:id/edit"
-                  element={
-                    <RouteErrorBoundary>
-                      <NoteEditor />
-                    </RouteErrorBoundary>
-                  }
-                />
-                {/*
-                    app#186 — the vault-scoped forms of the two routes above.
-                    Four/five segments, so they can't be reached by the
-                    single-segment `/:id` shim; `/v` is unclaimed by both doors
-                    (hub route table + my. reserved path-space) and by the PWA
-                    navigation denylist. See `VaultScopedRedirect`.
-                  */}
-                <Route path="/v/:vault/n/:id" element={<VaultScopedRedirect />} />
-                <Route
-                  path="/v/:vault/n/:id/edit"
-                  element={<VaultScopedRedirect suffix="/edit" />}
-                />
-                {/*
-                    app#194 — the multi-segment note reference. A note is
-                    addressable by ULID id OR by PATH, and a path contains `/`:
-                    `/v/aaron/n/Projects/2026/Roadmap`. The two routes above are
-                    ranked ABOVE this one by React Router (static and dynamic
-                    segments outscore a splat), so a single-segment id — and the
-                    percent-encoded single-segment path the app itself emits —
-                    never reaches the splat. `parseNoteRef` claims a trailing
-                    `/edit` here the same way `:id/edit` does above.
-                  */}
-                <Route path="/v/:vault/n/*" element={<VaultScopedRedirect splat />} />
-                {/*
-                    app#194 — the vault on its own. Switches and lands on that
-                    vault's notes; registered AFTER the note forms so it can only
-                    match when nothing follows the vault segment.
-                  */}
-                <Route path="/v/:vault" element={<VaultScopedRedirect />} />
-                {/*
+                  <Route
+                    path="/views/new"
+                    element={
+                      <RouteErrorBoundary>
+                        <ViewNew />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/views/:id"
+                    element={
+                      <RouteErrorBoundary>
+                        <ViewSurface />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/n/:id"
+                    element={
+                      <RouteErrorBoundary>
+                        <NoteView />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/n/:id/edit"
+                    element={
+                      <RouteErrorBoundary>
+                        <NoteEditor />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  {/*
                     app#194 — `/v` with no vault after it. Without this route the
                     bare prefix falls to `/:id` below and is read as a NOTE named
                     `v`, resolved in whatever vault happens to be active: the
@@ -763,8 +741,8 @@ function AppShell() {
                     outranks `/:id` regardless of order, and `/vaults` keeps its
                     own route because React Router matches whole segments.
                   */}
-                <Route path="/v" element={<Navigate to="/vaults" replace />} />
-                {/*
+                  <Route path="/v" element={<Navigate to="/vaults" replace />} />
+                  {/*
                     Bare `/n` — no note after it. Without this route the
                     prefix falls to `/:id` below and is read as a NOTE named
                     `n`, the same shape of collision `/v` was fixed for above.
@@ -772,90 +750,92 @@ function AppShell() {
                     the honest answer is the notes list, consistent with the
                     `/v` shim just above.
                   */}
-                <Route path="/n" element={<Navigate to="/notes" replace />} />
-                <Route path="/:id" element={<NoteIdRedirect />} />
-                <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
-                <Route
-                  path="/add"
-                  element={
-                    <RouteErrorBoundary>
-                      <AddVault />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/add-vault"
-                  element={
-                    <RouteErrorBoundary>
-                      <AddVaultChooser />
-                    </RouteErrorBoundary>
-                  }
-                />
-                {/*
+                  <Route path="/n" element={<Navigate to="/notes" replace />} />
+                  <Route path="/n/*" element={<NoteRefNormalizer />} />
+                  <Route path="/:id" element={<NoteIdRedirect />} />
+                  <Route path="/:id/edit" element={<NoteIdRedirect suffix="/edit" />} />
+                  <Route
+                    path="/add"
+                    element={
+                      <RouteErrorBoundary>
+                        <AddVault />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/add-vault"
+                    element={
+                      <RouteErrorBoundary>
+                        <AddVaultChooser />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  {/*
                     The creation ceremony's stepped URLs (W2-6, DESIGN-SPEC
                     §4.2): naming (+ the in-shell creating beat) at
                     /add-vault/create, the ready beat at /add-vault/ready.
                     The old /welcome?new=1 entry shims to /create inside the
                     Welcome dispatcher.
                   */}
-                <Route
-                  path="/add-vault/create"
-                  element={
-                    <RouteErrorBoundary>
-                      <AddVaultCreate />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/add-vault/ready"
-                  element={
-                    <RouteErrorBoundary>
-                      <AddVaultReady />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/welcome"
-                  element={
-                    <RouteErrorBoundary>
-                      <Welcome />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/oauth/callback"
-                  element={
-                    <RouteErrorBoundary>
-                      <OAuthCallback />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/vaults"
-                  element={
-                    <RouteErrorBoundary>
-                      <Vaults />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/account"
-                  element={
-                    <RouteErrorBoundary>
-                      <Account />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route
-                  path="/settings"
-                  element={
-                    <RouteErrorBoundary>
-                      <Settings />
-                    </RouteErrorBoundary>
-                  }
-                />
-                <Route path="*" element={<NotFoundPage />} />
-              </Routes>
+                  <Route
+                    path="/add-vault/create"
+                    element={
+                      <RouteErrorBoundary>
+                        <AddVaultCreate />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/add-vault/ready"
+                    element={
+                      <RouteErrorBoundary>
+                        <AddVaultReady />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/welcome"
+                    element={
+                      <RouteErrorBoundary>
+                        <Welcome />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/oauth/callback"
+                    element={
+                      <RouteErrorBoundary>
+                        <OAuthCallback />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/vaults"
+                    element={
+                      <RouteErrorBoundary>
+                        <Vaults />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/account"
+                    element={
+                      <RouteErrorBoundary>
+                        <Account />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      <RouteErrorBoundary>
+                        <Settings />
+                      </RouteErrorBoundary>
+                    }
+                  />
+                  <Route path="*" element={<NotFoundPage />} />
+                </Routes>
+              </VaultPrefixGate>
             </Suspense>
           </main>
           {focusActive ? null : <AppFooter />}
@@ -907,7 +887,7 @@ export function App() {
             (parachute-surface with a renamed install). See `src/lib/base-url.ts`
             for the detector + the design rationale.
           */}
-          <BrowserRouter basename={detectMountBase()}>
+          <VaultScopedBrowserRouter>
             {/*
               The ONE nav-model derivation (app#110 Finding A): Rail, NavDrawer,
               LensStrip and NavSheet all read `useNavBands()` from this provider instead
@@ -925,7 +905,7 @@ export function App() {
             <NavBandsProvider>
               <AppShell />
             </NavBandsProvider>
-          </BrowserRouter>
+          </VaultScopedBrowserRouter>
         </SyncProvider>
       </QueryProvider>
     </AppErrorBoundary>
