@@ -1,3 +1,7 @@
+## Unreleased
+
+- Note version history: browse retained native and imported snapshots, compare content and metadata, and explicitly confirm a restore using the current note timestamp you reviewed. Newer edits block restore. Recovery is online-only and never queued for reconnect; unavailable history is distinct from an empty list. Restore keeps current paths and tags, and does not replace attachment/link caches with a partial response. Requires a history-capable vault; deleted-note recovery remains an API operation.
+
 ## [0.22.15-rc.2] - 2026-09-12
 
 **`/v/<vault>/…` is the canonical in-app address.** Two PRs on `next` after 0.22.15-rc.1.
