@@ -44,8 +44,16 @@ import {
   VaultClient as BaseVaultClient,
   type VaultClientOptions as BaseVaultClientOptions,
 } from "@openparachute/surface-client";
+import {
+  type HistoryRow,
+  type HistorySelector,
+  type HistoryVersion,
+  historySelector,
+  historyVersionPath,
+} from "./history";
 import type {
   CreateNotePayload,
+  Note,
   NoteAttachment,
   PatchVaultPayload,
   ReachabilitySignal,
@@ -163,6 +171,26 @@ export class VaultClient extends BaseVaultClient {
   }
 
   // ---------- Notes-only vault config (GET/PATCH /api/vault) ----------
+
+  async listHistory(id: string, offset = 0): Promise<{ versions: HistoryRow[]; total: number }> {
+    const result = await this.request<{ versions: HistoryRow[]; total: number }>(
+      `/api/notes/${encodeURIComponent(id)}/versions?limit=50&offset=${offset}`,
+    );
+    for (const row of result.versions) historySelector(row);
+    return result;
+  }
+
+  async readHistory(id: string, selector: HistorySelector): Promise<HistoryVersion> {
+    return this.request(historyVersionPath(id, selector));
+  }
+
+  /** Never queued offline or retried with force: the reviewed current stamp is mandatory. */
+  async restoreHistory(id: string, selector: HistorySelector, ifUpdatedAt: string): Promise<Note> {
+    return this.request(`/api/notes/${encodeURIComponent(id)}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ ...selector, if_updated_at: ifUpdatedAt }),
+    });
+  }
 
   /**
    * Same wire call as the base's `vaultInfo`, narrowed to the shape both

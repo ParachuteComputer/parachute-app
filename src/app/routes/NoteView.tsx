@@ -3,6 +3,7 @@ import { DeleteNoteButton } from "@/components/DeleteNoteButton";
 import { buildWikilinkResolver } from "@/components/MarkdownView";
 import { IconExpand } from "@/components/NavIcons";
 import { NeighborhoodGraph } from "@/components/NeighborhoodGraph";
+import { NoteHistory } from "@/components/NoteHistory";
 import { NoteRenderer } from "@/components/NoteRenderer";
 import { PinArchiveButtons } from "@/components/PinArchiveButtons";
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
@@ -211,6 +212,7 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
             ) : null}
           </div>
           <HeaderPath value={label} isPath={!!note.path} />
+          <NoteHistory note={note} />
         </header>
 
         <TranscriptionStatus
