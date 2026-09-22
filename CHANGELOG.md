@@ -1,3 +1,18 @@
+## [0.22.15] - 2026-09-22
+
+**Stable promotion of 0.22.15-rc.3.** No new code. Suffix-drop only. npm `@rc` is 0.22.15-rc.3; this is the matching `@latest`.
+
+The 0.22.15 line (rc.1–rc.3):
+
+- **Note version history in the app (rc.3).** Browse retained native and imported snapshots, compare content and metadata, and explicitly confirm a restore using the current note timestamp you reviewed; newer edits block the restore. Recovery is online-only and never queued for reconnect, unavailable history is distinct from an empty list, and restore keeps current paths and tags. **Requires a history-capable vault** — pair this release with `@openparachute/vault` 0.7.9. Deleted-note recovery remains an API operation.
+- **`/v/<vault>/…` is the canonical in-app address (#208, closes #207).** The vault prefix now lives in React Router's `basename` instead of switching the vault and redirecting to a bare `/n/<id>`, so the address bar and "Copy link" agree and a copied URL opens on a device that is not already sitting in that vault. Vault switching from the sidebar and the vault list is now a navigation, so the URL is the single source of truth. Docs follow the same model (#210, closes #209).
+- **`/v/<vault>/n/<note>` takes a name or an id on both segments (#195, closes #194).** A splat route ranked below the existing routes accepts a multi-segment note path, so a hand-written link no longer has to be percent-encoded; `/v/<vault>` alone switches to that vault and lands on its notes. The route still grants nothing — an unresolvable or unconnected vault renders the not-connected state rather than borrowing the active vault's session.
+- **Share links carry the vault's server slug, not a local rename (#203, fixes #191).** "Copy link" built the address from a device-local label, so a device that relabelled its vault copied an address that resolved on exactly one device in the world. For an un-renamed vault the copied string is byte-identical to today's.
+- **A note deep link survives login (#199).** `/n/<id>` logged out used to hard-bounce to `/` and discard the id; the sanitized return-to param is now written in one place and forwarded into every affordance that starts a connect.
+- **`safeInternalRedirect` rejects control characters (#200).** `/\t/evil.com` read as a safe in-app path here but resolved to `https://evil.com/` once something downstream parsed it as a URL. Tab, CR, LF and every other C0/DEL byte are rejected before the existing checks.
+- **Bare `/v` and bare `/n` are no longer notes named `v` and `n` (#201, #202).** Both fell through to the `/:id` bookmark shim and resolved against whatever vault was active; they now replace to `/vaults` and `/notes`.
+- **Editor fixes.** Strikethrough normalizes across emphasis on a ragged selection (#198), and focus is handed to CodeMirror on the focus-mode entry transition so Escape has a handler again (#205, fixes #175). Plus an encoded edit-suffix route pin (#197).
+
 ## [0.22.15-rc.3] - 2026-09-17
 
 - Note version history: browse retained native and imported snapshots, compare content and metadata, and explicitly confirm a restore using the current note timestamp you reviewed. Newer edits block restore. Recovery is online-only and never queued for reconnect; unavailable history is distinct from an empty list. Restore keeps current paths and tags, and does not replace attachment/link caches with a partial response. Requires a history-capable vault; deleted-note recovery remains an API operation.
