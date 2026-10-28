@@ -13,6 +13,7 @@ import type {
   BillingInterval,
   BillingTier,
   CreateVaultResponse,
+  VaultConnectionsResponse,
   VaultTokenResponse,
 } from "./types";
 
@@ -291,7 +292,10 @@ async function ensureAccountBearer(fetchImpl: Fetch): Promise<string> {
 async function bearerFetch(
   fetchImpl: Fetch,
   path: string,
-  init: { method: "GET" } | { method: "POST"; body?: Record<string, unknown> },
+  init:
+    | { method: "GET" }
+    | { method: "DELETE" }
+    | { method: "POST"; body?: Record<string, unknown> },
 ): Promise<Response> {
   const send = (token: string): Promise<Response> => {
     const headers: Record<string, string> = {
@@ -475,4 +479,35 @@ export async function logout(
   }).catch(() => {
     // best-effort — a failed logout still clears local state client-side
   });
+}
+
+// --- Connected apps (T-318) -------------------------------------------------
+
+/** `GET /account/vaults/<name>/connections` — the apps connected to a vault.
+ *  Only call on a door whose descriptor advertises `capabilities.connections`. */
+export async function listVaultConnections(
+  name: string,
+  fetchImpl: Fetch = fetch.bind(globalThis),
+): Promise<VaultConnectionsResponse> {
+  const res = await bearerFetch(
+    fetchImpl,
+    `/account/vaults/${encodeURIComponent(name)}/connections`,
+    { method: "GET" },
+  );
+  return jsonOrThrow<VaultConnectionsResponse>(res);
+}
+
+/** `DELETE /account/vaults/<name>/connections/<client_id>` — disconnect one app
+ *  (its grant goes, its tokens are revoked; the vault refuses it within ~1 min). */
+export async function disconnectVaultConnection(
+  name: string,
+  clientId: string,
+  fetchImpl: Fetch = fetch.bind(globalThis),
+): Promise<void> {
+  const res = await bearerFetch(
+    fetchImpl,
+    `/account/vaults/${encodeURIComponent(name)}/connections/${encodeURIComponent(clientId)}`,
+    { method: "DELETE" },
+  );
+  await jsonOrThrow<unknown>(res);
 }
