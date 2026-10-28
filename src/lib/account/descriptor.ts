@@ -48,7 +48,16 @@ export interface DoorDescriptor {
   /** `{name}`-templated preview of a vault's eventual address — preview-only,
    *  never the source of truth for a URL after creation (Welcome.tsx). */
   vault_url_template?: string;
-  capabilities?: { vault_create?: boolean; vault_delete?: boolean };
+  /** What this door lets the signed-in account do. Absent (a hub, an older
+   *  door) ⇒ none of these surfaces render. `account_delete` gates the
+   *  Account screen's "Delete account" section; `vault_delete` gates a hosted
+   *  vault's "Delete this vault" section in Settings. */
+  capabilities?: {
+    vault_create?: boolean;
+    vault_rename?: boolean;
+    vault_delete?: boolean;
+    account_delete?: boolean;
+  };
   /** The upgrade-tier ladder for the Account surface's Billing section (see
    *  `Account.tsx`'s plan cards) — omitted on a door with no billing. */
   plans?: DoorPlan[];
