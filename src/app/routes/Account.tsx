@@ -1,3 +1,4 @@
+import { DeleteAccount } from "@/components/DeleteAccount";
 import { IconExport, IconImport, IconSpark } from "@/components/NavIcons";
 import {
   BillingApiError,
@@ -203,6 +204,7 @@ function ManagerView({
       />
       <VaultsCard vaults={vaults} summary={summary} onReload={reloadVaults} />
       <ConnectionsCard hasActiveVault={!!activeVault} />
+      <DeleteAccount email={email} descriptor={descriptor} onSignOut={signOut} />
     </div>
   );
 }
