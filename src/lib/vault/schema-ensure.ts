@@ -58,9 +58,15 @@ export async function ensureNotesSchema(
   // Mark as ensured BEFORE the async calls so concurrent invocations don't
   // race into a double-fire (two save paths can run in the same tick).
   ensuredVaults.add(guardKey);
+  // `capture` keeps the description core's packs declare (byte-equal); a
+  // renamed role gets a plain one that fits a text-only or voice-only tag.
+  const capture = NOTES_REQUIRED_SCHEMA.tags[0]!;
   const decl: RequiredTagDecl = {
     name: tagName,
-    description: NOTES_REQUIRED_SCHEMA.tags[0]!.description,
+    description:
+      tagName === capture.name
+        ? capture.description
+        : "Inbox: new notes from the Notes app that had no other tag yet.",
   };
   try {
     const audit = await auditSchema(client, [decl]);

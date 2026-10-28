@@ -13,6 +13,8 @@
 //     default `capture`). A note the person already tagged is left alone, so
 //     the inbox tag means "not yet sorted".
 
+import { extractHashtags } from "./hashtags";
+
 export type NoteSource = "text" | "voice";
 
 export function newNoteMetadata(source: NoteSource): { source: NoteSource; app: "notes" } {
@@ -25,4 +27,18 @@ export function withInboxTag(tags: readonly string[], inboxTag: string | null): 
   const own = Array.from(new Set(tags.filter((t) => t.length > 0)));
   if (own.length === 0 && inboxTag) return [inboxTag];
   return own;
+}
+
+// For the pre-save hint: the inbox tag a save of this draft would add right
+// now (chips + `#hashtags` in the typed body), or null. Same rule as the save.
+// A voice note's transcript arrives after the save, so hashtags spoken in it
+// don't count.
+export function pendingInboxTag(
+  chips: readonly string[],
+  content: string,
+  inboxTag: string | null,
+): string | null {
+  if (!inboxTag) return null;
+  const tags = withInboxTag([...chips, ...extractHashtags(content)], inboxTag);
+  return tags.length === 1 && tags[0] === inboxTag && !chips.includes(inboxTag) ? inboxTag : null;
 }

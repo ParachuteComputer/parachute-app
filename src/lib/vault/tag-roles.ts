@@ -71,16 +71,26 @@ export function normalizeTagRoles(raw: unknown): TagRoles {
   };
 }
 
-// True when either capture role points at something other than the default
-// `capture` tag. Used to derive "Tag new notes as an inbox" for settings saved
-// before that flag existed (T-318): an owner who renamed the role chose a tag,
-// so they keep getting it. A stored role equal to `capture` is
-// indistinguishable from the default (the settings note stores every role on
-// any write), so it derives to OFF.
+// Every value the capture roles have defaulted to over time: today's
+// `capture`, the 2026-07 hierarchy `capture/text` / `capture/voice`, and rc.6's
+// `quick` / `voice`. The settings note stores every role on ANY write, so a
+// stored default is not a choice the owner made.
+const DEFAULT_CAPTURE_ROLE_VALUES: ReadonlySet<string> = new Set([
+  "capture",
+  "capture/text",
+  "capture/voice",
+  "quick",
+  "voice",
+]);
+
+// True when either capture role points at a tag the owner chose (anything but
+// a current or past default). Used to derive "Tag new notes as an inbox" for
+// settings saved before that flag existed (T-318): an owner who renamed the
+// role keeps getting their tag; everyone else reads as OFF, per the opt-in.
 export function hasCustomInboxRole(roles: TagRoles): boolean {
   return (
-    roles.captureText !== DEFAULT_TAG_ROLES.captureText ||
-    roles.captureVoice !== DEFAULT_TAG_ROLES.captureVoice
+    !DEFAULT_CAPTURE_ROLE_VALUES.has(roles.captureText) ||
+    !DEFAULT_CAPTURE_ROLE_VALUES.has(roles.captureVoice)
   );
 }
 

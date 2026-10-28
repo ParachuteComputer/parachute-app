@@ -68,6 +68,17 @@ describe("normalizeNotesSettings — tagNewNotes opt-in", () => {
     ).toBe(false);
   });
 
+  it("is OFF for a pre-flag note holding a PAST default (capture/text, rc.6 quick/voice)", () => {
+    for (const [captureText, captureVoice] of [
+      ["capture/text", "capture/voice"],
+      ["quick", "voice"],
+    ]) {
+      expect(normalizeNotesSettings({ tagRoles: { captureText, captureVoice } }).tagNewNotes).toBe(
+        false,
+      );
+    }
+  });
+
   it("is ON for a pre-flag note with a custom capture role (either role)", () => {
     expect(normalizeNotesSettings({ tagRoles: { captureText: "inbox" } }).tagNewNotes).toBe(true);
     expect(normalizeNotesSettings({ tagRoles: { captureVoice: "memo" } }).tagNewNotes).toBe(true);

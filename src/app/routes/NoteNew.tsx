@@ -9,7 +9,7 @@ import { TagEditor, normalizeTag } from "@/components/TagEditor";
 import { VoiceUnavailableNote } from "@/components/VoiceUnavailableNote";
 import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { extractHashtags } from "@/lib/capture/hashtags";
-import { newNoteMetadata, withInboxTag } from "@/lib/capture/new-note-tags";
+import { newNoteMetadata, pendingInboxTag, withInboxTag } from "@/lib/capture/new-note-tags";
 import { quickPath } from "@/lib/capture/recorder";
 import { buildTextNotePayload } from "@/lib/capture/text-note";
 import { loadTranscribeDefault } from "@/lib/capture/transcribe-default";
@@ -252,10 +252,7 @@ export function NoteNew() {
   // voice role when audio is staged, else the text role; null when the
   // setting is off or the note already has a tag (chip or `#hashtag`).
   const inboxTagForSave = tagNewNotes ? (hasAudio ? roles.captureVoice : roles.captureText) : null;
-  const inboxHint =
-    inboxTagForSave && draft.tags.length === 0 && extractHashtags(draft.content).length === 0
-      ? inboxTagForSave
-      : null;
+  const inboxHint = pendingInboxTag(draft.tags, draft.content, inboxTagForSave);
 
   // Text-only mode requires path + content. Audio satisfies the "body" half
   // because the transcript will land there; path still required so the

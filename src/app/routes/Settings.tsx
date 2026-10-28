@@ -782,9 +782,12 @@ function TagRolesSection({ vaultId }: { vaultId: string }) {
         <div>
           <h3 className="font-medium text-fg">Tag new notes as an inbox</h3>
           <p className="mt-1 text-sm text-fg-muted">
-            When on, a new note you write or record here that has no tags gets your inbox tag (#
-            {roles.captureText}), so you can sort it later. Off by default. Whether a note was typed
-            or spoken is recorded either way.
+            When on, a new note you write or record here that has no tags gets your inbox tag (
+            {roles.captureText === roles.captureVoice
+              ? `#${roles.captureText}`
+              : `#${roles.captureText} for typed notes, #${roles.captureVoice} for voice notes`}
+            ), so you can sort it later. Off by default. Whether a note was typed or spoken is
+            recorded either way.
           </p>
         </div>
         <button
@@ -793,13 +796,7 @@ function TagRolesSection({ vaultId }: { vaultId: string }) {
           aria-checked={tagNewNotes}
           aria-label="Tag new notes as an inbox"
           data-testid="tag-new-notes-toggle"
-          onClick={() => {
-            setTagNewNotes(!tagNewNotes);
-            pushToast(
-              tagNewNotes ? "New notes won't be tagged." : "Untagged new notes go to your inbox.",
-              "success",
-            );
-          }}
+          onClick={() => setTagNewNotes(!tagNewNotes)}
           className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
             tagNewNotes ? "bg-accent" : "bg-border"
           }`}

@@ -1,6 +1,6 @@
 import { TagEditor, normalizeTag } from "@/components/TagEditor";
 import { VoiceUnavailableNote } from "@/components/VoiceUnavailableNote";
-import { extractHashtags } from "@/lib/capture/hashtags";
+import { pendingInboxTag } from "@/lib/capture/new-note-tags";
 import { quickPath } from "@/lib/capture/recorder";
 import { buildTextNotePayload } from "@/lib/capture/text-note";
 import {
@@ -141,10 +141,7 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
 
   // The opt-in inbox tag (null when "Tag new notes as an inbox" is off).
   const inboxTag = tagNewNotes ? roles.captureText : null;
-  const inboxHint =
-    inboxTag && body.tags.length === 0 && extractHashtags(body.content).length === 0
-      ? inboxTag
-      : null;
+  const inboxHint = pendingInboxTag(body.tags, body.content, inboxTag);
 
   const save = () => {
     if (!canSave) return;
