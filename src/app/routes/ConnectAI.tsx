@@ -1,6 +1,8 @@
 import { CopyField } from "@/components/CopyField";
-import { claudeConnectCommand, mcpEndpoint } from "@/lib/home/connect";
+import { claudeConnectCommand } from "@/lib/home/connect";
+import { useMcpAddress } from "@/lib/home/mcp-address";
 import { useVaultStore } from "@/lib/vault";
+import type { VaultRecord } from "@/lib/vault/types";
 import { Link, Navigate } from "react-router";
 
 // The "Connect your AI" moment. A vault speaks MCP, so any assistant that
@@ -27,7 +29,14 @@ export function ConnectAI() {
   // no-vault landing). NAVIGATION.md: route guard, no active vault — replace.
   if (!vault) return <Navigate to="/" replace />;
 
-  const mcpUrl = mcpEndpoint(vault.url);
+  return <ConnectAIFor vault={vault} />;
+}
+
+function ConnectAIFor({ vault }: { vault: VaultRecord }) {
+  // The one address to paste: the door's advertised MCP URL when it publishes
+  // one (cloud → my.parachute.computer/vault/<name>/mcp), else the derived
+  // `<vault url>/mcp` (a hub, or a vault from another door). See mcp-address.ts.
+  const { url: mcpUrl, settled } = useMcpAddress(vault);
   const cliCommand = claudeConnectCommand(vault.name, mcpUrl);
 
   return (
@@ -57,25 +66,41 @@ export function ConnectAI() {
           <code className="rounded bg-bg-soft px-1 font-mono text-fg">/mcp</code> suffix matters —
           it's the connection endpoint, not a page to open.
         </p>
-        <CopyField value={mcpUrl} label="vault MCP URL" />
+        {settled ? (
+          <CopyField value={mcpUrl} label="vault MCP URL" />
+        ) : (
+          <p className="text-sm text-fg-dim" aria-live="polite">
+            Finding your vault address…
+          </p>
+        )}
         <p className="mt-3 text-sm text-fg-muted">
           It reads and writes only inside{" "}
           <b className="rounded-md bg-grass-soft px-2 py-0.5 font-medium text-grass-ink">
             {vault.name}
           </b>{" "}
-          — never anywhere else. Disconnect anytime from your vault's settings.
+          — never anywhere else. Disconnect anytime from your vault's{" "}
+          <Link to="/settings" className="text-accent hover:underline">
+            settings
+          </Link>
+          .
         </p>
       </section>
 
       <h2 className="eyebrow mb-3">Bring your AI in</h2>
       <div className="grid gap-4 sm:grid-cols-2">
-        <AssistantCard title="Claude" initial="C" tone="coral" steps={CLAUDE_STEPS} />
+        <AssistantCard
+          title="Claude"
+          initial="C"
+          tone="coral"
+          steps={CLAUDE_STEPS}
+          note="On Claude's free plan you can add one custom connector."
+        />
         <AssistantCard
           title="ChatGPT"
           initial="G"
           tone="grass"
           steps={CHATGPT_STEPS}
-          note="Exact menu names vary by ChatGPT version; the shape is the same — add an MCP server, paste the URL."
+          note="ChatGPT moves these menus often; the shape stays the same — add a connector, paste the address."
         />
       </div>
 
@@ -87,7 +112,7 @@ export function ConnectAI() {
           That same URL works in any MCP-compatible client — Cursor, an agent you build, anywhere an
           AI asks for an MCP server. For Claude Code:
         </p>
-        <CopyField value={cliCommand} label="Claude Code command" />
+        {settled ? <CopyField value={cliCommand} label="Claude Code command" /> : null}
       </section>
 
       <div className="mt-10 flex flex-wrap items-center gap-3 border-t border-border pt-6">
@@ -124,7 +149,7 @@ const CLAUDE_STEPS: Step[] = [
         >
           claude.ai
         </a>{" "}
-        and go to <strong className="text-fg">Settings → Connectors</strong>.
+        and go to <strong className="text-fg">Customize → Connectors</strong>.
       </>
     ),
   },
@@ -132,11 +157,20 @@ const CLAUDE_STEPS: Step[] = [
     key: "add",
     body: (
       <>
-        Choose <strong className="text-fg">Add custom connector</strong>.
+        Click <strong className="text-fg">+ Add</strong>, then{" "}
+        <strong className="text-fg">Add custom connector</strong>.
       </>
     ),
   },
-  { key: "paste", body: "Paste your vault address above and connect." },
+  {
+    key: "paste",
+    body: (
+      <>
+        Paste your vault address above, click <strong className="text-fg">Continue</strong>, and
+        allow access when Parachute asks.
+      </>
+    ),
+  },
 ];
 
 const CHATGPT_STEPS: Step[] = [
@@ -144,12 +178,13 @@ const CHATGPT_STEPS: Step[] = [
     key: "settings",
     body: (
       <>
-        Open ChatGPT's <strong className="text-fg">Settings</strong> and find its connectors (custom
-        connectors need a paid ChatGPT plan).
+        Open ChatGPT's <strong className="text-fg">Settings</strong> and find{" "}
+        <strong className="text-fg">Apps &amp; Connectors</strong> (custom connectors need a paid
+        plan, and may need Developer mode turned on).
       </>
     ),
   },
-  { key: "add", body: "Add a custom connector / MCP server." },
+  { key: "add", body: "Create a custom connector (an MCP server)." },
   { key: "paste", body: "Paste the same vault address and connect." },
 ];
 

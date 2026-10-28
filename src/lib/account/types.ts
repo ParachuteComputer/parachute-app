@@ -69,6 +69,10 @@ export interface AccountVault {
   name: string;
   /** Full vault REST URL (cloud's field name is `url`). */
   url?: string;
+  /** The ONE MCP address to paste into an AI, as the door advertises it
+   *  (cloud: `https://my.parachute.computer/vault/<name>/mcp`). Absent on a
+   *  door that doesn't publish it (a hub) — the app then derives `<url>/mcp`. */
+  mcp_url?: string;
   /** BYTES only, nullable (see AccountVaultUsage). */
   usage?: AccountVaultUsage | null;
   /** ISO-8601. */
@@ -239,4 +243,25 @@ export interface DoorPlan {
   /** Per-interval availability + price (F1/F3/F5) — keyed by `BillingInterval`.
    *  Optional/tolerant by design; see `DoorPlanInterval`. */
   intervals?: Partial<Record<BillingInterval, DoorPlanInterval>>;
+}
+
+/** One app connected to a vault (`GET /account/vaults/<name>/connections`,
+ *  cloud oauth-connections.ts). Untrusted: render-time guarded. */
+export interface VaultConnection {
+  client_id: string;
+  /** The app's self-registered name, or null. */
+  client_name: string | null;
+  /** ISO-8601 — when the person approved it. */
+  connected_at: string;
+  /** ISO-8601 — when it last fetched a token for this vault, or null. */
+  last_used_at: string | null;
+  access: "read" | "write" | "admin";
+  /** "account" = it reaches every vault in the account, not just this one. */
+  covers: "vault" | "account";
+  scopes: string[];
+}
+
+export interface VaultConnectionsResponse {
+  vault: string;
+  connections: VaultConnection[];
 }

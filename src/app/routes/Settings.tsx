@@ -1,3 +1,4 @@
+import { ConnectedApps } from "@/components/ConnectedApps";
 import { getSession, logout } from "@/lib/account/client";
 import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import { useTranscribeDefault } from "@/lib/capture/transcribe-default";
@@ -60,6 +61,7 @@ export function Settings() {
 
       <div className="space-y-8">
         <ManageSection />
+        <ConnectedApps vault={activeVault} />
         <ImportSection />
         <VoiceSection vaultId={activeVault.id} />
         <EditorSection />
