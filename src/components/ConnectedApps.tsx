@@ -76,11 +76,13 @@ export function ConnectedApps({
   }, [slug, fetchImpl]);
 
   // A different vault starts from a clean slate, never the previous list.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: vault.name is the trigger.
+  // Keyed on the server slug (the same identity `refresh` uses), so a local
+  // rename neither resets the panel nor strands it on "Loading…".
+  // biome-ignore lint/correctness/useExhaustiveDependencies: slug is the trigger.
   useEffect(() => {
     latest.current++;
     setLoad({ kind: "loading" });
-  }, [vault.name]);
+  }, [slug]);
 
   useEffect(() => {
     if (enabled) void refresh();

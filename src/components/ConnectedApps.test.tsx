@@ -124,6 +124,30 @@ describe("ConnectedApps (vault settings)", () => {
     );
   });
 
+  it("a local rename keeps the list (never stuck on Loading…)", async () => {
+    const door = fakeDoor({ connections: true, list: [CLAUDE] });
+    const url = "https://u.parachute.computer/vault/notes";
+    const view = render(
+      <MemoryRouter>
+        <ConnectedApps
+          vault={{ name: "notes", clientId: HOSTED_CLIENT_ID, url }}
+          fetchImpl={door.fetchImpl}
+        />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Claude")).toBeInTheDocument();
+    view.rerender(
+      <MemoryRouter>
+        <ConnectedApps
+          vault={{ name: "Renamed", clientId: HOSTED_CLIENT_ID, url }}
+          fetchImpl={door.fetchImpl}
+        />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Claude")).toBeInTheDocument();
+    expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+  });
+
   it("Disconnect asks first, then DELETEs, refreshes the list and says so", async () => {
     const door = fakeDoor({ connections: true, list: [CLAUDE] });
     renderApps(door.fetchImpl);
