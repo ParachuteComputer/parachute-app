@@ -7,6 +7,7 @@ import {
   retryDoorDescriptorIfCold,
 } from "@/lib/account/descriptor";
 import { openHostedVault } from "@/lib/account/hosted-vault";
+import { OPEN_BETA_SHORT, isOpenBetaDoor } from "@/lib/account/money";
 import { clearAccountToken, loadLastSigninEmail, saveLastSigninEmail } from "@/lib/account/store";
 import type { AccountVault, DoorPlan } from "@/lib/account/types";
 import { withMount } from "@/lib/base-url";
@@ -167,6 +168,26 @@ export function trialLine(trialLengthLabel?: unknown): string {
   return `${length} free, no card.`;
 }
 
+/**
+ * The cloud front door's one money sentence. Open beta (T-318) → the canonical
+ * short line, nothing else (no trial length, no prices — the descriptor ships
+ * an empty plan ladder then anyway). Otherwise the pre-T-318 trial claim plus
+ * the cheapest advertised price.
+ */
+export function frontDoorMoneyLine({
+  openBeta,
+  plans,
+  trialLengthLabel,
+}: {
+  openBeta: boolean;
+  plans?: DoorPlan[];
+  trialLengthLabel?: unknown;
+}): string {
+  if (openBeta) return OPEN_BETA_SHORT;
+  const plansLine = pricingLine(plans);
+  return `${trialLine(trialLengthLabel)}${plansLine ? ` ${plansLine}` : ""}`;
+}
+
 // HUB-PARITY P4 — the ONE door-conditional piece of UI the portability
 // principle permits (SYNTHESIS "PORTABILITY"). Loads the door descriptor
 // (`/.well-known/parachute-account`, same-origin, public) and forks into the
@@ -208,6 +229,7 @@ function FrontDoor() {
       <MagicLinkFrontDoor
         plans={descriptor?.plans}
         trialLengthLabel={descriptor?.trial_length_label}
+        openBeta={isOpenBetaDoor(descriptor)}
       />
     );
   }
@@ -250,9 +272,13 @@ function NeutralFrontDoor() {
 function MagicLinkFrontDoor({
   plans,
   trialLengthLabel,
+  openBeta = false,
 }: {
   plans?: DoorPlan[];
   trialLengthLabel?: string;
+  /** The door's money switch says open beta (T-318): one money line, no
+   *  trial length, no "Plans from …". */
+  openBeta?: boolean;
 }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -262,8 +288,7 @@ function MagicLinkFrontDoor({
   const [error, setError] = useState<string | null>(null);
 
   const looksLikeEmail = /.+@.+\..+/.test(email.trim());
-  const plansLine = pricingLine(plans);
-  const trialClaim = trialLine(trialLengthLabel);
+  const moneyLine = frontDoorMoneyLine({ openBeta, plans, trialLengthLabel });
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -336,9 +361,27 @@ function MagicLinkFrontDoor({
         One link does both — if you're new, it creates your account, and the email will say so. No
         password.
       </p>
-      <p className="mx-auto mt-3 max-w-sm font-round text-xs text-fg-dim">
-        {trialClaim}
-        {plansLine ? ` ${plansLine}` : ""}
+      <p className="mx-auto mt-3 max-w-sm font-round text-xs text-fg-dim" data-testid="money-line">
+        {moneyLine}
+      </p>
+      <p className="mx-auto mt-2 max-w-sm font-round text-xs text-fg-dim" data-testid="legal-links">
+        <a
+          href="https://parachute.computer/terms/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:text-fg-muted"
+        >
+          Terms
+        </a>
+        {" · "}
+        <a
+          href="https://parachute.computer/privacy/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:text-fg-muted"
+        >
+          Privacy
+        </a>
       </p>
 
       {error ? (

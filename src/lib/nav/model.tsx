@@ -17,6 +17,7 @@ import {
 } from "@/components/NavIcons";
 import { ViewNavIcon } from "@/components/ViewNavIcon";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
+import { trialDaysLeftOf } from "@/lib/account/money";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import { type HomeStepId, deriveSteps } from "@/lib/home/checklist";
 import { useHasUserAuthoredNote } from "@/lib/home/use-has-user-note";
@@ -439,8 +440,8 @@ function useNavBandsModel(): NavBand[] {
   const summaryQuery = useAccountSummary({ enabled: isHosted });
   // Ambient read: failed and absent both mean "no chip" (the retry affordance
   // lives on /account's Plan & billing card, not in a badge).
-  const plan = (isHosted ? summaryOrNull(summaryQuery.data) : null)?.plan ?? null;
-  const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
+  // Open beta (T-318): never a countdown chip — trialDaysLeftOf returns null.
+  const trialDaysLeft = trialDaysLeftOf(isHosted ? summaryOrNull(summaryQuery.data) : null);
 
   // The Views band (VIEWS-RENDER-SPEC §6): every `#view`-tagged note, minus
   // the four shipped default pages (they already have Rail entries under

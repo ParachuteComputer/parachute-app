@@ -67,6 +67,9 @@ export interface DoorDescriptor {
    * type-guards it at the read site rather than trusting this annotation.
    */
   trial_length_label?: string;
+  /** The door's money switch (cloud, T-318) — `"open_beta"` ⇒ the front door
+   *  says "Free during the open beta." and quotes no prices (`money.ts`). */
+  billing_mode?: "open_beta" | "paid";
 }
 
 type Fetch = typeof fetch;
