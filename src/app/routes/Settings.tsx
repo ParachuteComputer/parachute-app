@@ -1,3 +1,4 @@
+import { DeleteVault } from "@/components/DeleteVault";
 import { getSession, logout } from "@/lib/account/client";
 import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import { useTranscribeDefault } from "@/lib/capture/transcribe-default";
@@ -68,6 +69,7 @@ export function Settings() {
         <TagRolesSection vaultId={activeVault.id} />
         <OfflineSection vaultId={activeVault.id} />
         <InstallStateSection />
+        <DeleteVault vault={activeVault} />
       </div>
     </div>
   );
