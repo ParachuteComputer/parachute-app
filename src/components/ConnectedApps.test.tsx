@@ -148,6 +148,41 @@ describe("ConnectedApps (vault settings)", () => {
     expect(door.calls.some((c) => c.includes("/connections"))).toBe(false);
   });
 
+  it("switching vaults never shows the previous vault's apps, even when its answer arrives last", async () => {
+    let releaseA: (r: Response) => void = () => {};
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : input.toString();
+      if (path === "/.well-known/parachute-account") {
+        return Response.json({ door: "cloud", capabilities: { connections: true } });
+      }
+      if (path === "/account/vaults/a/connections") {
+        return new Promise<Response>((r) => {
+          releaseA = r;
+        });
+      }
+      if (path === "/account/vaults/b/connections")
+        return Response.json({ vault: "b", connections: [] });
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+    const view = render(
+      <MemoryRouter>
+        <ConnectedApps vault={{ name: "a", clientId: HOSTED_CLIENT_ID }} fetchImpl={fetchImpl} />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(fetchImpl).toHaveBeenCalledWith("/account/vaults/a/connections", expect.anything()),
+    );
+    view.rerender(
+      <MemoryRouter>
+        <ConnectedApps vault={{ name: "b", clientId: HOSTED_CLIENT_ID }} fetchImpl={fetchImpl} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/nothing is connected yet/i)).toBeInTheDocument();
+    releaseA(Response.json({ vault: "a", connections: [CLAUDE] }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText("Claude")).not.toBeInTheDocument();
+  });
+
   it("hidden for a vault connected from another door (not a home-door vault)", async () => {
     const door = fakeDoor({ connections: true, list: [CLAUDE] });
     const { container } = renderApps(door.fetchImpl, "some-oauth-client");

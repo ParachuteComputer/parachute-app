@@ -35,6 +35,9 @@ export function advertisedMcpUrl(vaults: readonly AccountVault[], name: string):
 
 type Fetch = typeof fetch;
 
+/** How long Connect AI waits for the door before showing the derived address. */
+export const LOOKUP_TIMEOUT_MS = 4000;
+
 /**
  * The address to show for `vault`: `{ url, settled }`. For a home-door
  * (hosted) vault it waits for the door's answer (`settled: false` meanwhile, so
@@ -59,6 +62,12 @@ export function useMcpAddress(
     }
     let live = true;
     setState({ url: derived, settled: false });
+    // Never leave the page without an address: if the door is slow, show the
+    // derived one (it works too) and stop waiting.
+    const giveUp = setTimeout(() => {
+      if (live) setState({ url: derived, settled: true });
+      live = false;
+    }, LOOKUP_TIMEOUT_MS);
     listVaults(fetchImpl)
       .then((res) => {
         if (!live) return;
@@ -73,6 +82,7 @@ export function useMcpAddress(
       });
     return () => {
       live = false;
+      clearTimeout(giveUp);
     };
   }, [hosted, derived, vault.name, fetchImpl]);
 

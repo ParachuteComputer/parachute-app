@@ -1,8 +1,8 @@
 import { ConnectAI } from "@/app/routes/ConnectAI";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
-import { advertisedMcpUrl } from "@/lib/home/mcp-address";
+import { LOOKUP_TIMEOUT_MS, advertisedMcpUrl } from "@/lib/home/mcp-address";
 import { useVaultStore } from "@/lib/vault/store";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -158,6 +158,27 @@ describe("ConnectAI", () => {
       expect(
         await screen.findByText("https://u.parachute.computer/vault/aaron/mcp"),
       ).toBeInTheDocument();
+    });
+
+    it("a door that never answers still gets an address on screen (derived, after a short wait)", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        seedHosted();
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(() => new Promise<Response>(() => {})),
+        );
+        renderConnect();
+        expect(screen.getByText(/finding your vault address/i)).toBeInTheDocument();
+        await act(async () => {
+          vi.advanceTimersByTime(LOOKUP_TIMEOUT_MS);
+        });
+        expect(
+          screen.getByText("https://u.parachute.computer/vault/aaron/mcp"),
+        ).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("a vault connected from another door never asks this door — derived address at once", () => {

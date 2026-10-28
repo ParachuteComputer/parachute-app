@@ -5,7 +5,7 @@ import type { VaultConnection } from "@/lib/account/types";
 import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
 import type { VaultRecord } from "@/lib/vault/types";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 // "Connected apps" in vault settings (T-318): the AIs and apps that can reach
@@ -56,16 +56,28 @@ export function ConnectedApps({
     };
   }, [hosted, fetchImpl]);
 
+  // Only the newest request may paint: a slow answer for a vault the person
+  // has since switched away from must never show under this vault's heading.
+  const latest = useRef(0);
   const refresh = useCallback(async () => {
+    const ticket = ++latest.current;
     setLoad((prev) => (prev.kind === "ready" ? prev : { kind: "loading" }));
     try {
       const res = await listVaultConnections(vault.name, fetchImpl);
+      if (ticket !== latest.current) return;
       const list = Array.isArray(res?.connections) ? res.connections.filter(isConnection) : [];
       setLoad({ kind: "ready", connections: list });
     } catch {
-      setLoad({ kind: "error" });
+      if (ticket === latest.current) setLoad({ kind: "error" });
     }
   }, [vault.name, fetchImpl]);
+
+  // A different vault starts from a clean slate, never the previous list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: vault.name is the trigger.
+  useEffect(() => {
+    latest.current++;
+    setLoad({ kind: "loading" });
+  }, [vault.name]);
 
   useEffect(() => {
     if (enabled) void refresh();
