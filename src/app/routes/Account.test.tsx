@@ -403,6 +403,91 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
   // silence, never a vanished plan (WALK-manager #1, the MOCK-DOOR
   // SUMMARY_STATE-failure hole).
   // ---------------------------------------------------------------------
+  // T-318: cloud's money switch. Open beta replaces the plan grid, Upgrade
+  // buttons and trial countdown with the one money story; paid mode (above and
+  // below) renders exactly as before.
+  describe("Plan & billing — open beta (billing_mode: open_beta)", () => {
+    const BETA: AccountSummary = {
+      email: "ag@unforced.org",
+      plan: {
+        tier: "trial",
+        label: "Open beta",
+        vault_limit: 5,
+        vaults_used: 2,
+        storage_used_bytes: 3 * 1024 * 1024,
+        storage_limit_bytes: 500 * 1024 * 1024 + 8 * 1024 * 1024 * 1024,
+      },
+      billing_enabled: false,
+      has_billing_customer: false,
+      billing_mode: "open_beta",
+    };
+
+    it("shows the money story and the meters — no plan cards, no Upgrade, no countdown", async () => {
+      signedIn();
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      // A door that still advertised prices AND a countdown must not leak either.
+      vi.mocked(getDoorDescriptor).mockResolvedValue({
+        door: "cloud",
+        plans: PLANS_WITH_INTERVALS,
+      });
+      vi.mocked(getAccountSummaryState).mockResolvedValue({
+        ...BETA,
+        plan: { ...BETA.plan, trial_days_left: 90 },
+      });
+
+      renderAccount();
+      const card = await screen.findByTestId("open-beta-plan");
+      expect(
+        within(card).getByText(/Parachute is in open beta, and it's free for now\./),
+      ).toBeInTheDocument();
+      expect(within(card).getByText(/Open beta · 2 of 5 vaults/)).toBeInTheDocument();
+      expect(screen.queryByText(/days? left/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/90/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /upgrade/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /manage plan & billing/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument();
+      // The identity chip names the beta, never a countdown.
+      expect(screen.getAllByText("Open beta").length).toBeGreaterThan(0);
+      expect(screen.queryByText(/Free trial/)).not.toBeInTheDocument();
+    });
+
+    it("an existing paying subscriber keeps the portal door (nobody is stuck with a charge)", async () => {
+      signedIn();
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummaryState).mockResolvedValue({
+        ...BETA,
+        plan: { ...BETA.plan, tier: "plus", label: "Plus", price_monthly_usd: 5 },
+        has_billing_customer: true,
+      });
+
+      renderAccount();
+      const card = await screen.findByTestId("open-beta-plan");
+      expect(
+        within(card).getByRole("button", { name: /manage plan & billing/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /upgrade/i })).not.toBeInTheDocument();
+    });
+
+    it("paid mode is unchanged: the trial countdown + upgrade cards still render", async () => {
+      signedIn();
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getDoorDescriptor).mockResolvedValue({ door: "cloud", plans: PLANS });
+      vi.mocked(getAccountSummaryState).mockResolvedValue({
+        ...TRIAL_SUMMARY,
+        billing_mode: "paid",
+      });
+
+      renderAccount();
+      expect(
+        await screen.findByRole("button", { name: /upgrade to standard/i }),
+      ).toBeInTheDocument();
+      expect(screen.getAllByText(/5 days left/).length).toBeGreaterThan(0);
+      expect(screen.queryByTestId("open-beta-plan")).not.toBeInTheDocument();
+    });
+  });
+
   describe("Plan & billing — the five states", () => {
     it("state: loading → the card renders skeleton lines while the summary is in flight", async () => {
       signedIn();

@@ -2,6 +2,7 @@ import { InsecureContextBanner } from "@/components/InsecureContextBanner";
 import { listVaults } from "@/lib/account/client";
 import { describeAccountError } from "@/lib/account/error-copy";
 import { isHostedVaultRecord, openHostedVault } from "@/lib/account/hosted-vault";
+import { isOpenBeta, trialDaysLeftOf } from "@/lib/account/money";
 import { useAccountSessionStore } from "@/lib/account/store";
 import type { AccountVault } from "@/lib/account/types";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
@@ -333,7 +334,8 @@ function SwitcherPanel({
     typeof plan.vaults_used === "number" &&
     plan.vaults_used >= plan.vault_limit;
   // Trial ambience (decision b / F4): only when the door reports a number.
-  const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
+  const trialDaysLeft = trialDaysLeftOf(summary);
+  const openBeta = isOpenBeta(summary);
 
   const absoluteNavigate = useAbsoluteNavigate();
   const onSwitch = useCallback(
@@ -501,9 +503,13 @@ function SwitcherPanel({
             <VerbCircle tone="sun">↑</VerbCircle>
             {/* Wraps rather than truncates — the plan fact must read whole. */}
             <span className="min-w-0 flex-1 leading-snug text-fg-muted">
-              {plan.vaults_used} of {plan.vault_limit} vaults on your plan
+              {plan.vaults_used} of {plan.vault_limit} vaults
+              {openBeta ? " in the open beta" : " on your plan"}
             </span>
-            <span className="shrink-0 text-sm font-semibold text-accent">Upgrade →</span>
+            {/* Open beta: nothing to buy — the row says where the limit is, not "Upgrade". */}
+            <span className="shrink-0 text-sm font-semibold text-accent">
+              {openBeta ? "Details →" : "Upgrade →"}
+            </span>
           </Link>
         ) : (
           // NAVIGATION.md: "Chooser card → /add-vault/create" — user-

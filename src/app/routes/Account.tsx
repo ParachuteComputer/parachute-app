@@ -13,6 +13,7 @@ import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { markHubGateFromError } from "@/lib/account/dispatch";
 import { describeAccountError } from "@/lib/account/error-copy";
 import { openHostedVault } from "@/lib/account/hosted-vault";
+import { OPEN_BETA_LONG, isOpenBeta, trialDaysLeftOf } from "@/lib/account/money";
 import { formatBytes, formatUsageBytes } from "@/lib/account/provenance";
 import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import type {
@@ -253,7 +254,8 @@ function IdentityCard({
 
 function PlanChip({ summary }: { summary: AccountSummary | null }) {
   if (!summary) return null;
-  const days = summary.plan.trial_days_left;
+  // Open beta (T-318): never a countdown — trialDaysLeftOf is null there.
+  const days = trialDaysLeftOf(summary);
   if (typeof days === "number") {
     return (
       <span className="chip border-transparent bg-sun-soft font-medium text-sun-ink">
@@ -290,7 +292,10 @@ function PlanBillingCard({
   // steady-state), or it does and billing isn't wired. Either way there is
   // nothing honest to show, so the card simply doesn't exist.
   if (state === null) return null;
-  if (state !== "loading" && state !== "error" && !state.billing_enabled) return null;
+  // Open beta (T-318): billing is off, but the card stays — it tells the money
+  // story and shows the usage meters (no plan grid, no Upgrade, no countdown).
+  const openBeta = state !== "loading" && state !== "error" && isOpenBeta(state);
+  if (state !== "loading" && state !== "error" && !state.billing_enabled && !openBeta) return null;
 
   return (
     <section aria-label="Plan & billing" className="card p-6 shadow-soft">
@@ -316,6 +321,8 @@ function PlanBillingCard({
             {retrying ? "Retrying…" : "Retry"}
           </button>
         </div>
+      ) : openBeta ? (
+        <OpenBetaPlan summary={state} />
       ) : state.has_billing_customer ? (
         <ManageBilling summary={state} />
       ) : (
@@ -325,10 +332,35 @@ function PlanBillingCard({
   );
 }
 
+// Open beta (T-318): the plan line (label + meters), the one money story, and —
+// only for someone who already pays through Stripe — the portal, so nobody is
+// left with a charge they can't see or cancel. Nothing to buy, no countdown.
+function OpenBetaPlan({ summary }: { summary: AccountSummary }) {
+  const paying = summary.has_billing_customer && PAID_TIER_IDS.has(summary.plan.tier);
+  return (
+    <div className="mt-4" data-testid="open-beta-plan">
+      <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+      <p className="mt-3 text-sm text-fg">{OPEN_BETA_LONG}</p>
+      {paying ? <ManageBillingButton /> : null}
+    </div>
+  );
+}
+
+const PAID_TIER_IDS = new Set(["entry", "standard", "plus", "power"]);
+
 // Existing subscriber: the current-plan line + the one true trip to the
 // Stripe billing portal. A 409/503 (comped account, or billing momentarily
 // unconfigured) surfaces a small inline message — never a blocking error.
 function ManageBilling({ summary }: { summary: AccountSummary }) {
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+      <ManageBillingButton />
+    </div>
+  );
+}
+
+function ManageBillingButton() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -352,8 +384,7 @@ function ManageBilling({ summary }: { summary: AccountSummary }) {
   }
 
   return (
-    <div className="mt-4">
-      <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+    <>
       <button
         type="button"
         onClick={manage}
@@ -363,7 +394,7 @@ function ManageBilling({ summary }: { summary: AccountSummary }) {
         {busy ? "Opening…" : "Manage plan & billing ↗"}
       </button>
       {error ? <BillingErrorLine text={error} /> : null}
-    </div>
+    </>
   );
 }
 
@@ -622,8 +653,9 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
 function planSummaryLine(summary: AccountSummary): string {
   const { plan } = summary;
   const parts: string[] = [plan.label];
-  if (typeof plan.trial_days_left === "number") {
-    parts.push(`${plan.trial_days_left} day${plan.trial_days_left === 1 ? "" : "s"} left`);
+  const days = trialDaysLeftOf(summary);
+  if (days !== null) {
+    parts.push(`${days} day${days === 1 ? "" : "s"} left`);
   } else if (typeof plan.price_monthly_usd === "number" && plan.price_monthly_usd > 0) {
     parts.push(`$${plan.price_monthly_usd}/mo`);
   }
@@ -693,7 +725,7 @@ function VaultsCard({
   const plan = summary?.plan;
   const meter =
     plan && typeof plan.vault_limit === "number" && typeof plan.vaults_used === "number"
-      ? `${plan.vaults_used} of ${plan.vault_limit} on your plan`
+      ? `${plan.vaults_used} of ${plan.vault_limit} ${isOpenBeta(summary) ? "in the open beta" : "on your plan"}`
       : null;
 
   return (

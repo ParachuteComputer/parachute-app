@@ -185,6 +185,15 @@ export interface AccountSummary {
    * portal); `false` ⇒ it shows the upgrade plan cards (Stripe Checkout).
    */
   has_billing_customer: boolean;
+  /**
+   * The door's money switch (cloud, T-318). `"open_beta"` ⇒ Parachute is free
+   * for now: no plan grid, no Upgrade, no trial countdown (see `money.ts`).
+   * Absent on an older door ⇒ the pre-T-318 rendering, unchanged.
+   */
+  billing_mode?: "open_beta" | "paid";
+  /** Cloud's long money sentence in open beta. Informational — the app renders
+   *  its own canonical copy (`money.ts`), never this untrusted string. */
+  money_story?: string;
 }
 
 /** The tier ladder cloud's billing endpoints accept — `POST

@@ -12,6 +12,7 @@ import { RefinementChip } from "@/components/ui/RefinementChip";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
+import { trialDaysLeftOf } from "@/lib/account/money";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import { localDayBoundaryIso, shiftDay, toDateKey, todayKey } from "@/lib/dates";
 import {
@@ -772,8 +773,8 @@ function RecentLens() {
   // retry affordance lives on /account).
   const isHosted = vault !== null && isHostedVaultRecord(vault.clientId);
   const summaryQuery = useAccountSummary({ enabled: isHosted });
-  const plan = (isHosted ? summaryOrNull(summaryQuery.data) : null)?.plan ?? null;
-  const trialDaysLeft = typeof plan?.trial_days_left === "number" ? plan.trial_days_left : null;
+  // Open beta (T-318): trialDaysLeftOf returns null — no countdown nudge.
+  const trialDaysLeft = trialDaysLeftOf(isHosted ? summaryOrNull(summaryQuery.data) : null);
 
   // The floored window: archived drops out first, then the 14-day cut, then
   // the 100-note cap — sorted by the same touch stamp the timeline buckets
