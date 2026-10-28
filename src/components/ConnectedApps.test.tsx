@@ -101,6 +101,29 @@ describe("ConnectedApps (vault settings)", () => {
     expect(door.calls).toContain("GET /account/vaults/notes/connections");
   });
 
+  it("uses the server slug from the vault URL, not a renamed local label", async () => {
+    const door = fakeDoor({ connections: true, list: [CLAUDE] });
+    render(
+      <MemoryRouter>
+        <ConnectedApps
+          vault={{
+            name: "My renamed notes",
+            clientId: HOSTED_CLIENT_ID,
+            url: "https://u.parachute.computer/vault/notes",
+          }}
+          fetchImpl={door.fetchImpl}
+        />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Claude")).toBeInTheDocument();
+    expect(door.calls).toContain("GET /account/vaults/notes/connections");
+    fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, disconnect Claude" }));
+    await waitFor(() =>
+      expect(door.calls.some((c) => c.startsWith("DELETE /account/vaults/notes/"))).toBe(true),
+    );
+  });
+
   it("Disconnect asks first, then DELETEs, refreshes the list and says so", async () => {
     const door = fakeDoor({ connections: true, list: [CLAUDE] });
     renderApps(door.fetchImpl);

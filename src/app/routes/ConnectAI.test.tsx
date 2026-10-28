@@ -123,7 +123,8 @@ describe("ConnectAI", () => {
       seedHosted();
       stubVaultsList([
         {
-          name: "Aaron's Vault",
+          // The door lists vaults by SERVER slug; the local label is "Aaron's Vault".
+          name: "aaron",
           url: "https://my.parachute.computer/vault/aaron",
           mcp_url: MY_MCP,
         },
@@ -137,6 +138,33 @@ describe("ConnectAI", () => {
       expect(
         screen.getByText(`claude mcp add --transport http parachute-aaron-s-vault ${MY_MCP}`),
       ).toBeInTheDocument();
+    });
+
+    it("keeps the advertised address after the lookup timeout would have fired", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        seedHosted();
+        stubVaultsList([{ name: "aaron", mcp_url: MY_MCP }]);
+        renderConnect();
+        expect(await screen.findByText(MY_MCP)).toBeInTheDocument();
+        await act(async () => {
+          vi.advanceTimersByTime(LOOKUP_TIMEOUT_MS + 100);
+        });
+        expect(screen.getByText(MY_MCP)).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("matches by server slug, never by a label that names another vault", async () => {
+      seedHosted();
+      // The local label "Aaron's Vault" must not pick a vault whose slug equals it.
+      stubVaultsList([
+        { name: "Aaron's Vault", mcp_url: "https://my.parachute.computer/vault/other/mcp" },
+        { name: "aaron", mcp_url: MY_MCP },
+      ]);
+      renderConnect();
+      expect(await screen.findByText(MY_MCP)).toBeInTheDocument();
     });
 
     it("falls back to the derived address when the door publishes no mcp_url (a hub)", async () => {
