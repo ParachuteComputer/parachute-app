@@ -16,6 +16,7 @@
 import { listVaults } from "@/lib/account/client";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import type { AccountVault } from "@/lib/account/types";
+import { vaultServerSlug } from "@/lib/vault/deep-link";
 import type { VaultRecord } from "@/lib/vault/types";
 import { useEffect, useState } from "react";
 import { mcpEndpoint } from "./connect";
@@ -71,20 +72,23 @@ export function useMcpAddress(
     listVaults(fetchImpl)
       .then((res) => {
         if (!live) return;
+        clearTimeout(giveUp);
         const advertised = advertisedMcpUrl(
           Array.isArray(res?.vaults) ? res.vaults : [],
-          vault.name,
+          // Match by the SERVER slug: a renamed vault keeps its slug, not its label.
+          vaultServerSlug(vault.url) ?? vault.name,
         );
         setState({ url: advertised ?? derived, settled: true });
       })
       .catch(() => {
+        clearTimeout(giveUp);
         if (live) setState({ url: derived, settled: true });
       });
     return () => {
       live = false;
       clearTimeout(giveUp);
     };
-  }, [hosted, derived, vault.name, fetchImpl]);
+  }, [hosted, derived, vault.name, vault.url, fetchImpl]);
 
   return state;
 }

@@ -4,6 +4,7 @@ import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import type { VaultConnection } from "@/lib/account/types";
 import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
+import { vaultServerSlug } from "@/lib/vault/deep-link";
 import type { VaultRecord } from "@/lib/vault/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -34,7 +35,7 @@ export function ConnectedApps({
   vault,
   fetchImpl,
 }: {
-  vault: Pick<VaultRecord, "name" | "clientId">;
+  vault: Pick<VaultRecord, "name" | "clientId"> & Partial<Pick<VaultRecord, "url">>;
   fetchImpl?: Fetch;
 }) {
   const hosted = isHostedVaultRecord(vault.clientId);
@@ -58,19 +59,21 @@ export function ConnectedApps({
 
   // Only the newest request may paint: a slow answer for a vault the person
   // has since switched away from must never show under this vault's heading.
+  // The SERVER slug, not the device-local label (a renamed vault keeps its slug).
+  const slug = vaultServerSlug(vault.url) ?? vault.name;
   const latest = useRef(0);
   const refresh = useCallback(async () => {
     const ticket = ++latest.current;
     setLoad((prev) => (prev.kind === "ready" ? prev : { kind: "loading" }));
     try {
-      const res = await listVaultConnections(vault.name, fetchImpl);
+      const res = await listVaultConnections(slug, fetchImpl);
       if (ticket !== latest.current) return;
       const list = Array.isArray(res?.connections) ? res.connections.filter(isConnection) : [];
       setLoad({ kind: "ready", connections: list });
     } catch {
       if (ticket === latest.current) setLoad({ kind: "error" });
     }
-  }, [vault.name, fetchImpl]);
+  }, [slug, fetchImpl]);
 
   // A different vault starts from a clean slate, never the previous list.
   // biome-ignore lint/correctness/useExhaustiveDependencies: vault.name is the trigger.
@@ -124,7 +127,7 @@ export function ConnectedApps({
             <ConnectionRow
               key={c.client_id}
               connection={c}
-              vaultName={vault.name}
+              vaultSlug={slug}
               fetchImpl={fetchImpl}
               onDisconnected={refresh}
             />
@@ -141,12 +144,12 @@ function isConnection(c: unknown): c is VaultConnection {
 
 function ConnectionRow({
   connection: c,
-  vaultName,
+  vaultSlug,
   fetchImpl,
   onDisconnected,
 }: {
   connection: VaultConnection;
-  vaultName: string;
+  vaultSlug: string;
   fetchImpl?: Fetch;
   onDisconnected: () => Promise<void>;
 }) {
@@ -160,7 +163,7 @@ function ConnectionRow({
   async function disconnect() {
     setBusy(true);
     try {
-      await disconnectVaultConnection(vaultName, c.client_id, fetchImpl);
+      await disconnectVaultConnection(vaultSlug, c.client_id, fetchImpl);
       push(`${name} is disconnected.`, "success");
       await onDisconnected();
     } catch {
