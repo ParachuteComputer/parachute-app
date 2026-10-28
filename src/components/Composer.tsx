@@ -1,5 +1,6 @@
 import { TagEditor, normalizeTag } from "@/components/TagEditor";
 import { VoiceUnavailableNote } from "@/components/VoiceUnavailableNote";
+import { extractHashtags } from "@/lib/capture/hashtags";
 import { quickPath } from "@/lib/capture/recorder";
 import { buildTextNotePayload } from "@/lib/capture/text-note";
 import {
@@ -33,14 +34,12 @@ import { Link } from "react-router";
 //   - the mic is the same W2-9 voice arrival the speed dial uses
 //     (`/new?voice=1`), behind the same transcription-capability gate;
 //   - "Open full editor →" is the quiet ESCAPE (path/attachments/preview),
-//     not the default — tags got a narrow exception (below) since the
-//     capture-chip loosening.
+//     not the default — tags got a narrow exception: a compact tag row
+//     appears once the card is `expanded`.
 //
-// Capture-chip loosening (2026-07-17, ratified): the capture role tag used to
-// be an invisible save-time injection. It now pre-populates as a VISIBLE,
-// REMOVABLE chip in a compact tag row that appears once the card is
-// `expanded` (mirrors NoteNew's own auto-populate-until-touched effect) —
-// buildTextNotePayload takes the chip list as given.
+// No pre-filled tag (T-318, DESIGN-0.9 §8c): the chip row starts empty. With
+// "Tag new notes as an inbox" on, buildTextNotePayload adds the inbox tag at
+// save time to a note with no tag of its own — the same rule as NoteNew.
 //
 // LZ-1: extracted verbatim from Home.tsx (the W2-10 room) so the upcoming
 // one-surface merge can drop it onto both the Recent and All lenses
@@ -56,7 +55,7 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
   const pushToast = useToastStore((s) => s.push);
   const mutation = useCreateNote();
   const client = useActiveVaultClient();
-  const { roles } = useTagRoles(vault.id);
+  const { roles, tagNewNotes } = useTagRoles(vault.id);
 
   // Mic gate — the same seam as NoteNew: hide the voice door ONLY when the
   // vault EXPLICITLY declares transcription disabled; absent/undeclared stays
@@ -74,9 +73,7 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
   // previous visit here) shows through. The `path || default` guard covers a
   // malformed stored path; tags set on /new ride along untouched so a save
   // from here commits them too. Captured once via `useState`'s lazy
-  // initializer (not re-read per render) so `tagsTouchedRef` below can reuse
-  // the SAME "was there a stored draft" fact without a second localStorage
-  // read.
+  // initializer (not re-read per render).
   const [initialStored] = useState(() => loadDraft(vault.id, NEW_NOTE_SCOPE));
   const [body, setBody] = useState<DraftBody>(() =>
     initialStored
@@ -87,44 +84,12 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
   const [saveError, setSaveError] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
 
-  // Capture-chip loosening (2026-07-17, ratified) — mirrors NoteNew's own
-  // auto-populate-until-touched effect exactly (see the twin comment there)
-  // so the two composers stay in lockstep: the capture role tag rides into
-  // `body.tags` as a visible chip until the operator explicitly adds or
-  // removes one THIS compose, then their chip set is authoritative.
-  //
-  // Review fold (#49): the freeze must survive a REMOUNT — VaultSurface
-  // remounts Composer during ordinary browsing, and a stored draft already
-  // reflects whatever the operator left in the chip row (including a
-  // deliberate removal). Seed the guard from `initialStored` so a restored
-  // draft's tags are authoritative from the very first effect pass — never
-  // auto-repopulated on return.
-  const tagsTouchedRef = useRef(initialStored !== null);
-  const autoTagRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (tagsTouchedRef.current) return;
-    setBody((b) => {
-      const withoutPriorAuto = autoTagRef.current
-        ? b.tags.filter((t) => t !== autoTagRef.current)
-        : b.tags;
-      const next = withoutPriorAuto.includes(roles.captureText)
-        ? withoutPriorAuto
-        : [...withoutPriorAuto, roles.captureText];
-      return next === b.tags ? b : { ...b, tags: next };
-    });
-    autoTagRef.current = roles.captureText;
-  }, [roles.captureText]);
-
   // Mirror NoteNew's persistable-dirty test exactly, so the two surfaces keep
   // the one draft in lockstep (and an untouched composer never clobbers or
-  // litters the store). The sole auto-populated capture chip doesn't count
-  // as "touched" on its own — see the effect above.
-  const tagsArePristineDefault =
-    !tagsTouchedRef.current &&
-    (body.tags.length === 0 || (body.tags.length === 1 && body.tags[0] === roles.captureText));
+  // litters the store).
   const persistableDirty =
     body.content.trim().length > 0 ||
-    !tagsArePristineDefault ||
+    body.tags.length > 0 ||
     (body.path.trim().length > 0 && body.path !== defaultPathRef.current);
   useDraftAutosave(vault.id, NEW_NOTE_SCOPE, body, persistableDirty);
 
@@ -167,67 +132,65 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
   const addTag = (raw: string) => {
     const t = normalizeTag(raw);
     if (!t || body.tags.includes(t)) return;
-    tagsTouchedRef.current = true;
     setBody((b) => ({ ...b, tags: [...b.tags, t] }));
     setTagInput("");
   };
   const removeTag = (name: string) => {
-    // Freezes the auto-populate effect above — a deliberate removal (of the
-    // capture chip or any other) is never re-added underneath the operator.
-    tagsTouchedRef.current = true;
     setBody((b) => ({ ...b, tags: b.tags.filter((x) => x !== name) }));
   };
 
+  // The opt-in inbox tag (null when "Tag new notes as an inbox" is off).
+  const inboxTag = tagNewNotes ? roles.captureText : null;
+  const inboxHint =
+    inboxTag && body.tags.length === 0 && extractHashtags(body.content).length === 0
+      ? inboxTag
+      : null;
+
   const save = () => {
     if (!canSave) return;
-    // The same commit path as NoteNew's text save. Fire-and-forget schema
-    // ensure — creates the `capture` tag row if the vault doesn't have it
-    // yet; never blocks the save.
-    if (client) void ensureNotesSchema(vault.id, client);
+    // The same commit path as NoteNew's text save.
+    const payload = buildTextNotePayload({
+      content: body.content,
+      path: body.path,
+      tags: body.tags,
+      inboxTag,
+    });
+    // Fire-and-forget lazy declaration of the inbox tag — only when this save
+    // carries it; never blocks the save.
+    if (client && inboxTag && payload.tags?.includes(inboxTag)) {
+      void ensureNotesSchema(vault.id, client, inboxTag);
+    }
     setSaveError(null);
-    mutation.mutate(
-      buildTextNotePayload({
-        content: body.content,
-        path: body.path,
-        tags: body.tags,
-      }),
-      {
-        onSuccess: () => {
-          clearDraft(vault.id, NEW_NOTE_SCOPE);
-          defaultPathRef.current = quickPath();
-          // This instance stays mounted for the NEXT capture — reseed the
-          // chip row fresh and un-freeze the touched guard so the next note
-          // gets its own default capture chip (see the effect above; it
-          // won't re-fire on its own since `roles.captureText` hasn't
-          // changed).
-          tagsTouchedRef.current = false;
-          autoTagRef.current = roles.captureText;
-          setTagInput("");
-          setBody({ content: "", path: defaultPathRef.current, tags: [roles.captureText] });
-          // Fold the card back to resting. Explicit because the focused Save
-          // button goes disabled here, and Chrome drops focus WITHOUT firing
-          // blur in that case — the container's onBlur never runs, so the
-          // emptied card would sit expanded on stale focus state.
-          inputRef.current?.blur();
-          setFocusWithin(false);
-          // NO navigation — the W2-10 point. The note settles into the
-          // recent list below (useCreateNote invalidates the timeline
-          // query); the toast is the only ceremony.
-          pushToast(`Saved to ${vault.name}`, "success");
-        },
-        onError: (err) => {
-          // Content stays put (and stays draft-autosaved) — an error never
-          // costs the words.
-          setSaveError(
-            err instanceof VaultAuthError
-              ? "Session expired. Reconnect to save."
-              : err instanceof Error
-                ? err.message
-                : "Couldn't save — try again.",
-          );
-        },
+    mutation.mutate(payload, {
+      onSuccess: () => {
+        clearDraft(vault.id, NEW_NOTE_SCOPE);
+        defaultPathRef.current = quickPath();
+        // This instance stays mounted for the NEXT note — start it empty.
+        setTagInput("");
+        setBody({ content: "", path: defaultPathRef.current, tags: [] });
+        // Fold the card back to resting. Explicit because the focused Save
+        // button goes disabled here, and Chrome drops focus WITHOUT firing
+        // blur in that case — the container's onBlur never runs, so the
+        // emptied card would sit expanded on stale focus state.
+        inputRef.current?.blur();
+        setFocusWithin(false);
+        // NO navigation — the W2-10 point. The note settles into the
+        // recent list below (useCreateNote invalidates the timeline
+        // query); the toast is the only ceremony.
+        pushToast(`Saved to ${vault.name}`, "success");
       },
-    );
+      onError: (err) => {
+        // Content stays put (and stays draft-autosaved) — an error never
+        // costs the words.
+        setSaveError(
+          err instanceof VaultAuthError
+            ? "Session expired. Reconnect to save."
+            : err instanceof Error
+              ? err.message
+              : "Couldn't save — try again.",
+        );
+      },
+    });
   };
 
   return (
@@ -269,9 +232,8 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
         style={{ minHeight: expanded ? "6.5rem" : "1.75rem" }}
       />
       {expanded ? (
-        // Capture-chip loosening (2026-07-17): the capture role tag shows
-        // here as a removable chip once the card opens — same TagEditor
-        // NoteNew uses, so add/remove behaves identically on both surfaces.
+        // The tag row once the card opens — same TagEditor NoteNew uses, so
+        // add/remove behaves identically on both surfaces. Starts empty.
         <div className="mt-2">
           <TagEditor
             tags={body.tags}
@@ -280,6 +242,11 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
             onAdd={addTag}
             onRemove={removeTag}
           />
+          {inboxHint ? (
+            <p className="mt-1 text-xs text-fg-dim" data-testid="inbox-tag-hint">
+              No tags yet, so this note will be saved with #{inboxHint}.
+            </p>
+          ) : null}
         </div>
       ) : null}
       <div className="mt-3 flex items-center justify-between gap-3">
@@ -295,7 +262,7 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
             Open full editor →
           </Link>
         ) : (
-          <span className="font-round text-fg-dim text-xs">Autosaves to {vault.name}</span>
+          <span className="font-round text-fg-dim text-xs">Drafts are kept until you save.</span>
         )}
         <div className="flex items-center gap-2">
           {expanded ? (

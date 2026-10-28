@@ -93,10 +93,15 @@ function diffOne(decl: RequiredTagDecl, row: TagSchemaRow | undefined): TagAudit
 // Fetches the vault's tag schema and diffs against `NOTES_REQUIRED_SCHEMA`.
 // Network failures bubble — callers decide whether to retry / surface;
 // `ensureNotesSchema()` swallows them (capture must never fail on this).
-export async function auditSchema(client: VaultClient): Promise<SchemaAuditResult> {
+// `decls` defaults to the declared schema; the lazy-ensure passes the inbox tag
+// actually in use (the capture role may be renamed).
+export async function auditSchema(
+  client: VaultClient,
+  decls: readonly RequiredTagDecl[] = NOTES_REQUIRED_SCHEMA.tags,
+): Promise<SchemaAuditResult> {
   const rows = await client.listTagsWithSchema();
   const byName = new Map(rows.map((r) => [r.name, r] as const));
-  const audited = NOTES_REQUIRED_SCHEMA.tags.map((decl) => diffOne(decl, byName.get(decl.name)));
+  const audited = decls.map((decl) => diffOne(decl, byName.get(decl.name)));
   const missing = audited.filter((r) => r.status === "missing");
   const misaligned = audited.filter((r) => r.status === "misaligned");
   return {

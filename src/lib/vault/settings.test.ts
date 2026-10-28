@@ -52,6 +52,46 @@ describe("normalizeNotesSettings", () => {
   });
 });
 
+// "Tag new notes as an inbox" (T-318). OFF for a fresh vault; an explicit
+// stored boolean wins; a settings note from before the flag existed derives
+// it from the capture roles — a custom role reads as opted in (that owner
+// chose a tag), a role still equal to the default `capture` reads as OFF.
+describe("normalizeNotesSettings — tagNewNotes opt-in", () => {
+  it("is OFF for a fresh vault (no settings note)", () => {
+    expect(normalizeNotesSettings(undefined).tagNewNotes).toBe(false);
+    expect(DEFAULT_NOTES_SETTINGS.tagNewNotes).toBe(false);
+  });
+
+  it("is OFF for a pre-flag note whose capture roles are the default", () => {
+    expect(
+      normalizeNotesSettings({ schemaVersion: 1, tagRoles: DEFAULT_TAG_ROLES }).tagNewNotes,
+    ).toBe(false);
+  });
+
+  it("is ON for a pre-flag note with a custom capture role (either role)", () => {
+    expect(normalizeNotesSettings({ tagRoles: { captureText: "inbox" } }).tagNewNotes).toBe(true);
+    expect(normalizeNotesSettings({ tagRoles: { captureVoice: "memo" } }).tagNewNotes).toBe(true);
+  });
+
+  it("an explicit stored boolean wins over the derivation", () => {
+    expect(
+      normalizeNotesSettings({ tagRoles: { captureText: "inbox" }, tagNewNotes: false })
+        .tagNewNotes,
+    ).toBe(false);
+    expect(normalizeNotesSettings({ tagNewNotes: true }).tagNewNotes).toBe(true);
+  });
+
+  it("a patch flips it and survives a later roles-only patch", () => {
+    const on = applySettingsPatch(DEFAULT_NOTES_SETTINGS, { tagNewNotes: true });
+    expect(on.tagNewNotes).toBe(true);
+    expect(applySettingsPatch(on, { tagRoles: { pinned: "fav" } }).tagNewNotes).toBe(true);
+    expect(mergeSettingsPatches({ tagNewNotes: true }, { tagRoles: { pinned: "x" } })).toEqual({
+      tagNewNotes: true,
+      tagRoles: { pinned: "x" },
+    });
+  });
+});
+
 describe("extractNotesSettings", () => {
   it("returns defaults for a null note", () => {
     expect(extractNotesSettings(null)).toEqual(DEFAULT_NOTES_SETTINGS);
