@@ -27,6 +27,8 @@ function json(body: unknown, status = 200): Response {
 }
 
 let deleteHandler: Handler;
+/** What `GET /account/vaults` lists for the signed-in account. */
+let accountVaults: { name: string }[] = [];
 let descriptor: Record<string, unknown>;
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 
@@ -37,7 +39,7 @@ function door(): typeof fetch {
     if (path === "/.well-known/parachute-account") return json(descriptor);
     if (path === "/account/session") return json({ signed_in: true, csrf: "csrf-1", email: EMAIL });
     if (path === "/account/token" && method === "POST") return json({ token: "acct-tok" });
-    if (path === "/account/vaults" && method === "GET") return json({ vaults: [] });
+    if (path === "/account/vaults" && method === "GET") return json({ vaults: accountVaults });
     if (path === "/account/summary") return json({ error: "not_found" }, 404);
     if (path === "/account/delete" && method === "POST") return deleteHandler(init);
     if (path === "/logout" && method === "POST") return new Response("", { status: 200 });
@@ -86,6 +88,7 @@ function deleteButton() {
 }
 
 beforeEach(() => {
+  accountVaults = [];
   localStorage.clear();
   sessionStorage.clear();
   __resetDoorDescriptorCacheForTests();
@@ -159,8 +162,10 @@ describe("Delete account — confirmation", () => {
   });
 
   it("success: posts { confirm } with the account bearer, shows the undo deadline, then Done signs out", async () => {
-    // One hosted vault minted through this door, one connected over OAuth to
-    // another parachute: account deletion forgets only the first.
+    // One hosted vault of THIS account, one of another account on the same door
+    // (still on this device), one connected over OAuth to another parachute:
+    // account deletion forgets only the first.
+    accountVaults = [{ name: "moss" }];
     useVaultStore.setState({
       vaults: {
         moss: {
@@ -170,6 +175,16 @@ describe("Delete account — confirmation", () => {
           issuer: window.location.origin,
           clientId: HOSTED_CLIENT_ID,
           scope: "vault:moss:read vault:moss:write",
+          addedAt: "2026-10-01T00:00:00.000Z",
+          lastUsedAt: "2026-10-01T00:00:00.000Z",
+        },
+        pine: {
+          id: "pine",
+          url: "https://vault.example.com/vault/pine",
+          name: "pine",
+          issuer: window.location.origin,
+          clientId: HOSTED_CLIENT_ID,
+          scope: "vault:pine:read vault:pine:write",
           addedAt: "2026-10-01T00:00:00.000Z",
           lastUsedAt: "2026-10-01T00:00:00.000Z",
         },
@@ -206,9 +221,10 @@ describe("Delete account — confirmation", () => {
     expect((init?.headers as Record<string, string>).authorization).toBe("Bearer acct-tok");
     expect(JSON.parse(init?.body as string)).toEqual({ confirm: EMAIL });
     // The session is dead server-side — the cached bearer and this account's
-    // hosted vaults are dropped at once; the other door's vault stays.
+    // hosted vaults are dropped at once; another account's vault on the same
+    // door and the other door's vault stay.
     expect(loadAccountToken()).toBeNull();
-    expect(Object.keys(useVaultStore.getState().vaults)).toEqual(["home"]);
+    expect(Object.keys(useVaultStore.getState().vaults).sort()).toEqual(["home", "pine"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(await screen.findByText("Home surface")).toBeInTheDocument();

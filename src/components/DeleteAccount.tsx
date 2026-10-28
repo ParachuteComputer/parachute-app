@@ -1,8 +1,9 @@
-import { type DeleteAccountResponse, deleteAccount } from "@/lib/account/client";
+import { type DeleteAccountResponse, deleteAccount, listVaults } from "@/lib/account/client";
 import type { DoorDescriptor } from "@/lib/account/descriptor";
 import { describeDeletionError } from "@/lib/account/error-copy";
 import { isHomeDoorVault } from "@/lib/account/hosted-vault";
 import { clearAccountToken } from "@/lib/account/store";
+import { vaultServerSlug } from "@/lib/vault/deep-link";
 import { useVaultStore } from "@/lib/vault/store";
 import { useId, useState } from "react";
 import { Link } from "react-router";
@@ -44,13 +45,28 @@ function isSafeLink(url: string | undefined): url is string {
   return typeof url === "string" && (/^https?:\/\//i.test(url) || url.startsWith("/"));
 }
 
-/** Forget this account's hosted vaults on this device — their tokens, service
+/** Forget THIS account's hosted vaults on this device — their tokens, service
  *  catalogs and drafts — the same way "Remove from this device" does. The
- *  account is closed, so none of them can sync any more. */
-function forgetHomeDoorVaults(): void {
+ *  account is closed, so none of them can sync any more. Only vaults the door
+ *  listed for this account (by server slug) go: a device can still hold another
+ *  account's vaults on the same door, and those must stay. */
+function forgetAccountVaults(slugs: ReadonlySet<string>): void {
   const { vaults, removeVault } = useVaultStore.getState();
   for (const record of Object.values(vaults)) {
-    if (isHomeDoorVault(record)) removeVault(record.id);
+    const slug = vaultServerSlug(record.url) ?? record.name;
+    if (isHomeDoorVault(record) && slugs.has(slug)) removeVault(record.id);
+  }
+}
+
+/** The deleting account's vault slugs, read BEFORE the delete (afterwards the
+ *  bearer is dead). A failed read forgets nothing: leaving a dead record is
+ *  recoverable ("Remove from this device"); erasing another account's isn't. */
+async function accountVaultSlugs(): Promise<Set<string>> {
+  try {
+    const res = await listVaults();
+    return new Set((Array.isArray(res?.vaults) ? res.vaults : []).map((v) => v.name));
+  } catch {
+    return new Set();
   }
 }
 
@@ -84,12 +100,13 @@ function DeleteAccountSection({ email, onSignOut }: { email: string; onSignOut: 
     setBusy(true);
     setError(null);
     try {
+      const slugs = await accountVaultSlugs();
       const result = await deleteAccount(typed.trim());
       // The door already ended every session for this account — the cached
       // bearer is dead, and so is every hosted vault's token. Don't keep any
       // of it around while the outcome shows.
       clearAccountToken();
-      forgetHomeDoorVaults();
+      forgetAccountVaults(slugs);
       setDone(result);
     } catch (err) {
       setError(describeDeletionError(err, ERROR_COPY));
