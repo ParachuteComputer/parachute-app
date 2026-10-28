@@ -9,6 +9,8 @@
  * app doesn't recognize yet. Never renders a raw `snake_case` code to a user.
  */
 
+import { DeletionApiError, SessionExpiredError } from "./client";
+
 const KNOWN_VAULT_ERROR_COPY: Record<string, string> = {
   vault_taken: "That name's already taken — try another.",
   vault_limit_reached:
@@ -43,4 +45,22 @@ export function describeAccountError(err: unknown, fallback = GENERIC_FALLBACK):
     return KNOWN_VAULT_ERROR_COPY[raw] ?? fallback;
   }
   return raw;
+}
+
+/**
+ * Copy for a failed deletion (T-318). `byCode` maps the door's machine codes
+ * whose `message` is written for API clients (confirm_mismatch, …) to human
+ * copy; any other failure shows the door's own prose `message` (its 5xx
+ * messages say what happened and whether to retry); a session lapse gets
+ * `sessionEnded`; anything unreadable gets `fallback`.
+ */
+export function describeDeletionError(
+  err: unknown,
+  copy: { byCode: Record<string, string>; sessionEnded: string; fallback: string },
+): string {
+  if (err instanceof SessionExpiredError) return copy.sessionEnded;
+  if (err instanceof DeletionApiError && err.code && copy.byCode[err.code]) {
+    return copy.byCode[err.code] as string;
+  }
+  return describeAccountError(err, copy.fallback);
 }

@@ -1,8 +1,10 @@
-import { AccountApiError, SessionExpiredError, deleteVault } from "@/lib/account/client";
+import { deleteVault } from "@/lib/account/client";
 import { type DoorDescriptor, getDoorDescriptor } from "@/lib/account/descriptor";
-import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
+import { describeDeletionError } from "@/lib/account/error-copy";
+import { isHomeDoorVault } from "@/lib/account/hosted-vault";
 import { ACCOUNT_SUMMARY_QUERY_KEY } from "@/lib/account/use-summary";
 import { useToastStore } from "@/lib/toast/store";
+import { vaultServerSlug } from "@/lib/vault/deep-link";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,34 +15,26 @@ import { Link, useNavigate } from "react-router";
 // Settings is the per-vault management surface ("Everything about this
 // vault"), so the destructive verb for the active vault lives there.
 //
-// Renders only for a HOSTED vault on THIS door — minted through the account
-// session (`clientId === HOSTED_CLIENT_ID`) with the serving origin as issuer,
-// i.e. a vault the signed-in account owns — and only when the door advertises
-// `capabilities.vault_delete === true`. A self-hosted vault connected over
-// OAuth (or any vault on a hub) never shows it; the door still enforces
-// ownership server-side (403 not_owner).
+// Renders only for a vault this door minted through the account session (a
+// hosted vault the signed-in account owns — see `isHomeDoorVault`), and only
+// on a CLOUD door that advertises `capabilities.vault_delete === true`. A
+// vault connected over OAuth to another parachute never shows it. A
+// self-hosted hub also advertises `vault_delete` (for its own admin surface),
+// but this flow and its copy were built and checked against cloud only, so
+// it stays off there until someone verifies the hub path end to end. The
+// door still enforces ownership server-side (403 not_owner).
 
-function isHomeDoorHostedVault(vault: Pick<VaultRecord, "clientId" | "issuer">): boolean {
-  if (!isHostedVaultRecord(vault.clientId)) return false;
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  return vault.issuer === origin;
-}
-
-function errorCopy(err: unknown): string {
-  if (err instanceof SessionExpiredError) {
-    return "Your sign-in has ended. Sign in again, then come back here to delete this vault.";
-  }
-  if (err instanceof AccountApiError) {
-    if (err.message === "confirm_mismatch") return "That doesn't match the vault name.";
-    if (err.message === "not_owner") return "That vault isn't linked to this account.";
-    // The door's own message ("…try again.", …).
-    if (err.message && !/^[a-z0-9_]+$/.test(err.message)) return err.message;
-  }
-  return "Couldn't delete this vault. Try again.";
-}
+const ERROR_COPY = {
+  byCode: {
+    confirm_mismatch: "That doesn't match the vault name.",
+    not_owner: "That vault isn't linked to this account.",
+  },
+  sessionEnded: "Your sign-in has ended. Sign in again, then come back here to delete this vault.",
+  fallback: "Couldn't delete this vault. Try again.",
+};
 
 export function DeleteVault({ vault }: { vault: VaultRecord }) {
-  const hosted = isHomeDoorHostedVault(vault);
+  const hosted = isHomeDoorVault(vault);
   const [descriptor, setDescriptor] = useState<DoorDescriptor | null>(null);
 
   useEffect(() => {
@@ -56,7 +50,9 @@ export function DeleteVault({ vault }: { vault: VaultRecord }) {
     };
   }, [hosted]);
 
-  if (!hosted || descriptor?.capabilities?.vault_delete !== true) return null;
+  if (!hosted || descriptor?.door !== "cloud" || descriptor.capabilities?.vault_delete !== true) {
+    return null;
+  }
   return <DeleteVaultSection vault={vault} />;
 }
 
@@ -73,16 +69,21 @@ function DeleteVaultSection({ vault }: { vault: VaultRecord }) {
   // The local record is forgotten AFTER this screen unmounts, not before we
   // navigate: Settings redirects to "/" the moment it has no active vault, which
   // would race (and win over) the move to the Vaults list when this was the
-  // last vault on the device.
+  // last vault on the device. If the screen is already gone when the door
+  // answers (the person navigated away mid-request), forget it right then.
+  const mounted = useRef(true);
   const forgetOnUnmount = useRef<string | null>(null);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       if (forgetOnUnmount.current) removeVault(forgetOnUnmount.current);
-    },
-    [removeVault],
-  );
+    };
+  }, [removeVault]);
 
-  const name = vault.name;
+  // The door's name for the vault (from its URL), not the local display label
+  // — `renameVault` can relabel a record on this device only.
+  const name = vaultServerSlug(vault.url) ?? vault.name;
   const confirmed = typed === name;
 
   async function submit(e: React.FormEvent) {
@@ -93,16 +94,22 @@ function DeleteVaultSection({ vault }: { vault: VaultRecord }) {
     try {
       await deleteVault(name, typed);
     } catch (err) {
-      setError(errorCopy(err));
-      setBusy(false);
+      if (mounted.current) {
+        setError(describeDeletionError(err, ERROR_COPY));
+        setBusy(false);
+      }
       return;
     }
     // The vault is gone on the door — drop this device's record of it (token,
     // services catalog, drafts) the same way "Remove from this device" does,
     // and let the plan's vault count refresh.
-    forgetOnUnmount.current = vault.id;
     void queryClient.invalidateQueries({ queryKey: ACCOUNT_SUMMARY_QUERY_KEY });
     pushToast(`Vault ${name} deleted.`, "success");
+    if (!mounted.current) {
+      removeVault(vault.id);
+      return;
+    }
+    forgetOnUnmount.current = vault.id;
     navigate("/vaults");
   }
 

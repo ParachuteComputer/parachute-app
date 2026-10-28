@@ -589,9 +589,28 @@ describe("deletion (T-318) — Bearer + JSON { confirm }", () => {
       res({ error: "storage_unavailable", message: "Storage is busy. Try again soon." }, 503),
     );
     await expect(deleteAccount("a@b.c", fetchImpl)).rejects.toMatchObject({
-      name: "AccountApiError",
+      name: "DeletionApiError",
       status: 503,
+      code: "storage_unavailable",
       message: "Storage is busy. Try again soon.",
+    });
+  });
+
+  it("deleteVault: keeps the door's machine code on a refusal (its message is for API clients)", async () => {
+    seedAccountToken("acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res(
+        {
+          error: "confirm_mismatch",
+          message: 'deleting a vault requires the body {"confirm": "moss"}',
+        },
+        400,
+      ),
+    );
+    await expect(deleteVault("moss", "Moss", fetchImpl)).rejects.toMatchObject({
+      name: "DeletionApiError",
+      status: 400,
+      code: "confirm_mismatch",
     });
   });
 

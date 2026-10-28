@@ -479,6 +479,37 @@ export async function logout(
 
 // --- Deletion (T-318) ---------------------------------------------------------
 
+/** Thrown by `deleteAccount` / `deleteVault` on any non-2xx other than 401 —
+ *  an `AccountApiError` that also keeps the door's machine `code`
+ *  (`confirm_mismatch`, `already_deleting`, `not_owner`, …). The door's
+ *  `message` for those codes is written for API clients (`deleting a vault
+ *  requires the body {"confirm": …}`), so the UI branches on `code` and only
+ *  shows `message` for the rest (5xx: "…retry the request."). */
+export class DeletionApiError extends AccountApiError {
+  readonly code: string | null;
+  constructor(status: number, code: string | null, message: string) {
+    super(status, message);
+    this.name = "DeletionApiError";
+    this.code = code;
+  }
+}
+
+async function deletionResult<T>(res: Response): Promise<T> {
+  if (res.status === 401) throw new SessionExpiredError();
+  if (res.ok) return (await res.json()) as T;
+  let code: string | null = null;
+  let message = `${res.status}`;
+  try {
+    const body = (await res.json()) as { error?: unknown; message?: unknown };
+    if (typeof body.error === "string") code = body.error;
+    if (typeof body.message === "string" && body.message) message = body.message;
+    else if (code) message = code;
+  } catch {
+    // non-JSON error body — keep the status
+  }
+  throw new DeletionApiError(res.status, code, message);
+}
+
 /** `POST /account/delete` 200 body. The account closes at once; the data is
  *  erased after the undo window (`undo_expires_at`, ISO-8601). */
 export interface DeleteAccountResponse {
@@ -495,8 +526,7 @@ export interface DeleteAccountResponse {
  * signed-in account. The door matches `confirm` case-insensitively against the
  * account email and answers `400 confirm_mismatch` otherwise, `409
  * already_deleting` when a deletion is already pending. Errors surface as
- * `AccountApiError` (the door's `message` when it sends one), a 401 as
- * `SessionExpiredError`. Only a door advertising
+ * `DeletionApiError`, a 401 as `SessionExpiredError`. Only a door advertising
  * `capabilities.account_delete` serves this.
  */
 export async function deleteAccount(
@@ -507,7 +537,7 @@ export async function deleteAccount(
     method: "POST",
     body: { confirm },
   });
-  return jsonOrThrow<DeleteAccountResponse>(res);
+  return deletionResult<DeleteAccountResponse>(res);
 }
 
 /** `DELETE /account/vaults/<name>` 200 body. */
@@ -521,7 +551,7 @@ export interface DeleteVaultResponse {
  * `DELETE /account/vaults/<name>` (Bearer, `{ confirm: <name> }`) — destroy a
  * hosted vault the account owns. Immediate and permanent: there is no undo.
  * `400 confirm_mismatch`, `403 not_owner`, `502 vault_destroy_failed`, `500
- * d1_cleanup_failed` surface as `AccountApiError`. Only a door advertising
+ * d1_cleanup_failed` surface as `DeletionApiError`. Only a door advertising
  * `capabilities.vault_delete` serves this.
  */
 export async function deleteVault(
@@ -533,5 +563,5 @@ export async function deleteVault(
     method: "DELETE",
     body: { confirm },
   });
-  return jsonOrThrow<DeleteVaultResponse>(res);
+  return deletionResult<DeleteVaultResponse>(res);
 }

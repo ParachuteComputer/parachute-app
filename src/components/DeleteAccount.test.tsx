@@ -1,5 +1,6 @@
 import { Account } from "@/app/routes/Account";
 import { __resetDoorDescriptorCacheForTests } from "@/lib/account/descriptor";
+import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import { loadAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import { useVaultStore } from "@/lib/vault";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -158,6 +159,33 @@ describe("Delete account — confirmation", () => {
   });
 
   it("success: posts { confirm } with the account bearer, shows the undo deadline, then Done signs out", async () => {
+    // One hosted vault minted through this door, one connected over OAuth to
+    // another parachute: account deletion forgets only the first.
+    useVaultStore.setState({
+      vaults: {
+        moss: {
+          id: "moss",
+          url: "https://vault.example.com/vault/moss",
+          name: "moss",
+          issuer: window.location.origin,
+          clientId: HOSTED_CLIENT_ID,
+          scope: "vault:moss:read vault:moss:write",
+          addedAt: "2026-10-01T00:00:00.000Z",
+          lastUsedAt: "2026-10-01T00:00:00.000Z",
+        },
+        home: {
+          id: "home",
+          url: "https://hub.example.com/vault/home",
+          name: "home",
+          issuer: "https://hub.example.com",
+          clientId: "client-oauth",
+          scope: "vault:home:read",
+          addedAt: "2026-10-01T00:00:00.000Z",
+          lastUsedAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+      activeVaultId: "moss",
+    });
     renderAccount();
     await screen.findByRole("heading", { name: "Delete account" });
     fireEvent.change(confirmInput(), { target: { value: EMAIL } });
@@ -177,8 +205,10 @@ describe("Delete account — confirmation", () => {
     expect(init?.method).toBe("POST");
     expect((init?.headers as Record<string, string>).authorization).toBe("Bearer acct-tok");
     expect(JSON.parse(init?.body as string)).toEqual({ confirm: EMAIL });
-    // The session is dead server-side — the cached bearer is dropped at once.
+    // The session is dead server-side — the cached bearer and this account's
+    // hosted vaults are dropped at once; the other door's vault stays.
     expect(loadAccountToken()).toBeNull();
+    expect(Object.keys(useVaultStore.getState().vaults)).toEqual(["home"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(await screen.findByText("Home surface")).toBeInTheDocument();
@@ -204,8 +234,31 @@ describe("Delete account — errors", () => {
     expect(fetchMock.mock.calls.some(([p]) => String(p) === "/logout")).toBe(false);
   });
 
+  it("explains a mismatch in plain words, not the door's API-client message", async () => {
+    deleteHandler = () =>
+      json(
+        {
+          error: "confirm_mismatch",
+          message: `deleting an account requires the body {"confirm": "${EMAIL}"}`,
+        },
+        400,
+      );
+    renderAccount();
+    await screen.findByRole("heading", { name: "Delete account" });
+    fireEvent.change(confirmInput(), { target: { value: EMAIL } });
+    fireEvent.click(deleteButton());
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("That doesn't match your account email.");
+    expect(alert).not.toHaveTextContent("requires the body");
+  });
+
   it("explains an already-pending deletion instead of showing the wire code", async () => {
-    deleteHandler = () => json({ error: "already_deleting" }, 409);
+    deleteHandler = () =>
+      json(
+        { error: "already_deleting", message: "This account is already scheduled for deletion." },
+        409,
+      );
     renderAccount();
     await screen.findByRole("heading", { name: "Delete account" });
     fireEvent.change(confirmInput(), { target: { value: EMAIL } });
@@ -216,5 +269,28 @@ describe("Delete account — errors", () => {
       "This account is already being deleted. Check your email for the undo link.",
     );
     expect(alert).not.toHaveTextContent("already_deleting");
+  });
+
+  it("shows the undo link on screen when the door couldn't send the email", async () => {
+    deleteHandler = () =>
+      json({
+        deleted: true,
+        deleted_at: "2026-10-28T12:00:00.000Z",
+        undo_expires_at: "2026-10-29T12:00:00.000Z",
+        undo_token: "u",
+        undo_url: "https://example.com/account/delete/undo?token=u",
+        notice_sent: false,
+      });
+    renderAccount();
+    await screen.findByRole("heading", { name: "Delete account" });
+    fireEvent.change(confirmInput(), { target: { value: EMAIL } });
+    fireEvent.click(deleteButton());
+
+    const outcome = await screen.findByText(/Your account is closed\./);
+    expect(outcome).toHaveTextContent("We couldn't send the email with the undo link");
+    expect(within(outcome).getByRole("link", { name: "undo the deletion" })).toHaveAttribute(
+      "href",
+      "https://example.com/account/delete/undo?token=u",
+    );
   });
 });

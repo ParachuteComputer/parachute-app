@@ -1,11 +1,9 @@
-import {
-  AccountApiError,
-  type DeleteAccountResponse,
-  SessionExpiredError,
-  deleteAccount,
-} from "@/lib/account/client";
+import { type DeleteAccountResponse, deleteAccount } from "@/lib/account/client";
 import type { DoorDescriptor } from "@/lib/account/descriptor";
+import { describeDeletionError } from "@/lib/account/error-copy";
+import { isHomeDoorVault } from "@/lib/account/hosted-vault";
 import { clearAccountToken } from "@/lib/account/store";
+import { useVaultStore } from "@/lib/vault/store";
 import { useId, useState } from "react";
 import { Link } from "react-router";
 
@@ -16,8 +14,9 @@ import { Link } from "react-router";
 // The door closes the account at once and signs it out everywhere, then erases
 // the data after 24 hours unless the person follows the undo link it emails.
 // So on success the session is already dead server-side: we drop the cached
-// account bearer right away, show the outcome (with the undo deadline), and
-// "Done" runs the Account screen's own sign-out (logout + clear + home).
+// account bearer and this account's hosted vaults on this device right away,
+// show the outcome (with the undo deadline), and "Done" runs the Account
+// screen's own sign-out (logout + clear + home).
 
 /** Trimmed, case-insensitive — the same match the door applies. */
 function matchesEmail(typed: string, email: string): boolean {
@@ -30,21 +29,29 @@ function formatUndoDeadline(iso: string): string {
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-function errorCopy(err: unknown): string {
-  if (err instanceof SessionExpiredError) {
-    return "Your sign-in has ended. Sign in again, then come back here to delete your account.";
+const ERROR_COPY = {
+  byCode: {
+    confirm_mismatch: "That doesn't match your account email.",
+    already_deleting: "This account is already being deleted. Check your email for the undo link.",
+  },
+  sessionEnded:
+    "Your sign-in has ended. Sign in again, then come back here to delete your account.",
+  fallback: "Couldn't delete your account. Nothing has changed. Try again.",
+};
+
+/** The undo link comes from the door; only ever render it as a web link. */
+function isSafeLink(url: string | undefined): url is string {
+  return typeof url === "string" && (/^https?:\/\//i.test(url) || url.startsWith("/"));
+}
+
+/** Forget this account's hosted vaults on this device — their tokens, service
+ *  catalogs and drafts — the same way "Remove from this device" does. The
+ *  account is closed, so none of them can sync any more. */
+function forgetHomeDoorVaults(): void {
+  const { vaults, removeVault } = useVaultStore.getState();
+  for (const record of Object.values(vaults)) {
+    if (isHomeDoorVault(record)) removeVault(record.id);
   }
-  if (err instanceof AccountApiError) {
-    if (err.message === "already_deleting") {
-      return "This account is already being deleted. Check your email for the undo link.";
-    }
-    if (err.message === "confirm_mismatch") {
-      return "That doesn't match your account email.";
-    }
-    // The door's own message ("Couldn't reach storage, try again.", …).
-    if (err.message && !/^[a-z0-9_]+$/.test(err.message)) return err.message;
-  }
-  return "Couldn't delete your account. Nothing has changed. Try again.";
 }
 
 export function DeleteAccount({
@@ -79,11 +86,13 @@ function DeleteAccountSection({ email, onSignOut }: { email: string; onSignOut: 
     try {
       const result = await deleteAccount(typed.trim());
       // The door already ended every session for this account — the cached
-      // bearer is dead, so don't keep it around while the outcome shows.
+      // bearer is dead, and so is every hosted vault's token. Don't keep any
+      // of it around while the outcome shows.
       clearAccountToken();
+      forgetHomeDoorVaults();
       setDone(result);
     } catch (err) {
-      setError(errorCopy(err));
+      setError(describeDeletionError(err, ERROR_COPY));
     } finally {
       setBusy(false);
     }
@@ -94,10 +103,22 @@ function DeleteAccountSection({ email, onSignOut }: { email: string; onSignOut: 
       <h2 className="font-serif text-xl text-fg">Delete account</h2>
       {done ? (
         <div className="mt-2 space-y-4">
-          <output className="block text-sm text-fg-muted">
-            Your account is closed. We sent an email with an undo link; it works for 24 hours, until{" "}
-            {formatUndoDeadline(done.undo_expires_at)}.
-          </output>
+          {done.notice_sent === false && isSafeLink(done.undo_url) ? (
+            // The door couldn't send the email — the undo link it returned is
+            // the person's only way back, so it goes on screen.
+            <output className="block text-sm text-fg-muted">
+              Your account is closed. We couldn't send the email with the undo link, so here it is:{" "}
+              <a href={done.undo_url} className="focus-ring text-accent underline">
+                undo the deletion
+              </a>
+              . It works for 24 hours, until {formatUndoDeadline(done.undo_expires_at)}.
+            </output>
+          ) : (
+            <output className="block text-sm text-fg-muted">
+              Your account is closed. We sent an email with an undo link; it works for 24 hours,
+              until {formatUndoDeadline(done.undo_expires_at)}.
+            </output>
+          )}
           <button type="button" onClick={onSignOut} className="btn btn-primary btn-touch">
             Done
           </button>

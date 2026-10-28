@@ -40,7 +40,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 let descriptor: Record<string, unknown>;
-let deleteHandler: (init: RequestInit | undefined) => Response;
+let deleteHandler: (init: RequestInit | undefined) => Response | Promise<Response>;
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 
 function door(): typeof fetch {
@@ -155,6 +155,20 @@ describe("Delete this vault — gate", () => {
     expect(screen.queryByRole("heading", { name: "Delete this vault" })).not.toBeInTheDocument();
   });
 
+  it("is hidden on a self-hosted hub even though it advertises vault_delete (cloud-only for now)", async () => {
+    descriptor = {
+      door: "hub",
+      auth: { methods: ["password"], signin_path: "/login" },
+      capabilities: { vault_create: true, vault_rename: false, vault_delete: true },
+    };
+    seed(hostedVault());
+    renderSettings();
+    await waitFor(() => expect(descriptorRead()).toBe(true));
+    await screen.findByRole("heading", { name: "Settings" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole("heading", { name: "Delete this vault" })).not.toBeInTheDocument();
+  });
+
   it("is hidden for a self-hosted (OAuth) vault, without even reading the descriptor", async () => {
     seed(
       hostedVault({
@@ -209,6 +223,70 @@ describe("Delete this vault — confirmation and outcome", () => {
     expect(init?.method).toBe("DELETE");
     expect((init?.headers as Record<string, string>).authorization).toBe("Bearer acct-tok");
     expect(JSON.parse(init?.body as string)).toEqual({ confirm: "moss" });
+  });
+
+  it("uses the door's name for the vault, not a local relabel", async () => {
+    seed(hostedVault({ name: "My notes" }));
+    const section = await openSection();
+    expect(section).toHaveTextContent("This deletes the vault moss now");
+    fireEvent.change(within(section).getByLabelText("Type the vault name to confirm"), {
+      target: { value: "moss" },
+    });
+    await act(async () => {
+      fireEvent.click(within(section).getByRole("button", { name: "Delete vault" }));
+    });
+    expect(await screen.findByText("Vaults surface")).toBeInTheDocument();
+    expect(String(deleteCalls()[0]?.[0])).toBe("/account/vaults/moss");
+  });
+
+  it("navigating away mid-request still forgets the vault, and doesn't pull the person to Vaults", async () => {
+    let answer: (r: Response) => void = () => {};
+    deleteHandler = () =>
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      });
+    seed(
+      hostedVault(),
+      hostedVault({ id: "fern-id", name: "fern", url: "https://vault.example.com/vault/fern" }),
+    );
+    const section = await openSection();
+    fireEvent.change(within(section).getByLabelText("Type the vault name to confirm"), {
+      target: { value: "moss" },
+    });
+    fireEvent.click(within(section).getByRole("button", { name: "Delete vault" }));
+    await waitFor(() => expect(deleteCalls()).toHaveLength(1));
+    fireEvent.click(screen.getByRole("link", { name: "← Home" }));
+    await screen.findByText("Home surface");
+
+    await act(async () => {
+      answer(json({ destroyed: true, r2_objects_deleted: 0, d1: {} }));
+    });
+    await waitFor(() => expect(useVaultStore.getState().vaults["moss-id"]).toBeUndefined());
+    expect(useVaultStore.getState().vaults["fern-id"]).toBeDefined();
+    expect(screen.getByText("Home surface")).toBeInTheDocument();
+    expect(screen.queryByText("Vaults surface")).not.toBeInTheDocument();
+  });
+
+  it("a refusal reads as plain words, not the door's API-client message", async () => {
+    deleteHandler = () =>
+      json(
+        {
+          error: "confirm_mismatch",
+          message: 'deleting a vault requires the body {"confirm": "moss"}',
+        },
+        400,
+      );
+    seed(hostedVault());
+    const section = await openSection();
+    fireEvent.change(within(section).getByLabelText("Type the vault name to confirm"), {
+      target: { value: "moss" },
+    });
+    await act(async () => {
+      fireEvent.click(within(section).getByRole("button", { name: "Delete vault" }));
+    });
+    const alert = await within(section).findByRole("alert");
+    expect(alert).toHaveTextContent("That doesn't match the vault name.");
+    expect(alert).not.toHaveTextContent("requires the body");
   });
 
   it("error: shows the door's message and keeps the vault", async () => {
