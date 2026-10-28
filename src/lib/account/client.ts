@@ -285,17 +285,14 @@ async function ensureAccountBearer(fetchImpl: Fetch): Promise<string> {
  * A Bearer-gated `/account/*` request with ONE automatic re-mint on 401.
  * Attaches `Authorization: Bearer <account token>`; if the server 401s the
  * bearer (its ~10-min TTL lapsed), clears it, re-mints from the still-live
- * session cookie, and retries once. A POST body is JSON-encoded (no CSRF — the
+ * session cookie, and retries once. A POST/DELETE body is JSON-encoded (no CSRF — the
  * Bearer layer isn't CSRF-gated). No cookie is sent: the C3 gate reads only the
  * Authorization header.
  */
 async function bearerFetch(
   fetchImpl: Fetch,
   path: string,
-  init:
-    | { method: "GET" }
-    | { method: "DELETE" }
-    | { method: "POST"; body?: Record<string, unknown> },
+  init: { method: "GET" } | { method: "POST" | "DELETE"; body?: Record<string, unknown> },
 ): Promise<Response> {
   const send = (token: string): Promise<Response> => {
     const headers: Record<string, string> = {
@@ -303,7 +300,7 @@ async function bearerFetch(
       "X-Requested-With": "fetch",
     };
     const reqInit: RequestInit = { method: init.method, headers };
-    if (init.method === "POST") {
+    if (init.method !== "GET") {
       headers["content-type"] = "application/json";
       reqInit.body = JSON.stringify(init.body ?? {});
     }
@@ -510,4 +507,93 @@ export async function disconnectVaultConnection(
     { method: "DELETE" },
   );
   await jsonOrThrow<unknown>(res);
+}
+
+// --- Deletion (T-318) ---------------------------------------------------------
+
+/** Thrown by `deleteAccount` / `deleteVault` on any non-2xx other than 401 —
+ *  an `AccountApiError` that also keeps the door's machine `code`
+ *  (`confirm_mismatch`, `already_deleting`, `not_owner`, …). The door's
+ *  `message` for those codes is written for API clients (`deleting a vault
+ *  requires the body {"confirm": …}`), so the UI branches on `code` and only
+ *  shows `message` for the rest (5xx: "…retry the request."). */
+export class DeletionApiError extends AccountApiError {
+  readonly code: string | null;
+  constructor(status: number, code: string | null, message: string) {
+    super(status, message);
+    this.name = "DeletionApiError";
+    this.code = code;
+  }
+}
+
+async function deletionResult<T>(res: Response): Promise<T> {
+  if (res.status === 401) throw new SessionExpiredError();
+  if (res.ok) return (await res.json()) as T;
+  let code: string | null = null;
+  let message = `${res.status}`;
+  try {
+    const body = (await res.json()) as { error?: unknown; message?: unknown };
+    if (typeof body.error === "string") code = body.error;
+    if (typeof body.message === "string" && body.message) message = body.message;
+    else if (code) message = code;
+  } catch {
+    // non-JSON error body — keep the status
+  }
+  throw new DeletionApiError(res.status, code, message);
+}
+
+/** `POST /account/delete` 200 body. The account closes at once; the data is
+ *  erased after the undo window (`undo_expires_at`, ISO-8601). */
+export interface DeleteAccountResponse {
+  deleted: true;
+  deleted_at: string;
+  undo_expires_at: string;
+  undo_token?: string;
+  undo_url?: string;
+  notice_sent?: boolean;
+}
+
+/**
+ * `POST /account/delete` (Bearer, `{ confirm: <account email> }`) — close the
+ * signed-in account. The door matches `confirm` case-insensitively against the
+ * account email and answers `400 confirm_mismatch` otherwise, `409
+ * already_deleting` when a deletion is already pending. Errors surface as
+ * `DeletionApiError`, a 401 as `SessionExpiredError`. Only a door advertising
+ * `capabilities.account_delete` serves this.
+ */
+export async function deleteAccount(
+  confirm: string,
+  fetchImpl: Fetch = fetch.bind(globalThis),
+): Promise<DeleteAccountResponse> {
+  const res = await bearerFetch(fetchImpl, "/account/delete", {
+    method: "POST",
+    body: { confirm },
+  });
+  return deletionResult<DeleteAccountResponse>(res);
+}
+
+/** `DELETE /account/vaults/<name>` 200 body. */
+export interface DeleteVaultResponse {
+  destroyed: true;
+  r2_objects_deleted?: number;
+  d1?: Record<string, unknown>;
+}
+
+/**
+ * `DELETE /account/vaults/<name>` (Bearer, `{ confirm: <name> }`) — destroy a
+ * hosted vault the account owns. Immediate and permanent: there is no undo.
+ * `400 confirm_mismatch`, `403 not_owner`, `502 vault_destroy_failed`, `500
+ * d1_cleanup_failed` surface as `DeletionApiError`. Only a door advertising
+ * `capabilities.vault_delete` serves this.
+ */
+export async function deleteVault(
+  name: string,
+  confirm: string,
+  fetchImpl: Fetch = fetch.bind(globalThis),
+): Promise<DeleteVaultResponse> {
+  const res = await bearerFetch(fetchImpl, `/account/vaults/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+    body: { confirm },
+  });
+  return deletionResult<DeleteVaultResponse>(res);
 }

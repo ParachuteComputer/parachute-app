@@ -4,6 +4,8 @@ import {
   BillingApiError,
   SessionExpiredError,
   createVault,
+  deleteAccount,
+  deleteVault,
   getAccountSummaryState,
   getSession,
   listVaults,
@@ -552,5 +554,80 @@ describe("verifySignInCode — POST /auth/code (AUTH-W2 §2, form-encoded — no
     const fetchImpl = vi.fn<typeof fetch>(async () => res("<html>the ceremony page</html>", 200));
 
     await expect(verifySignInCode("a@b.c", "000000", "csrf-1", fetchImpl)).resolves.toBe(false);
+  });
+});
+
+describe("deletion (T-318) — Bearer + JSON { confirm }", () => {
+  it("deleteAccount: POST /account/delete with the account bearer and { confirm: email }", async () => {
+    seedAccountToken("acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/account/delete" && init?.method === "POST")
+        return res({
+          deleted: true,
+          deleted_at: "2026-10-28T12:00:00.000Z",
+          undo_expires_at: "2026-10-29T12:00:00.000Z",
+          undo_token: "u",
+          undo_url: "https://example.com/undo",
+          notice_sent: true,
+        });
+      return res("unexpected", 500);
+    });
+
+    const out = await deleteAccount("a@b.c", fetchImpl);
+
+    expect(out.undo_expires_at).toBe("2026-10-29T12:00:00.000Z");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(headersOf(init).authorization).toBe("Bearer acct-tok");
+    expect(headersOf(init)["content-type"]).toBe("application/json");
+    expect(JSON.parse(init?.body as string)).toEqual({ confirm: "a@b.c" });
+  });
+
+  it("deleteAccount: surfaces the door's message on a 5xx", async () => {
+    seedAccountToken("acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ error: "storage_unavailable", message: "Storage is busy. Try again soon." }, 503),
+    );
+    await expect(deleteAccount("a@b.c", fetchImpl)).rejects.toMatchObject({
+      name: "DeletionApiError",
+      status: 503,
+      code: "storage_unavailable",
+      message: "Storage is busy. Try again soon.",
+    });
+  });
+
+  it("deleteVault: keeps the door's machine code on a refusal (its message is for API clients)", async () => {
+    seedAccountToken("acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res(
+        {
+          error: "confirm_mismatch",
+          message: 'deleting a vault requires the body {"confirm": "moss"}',
+        },
+        400,
+      ),
+    );
+    await expect(deleteVault("moss", "Moss", fetchImpl)).rejects.toMatchObject({
+      name: "DeletionApiError",
+      status: 400,
+      code: "confirm_mismatch",
+    });
+  });
+
+  it("deleteVault: DELETE /account/vaults/<name> with the account bearer and { confirm: name }", async () => {
+    seedAccountToken("acct-tok");
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/account/vaults/moss" && init?.method === "DELETE")
+        return res({ destroyed: true, r2_objects_deleted: 3, d1: {} });
+      return res("unexpected", 500);
+    });
+
+    const out = await deleteVault("moss", "moss", fetchImpl);
+
+    expect(out.destroyed).toBe(true);
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(headersOf(init).authorization).toBe("Bearer acct-tok");
+    expect(headersOf(init)["content-type"]).toBe("application/json");
+    expect(JSON.parse(init?.body as string)).toEqual({ confirm: "moss" });
   });
 });

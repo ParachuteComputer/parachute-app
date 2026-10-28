@@ -123,6 +123,19 @@ describe("getDoorDescriptor", () => {
     await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "hub" });
   });
 
+  // T-318: the Delete account / Delete this vault sections gate on these
+  // flags, so the normalizer's rebuild-from-rest path (taken whenever a block
+  // is dropped) and the persisted copy must both keep them.
+  it("capabilities (account_delete, vault_delete) survive a dropped block and the persisted reload", async () => {
+    const capabilities = { vault_create: true, vault_delete: true, account_delete: true };
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      res({ door: "cloud", auth: {}, plans: "x", capabilities }),
+    );
+    await expect(getDoorDescriptor(fetchImpl)).resolves.toEqual({ door: "cloud", capabilities });
+    __resetDoorDescriptorCacheForTests();
+    expect(peekDoorDescriptor()?.capabilities).toEqual(capabilities);
+  });
+
   it("a non-object body (e.g. a JSON array) → null", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => res([1, 2, 3]));
     await expect(getDoorDescriptor(fetchImpl)).resolves.toBeNull();
