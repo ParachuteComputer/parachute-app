@@ -260,7 +260,7 @@ describe("AddVaultCreate (naming + the in-shell creating beat)", () => {
       fireEvent.click(screen.getByRole("button", { name: /create moss →/i }));
 
       await waitFor(() =>
-        expect(screen.getByText(/reached your plan's vault limit/i)).toBeInTheDocument(),
+        expect(screen.getByText(/reached this account's vault limit/i)).toBeInTheDocument(),
       );
       expect(screen.queryByText("vault_limit_reached")).not.toBeInTheDocument();
     });

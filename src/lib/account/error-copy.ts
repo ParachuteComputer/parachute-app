@@ -13,8 +13,7 @@ import { DeletionApiError, SessionExpiredError } from "./client";
 
 const KNOWN_VAULT_ERROR_COPY: Record<string, string> = {
   vault_taken: "That name's already taken — try another.",
-  vault_limit_reached:
-    "You've reached your plan's vault limit. Upgrade your plan, or free one up first.",
+  vault_limit_reached: "You've reached this account's vault limit. Free one up first.",
   invalid_name: "Use 2–63 characters: lowercase letters, numbers, and hyphens.",
   reserved: "That name is reserved — pick a different one.",
   not_owner: "That vault isn't linked to this account.",

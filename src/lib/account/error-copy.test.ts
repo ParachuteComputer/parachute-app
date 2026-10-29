@@ -13,6 +13,10 @@ describe("describeAccountError", () => {
     expect(describeAccountError(new AccountApiError(403, "vault_limit_reached"))).toMatch(
       /vault limit/i,
     );
+    // No upsell: the cloud is a free open beta, and a self-hosted hub has no plans (T-318 night).
+    expect(describeAccountError(new AccountApiError(403, "vault_limit_reached"))).not.toMatch(
+      /upgrade|plan/i,
+    );
     expect(describeAccountError(new AccountApiError(409, "vault_taken"))).toMatch(/already taken/i);
     expect(describeAccountError(new AccountApiError(400, "reserved"))).toMatch(/reserved/i);
     expect(describeAccountError(new AccountApiError(400, "invalid_name"))).toMatch(
