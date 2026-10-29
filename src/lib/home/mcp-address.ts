@@ -92,3 +92,51 @@ export function useMcpAddress(
 
   return state;
 }
+
+/**
+ * The door's advertised vault URL per server slug, for every home-door
+ * (hosted) vault in `vaults` (T-318 night: the Vaults page showed the machine
+ * `u.` address). One `GET /account/vaults`; empty until it answers, and empty
+ * for a self-hosted-only list or on any failure, so callers fall back to the
+ * record's own URL.
+ */
+export function useAdvertisedVaultUrls(
+  vaults: readonly Pick<VaultRecord, "url" | "name" | "clientId">[],
+  fetchImpl?: Fetch,
+): ReadonlyMap<string, string> {
+  const anyHosted = vaults.some((v) => isHostedVaultRecord(v.clientId));
+  const [urls, setUrls] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(() => {
+    if (!anyHosted) return;
+    let live = true;
+    listVaults(fetchImpl)
+      .then((res) => {
+        if (!live) return;
+        const next = new Map<string, string>();
+        for (const row of Array.isArray(res?.vaults) ? res.vaults : []) {
+          if (typeof row?.name !== "string" || typeof row?.url !== "string") continue;
+          try {
+            const u = new URL(row.url);
+            if (u.protocol === "https:" || u.protocol === "http:") next.set(row.name, row.url);
+          } catch {
+            // not a URL: ignore the row
+          }
+        }
+        setUrls(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [anyHosted, fetchImpl]);
+  return urls;
+}
+
+/** The URL to show for one vault: the door's advertised one when known. */
+export function shownVaultUrl(
+  vault: Pick<VaultRecord, "url" | "name" | "clientId">,
+  advertised: ReadonlyMap<string, string>,
+): string {
+  if (!isHostedVaultRecord(vault.clientId)) return vault.url;
+  return advertised.get(vaultServerSlug(vault.url) ?? vault.name) ?? vault.url;
+}

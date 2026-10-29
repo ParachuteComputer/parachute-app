@@ -1,5 +1,6 @@
 import { vaultProvenance } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
+import { shownVaultUrl, useAdvertisedVaultUrls } from "@/lib/home/mcp-address";
 import { useAbsoluteNavigate } from "@/lib/nav/vault-router";
 import { isLegacyVaultUrl, useVaultStore } from "@/lib/vault";
 import { vaultShareRef } from "@/lib/vault/deep-link";
@@ -12,6 +13,7 @@ export function Vaults() {
   const removeVault = useVaultStore((s) => s.removeVault);
 
   const list = Object.values(vaults).sort((a, b) => a.name.localeCompare(b.name));
+  const advertised = useAdvertisedVaultUrls(list);
 
   return (
     <div className="page-prose">
@@ -57,7 +59,7 @@ export function Vaults() {
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-1 truncate note-id">{vault.url}</p>
+                    <p className="mt-1 truncate note-id">{shownVaultUrl(vault, advertised)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-4 text-sm">
                     {!isActive ? (
