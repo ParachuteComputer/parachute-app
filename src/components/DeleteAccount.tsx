@@ -73,24 +73,31 @@ async function accountVaultSlugs(): Promise<Set<string>> {
 export function DeleteAccount({
   email,
   descriptor,
-  onSignOut,
+  onDeleted,
 }: {
   /** The signed-in account's email — the confirmation phrase. */
   email?: string;
   descriptor: DoorDescriptor | null;
-  /** The Account screen's existing sign-out (logout + clear token + home). */
-  onSignOut: () => void;
+  /** Called with the door's answer once the account is closed. The Account
+   *  screen shows the outcome itself: the session is gone, so this signed-in
+   *  section is about to unmount, and the outcome must outlive it. */
+  onDeleted: (result: DeleteAccountResponse) => void;
 }) {
   if (descriptor?.capabilities?.account_delete !== true || !email) return null;
-  return <DeleteAccountSection email={email} onSignOut={onSignOut} />;
+  return <DeleteAccountSection email={email} onDeleted={onDeleted} />;
 }
 
-function DeleteAccountSection({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+function DeleteAccountSection({
+  email,
+  onDeleted,
+}: {
+  email: string;
+  onDeleted: (result: DeleteAccountResponse) => void;
+}) {
   const inputId = useId();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<DeleteAccountResponse | null>(null);
 
   const confirmed = matchesEmail(typed, email);
 
@@ -107,7 +114,7 @@ function DeleteAccountSection({ email, onSignOut }: { email: string; onSignOut: 
       // of it around while the outcome shows.
       clearAccountToken();
       forgetAccountVaults(slugs);
-      setDone(result);
+      onDeleted(result);
     } catch (err) {
       setError(describeDeletionError(err, ERROR_COPY));
     } finally {
@@ -118,71 +125,85 @@ function DeleteAccountSection({ email, onSignOut }: { email: string; onSignOut: 
   return (
     <section aria-label="Delete account" className="card p-6 shadow-soft">
       <h2 className="font-serif text-xl text-fg">Delete account</h2>
-      {done ? (
-        <div className="mt-2 space-y-4">
-          {done.notice_sent === false && isSafeLink(done.undo_url) ? (
-            // The door couldn't send the email — the undo link it returned is
-            // the person's only way back, so it goes on screen.
-            <output className="block text-sm text-fg-muted">
-              Your account is closed. We couldn't send the email with the undo link, so here it is:{" "}
-              <a href={done.undo_url} className="focus-ring text-accent underline">
-                undo the deletion
-              </a>
-              . It works for 24 hours, until {formatUndoDeadline(done.undo_expires_at)}.
-            </output>
-          ) : (
-            <output className="block text-sm text-fg-muted">
-              Your account is closed. We sent an email with an undo link; it works for 24 hours,
-              until {formatUndoDeadline(done.undo_expires_at)}.
-            </output>
-          )}
-          <button type="button" onClick={onSignOut} className="btn btn-primary btn-touch">
-            Done
+      <>
+        <p className="mt-2 text-sm text-fg-muted">
+          Your account closes now and you're signed out everywhere. Everything is erased after 24
+          hours: your vaults, notes, files, snapshots and exports. Until then the email we send has
+          an undo link.{" "}
+          <Link to="/export" className="focus-ring text-accent underline">
+            Export first
+          </Link>{" "}
+          if you want a copy.
+        </p>
+        <form onSubmit={submit} className="mt-4 space-y-3">
+          <label htmlFor={inputId} className="block text-sm font-medium text-fg">
+            Type your account email to confirm
+          </label>
+          <input
+            id={inputId}
+            type="email"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={email}
+            className="input"
+          />
+          <button
+            type="submit"
+            disabled={!confirmed || busy}
+            className="btn btn-danger-solid btn-touch"
+          >
+            {busy ? "Deleting…" : "Delete my account"}
           </button>
-        </div>
-      ) : (
-        <>
-          <p className="mt-2 text-sm text-fg-muted">
-            Your account closes now and you're signed out everywhere. Everything is erased after 24
-            hours: your vaults, notes, files, snapshots and exports. Until then the email we send
-            has an undo link.{" "}
-            <Link to="/export" className="focus-ring text-accent underline">
-              Export first
-            </Link>{" "}
-            if you want a copy.
+        </form>
+        {error ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-lg border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger"
+          >
+            {error}
           </p>
-          <form onSubmit={submit} className="mt-4 space-y-3">
-            <label htmlFor={inputId} className="block text-sm font-medium text-fg">
-              Type your account email to confirm
-            </label>
-            <input
-              id={inputId}
-              type="email"
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={email}
-              className="input"
-            />
-            <button
-              type="submit"
-              disabled={!confirmed || busy}
-              className="btn btn-danger-solid btn-touch"
-            >
-              {busy ? "Deleting…" : "Delete my account"}
-            </button>
-          </form>
-          {error ? (
-            <p
-              role="alert"
-              className="mt-4 rounded-lg border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger"
-            >
-              {error}
-            </p>
-          ) : null}
-        </>
-      )}
+        ) : null}
+      </>
+    </section>
+  );
+}
+
+/** What the person sees once their account is closed: the undo deadline (and
+ *  the undo link itself when the email couldn't be sent), then Done. Rendered
+ *  by the Account screen, outside the signed-in view. */
+export function DeletionOutcome({
+  done,
+  onDone,
+}: {
+  done: DeleteAccountResponse;
+  onDone: () => void;
+}) {
+  return (
+    <section aria-label="Account closed" className="card p-6 shadow-soft">
+      <h2 className="font-serif text-xl text-fg">Account closed</h2>
+      <div className="mt-2 space-y-4">
+        {done.notice_sent === false && isSafeLink(done.undo_url) ? (
+          // The door couldn't send the email — the undo link it returned is
+          // the person's only way back, so it goes on screen.
+          <output className="block text-sm text-fg-muted">
+            Your account is closed. We couldn't send the email with the undo link, so here it is:{" "}
+            <a href={done.undo_url} className="focus-ring text-accent underline">
+              undo the deletion
+            </a>
+            . It works for 24 hours, until {formatUndoDeadline(done.undo_expires_at)}.
+          </output>
+        ) : (
+          <output className="block text-sm text-fg-muted">
+            Your account is closed. We sent an email with an undo link; it works for 24 hours, until{" "}
+            {formatUndoDeadline(done.undo_expires_at)}.
+          </output>
+        )}
+        <button type="button" onClick={onDone} className="btn btn-primary btn-touch">
+          Done
+        </button>
+      </div>
     </section>
   );
 }

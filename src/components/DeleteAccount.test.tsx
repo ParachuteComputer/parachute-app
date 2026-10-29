@@ -29,6 +29,8 @@ function json(body: unknown, status = 200): Response {
 let deleteHandler: Handler;
 /** What `GET /account/vaults` lists for the signed-in account. */
 let accountVaults: { name: string }[] = [];
+/** Flips once the door has closed the account: every session check says signed out. */
+let closed = false;
 let descriptor: Record<string, unknown>;
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 
@@ -37,11 +39,18 @@ function door(): typeof fetch {
     const path = String(input);
     const method = init?.method ?? "GET";
     if (path === "/.well-known/parachute-account") return json(descriptor);
-    if (path === "/account/session") return json({ signed_in: true, csrf: "csrf-1", email: EMAIL });
+    if (path === "/account/session")
+      return json(
+        closed ? { signed_in: false } : { signed_in: true, csrf: "csrf-1", email: EMAIL },
+      );
     if (path === "/account/token" && method === "POST") return json({ token: "acct-tok" });
     if (path === "/account/vaults" && method === "GET") return json({ vaults: accountVaults });
     if (path === "/account/summary") return json({ error: "not_found" }, 404);
-    if (path === "/account/delete" && method === "POST") return deleteHandler(init);
+    if (path === "/account/delete" && method === "POST") {
+      const res = await deleteHandler(init);
+      if (res.ok) closed = true;
+      return res;
+    }
     if (path === "/logout" && method === "POST") return new Response("", { status: 200 });
     return json({ error: "unexpected", path }, 500);
   });
@@ -89,6 +98,7 @@ function deleteButton() {
 
 beforeEach(() => {
   accountVaults = [];
+  closed = false;
   localStorage.clear();
   sessionStorage.clear();
   __resetDoorDescriptorCacheForTests();
@@ -201,7 +211,7 @@ describe("Delete account — confirmation", () => {
       },
       activeVaultId: "moss",
     });
-    renderAccount();
+    const view = renderAccount();
     await screen.findByRole("heading", { name: "Delete account" });
     fireEvent.change(confirmInput(), { target: { value: EMAIL } });
     fireEvent.click(deleteButton());
@@ -226,10 +236,15 @@ describe("Delete account — confirmation", () => {
     expect(loadAccountToken()).toBeNull();
     expect(Object.keys(useVaultStore.getState().vaults).sort()).toEqual(["home", "pine"]);
 
+    // On staging the Account page re-mounted as signed out within a second
+    // (T-318 walk) and the outcome vanished. Re-mount it against the now
+    // signed-out door: the outcome must still be there.
+    view.unmount();
+    renderAccount();
+    expect(await screen.findByText(/Your account is closed\./)).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(await screen.findByText("Home surface")).toBeInTheDocument();
-    const logout = fetchMock.mock.calls.find(([p]) => String(p) === "/logout");
-    expect(logout?.[1]?.body).toBe("__csrf=csrf-1");
   });
 });
 

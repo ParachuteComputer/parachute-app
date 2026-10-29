@@ -1,7 +1,8 @@
-import { DeleteAccount } from "@/components/DeleteAccount";
+import { DeleteAccount, DeletionOutcome } from "@/components/DeleteAccount";
 import { IconExport, IconImport, IconSpark } from "@/components/NavIcons";
 import {
   BillingApiError,
+  type DeleteAccountResponse,
   SessionExpiredError,
   getSession,
   listVaults,
@@ -61,8 +62,43 @@ type BootView =
  *  duplicate vault on a transient 500 / session lapse). */
 type VaultsState = "loading" | "error" | AccountVault[];
 
+// The deletion outcome outlives a remount of this page (forgetting the deleted
+// vaults re-renders the app's routes) and the signed-out re-boot, until Done.
+const DELETION_OUTCOME_KEY = "lens:account_deleted";
+
+function loadDeletionOutcome(): DeleteAccountResponse | null {
+  try {
+    const raw = sessionStorage.getItem(DELETION_OUTCOME_KEY);
+    const v = raw ? (JSON.parse(raw) as DeleteAccountResponse) : null;
+    return v && typeof v.undo_expires_at === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDeletionOutcome(r: DeleteAccountResponse | null): void {
+  try {
+    if (r) {
+      // Never keep the undo token on the device: the email carries it.
+      const { undo_token: _t, ...rest } = r;
+      sessionStorage.setItem(DELETION_OUTCOME_KEY, JSON.stringify(rest));
+    } else sessionStorage.removeItem(DELETION_OUTCOME_KEY);
+  } catch {
+    // best-effort: the in-memory state still shows it
+  }
+}
+
 export function Account() {
   const [view, setView] = useState<BootView>({ kind: "loading" });
+  // T-318: once the account is deleted the session is gone, so the identity
+  // check flips this page to the signed-out view within a second. The outcome
+  // (undo deadline, Done) lives here, above that switch, so the person sees it.
+  const [deleted, setDeletedState] = useState<DeleteAccountResponse | null>(loadDeletionOutcome);
+  const setDeleted = useCallback((r: DeleteAccountResponse | null) => {
+    saveDeletionOutcome(r);
+    setDeletedState(r);
+  }, []);
+  const navigate = useNavigate();
   // AUTH-W2 move 2: re-resolve "Signed in as" if ANOTHER tab flips the
   // identity while this page is open — without this dependency the boot
   // fetch only ever runs once, and client.ts's cache drop (identityEpoch
@@ -108,14 +144,28 @@ export function Account() {
         </p>
       </header>
 
-      {view.kind === "loading" ? (
+      {deleted ? (
+        <DeletionOutcome
+          done={deleted}
+          onDone={() => {
+            setDeleted(null);
+            clearAccountToken();
+            navigate("/", { replace: true });
+          }}
+        />
+      ) : view.kind === "loading" ? (
         <output aria-live="polite" className="block py-10 text-center text-sm text-fg-dim">
           <span className="animate-pulse">Loading your account…</span>
         </output>
       ) : view.kind === "device" ? (
         <DeviceView />
       ) : (
-        <ManagerView email={view.email} username={view.username} csrf={view.csrf} />
+        <ManagerView
+          email={view.email}
+          username={view.username}
+          csrf={view.csrf}
+          onDeleted={setDeleted}
+        />
       )}
     </div>
   );
@@ -127,10 +177,12 @@ function ManagerView({
   email,
   username,
   csrf,
+  onDeleted,
 }: {
   email?: string;
   username?: string;
   csrf: string;
+  onDeleted: (result: DeleteAccountResponse) => void;
 }) {
   const navigate = useNavigate();
   const activeVault = useVaultStore((s) => s.getActiveVault());
@@ -204,7 +256,7 @@ function ManagerView({
       />
       <VaultsCard vaults={vaults} summary={summary} onReload={reloadVaults} />
       <ConnectionsCard hasActiveVault={!!activeVault} />
-      <DeleteAccount email={email} descriptor={descriptor} onSignOut={signOut} />
+      <DeleteAccount email={email} descriptor={descriptor} onDeleted={onDeleted} />
     </div>
   );
 }
