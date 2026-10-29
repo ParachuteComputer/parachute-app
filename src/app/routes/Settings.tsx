@@ -1,3 +1,5 @@
+import { ConnectedApps } from "@/components/ConnectedApps";
+import { DeleteVault } from "@/components/DeleteVault";
 import { getSession, logout } from "@/lib/account/client";
 import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import { useTranscribeDefault } from "@/lib/capture/transcribe-default";
@@ -60,6 +62,7 @@ export function Settings() {
 
       <div className="space-y-8">
         <ManageSection />
+        <ConnectedApps vault={activeVault} />
         <ImportSection />
         <VoiceSection vaultId={activeVault.id} />
         <EditorSection />
@@ -68,6 +71,7 @@ export function Settings() {
         <TagRolesSection vaultId={activeVault.id} />
         <OfflineSection vaultId={activeVault.id} />
         <InstallStateSection />
+        <DeleteVault vault={activeVault} />
       </div>
     </div>
   );
@@ -244,9 +248,9 @@ function ImportSection() {
 }
 
 // The "Vault schema" audit section that used to sit here (notes#129) was
-// retired in the 2026-07 one-tag simplification: the single `capture` tag
-// is now lazily ensured on first capture (schema-ensure.ts), so there is
-// nothing for the operator to review or fix.
+// retired in the 2026-07 one-tag simplification. Since T-318 the `capture`
+// tag is not required at all: it is declared lazily only when "Tag new notes
+// as an inbox" (Tag roles, below) adds it (schema-ensure.ts).
 
 // One honest line per retention option; changing PATCHes immediately; errors
 // surface as a toast and the radios stay on the server truth (controlled inputs
@@ -726,12 +730,12 @@ const ROLE_LABELS: Record<TagRoleKey, { title: string; help: string }> = {
     help: "Tag for notes you've moved out of the way.",
   },
   captureVoice: {
-    title: "Voice capture",
-    help: "Default tag for new voice memos.",
+    title: "Inbox tag for voice notes",
+    help: "Added to a new voice note with no other tag, when “Tag new notes as an inbox” is on.",
   },
   captureText: {
-    title: "Text capture",
-    help: "Default tag for quick typed notes.",
+    title: "Inbox tag for typed notes",
+    help: "Added to a new typed note with no other tag, when “Tag new notes as an inbox” is on.",
   },
   view: {
     title: "Saved view",
@@ -740,7 +744,7 @@ const ROLE_LABELS: Record<TagRoleKey, { title: string; help: string }> = {
 };
 
 function TagRolesSection({ vaultId }: { vaultId: string }) {
-  const { roles, setRoles } = useTagRoles(vaultId);
+  const { roles, setRoles, tagNewNotes, setTagNewNotes } = useTagRoles(vaultId);
   const tagsQuery = useTags();
   const pushToast = useToastStore((s) => s.push);
   const datalistId = useId();
@@ -774,6 +778,39 @@ function TagRolesSection({ vaultId }: { vaultId: string }) {
           Point each role at whatever tag your vault already uses. Changes apply to future notes
           only — existing notes keep their current tags.
         </p>
+      </div>
+
+      {/* T-318 / DESIGN-0.9 §8c: new notes get no tag by default; how a note
+          arrived (typed or voice) is recorded in its metadata either way. */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-medium text-fg">Tag new notes as an inbox</h3>
+          <p className="mt-1 text-sm text-fg-muted">
+            When on, a new note you write or record here that has no tags gets your inbox tag (
+            {roles.captureText === roles.captureVoice
+              ? `#${roles.captureText}`
+              : `#${roles.captureText} for typed notes, #${roles.captureVoice} for voice notes`}
+            ), so you can sort it later. Off by default. Whether a note was typed or spoken is
+            recorded either way.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={tagNewNotes}
+          aria-label="Tag new notes as an inbox"
+          data-testid="tag-new-notes-toggle"
+          onClick={() => setTagNewNotes(!tagNewNotes)}
+          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+            tagNewNotes ? "bg-accent" : "bg-border"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0 h-6 w-6 rounded-full bg-card shadow-sm transition-transform ${
+              tagNewNotes ? "translate-x-5" : "translate-x-0.5"
+            }`}
+          />
+        </button>
       </div>
 
       <datalist id={datalistId}>

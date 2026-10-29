@@ -83,6 +83,18 @@ describe("ensureNotesSchema (quiet lazy-ensure)", () => {
     expect(puts[0]!.body).not.toHaveProperty("parent_names");
   });
 
+  // T-318: the capture role can be renamed; the lazy-ensure declares the tag
+  // the note actually got, under its own name — never `capture` behind it.
+  it("declares a renamed inbox tag under its own name, not `capture`", async () => {
+    const calls: RecordedCall[] = [];
+    const client = makeClient({ tagRows: [captureRow()], calls });
+
+    await ensureNotesSchema("v1", client, "inbox");
+
+    const puts = calls.filter((c) => c.method === "PUT");
+    expect(puts.map((p) => p.url)).toEqual(["http://localhost:1940/api/tags/inbox"]);
+  });
+
   it("leaves an existing tag row alone — even when its description differs", async () => {
     // Once the row exists it belongs to the operator; a customized
     // description must never be clobbered back to the declared text.

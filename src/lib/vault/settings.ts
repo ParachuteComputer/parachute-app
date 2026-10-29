@@ -4,7 +4,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { type VaultClient, VaultConflictError, VaultNotFoundError } from "./client";
 import { isOffline, useActiveVaultClient, withOfflineFallback } from "./queries";
-import { DEFAULT_TAG_ROLES, type TagRoles, loadTagRoles, normalizeTagRoles } from "./tag-roles";
+import {
+  DEFAULT_TAG_ROLES,
+  type TagRoles,
+  hasCustomInboxRole,
+  loadTagRoles,
+  normalizeTagRoles,
+} from "./tag-roles";
 import type { Note } from "./types";
 
 // Per-vault settings live in a single note at this path. We stash the payload
@@ -26,6 +32,13 @@ export const SETTINGS_SCHEMA_VERSION = 1;
 export interface NotesSettings {
   schemaVersion: number;
   tagRoles: TagRoles;
+  // "Tag new notes as an inbox" (T-318, DESIGN-0.9 §8c). OFF for a fresh
+  // vault: new notes get no tag, and how they arrived rides `metadata.source`.
+  // ON: a new note that has no tag of its own gets the capture role tag
+  // (`captureText` typed / `captureVoice` voice). A settings note written
+  // before this flag existed has no value; `normalizeNotesSettings` derives it
+  // from the stored roles (see `hasCustomInboxRole`).
+  tagNewNotes: boolean;
 }
 
 // Patch type mirrors NotesSettings but lets callers supply only the fields
@@ -36,22 +49,30 @@ export interface NotesSettings {
 export interface NotesSettingsPatch {
   schemaVersion?: number;
   tagRoles?: Partial<TagRoles>;
+  tagNewNotes?: boolean;
 }
 
 export const DEFAULT_NOTES_SETTINGS: NotesSettings = {
   schemaVersion: SETTINGS_SCHEMA_VERSION,
   tagRoles: { ...DEFAULT_TAG_ROLES },
+  tagNewNotes: false,
 };
 
 export function normalizeNotesSettings(raw: unknown): NotesSettings {
   if (!raw || typeof raw !== "object") {
     return { ...DEFAULT_NOTES_SETTINGS, tagRoles: { ...DEFAULT_TAG_ROLES } };
   }
-  const r = raw as { schemaVersion?: unknown; tagRoles?: unknown };
+  const r = raw as { schemaVersion?: unknown; tagRoles?: unknown; tagNewNotes?: unknown };
   const schemaVersion =
     typeof r.schemaVersion === "number" ? r.schemaVersion : SETTINGS_SCHEMA_VERSION;
   const tagRoles = normalizeTagRoles(r.tagRoles);
-  return { schemaVersion, tagRoles };
+  // An explicit boolean wins. Absent (a settings note from before the flag):
+  // an owner who pointed a capture role at their own tag chose that tag, so
+  // they keep getting it; a stored role still equal to the default `capture`
+  // can't be told apart from the default, so it reads as OFF.
+  const tagNewNotes =
+    typeof r.tagNewNotes === "boolean" ? r.tagNewNotes : hasCustomInboxRole(tagRoles);
+  return { schemaVersion, tagRoles, tagNewNotes };
 }
 
 export function extractNotesSettings(note: Note | null | undefined): NotesSettings {
@@ -70,6 +91,7 @@ export function applySettingsPatch(base: NotesSettings, patch: NotesSettingsPatc
     tagRoles: patch.tagRoles
       ? normalizeTagRoles({ ...base.tagRoles, ...patch.tagRoles })
       : base.tagRoles,
+    tagNewNotes: patch.tagNewNotes ?? base.tagNewNotes,
   };
 }
 
@@ -88,6 +110,9 @@ export function mergeSettingsPatches(
   }
   if (newer.tagRoles || older.tagRoles) {
     merged.tagRoles = { ...(older.tagRoles ?? {}), ...(newer.tagRoles ?? {}) };
+  }
+  if (newer.tagNewNotes !== undefined || older.tagNewNotes !== undefined) {
+    merged.tagNewNotes = newer.tagNewNotes ?? older.tagNewNotes;
   }
   return merged;
 }
@@ -193,7 +218,12 @@ function seedFromLegacyTagRoles(vaultId: string): SettingsCacheEntry | null {
   if (typeof localStorage === "undefined") return null;
   if (!localStorage.getItem(`lens:tag-roles:${vaultId}`)) return null;
   const legacyRoles = loadTagRoles(vaultId);
-  const patch: NotesSettingsPatch = { tagRoles: legacyRoles };
+  // Same derivation as a settings note without the flag: a custom capture role
+  // carried over from the legacy key keeps tagging new notes.
+  const patch: NotesSettingsPatch = {
+    tagRoles: legacyRoles,
+    tagNewNotes: hasCustomInboxRole(legacyRoles),
+  };
   const settings = applySettingsPatch(DEFAULT_NOTES_SETTINGS, patch);
   // Seeded entries are dirty by construction: we've never pushed them up.
   return {
@@ -570,6 +600,9 @@ export function useVaultSettings(vaultId: string | null): UseVaultSettingsResult
 export function useTagRoles(vaultId: string | null): {
   roles: TagRoles;
   setRoles: (next: TagRoles | null) => void;
+  /** "Tag new notes as an inbox" — see `NotesSettings.tagNewNotes`. */
+  tagNewNotes: boolean;
+  setTagNewNotes: (next: boolean) => void;
 } {
   const { settings, update } = useVaultSettings(vaultId);
   const setRoles = useCallback(
@@ -580,5 +613,17 @@ export function useTagRoles(vaultId: string | null): {
     },
     [vaultId, update],
   );
-  return { roles: settings.tagRoles, setRoles };
+  const setTagNewNotes = useCallback(
+    (next: boolean) => {
+      if (!vaultId) return;
+      void update({ tagNewNotes: next });
+    },
+    [vaultId, update],
+  );
+  return {
+    roles: settings.tagRoles,
+    setRoles,
+    tagNewNotes: settings.tagNewNotes,
+    setTagNewNotes,
+  };
 }

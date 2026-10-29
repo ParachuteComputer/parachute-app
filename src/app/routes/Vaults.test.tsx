@@ -8,7 +8,7 @@ import type { VaultRecord } from "@/lib/vault/types";
 import { absoluteNavigateHarness } from "@/test/absolute-navigate";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The device vault list: BOTH provenance kinds appear here (Cloud home-door +
 // Self-hosted /add), each with a chip; removal is honest ("from this device").
@@ -45,6 +45,36 @@ beforeEach(() => {
 afterEach(() => {
   useVaultStore.setState({ vaults: {}, activeVaultId: null });
   useToastStore.setState({ toasts: [] });
+});
+
+describe("Vaults — the address a person sees", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    sessionStorage.clear();
+  });
+
+  it("a hosted vault shows the door's advertised address, not the machine (u.) one (T-318 night)", async () => {
+    sessionStorage.setItem("lens:account_token", JSON.stringify({ token: "acct", identity: null }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = typeof input === "string" ? input : input.toString();
+        if (path === "/account/vaults") {
+          return new Response(
+            JSON.stringify({
+              vaults: [{ name: "moss", url: "https://my.parachute.computer/vault/moss" }],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("{}", { status: 404 });
+      }),
+    );
+    useVaultStore.setState({ vaults: { "1": vaultRecord({}) }, activeVaultId: "1" });
+    renderVaults();
+    expect(await screen.findByText("https://my.parachute.computer/vault/moss")).toBeInTheDocument();
+    expect(screen.queryByText("https://u.parachute.computer/vault/moss")).not.toBeInTheDocument();
+  });
 });
 
 describe("Vaults — provenance chips + honest remove copy", () => {

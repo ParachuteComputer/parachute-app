@@ -210,6 +210,28 @@ describe("Settings route", () => {
     expect(stored.dirtyPatch?.tagRoles?.pinned).toBe("starred");
   });
 
+  // T-318: "Tag new notes as an inbox" — OFF for a fresh vault; turning it on
+  // writes the flag into the vault settings (here the offline cache path).
+  it("shows 'Tag new notes as an inbox' OFF by default and saves it when turned on", async () => {
+    renderSettings();
+    const section = screen
+      .getByRole("heading", { name: /tag roles/i })
+      .closest("section") as HTMLElement;
+    const toggle = within(section).getByRole("switch", { name: /tag new notes as an inbox/i });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    const stored = JSON.parse(localStorage.getItem("notes:settings:dev") ?? "{}") as {
+      settings?: { tagNewNotes?: boolean };
+      dirtyPatch?: { tagNewNotes?: boolean } | null;
+    };
+    expect(stored.settings?.tagNewNotes).toBe(true);
+    expect(stored.dirtyPatch?.tagNewNotes).toBe(true);
+  });
+
   it("renders the path-tree section and persists mode changes", async () => {
     renderSettings();
     const section = screen

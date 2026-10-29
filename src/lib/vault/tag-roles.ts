@@ -26,14 +26,16 @@ export const DEFAULT_TAG_ROLES: TagRoles = {
   archived: "archived",
   // captureVoice/captureText both default to the single `capture` tag
   // (2026-07 simplification — one tag, with the text-vs-voice distinction
-  // riding note metadata `source` instead of tag identity). The tag row is
-  // declared in `NOTES_REQUIRED_SCHEMA` (schema.ts) and lazily ensured on
-  // first capture per session via `ensureNotesSchema()`. The two roles stay
+  // riding note metadata `source` instead of tag identity). Since T-318 the
+  // roles are only USED when the owner turns on "Tag new notes as an inbox"
+  // (`NotesSettings.tagNewNotes`, off by default): then a new note with no tag
+  // of its own gets the role tag, and the tag row is lazily declared via
+  // `ensureNotesSchema()` the first time that happens. The two roles stay
   // separate knobs so an operator can still route voice memos and typed
   // notes to different tags. Existing vaults that have stored
   // "capture/voice"/"capture/text" (or "voice"/"quick" from rc.6) in their
-  // settings note keep those values (no force-migrate); only the defaults a
-  // fresh vault inherits change here.
+  // settings note keep those values (no force-migrate), and a non-default
+  // value reads as opted in (`hasCustomInboxRole`).
   captureVoice: "capture",
   captureText: "capture",
   view: "view",
@@ -67,6 +69,29 @@ export function normalizeTagRoles(raw: unknown): TagRoles {
     captureText: normalizeTag(r.captureText, DEFAULT_TAG_ROLES.captureText),
     view: normalizeTag(r.view, DEFAULT_TAG_ROLES.view),
   };
+}
+
+// Every value the capture roles have defaulted to over time: today's
+// `capture`, the 2026-07 hierarchy `capture/text` / `capture/voice`, and rc.6's
+// `quick` / `voice`. The settings note stores every role on ANY write, so a
+// stored default is not a choice the owner made.
+const DEFAULT_CAPTURE_ROLE_VALUES: ReadonlySet<string> = new Set([
+  "capture",
+  "capture/text",
+  "capture/voice",
+  "quick",
+  "voice",
+]);
+
+// True when either capture role points at a tag the owner chose (anything but
+// a current or past default). Used to derive "Tag new notes as an inbox" for
+// settings saved before that flag existed (T-318): an owner who renamed the
+// role keeps getting their tag; everyone else reads as OFF, per the opt-in.
+export function hasCustomInboxRole(roles: TagRoles): boolean {
+  return (
+    !DEFAULT_CAPTURE_ROLE_VALUES.has(roles.captureText) ||
+    !DEFAULT_CAPTURE_ROLE_VALUES.has(roles.captureVoice)
+  );
 }
 
 // Legacy localStorage helpers — retained as a migration seed for the vault

@@ -1,5 +1,5 @@
 import type { VaultClient } from "./client";
-import type { RequiredTagDecl } from "./schema";
+import { NOTES_REQUIRED_SCHEMA, type RequiredTagDecl } from "./schema";
 import { auditSchema } from "./schema-audit";
 
 // Per-session ref guard so we don't hammer the vault on every capture. The
@@ -33,9 +33,13 @@ async function applyTagDecls(client: VaultClient, decls: RequiredTagDecl[]): Pro
   }
 }
 
-// Quiet lazy-ensure, fired on first capture into a vault this session
-// (NoteNew's text + voice save paths). Audits the vault's tags against
-// `NOTES_REQUIRED_SCHEMA` and creates only the MISSING ones — a tag the
+// Quiet lazy-ensure, fired only when a save actually adds the inbox tag
+// ("Tag new notes as an inbox" on — T-318; NoteNew's text + voice saves and
+// Home's composer). Nothing calls it for an untagged note, so a vault that
+// never opts in never gets the tag declared. `tagName` is the capture role in
+// use (default `capture`); a renamed role is declared under its own name with
+// the same description. Audits the vault's tags and creates only the MISSING
+// one — a tag the
 // vault already has is left alone even if its description drifted; the row
 // belongs to the operator once it exists. Replaces the connect-time
 // suggestion banner (notes#129, retired 2026-07): populate quietly instead
@@ -44,13 +48,28 @@ async function applyTagDecls(client: VaultClient, decls: RequiredTagDecl[]): Pro
 // Contract: best-effort, silent, idempotent — NEVER blocks or fails the
 // capture. Failures are logged and the guard rolls back so a later capture
 // retries.
-export async function ensureNotesSchema(vaultId: string, client: VaultClient): Promise<void> {
-  if (ensuredVaults.has(vaultId)) return;
+export async function ensureNotesSchema(
+  vaultId: string,
+  client: VaultClient,
+  tagName: string = NOTES_REQUIRED_SCHEMA.tags[0]!.name,
+): Promise<void> {
+  const guardKey = `${vaultId}\u0000${tagName}`;
+  if (ensuredVaults.has(guardKey)) return;
   // Mark as ensured BEFORE the async calls so concurrent invocations don't
   // race into a double-fire (two save paths can run in the same tick).
-  ensuredVaults.add(vaultId);
+  ensuredVaults.add(guardKey);
+  // `capture` keeps the description core's packs declare (byte-equal); a
+  // renamed role gets a plain one that fits a text-only or voice-only tag.
+  const capture = NOTES_REQUIRED_SCHEMA.tags[0]!;
+  const decl: RequiredTagDecl = {
+    name: tagName,
+    description:
+      tagName === capture.name
+        ? capture.description
+        : "Inbox: new notes from the Notes app that had no other tag yet.",
+  };
   try {
-    const audit = await auditSchema(client);
+    const audit = await auditSchema(client, [decl]);
     const missing = audit.missing.map((row) => row.expected);
     if (missing.length > 0) {
       await applyTagDecls(client, missing);
@@ -59,7 +78,7 @@ export async function ensureNotesSchema(vaultId: string, client: VaultClient): P
     // Roll back the guard so a future capture can retry. Schema-ensure is
     // best-effort; a transient 5xx shouldn't permanently disable it for the
     // session.
-    ensuredVaults.delete(vaultId);
+    ensuredVaults.delete(guardKey);
     // Don't rethrow — the capture itself still succeeds without the schema
     // setup (vault accepts notes whose tags have no identity row yet).
     if (typeof console !== "undefined") {

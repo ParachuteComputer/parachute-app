@@ -11,6 +11,7 @@ import { UNSAFE_createBrowserHistory } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // app#207 P3–P5, P11–P17, P19–P22: exercise real App routing, not a store-derived basename.
+const RECENT = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 const record = (name: string): VaultRecord => ({
   id: name,
   name,
@@ -28,8 +29,10 @@ const note = (id: string) => ({
   tags: [],
   links: [],
   attachments: [],
-  createdAt: "2026-09-11T00:00:00Z",
-  updatedAt: "2026-09-11T00:00:00Z",
+  // Relative to now: the Recent lens only lists recent notes, so a fixed date
+  // ages out of it and P20 starts failing on its own (it did from late Oct 2026).
+  createdAt: RECENT,
+  updatedAt: RECENT,
 });
 function seed(active = "beta") {
   useVaultStore.setState({

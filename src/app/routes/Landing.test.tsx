@@ -458,6 +458,67 @@ describe("Landing — the trial claim", () => {
       expect(screen.queryByText(/30 days/i)).not.toBeInTheDocument();
     });
 
+    // T-318: the cloud's money switch. Open beta → the one short line, no
+    // trial length, no prices — even if the door still published them.
+    it("open beta: 'Free during the open beta.' and nothing else about money", async () => {
+      vi.mocked(getDoorDescriptor).mockResolvedValue({
+        door: "cloud",
+        auth: { methods: ["magic_link"], signin_path: "/login" },
+        billing_mode: "open_beta",
+        trial_length_label: "3 months",
+        plans: [
+          {
+            id: "entry",
+            name: "Entry",
+            price_month: 1,
+            intervals: { yearly: { available: true, price: 10, label: "$10/yr" } },
+          },
+        ],
+      });
+      renderLanding();
+      const line = await screen.findByTestId("money-line");
+      expect(line.textContent).toBe("Free during the open beta.");
+      expect(screen.queryByText(/months free/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/plans from/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument();
+    });
+
+    it("the cloud door links Terms and Privacy under the sign-in box", async () => {
+      vi.mocked(getDoorDescriptor).mockResolvedValue({
+        door: "cloud",
+        auth: { methods: ["magic_link"], signin_path: "/login" },
+        billing_mode: "open_beta",
+      });
+      renderLanding();
+      const links = await screen.findByTestId("legal-links");
+      expect(links.querySelector('a[href="https://parachute.computer/terms/"]')?.textContent).toBe(
+        "Terms",
+      );
+      expect(
+        links.querySelector('a[href="https://parachute.computer/privacy/"]')?.textContent,
+      ).toBe("Privacy");
+    });
+
+    it("paid mode keeps the trial claim + cheapest price", async () => {
+      vi.mocked(getDoorDescriptor).mockResolvedValue({
+        door: "cloud",
+        auth: { methods: ["magic_link"], signin_path: "/login" },
+        billing_mode: "paid",
+        trial_length_label: "3 months",
+        plans: [
+          {
+            id: "entry",
+            name: "Entry",
+            price_month: 1,
+            intervals: { yearly: { available: true, price: 10, label: "$10/yr" } },
+          },
+        ],
+      });
+      renderLanding();
+      const line = await screen.findByTestId("money-line");
+      expect(line.textContent).toBe("3 months free, no card. Plans from $10 a year.");
+    });
+
     it("renders the honest fallback on a cloud door that publishes no length", async () => {
       vi.mocked(getDoorDescriptor).mockResolvedValue({
         door: "cloud",

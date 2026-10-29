@@ -201,6 +201,35 @@ function installFetch(map: FetchMap) {
   return fetchImpl;
 }
 
+// The vault settings note with "Tag new notes as an inbox" ON (T-318). Served
+// for the settings GET (`/api/notes?id=.parachute%2Fnotes%2Fsettings…`); the
+// default (no such entry → 404) is a fresh vault with the opt-in OFF.
+const INBOX_ON: FetchMap = {
+  "GET notes%2Fsettings": {
+    body: [
+      {
+        id: "settings",
+        path: ".parachute/notes/settings",
+        content: "",
+        updatedAt: "2026-10-28T00:00:00.000Z",
+        metadata: {
+          notes: {
+            schemaVersion: 1,
+            tagRoles: {
+              pinned: "pinned",
+              archived: "archived",
+              captureVoice: "capture",
+              captureText: "capture",
+              view: "view",
+            },
+            tagNewNotes: true,
+          },
+        },
+      },
+    ],
+  },
+};
+
 class FakeXhrUpload {
   onprogress: ((e: ProgressEvent) => void) | null = null;
 }
@@ -414,63 +443,27 @@ describe("NoteNew route — unified create surface", () => {
     );
     expect(postCall).toBeDefined();
     const body = JSON.parse((postCall![1] as RequestInit).body as string);
-    // A typed note through this surface is a capture: the capture role tag
-    // (default `capture`) leads the tag list and `metadata.source` records
-    // HOW it arrived. No `metadata.summary` — Summary field is gone from
-    // this surface.
+    // A typed note carries exactly the operator's tags — no #capture (T-318)
+    // — and `metadata` records HOW it arrived. No `metadata.summary` —
+    // Summary field is gone from this surface.
     expect(body).toEqual({
       content: "# hi",
       path: "Projects/README",
-      metadata: { source: "text" },
-      tags: ["capture", "docs"],
+      metadata: { source: "text", app: "notes" },
+      tags: ["docs"],
     });
-
-    // The quiet lazy-ensure fired for the active vault (fire-and-forget —
-    // it must never gate the save).
-    const { ensureNotesSchema } = await import("@/lib/vault/schema-ensure");
-    expect(vi.mocked(ensureNotesSchema)).toHaveBeenCalledWith("dev", expect.anything());
 
     expect(useToastStore.getState().toasts[0]?.message).toContain("Created");
   });
 
-  // Capture-chip loosening (2026-07-17, ratified): the capture role tag
-  // pre-populates as a visible, removable chip in the tag row — no longer an
-  // invisible save-time injection.
-  it("pre-populates the capture tag as a visible, removable chip in the tag row", async () => {
-    installFetch({});
-    renderAt("/new");
-
-    expect(await screen.findByText("capture")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /remove tag capture/i })).toBeInTheDocument();
-  });
-
-  it("removing the capture chip is respected on save — not re-added underneath", async () => {
-    const fetchImpl = installFetch({
-      "POST /api/notes": {
-        status: 201,
-        body: { id: "n", path: "Notes/no-capture", createdAt: "2026-07-17T00:00:00Z" },
-      },
-    });
-    renderAt("/new");
-
-    await screen.findByText("capture");
-    fireEvent.click(screen.getByRole("button", { name: /remove tag capture/i }));
-    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "no capture tag" } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
-    });
-
-    await waitFor(() => {
-      const post = fetchImpl.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
-      );
-      expect(post).toBeDefined();
-      const body = JSON.parse((post![1] as RequestInit).body as string);
-      expect(body.tags ?? []).not.toContain("capture");
-    });
-  });
-
-  it("untouched chips: save is byte-identical to today (capture tag applied automatically)", async () => {
+  // T-318 / DESIGN-0.9 §8c: #capture is opt-in. A fresh vault (no settings
+  // note → opt-in OFF) starts with an empty tag row and saves an untagged
+  // typed note with NO tags; `metadata.source` records how it arrived. The
+  // lazy tag declaration never fires, so a vault without a `capture` tag is
+  // never touched.
+  it("typed note, opt-in off (default): no chip, no tags, source text, no tag declared", async () => {
+    const { ensureNotesSchema } = await import("@/lib/vault/schema-ensure");
+    vi.mocked(ensureNotesSchema).mockClear();
     const fetchImpl = installFetch({
       "POST /api/notes": {
         status: 201,
@@ -479,73 +472,98 @@ describe("NoteNew route — unified create surface", () => {
     });
     renderAt("/new");
 
-    // Types and saves — never touches the tag row.
+    expect(screen.queryByText("capture")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove tag/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inbox-tag-hint")).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "never touched tags" } });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
     });
 
     await waitFor(() => {
-      const post = fetchImpl.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
-      );
-      expect(post).toBeDefined();
-      const body = JSON.parse((post![1] as RequestInit).body as string);
-      expect(body.tags).toEqual(["capture"]);
+      expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
     });
+    const post = fetchImpl.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+    );
+    const body = JSON.parse((post![1] as RequestInit).body as string);
+    expect(body.tags).toBeUndefined();
+    expect(body.metadata).toEqual({ source: "text", app: "notes" });
+    expect(vi.mocked(ensureNotesSchema)).not.toHaveBeenCalled();
+  });
+
+  it("typed note, opt-in ON: an untagged note gets the inbox tag, declared lazily", async () => {
+    const { ensureNotesSchema } = await import("@/lib/vault/schema-ensure");
+    vi.mocked(ensureNotesSchema).mockClear();
+    const fetchImpl = installFetch({
+      ...INBOX_ON,
+      "POST /api/notes": {
+        status: 201,
+        body: { id: "n", path: "Notes/inbox", createdAt: "2026-10-28T00:00:00Z" },
+      },
+    });
+    renderAt("/new");
+
+    // The hint says so BEFORE saving (once the settings note has loaded).
+    expect(await screen.findByTestId("inbox-tag-hint")).toHaveTextContent(
+      "No tags yet, so this note will be saved with #capture.",
+    );
+    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "sort me later" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    });
+    const post = fetchImpl.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+    );
+    const body = JSON.parse((post![1] as RequestInit).body as string);
+    expect(body.tags).toEqual(["capture"]);
+    expect(body.metadata).toEqual({ source: "text", app: "notes" });
+    expect(vi.mocked(ensureNotesSchema)).toHaveBeenCalledWith("dev", expect.anything(), "capture");
+  });
+
+  it("typed note, opt-in ON: a note that already has a tag is left alone", async () => {
+    const fetchImpl = installFetch({
+      ...INBOX_ON,
+      "POST /api/notes": {
+        status: 201,
+        body: { id: "n", path: "Notes/tagged", createdAt: "2026-10-28T00:00:00Z" },
+      },
+    });
+    renderAt("/new");
+    await screen.findByTestId("inbox-tag-hint");
+
+    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "about my #garden" } });
+    // A #hashtag in the body counts as the note's own tag — the hint goes away.
+    await waitFor(() => expect(screen.queryByTestId("inbox-tag-hint")).not.toBeInTheDocument());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    });
+    const post = fetchImpl.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+    );
+    const body = JSON.parse((post![1] as RequestInit).body as string);
+    expect(body.tags).toEqual(["garden"]);
   });
 
   it("an untouched compose never trips the leave-guard confirm on Cancel", async () => {
     installFetch({});
     renderAt("/new");
 
-    await screen.findByText("capture");
     const confirmSpy = vi.mocked(window.confirm);
     confirmSpy.mockClear();
     fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
-    // isDirty stayed false (the auto-populated chip alone isn't "dirty"), so
-    // handleCancel's `isDirty && !confirm(...)` short-circuits — confirm is
-    // never invoked.
+    // isDirty stayed false, so handleCancel's `isDirty && !confirm(...)`
+    // short-circuits — confirm is never invoked.
     expect(confirmSpy).not.toHaveBeenCalled();
-  });
-
-  // Review fold (#49): the touched-freeze must survive a REMOUNT — a stored
-  // draft that already reflects a deliberate chip removal (tags: []) must
-  // not get the capture tag auto-repopulated when the compose screen mounts
-  // fresh over it. A naive `useRef(false)` would have let the auto-populate
-  // effect fire on this new mount and re-inject it.
-  it("a restored draft with the capture chip already removed does NOT get it re-populated on remount", async () => {
-    saveDraft("dev", "new", {
-      content: "removed capture before leaving",
-      path: "Notes/2026/07-17/09-00-00",
-      tags: [],
-    });
-    const fetchImpl = installFetch({
-      "POST /api/notes": {
-        status: 201,
-        body: { id: "n", path: "Notes/2026/07-17/09-00-00", createdAt: "2026-07-17T00:00:00Z" },
-      },
-    });
-    renderAt("/new");
-
-    expect(await screen.findByTestId("draft-restored")).toBeInTheDocument();
-    expect((screen.getByTestId("cm-editor") as HTMLTextAreaElement).value).toBe(
-      "removed capture before leaving",
-    );
-    expect(screen.queryByText("capture")).not.toBeInTheDocument();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
-    });
-
-    await waitFor(() => {
-      const post = fetchImpl.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
-      );
-      expect(post).toBeDefined();
-      const body = JSON.parse((post![1] as RequestInit).body as string);
-      expect(body.tags ?? []).not.toContain("capture");
-    });
   });
 
   // NAVIGATION.md: "NoteNew save → /n/<id>" — (b) consumes the compose form,
@@ -604,7 +622,7 @@ describe("NoteNew route — unified create surface", () => {
       ([, init]) => (init as RequestInit | undefined)?.method === "POST",
     );
     const body = JSON.parse((post![1] as RequestInit).body as string);
-    expect(new Set(body.tags)).toEqual(new Set(["capture", "docs", "idea"]));
+    expect(new Set(body.tags)).toEqual(new Set(["docs", "idea"]));
   });
 
   it("drop file → uploads, inserts image markdown, stages for link-on-create", async () => {
@@ -980,15 +998,54 @@ describe("NoteNew — voice affordance", () => {
     if (link && link.mutation.kind === "link-attachment") {
       expect(link.mutation.transcribe).toBe(true);
     }
-    // Voice capture carries the capture role tag (default `capture`) +
-    // `metadata.source: "voice"` — the how-it-arrived axis lives in
-    // metadata, not tag identity.
+    // A voice note no longer always gets #capture (T-318): with the opt-in
+    // off (the default) it carries no tags; `metadata.source: "voice"`
+    // records how it arrived.
     const create = pending.find((p) => p.mutation.kind === "create-note");
     expect(create).toBeDefined();
     if (create && create.mutation.kind === "create-note") {
-      expect(create.mutation.payload.tags).toContain("capture");
-      expect(create.mutation.payload.metadata).toEqual({ source: "voice" });
+      expect(create.mutation.payload.tags).toBeUndefined();
+      expect(create.mutation.payload.metadata).toEqual({ source: "voice", app: "notes" });
     }
+  });
+
+  it("voice note, opt-in ON: an untagged voice note gets the inbox tag, same rule as typed", async () => {
+    const { ensureNotesSchema } = await import("@/lib/vault/schema-ensure");
+    vi.mocked(ensureNotesSchema).mockClear();
+    installFetch({ ...INBOX_ON });
+    renderAt("/new");
+    await screen.findByTestId("inbox-tag-hint");
+
+    const recordBtn = await screen.findByRole("button", { name: /record voice memo/i });
+    await act(async () => {
+      fireEvent.click(recordBtn);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      tapStop();
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/recorded\s+/i)).toBeInTheDocument();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    });
+    await waitFor(() => {
+      expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    });
+
+    const db = await openLensDB();
+    const pending = await listPending(db, "dev");
+    db.close();
+    const create = pending.find((p) => p.mutation.kind === "create-note");
+    expect(create).toBeDefined();
+    if (create && create.mutation.kind === "create-note") {
+      expect(create.mutation.payload.tags).toEqual(["capture"]);
+      expect(create.mutation.payload.metadata).toEqual({ source: "voice", app: "notes" });
+    }
+    expect(vi.mocked(ensureNotesSchema)).toHaveBeenCalledWith("dev", expect.anything(), "capture");
   });
 
   it("does not enqueue the note until its audio blob is stored", async () => {
@@ -1237,7 +1294,7 @@ describe("NoteNew — voice affordance", () => {
       .map((q) => q.state.data as Note | undefined)
       .find((d) => typeof d?.content === "string" && d.content.includes("Transcript pending"));
     expect(seeded).toBeDefined();
-    expect(seeded?.metadata).toEqual({ source: "voice" });
+    expect(seeded?.metadata).toEqual({ source: "voice", app: "notes" });
     expect(seeded?.id.startsWith("local-")).toBe(true);
   });
 

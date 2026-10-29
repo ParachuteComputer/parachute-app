@@ -151,3 +151,13 @@ export async function remintHostedVault(
     throw err;
   }
 }
+
+/**
+ * Is this record a vault minted through THIS door's account session — a
+ * hosted vault the signed-in account owns (T-318: what account deletion
+ * forgets on this device, and what may offer "Delete this vault")? A vault
+ * connected over OAuth to another parachute is not.
+ */
+export function isHomeDoorVault(record: { clientId: string; issuer: string }): boolean {
+  return isHostedVaultRecord(record.clientId) && record.issuer === homeDoorOrigin();
+}

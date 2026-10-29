@@ -155,8 +155,10 @@ describe("Composer — the honest write-in-place hero (W2-10; F10)", () => {
     installRoutedFetch({ notes: SEED_ONLY });
     renderComposer();
     const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
-    // Resting: the quiet autosave line, no action row.
-    expect(screen.getByText(/autosaves to default/i)).toBeInTheDocument();
+    // Resting: the quiet draft line, no action row. It must not promise the
+    // note is saved to the vault — nothing reaches the vault until Save.
+    expect(screen.getByText(/drafts are kept until you save/i)).toBeInTheDocument();
+    expect(screen.queryByText(/autosaves/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /save to default/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /open full editor/i })).not.toBeInTheDocument();
 
@@ -173,14 +175,14 @@ describe("Composer — the honest write-in-place hero (W2-10; F10)", () => {
     fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
 
     // The create POST carries the same shape NoteNew's text save sends:
-    // capture role tag + extracted hashtag + metadata.source "text".
+    // the extracted hashtag only (no #capture, T-318) + provenance metadata.
     await waitFor(() => {
       const post = fetchImpl.mock.calls.find(([, init]) => init?.method === "POST");
       expect(post).toBeTruthy();
       const body = JSON.parse(String(post?.[1]?.body));
       expect(body.content).toBe("quick capture #idea");
-      expect(body.tags).toEqual(expect.arrayContaining(["capture", "idea"]));
-      expect(body.metadata).toEqual({ source: "text" });
+      expect(body.tags).toEqual(["idea"]);
+      expect(body.metadata).toEqual({ source: "text", app: "notes" });
       expect(body.path).toMatch(/^Notes\//);
     });
 
@@ -252,45 +254,21 @@ describe("Composer — the honest write-in-place hero (W2-10; F10)", () => {
     expect(mic).toHaveAttribute("href", "/new?voice=1");
   });
 
-  // Capture-chip loosening (2026-07-17, ratified): the capture role tag
-  // pre-populates as a visible, removable chip once the card opens — no
-  // longer an invisible save-time injection.
-  it("pre-populates the capture tag as a visible, removable chip once expanded", async () => {
-    installRoutedFetch({ notes: SEED_ONLY });
+  // T-318 / DESIGN-0.9 §8c: no pre-filled tag. A typed note with no tags of
+  // its own saves with NO tags; how it arrived rides metadata. (The opt-in
+  // inbox tag, and the lazy tag declaration, are pinned against the real
+  // schema-ensure in Composer.inbox.test.tsx.)
+  it("a fresh composer shows no tag chip and saves an untagged note with no tags", async () => {
+    const { ensureNotesSchema } = await import("@/lib/vault/schema-ensure");
+    vi.mocked(ensureNotesSchema).mockClear();
+    const fetchImpl = installRoutedFetch({ notes: SEED_ONLY });
     renderComposer();
     const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    fireEvent.focus(input);
     expect(screen.queryByText("capture")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove tag/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inbox-tag-hint")).not.toBeInTheDocument();
 
-    fireEvent.focus(input);
-
-    expect(await screen.findByText("capture")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /remove tag capture/i })).toBeInTheDocument();
-  });
-
-  it("removing the capture chip is respected on save — not re-added underneath", async () => {
-    const fetchImpl = installRoutedFetch({ notes: SEED_ONLY });
-    renderComposer();
-    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
-    fireEvent.focus(input);
-    await screen.findByText("capture");
-
-    fireEvent.click(screen.getByRole("button", { name: /remove tag capture/i }));
-    fireEvent.change(input, { target: { value: "no capture tag here" } });
-    fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
-
-    await waitFor(() => {
-      const post = fetchImpl.mock.calls.find(([, init]) => init?.method === "POST");
-      expect(post).toBeTruthy();
-      const body = JSON.parse(String(post?.[1]?.body));
-      expect(body.tags ?? []).not.toContain("capture");
-    });
-  });
-
-  it("untouched chips: save is byte-identical to today (capture tag applied automatically)", async () => {
-    const fetchImpl = installRoutedFetch({ notes: SEED_ONLY });
-    renderComposer();
-    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
-    // Never touches the tag row — types and saves directly.
     fireEvent.change(input, { target: { value: "never touched tags" } });
     fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
 
@@ -298,48 +276,19 @@ describe("Composer — the honest write-in-place hero (W2-10; F10)", () => {
       const post = fetchImpl.mock.calls.find(([, init]) => init?.method === "POST");
       expect(post).toBeTruthy();
       const body = JSON.parse(String(post?.[1]?.body));
-      expect(body.tags).toEqual(["capture"]);
+      expect(body.tags).toBeUndefined();
+      expect(body.metadata).toEqual({ source: "text", app: "notes" });
     });
+    expect(vi.mocked(ensureNotesSchema)).not.toHaveBeenCalled();
   });
 
-  it("an untouched composer never writes a draft — the pre-populated chip alone isn't 'dirty'", async () => {
+  it("an untouched composer never writes a draft", async () => {
     installRoutedFetch({ notes: SEED_ONLY });
     renderComposer();
     const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
     fireEvent.focus(input);
-    await screen.findByText("capture");
     fireEvent.focusOut(input);
     expect(loadDraft("v1", NEW_NOTE_SCOPE)).toBeNull();
-  });
-
-  // Review fold (#49): the touched-freeze must survive a REMOUNT, not just
-  // one mount's lifetime. VaultSurface remounts Composer during ordinary
-  // browsing; a stored draft that already reflects a deliberate chip
-  // removal (tags: []) must not get the capture tag auto-repopulated on
-  // return — a fresh `tagsTouchedRef` (naively `useRef(false)`) would have
-  // let the auto-populate effect fire again on the new mount and re-inject it.
-  it("a restored draft with the capture chip already removed does NOT get it re-populated on remount", async () => {
-    saveDraft("v1", NEW_NOTE_SCOPE, {
-      content: "removed capture before leaving",
-      path: "Notes/2026/07-17/09-00-00",
-      tags: [],
-    });
-    const fetchImpl = installRoutedFetch({ notes: SEED_ONLY });
-    renderComposer();
-
-    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
-    expect(input).toHaveValue("removed capture before leaving");
-    fireEvent.focus(input);
-    // No "capture" chip anywhere in the (now-visible) tag row.
-    expect(screen.queryByText("capture")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
-    await waitFor(() => {
-      const post = fetchImpl.mock.calls.find(([, init]) => init?.method === "POST");
-      expect(post).toBeTruthy();
-      const body = JSON.parse(String(post?.[1]?.body));
-      expect(body.tags ?? []).not.toContain("capture");
-    });
   });
 
   it("the mic honors the transcription gate: disabled vault → no mic, the honest line", async () => {

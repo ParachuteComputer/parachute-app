@@ -1,6 +1,8 @@
+import { DeleteAccount, DeletionOutcome } from "@/components/DeleteAccount";
 import { IconExport, IconImport, IconSpark } from "@/components/NavIcons";
 import {
   BillingApiError,
+  type DeleteAccountResponse,
   SessionExpiredError,
   getSession,
   listVaults,
@@ -13,6 +15,7 @@ import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { markHubGateFromError } from "@/lib/account/dispatch";
 import { describeAccountError } from "@/lib/account/error-copy";
 import { openHostedVault } from "@/lib/account/hosted-vault";
+import { OPEN_BETA_LONG, isOpenBeta, trialDaysLeftOf } from "@/lib/account/money";
 import { formatBytes, formatUsageBytes } from "@/lib/account/provenance";
 import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import type {
@@ -60,8 +63,43 @@ type BootView =
  *  duplicate vault on a transient 500 / session lapse). */
 type VaultsState = "loading" | "error" | AccountVault[];
 
+// The deletion outcome outlives a remount of this page (forgetting the deleted
+// vaults re-renders the app's routes) and the signed-out re-boot, until Done.
+const DELETION_OUTCOME_KEY = "lens:account_deleted";
+
+function loadDeletionOutcome(): DeleteAccountResponse | null {
+  try {
+    const raw = sessionStorage.getItem(DELETION_OUTCOME_KEY);
+    const v = raw ? (JSON.parse(raw) as DeleteAccountResponse) : null;
+    return v && typeof v.undo_expires_at === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDeletionOutcome(r: DeleteAccountResponse | null): void {
+  try {
+    if (r) {
+      // Never keep the undo token on the device: the email carries it.
+      const { undo_token: _t, ...rest } = r;
+      sessionStorage.setItem(DELETION_OUTCOME_KEY, JSON.stringify(rest));
+    } else sessionStorage.removeItem(DELETION_OUTCOME_KEY);
+  } catch {
+    // best-effort: the in-memory state still shows it
+  }
+}
+
 export function Account() {
   const [view, setView] = useState<BootView>({ kind: "loading" });
+  // T-318: once the account is deleted the session is gone, so the identity
+  // check flips this page to the signed-out view within a second. The outcome
+  // (undo deadline, Done) lives here, above that switch, so the person sees it.
+  const [deleted, setDeletedState] = useState<DeleteAccountResponse | null>(loadDeletionOutcome);
+  const setDeleted = useCallback((r: DeleteAccountResponse | null) => {
+    saveDeletionOutcome(r);
+    setDeletedState(r);
+  }, []);
+  const navigate = useNavigate();
   // AUTH-W2 move 2: re-resolve "Signed in as" if ANOTHER tab flips the
   // identity while this page is open — without this dependency the boot
   // fetch only ever runs once, and client.ts's cache drop (identityEpoch
@@ -107,14 +145,28 @@ export function Account() {
         </p>
       </header>
 
-      {view.kind === "loading" ? (
+      {deleted ? (
+        <DeletionOutcome
+          done={deleted}
+          onDone={() => {
+            setDeleted(null);
+            clearAccountToken();
+            navigate("/", { replace: true });
+          }}
+        />
+      ) : view.kind === "loading" ? (
         <output aria-live="polite" className="block py-10 text-center text-sm text-fg-dim">
           <span className="animate-pulse">Loading your account…</span>
         </output>
       ) : view.kind === "device" ? (
         <DeviceView />
       ) : (
-        <ManagerView email={view.email} username={view.username} csrf={view.csrf} />
+        <ManagerView
+          email={view.email}
+          username={view.username}
+          csrf={view.csrf}
+          onDeleted={setDeleted}
+        />
       )}
     </div>
   );
@@ -126,10 +178,12 @@ function ManagerView({
   email,
   username,
   csrf,
+  onDeleted,
 }: {
   email?: string;
   username?: string;
   csrf: string;
+  onDeleted: (result: DeleteAccountResponse) => void;
 }) {
   const navigate = useNavigate();
   const activeVault = useVaultStore((s) => s.getActiveVault());
@@ -203,6 +257,7 @@ function ManagerView({
       />
       <VaultsCard vaults={vaults} summary={summary} onReload={reloadVaults} />
       <ConnectionsCard hasActiveVault={!!activeVault} />
+      <DeleteAccount email={email} descriptor={descriptor} onDeleted={onDeleted} />
     </div>
   );
 }
@@ -253,7 +308,8 @@ function IdentityCard({
 
 function PlanChip({ summary }: { summary: AccountSummary | null }) {
   if (!summary) return null;
-  const days = summary.plan.trial_days_left;
+  // Open beta (T-318): never a countdown — trialDaysLeftOf is null there.
+  const days = trialDaysLeftOf(summary);
   if (typeof days === "number") {
     return (
       <span className="chip border-transparent bg-sun-soft font-medium text-sun-ink">
@@ -290,7 +346,10 @@ function PlanBillingCard({
   // steady-state), or it does and billing isn't wired. Either way there is
   // nothing honest to show, so the card simply doesn't exist.
   if (state === null) return null;
-  if (state !== "loading" && state !== "error" && !state.billing_enabled) return null;
+  // Open beta (T-318): billing is off, but the card stays — it tells the money
+  // story and shows the usage meters (no plan grid, no Upgrade, no countdown).
+  const openBeta = state !== "loading" && state !== "error" && isOpenBeta(state);
+  if (state !== "loading" && state !== "error" && !state.billing_enabled && !openBeta) return null;
 
   return (
     <section aria-label="Plan & billing" className="card p-6 shadow-soft">
@@ -316,6 +375,8 @@ function PlanBillingCard({
             {retrying ? "Retrying…" : "Retry"}
           </button>
         </div>
+      ) : openBeta ? (
+        <OpenBetaPlan summary={state} />
       ) : state.has_billing_customer ? (
         <ManageBilling summary={state} />
       ) : (
@@ -325,10 +386,35 @@ function PlanBillingCard({
   );
 }
 
+// Open beta (T-318): the plan line (label + meters), the one money story, and —
+// only for someone who already pays through Stripe — the portal, so nobody is
+// left with a charge they can't see or cancel. Nothing to buy, no countdown.
+function OpenBetaPlan({ summary }: { summary: AccountSummary }) {
+  const paying = summary.has_billing_customer && PAID_TIER_IDS.has(summary.plan.tier);
+  return (
+    <div className="mt-4" data-testid="open-beta-plan">
+      <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+      <p className="mt-3 text-sm text-fg">{OPEN_BETA_LONG}</p>
+      {paying ? <ManageBillingButton /> : null}
+    </div>
+  );
+}
+
+const PAID_TIER_IDS = new Set(["entry", "standard", "plus", "power"]);
+
 // Existing subscriber: the current-plan line + the one true trip to the
 // Stripe billing portal. A 409/503 (comped account, or billing momentarily
 // unconfigured) surfaces a small inline message — never a blocking error.
 function ManageBilling({ summary }: { summary: AccountSummary }) {
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+      <ManageBillingButton />
+    </div>
+  );
+}
+
+function ManageBillingButton() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -352,8 +438,7 @@ function ManageBilling({ summary }: { summary: AccountSummary }) {
   }
 
   return (
-    <div className="mt-4">
-      <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
+    <>
       <button
         type="button"
         onClick={manage}
@@ -363,7 +448,7 @@ function ManageBilling({ summary }: { summary: AccountSummary }) {
         {busy ? "Opening…" : "Manage plan & billing ↗"}
       </button>
       {error ? <BillingErrorLine text={error} /> : null}
-    </div>
+    </>
   );
 }
 
@@ -622,8 +707,9 @@ function UpgradePlans({ summary, plans }: { summary: AccountSummary; plans: Door
 function planSummaryLine(summary: AccountSummary): string {
   const { plan } = summary;
   const parts: string[] = [plan.label];
-  if (typeof plan.trial_days_left === "number") {
-    parts.push(`${plan.trial_days_left} day${plan.trial_days_left === 1 ? "" : "s"} left`);
+  const days = trialDaysLeftOf(summary);
+  if (days !== null) {
+    parts.push(`${days} day${days === 1 ? "" : "s"} left`);
   } else if (typeof plan.price_monthly_usd === "number" && plan.price_monthly_usd > 0) {
     parts.push(`$${plan.price_monthly_usd}/mo`);
   }
@@ -693,7 +779,7 @@ function VaultsCard({
   const plan = summary?.plan;
   const meter =
     plan && typeof plan.vault_limit === "number" && typeof plan.vaults_used === "number"
-      ? `${plan.vaults_used} of ${plan.vault_limit} on your plan`
+      ? `${plan.vaults_used} of ${plan.vault_limit} ${isOpenBeta(summary) ? "in the open beta" : "on your plan"}`
       : null;
 
   return (

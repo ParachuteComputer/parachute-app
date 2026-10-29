@@ -9,6 +9,7 @@ import { TagEditor, normalizeTag } from "@/components/TagEditor";
 import { VoiceUnavailableNote } from "@/components/VoiceUnavailableNote";
 import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { extractHashtags } from "@/lib/capture/hashtags";
+import { newNoteMetadata, pendingInboxTag, withInboxTag } from "@/lib/capture/new-note-tags";
 import { quickPath } from "@/lib/capture/recorder";
 import { buildTextNotePayload } from "@/lib/capture/text-note";
 import { loadTranscribeDefault } from "@/lib/capture/transcribe-default";
@@ -87,7 +88,7 @@ export function NoteNew() {
   const linkAttachment = useLinkAttachment();
   const qc = useQueryClient();
   const { db, blobStore, engine } = useSync();
-  const { roles } = useTagRoles(activeVault?.id ?? null);
+  const { roles, tagNewNotes } = useTagRoles(activeVault?.id ?? null);
   const client = useActiveVaultClient();
 
   // Default the path to a `quickPath()` so the operator sees a real value
@@ -222,53 +223,17 @@ export function NoteNew() {
     onError: (msg) => pushToast(msg, "error"),
   });
 
-  // Capture-chip loosening (2026-07-17, ratified): the capture role tag now
-  // pre-populates as a VISIBLE, REMOVABLE chip in the tag row instead of an
-  // invisible save-time injection — buildTextNotePayload takes `tags` as
-  // given. Sync the role tag into `draft.tags` until the operator explicitly
-  // adds or removes a chip THIS compose session (`tagsTouchedRef`); once
-  // touched, their chip set is authoritative — we never re-inject, even if
-  // tag-role settings resolve to a different name underneath (the default
-  // resolves synchronously, but a custom mapping can arrive a beat later once
-  // the settings note loads). `autoTagRef` remembers which value we last
-  // auto-added so a role-name change swaps it instead of leaving both names
-  // in the chip row.
-  //
-  // Review fold (#49): the freeze must survive a REMOUNT, not just live out
-  // one mount's lifetime — VaultSurface remounts this screen during ordinary
-  // browsing, and a stored draft already reflects whatever the operator left
-  // in the chip row (including a deliberate removal). Seed the guard from
-  // `restoredAtRef` (set above, in the SAME initial render, whenever a stored
-  // draft was found) so a restored draft's tags are authoritative from the
-  // very first effect pass — never auto-repopulated on return.
-  const tagsTouchedRef = useRef(restoredAtRef.current !== null);
-  const autoTagRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (tagsTouchedRef.current) return;
-    setDraft((d) => {
-      const withoutPriorAuto = autoTagRef.current
-        ? d.tags.filter((t) => t !== autoTagRef.current)
-        : d.tags;
-      const next = withoutPriorAuto.includes(roles.captureText)
-        ? withoutPriorAuto
-        : [...withoutPriorAuto, roles.captureText];
-      return next === d.tags ? d : { ...d, tags: next };
-    });
-    autoTagRef.current = roles.captureText;
-  }, [roles.captureText]);
+  // No pre-filled tag (T-318, DESIGN-0.9 §8c). The chip row starts empty and
+  // holds exactly what the operator adds. The capture-chip pre-fill that used
+  // to live here is gone: when "Tag new notes as an inbox" is on, the inbox tag
+  // is added at SAVE time, and only to a note with no tag of its own
+  // (new-note-tags.ts). The hint under the tag row says so before saving.
 
   // Persist the text draft (content/path/tags — not audio blobs) whenever
-  // there's something worth keeping. Cleared on save or explicit discard. The
-  // sole auto-populated capture chip doesn't count as "something worth
-  // keeping" on its own — an untouched compose (nothing typed, tags exactly
-  // the auto-default) must stay byte-identical to pre-chip behavior and not
-  // litter the draft store.
-  const tagsArePristineDefault =
-    !tagsTouchedRef.current &&
-    (draft.tags.length === 0 || (draft.tags.length === 1 && draft.tags[0] === roles.captureText));
+  // there's something worth keeping. Cleared on save or explicit discard.
   const persistableDirty =
     draft.content.trim().length > 0 ||
-    !tagsArePristineDefault ||
+    draft.tags.length > 0 ||
     (draft.path.trim().length > 0 && draft.path !== defaultPathRef.current);
   useDraftAutosave(composeVaultId, NEW_NOTE_SCOPE, draft, persistableDirty);
 
@@ -277,14 +242,17 @@ export function NoteNew() {
   const hasAudio = voice.phase.kind === "have-audio";
   const hasText = draft.content.trim().length > 0;
 
-  // Same pristine-tags carve-out as `persistableDirty` above: the sole
-  // auto-populated capture chip must not itself trip the leave-guard or the
-  // Cancel confirm on a compose the operator never touched.
   const isDirty =
     draft.content.length > 0 ||
     draft.path !== defaultPathRef.current ||
-    !tagsArePristineDefault ||
+    draft.tags.length > 0 ||
     hasAudio;
+
+  // The opt-in inbox tag for THIS note, if it would be added on save: the
+  // voice role when audio is staged, else the text role; null when the
+  // setting is off or the note already has a tag (chip or `#hashtag`).
+  const inboxTagForSave = tagNewNotes ? (hasAudio ? roles.captureVoice : roles.captureText) : null;
+  const inboxHint = pendingInboxTag(draft.tags, draft.content, inboxTagForSave);
 
   // Text-only mode requires path + content. Audio satisfies the "body" half
   // because the transcript will land there; path still required so the
@@ -294,25 +262,25 @@ export function NoteNew() {
 
   // ---- text-only save ------------------------------------------------------
   // A typed note through this surface carries whatever's in the tag row
-  // (chips are the source of truth — the capture role tag pre-populates
-  // there, above, but a chip the operator removed does NOT come back here)
-  // + `metadata.source: "text"` so the how-it-arrived axis lives in metadata,
-  // not tag identity (2026-07 one-tag simplification). The payload assembly
-  // is shared with Home's composer (W2-10) — `buildTextNotePayload` is the
-  // one place it happens.
+  // (+ `#hashtags`), the opt-in inbox tag only if it has none, and
+  // `metadata.source: "text"` / `app: "notes"` so how it arrived lives in
+  // metadata, not a tag (T-318). The payload assembly is shared with Home's
+  // composer (W2-10) — `buildTextNotePayload` is the one place it happens.
   const saveTextOnly = useCallback(() => {
     if (!isValid || pending) return;
+    const inboxTag = tagNewNotes ? roles.captureText : null;
     const payload = buildTextNotePayload({
       content: draft.content,
       path: draft.path,
       tags: draft.tags,
+      inboxTag,
     });
 
-    // Fire-and-forget schema ensure — creates the `capture` tag row if the
-    // vault doesn't have it yet. Never blocks the save; vault accepts notes
-    // with unwritten tag-identity rows.
-    if (client) {
-      void ensureNotesSchema(activeVault.id, client);
+    // Fire-and-forget lazy declaration of the inbox tag — only when this save
+    // actually carries it. A vault that never opts in never gets it. Never
+    // blocks the save; the vault accepts notes with unwritten tag rows.
+    if (client && inboxTag && payload.tags?.includes(inboxTag)) {
+      void ensureNotesSchema(activeVault.id, client, inboxTag);
     }
 
     setSaveError(null);
@@ -361,7 +329,9 @@ export function NoteNew() {
     navigate,
     pending,
     pushToast,
+    roles.captureText,
     staged,
+    tagNewNotes,
   ]);
 
   // ---- audio save ----------------------------------------------------------
@@ -385,17 +355,12 @@ export function NoteNew() {
     const path = draft.path.trim();
     const explicit = draft.tags;
     const extracted = extractHashtags(draft.content);
-    // Audio present → this is a voice capture (`metadata.source: "voice"`,
-    // below). The voice role tag (default `capture`) rides along; when the
-    // operator also typed text, the text role tag joins it — a no-op under
-    // the defaults (both roles point at `capture`, de-duped), but it keeps
-    // custom role mappings honest.
-    const finalTags = Array.from(
-      new Set([roles.captureVoice, ...explicit, ...extracted].filter((t) => t.length > 0)),
-    );
-    if (hasText) finalTags.push(roles.captureText);
-    // de-dupe again after the conditional push so the role tag isn't duplicated.
-    const tags = Array.from(new Set(finalTags));
+    // Audio present → this is a voice note (`metadata.source: "voice"`,
+    // below). Same rule as a typed note (T-318): the operator's own tags,
+    // plus the voice role tag only when "Tag new notes as an inbox" is on and
+    // the note has no tag of its own. No more always-tagging voice notes.
+    const inboxTag = tagNewNotes ? roles.captureVoice : null;
+    const tags = withInboxTag([...explicit, ...extracted], inboxTag);
 
     // Segmentation: a long recording rolled into several standalone audio
     // segments (see `segmented-recorder`). `buildVoiceCapturePlan` owns the
@@ -436,11 +401,10 @@ export function NoteNew() {
 
     setIsSavingAudio(true);
 
-    // Fire-and-forget schema ensure — creates the `capture` tag row if the
-    // vault doesn't have it yet. Vault accepts notes with unwritten
-    // tag-identity rows, so we don't await.
-    if (client) {
-      void ensureNotesSchema(activeVault.id, client);
+    // Fire-and-forget lazy declaration of the inbox tag — only when this
+    // save carries it (see the text path). Not awaited.
+    if (client && inboxTag && tags.includes(inboxTag)) {
+      void ensureNotesSchema(activeVault.id, client, inboxTag);
     }
 
     // Built once so the enqueued create-note row and the optimistic cache
@@ -448,7 +412,7 @@ export function NoteNew() {
     const createPayload: CreateNotePayload = {
       content: plan.body,
       path,
-      metadata: { source: "voice" },
+      metadata: newNoteMetadata("voice"),
       ...(tags.length ? { tags } : {}),
     };
 
@@ -540,15 +504,14 @@ export function NoteNew() {
     db,
     draft,
     engine,
-    hasText,
     isValid,
     navigate,
     outOfMinutes,
     pending,
     pushToast,
     qc,
-    roles.captureText,
     roles.captureVoice,
+    tagNewNotes,
     transcribeThisCapture,
     voice,
   ]);
@@ -566,17 +529,13 @@ export function NoteNew() {
   }, [composeVaultId, isDirty, navigate, voice]);
 
   // The "draft restored" banner's discard: wipe the saved draft AND reset the
-  // compose surface to a fresh, empty note — including a fresh capture chip
-  // (this instance stays mounted, so the auto-populate effect above won't
-  // re-fire on its own; reseed it explicitly and un-freeze the touched guard).
+  // compose surface to a fresh, empty note.
   const discardRestoredDraft = useCallback(() => {
     if (composeVaultId) clearDraft(composeVaultId, NEW_NOTE_SCOPE);
-    tagsTouchedRef.current = false;
-    autoTagRef.current = roles.captureText;
-    setDraft({ ...EMPTY_DRAFT, path: defaultPathRef.current, tags: [roles.captureText] });
+    setDraft({ ...EMPTY_DRAFT, path: defaultPathRef.current });
     voice.discardAudio();
     setRestoredAt(null);
-  }, [composeVaultId, voice, roles.captureText]);
+  }, [composeVaultId, voice]);
 
   // Page-leave guard. Don't pop on save-success (when we navigate
   // programmatically, isDirty drops because state was just cleared).
@@ -593,14 +552,10 @@ export function NoteNew() {
   const addTag = (raw: string) => {
     const t = normalizeTag(raw);
     if (!t || draft.tags.includes(t)) return;
-    tagsTouchedRef.current = true;
     setDraft((d) => ({ ...d, tags: [...d.tags, t] }));
     setTagInput("");
   };
   const removeTag = (name: string) => {
-    // Freezes the auto-populate effect above — a deliberate removal (of the
-    // capture chip or any other) is never re-added underneath the operator.
-    tagsTouchedRef.current = true;
     setDraft((d) => ({ ...d, tags: d.tags.filter((x) => x !== name) }));
   };
 
@@ -668,6 +623,11 @@ export function NoteNew() {
               onAdd={addTag}
               onRemove={removeTag}
             />
+            {inboxHint ? (
+              <p className="mt-1.5 text-xs text-fg-dim" data-testid="inbox-tag-hint">
+                No tags yet, so this note will be saved with #{inboxHint}.
+              </p>
+            ) : null}
           </div>
         </header>
 

@@ -11,10 +11,13 @@
 // seeded starter pack (parachute-vault, 2026-07 simplification) — a fresh
 // vault and a Notes-ensured vault agree on the same single row.
 //
-// Notes "ensures" this schema lazily on first capture — creating the tag
-// only when the vault doesn't have it (see schema-ensure.ts). It never
-// force-migrates a vault's existing rows or the user's stored Tag Role
-// *values*: if a user has `captureText = "quick"` from rc.6, that stays.
+// Notes does NOT require this tag (T-318, DESIGN-0.9 §8b/§8c): a vault
+// without it works, and a fresh cloud vault no longer seeds it. The app
+// declares it lazily, only when "Tag new notes as an inbox" is on and a note
+// actually gets the tag — creating the row only when the vault doesn't have it
+// (see schema-ensure.ts). It never force-migrates a vault's existing rows or
+// the user's stored Tag Role *values*: if a user has `captureText = "quick"`
+// from rc.6, that stays.
 
 export interface RequiredTagDecl {
   name: string;
