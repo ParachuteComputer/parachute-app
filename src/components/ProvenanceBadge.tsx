@@ -9,7 +9,8 @@ import { type ProvenanceAttribution, describeProvenance } from "@/lib/note-prove
 // `compact` — one short fragment ("via MCP"), for a list row sitting beside
 // the relative-time stamp. `detail` — the fuller created/updated pair, for
 // NoteView's metadata panel; only shows "updated" when it names a different
-// principal than "created" (otherwise it's the same fact twice).
+// principal than "created" (otherwise it's the same fact twice), or when
+// there is no "created" line to repeat (the app's own write).
 export function ProvenanceBadge({
   note,
   variant = "compact",
@@ -29,7 +30,7 @@ export function ProvenanceBadge({
         title={parts.raw}
       >
         {parts.created ? <p>created {parts.created}</p> : null}
-        {parts.updated && parts.differs ? <p>updated {parts.updated}</p> : null}
+        {parts.updated && (parts.differs || !parts.created) ? <p>updated {parts.updated}</p> : null}
       </div>
     );
   }

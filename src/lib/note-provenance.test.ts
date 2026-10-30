@@ -95,7 +95,7 @@ describe("describeProvenance", () => {
       expect(parts?.compact).toBe(expected);
     });
   });
-  describe("the app's own writes (metadata.app: \"notes\")", () => {
+  describe('the app\'s own writes (metadata.app: "notes")', () => {
     // T-318: a note typed in the app arrives over the app's REST credential,
     // so the vault stamps the generic `api` channel. That's plumbing, not
     // news — "via API" on a note the person typed here reads as jargon.
@@ -119,9 +119,9 @@ describe("describeProvenance", () => {
     });
 
     it("keeps 'via API' for a REST write that isn't the app's (a script, another client)", () => {
-      expect(describeProvenance({ createdVia: "api", metadata: { source: "script" } })?.compact).toBe(
-        "via API",
-      );
+      expect(
+        describeProvenance({ createdVia: "api", metadata: { source: "script" } })?.compact,
+      ).toBe("via API");
     });
   });
 });

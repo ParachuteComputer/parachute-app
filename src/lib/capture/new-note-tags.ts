@@ -17,8 +17,12 @@ import { extractHashtags } from "./hashtags";
 
 export type NoteSource = "text" | "voice";
 
-export function newNoteMetadata(source: NoteSource): { source: NoteSource; app: "notes" } {
-  return { source, app: "notes" };
+// The app's own name in `metadata.app`. Provenance display reads it to tell
+// the app's writes from other clients' (note-provenance.ts).
+export const NOTES_APP = "notes";
+
+export function newNoteMetadata(source: NoteSource): { source: NoteSource; app: typeof NOTES_APP } {
+  return { source, app: NOTES_APP };
 }
 
 // `inboxTag` is the role tag to add when the opt-in is on, or null when off.
