@@ -1,4 +1,5 @@
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
+import { plainPreview } from "@/lib/note-preview";
 import { displayTitle } from "@/lib/note-title";
 import { relativeTime } from "@/lib/time";
 import type { Note } from "@/lib/vault/types";
@@ -71,6 +72,7 @@ export function NoteCard({
   drag?: NoteDragSource;
 }) {
   const title = displayTitle(note);
+  const preview = plainPreview(note.preview, title.kind === "title" ? title.text : null);
   const stamp = note.updatedAt ?? note.createdAt;
   const isPinned = (note.tags ?? []).includes(pinnedTag);
   const isArchived = (note.tags ?? []).includes(archivedTag);
@@ -115,7 +117,7 @@ export function NoteCard({
               // A quiet text tile stands in for a cover — the note's first
               // words, so the grid still reads as distinct spines.
             >
-              <span className="line-clamp-3 text-sm text-fg-muted">{note.preview ?? ""}</span>
+              <span className="line-clamp-3 text-sm text-fg-muted">{preview ?? ""}</span>
             </div>
           )}
         </div>
@@ -141,8 +143,8 @@ export function NoteCard({
           </span>
           <ProvenanceBadge note={note} />
         </div>
-        {note.preview && !(variant === "gallery" && !showCover) ? (
-          <p className="line-clamp-2 text-xs text-fg-muted">{note.preview}</p>
+        {preview && !(variant === "gallery" && !showCover) ? (
+          <p className="line-clamp-2 text-xs text-fg-muted">{preview}</p>
         ) : null}
         <span className="mt-auto pt-1 text-[0.6875rem] tabular-nums text-fg-dim">
           {relativeTime(stamp)}

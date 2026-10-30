@@ -98,4 +98,36 @@ describe("ProvenanceBadge — NoteView's mount point (detail variant)", () => {
     expect(screen.getByText("created via MCP")).toBeInTheDocument();
     expect(screen.queryByText(/^updated /)).not.toBeInTheDocument();
   });
+  it("a note typed in the app: no 'created via API' line on the note page", () => {
+    const { container } = render(
+      <ProvenanceBadge
+        note={{
+          createdBy: "user-1",
+          createdVia: "api",
+          lastUpdatedBy: "user-1",
+          lastUpdatedVia: "api",
+          metadata: { source: "text", app: "notes" },
+        }}
+        variant="detail"
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("a note typed in the app, later edited over MCP: shows the update line", () => {
+    render(
+      <ProvenanceBadge
+        note={{
+          createdBy: "user-1",
+          createdVia: "api",
+          lastUpdatedBy: "user-1",
+          lastUpdatedVia: "mcp",
+          metadata: { app: "notes" },
+        }}
+        variant="detail"
+      />,
+    );
+    expect(screen.getByText("updated via MCP")).toBeInTheDocument();
+    expect(screen.queryByText(/via API/)).not.toBeInTheDocument();
+  });
 });

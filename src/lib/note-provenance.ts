@@ -1,3 +1,5 @@
+import { NOTES_APP } from "@/lib/capture/new-note-tags";
+
 // Write-attribution (vault#298, surface-client 0.3.5) — the wire's four
 // nullable fields, `createdBy`/`createdVia` set once at create, the
 // `lastUpdated*` pair tracking the most recent mutating write. `*By` is a
@@ -19,6 +21,8 @@ export interface ProvenanceAttribution {
   createdVia?: string | null;
   lastUpdatedBy?: string | null;
   lastUpdatedVia?: string | null;
+  /** The note's metadata — read only for the app's own `app` stamp. */
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface ProvenanceParts {
@@ -62,8 +66,17 @@ function friendlyVia(via: string): string {
 }
 
 export function describeProvenance(note: ProvenanceAttribution): ProvenanceParts | null {
-  const created = note.createdVia ? `via ${friendlyVia(note.createdVia)}` : null;
-  const updated = note.lastUpdatedVia ? `via ${friendlyVia(note.lastUpdatedVia)}` : null;
+  // A note made in this app (T-318) carries `metadata.app: "notes"`, and the
+  // vault stamps the channel of the app's own credential (`api` on both
+  // doors). That channel is how the app talks to its vault, not news to the
+  // person who typed the note here — "via API" reads as jargon. So the app's
+  // channel says nothing; a write through any OTHER channel (an MCP edit)
+  // still shows. Still factual: this hides a label, it never invents one.
+  const ownVia = note.metadata?.app === NOTES_APP ? note.createdVia : null;
+  const label = (via: string | null | undefined) =>
+    via && via !== ownVia ? `via ${friendlyVia(via)}` : null;
+  const created = label(note.createdVia);
+  const updated = label(note.lastUpdatedVia);
   // Nothing factual to say (legacy record, or attribution never captured) —
   // tolerate silently, no "unknown" placeholder.
   if (!created && !updated) return null;
@@ -77,10 +90,13 @@ export function describeProvenance(note: ProvenanceAttribution): ProvenanceParts
   // ProvenanceBadge's detail variant) — prefer `created` here too, so the
   // two mount points never disagree about which channel to name for the
   // same note.
+  // On the app's own note the only fragment left can be a later edit from
+  // elsewhere — say "updated" so it doesn't read as how the note was made.
+  const fallback = ownVia && updated ? `updated ${updated}` : (updated ?? "");
   const compact =
     differs && created && updated
       ? `created ${created} · updated ${updated}`
-      : (created ?? updated ?? "");
+      : (created ?? fallback);
 
   const raw = [
     note.createdBy ? `createdBy: ${note.createdBy}` : null,

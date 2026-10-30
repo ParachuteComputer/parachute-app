@@ -211,4 +211,57 @@ describe("NoteRow — title from the vault's displayTitle (lean list shape)", ()
     // The quickPath timestamp is no longer the headline.
     expect(within(row).queryByText(/July 16/)).toBeNull();
   });
+  it("a note typed in the app itself carries no 'via API' label; an MCP note still says 'via MCP'", () => {
+    // T-318 production walk: a newcomer typed a note in Home's composer and
+    // the Recent row read "just now · via API". The app's own REST write is
+    // stamped `created_via: "api"` by the vault; the app marks its notes with
+    // `metadata.app: "notes"` (new-note-tags.ts), which is what tells them apart.
+    const typedHere = {
+      id: "t1",
+      path: "Notes/2026/10-30/09-15-02",
+      displayTitle: "Call the plumber",
+      createdBy: "user-1",
+      createdVia: "api",
+      lastUpdatedBy: "user-1",
+      lastUpdatedVia: "api",
+      metadata: { source: "text", app: "notes" },
+      updatedAt: "2026-10-30T09:15:02.000Z",
+    } as unknown as Note;
+    const fromClaude = {
+      id: "m1",
+      path: "Ideas from Claude",
+      displayTitle: "Ideas from Claude",
+      createdBy: "user-1",
+      createdVia: "mcp",
+      updatedAt: "2026-10-30T09:10:00.000Z",
+    } as unknown as Note;
+    render(<RecentTimeline notes={[typedHere, fromClaude]} />, { wrapper: Wrapper });
+    const typedRow = rowFor(document.body, "Call the plumber");
+    expect(typedRow.textContent).not.toMatch(/via API/);
+    const mcpRow = rowFor(document.body, "Ideas from Claude");
+    expect(within(mcpRow).getByText("via MCP")).toBeInTheDocument();
+  });
+
+  it("the preview reads as plain text: no markdown syntax, no repeat of the title", () => {
+    // T-318 production walk: the seeded Getting Started guide's row read
+    // "# Getting Started This is the **start-here guide** for…" under the
+    // title "Getting Started" — the vault's lean preview is the raw body,
+    // whitespace-collapsed and cut at 120 code points.
+    const guide = {
+      id: "g1",
+      path: "Getting Started",
+      displayTitle: "Getting Started",
+      preview:
+        "# Getting Started This is the **start-here guide** for this Parachute vault — instructions for a connected AI (you), lik",
+      tags: ["guide"],
+      updatedAt: "2026-10-30T09:00:00.000Z",
+    } as unknown as Note;
+    render(<RecentTimeline notes={[guide]} />, { wrapper: Wrapper });
+    const row = rowFor(document.body, "Getting Started");
+    expect(
+      within(row).getByText(
+        "This is the start-here guide for this Parachute vault — instructions for a connected AI (you), lik",
+      ),
+    ).toBeInTheDocument();
+  });
 });
