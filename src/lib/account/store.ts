@@ -117,11 +117,14 @@ interface AccountSessionState {
    * every session, so the open vault's next call 401s and the refresh path
    * would call that an expired sign-in. It isn't: while this is set,
    * `markExpired` is a no-op. Cleared by the next signed-in session read
-   * (`client.ts`'s `getSession()`).
+   * (`client.ts`'s `getSession()`) — but only one SENT after the close:
+   * `closeEpoch` is bumped on every close, the read captures it when it starts,
+   * and `clearClosed` ignores a read from an older epoch (a stale "signed in").
    */
   closed: boolean;
+  closeEpoch: number;
   markClosed: () => void;
-  clearClosed: () => void;
+  clearClosed: (sinceEpoch: number) => void;
   /** See `HubGate` — set by the boot dispatcher / Account surface. */
   gate: HubGate | null;
   markGate: (gate: HubGate) => void;
@@ -144,8 +147,9 @@ export const useAccountSessionStore = create<AccountSessionState>((set) => ({
   markExpired: () => set((s) => (s.closed ? s : { expired: true })),
   clearExpired: () => set({ expired: false }),
   closed: false,
-  markClosed: () => set({ closed: true, expired: false }),
-  clearClosed: () => set({ closed: false }),
+  closeEpoch: 0,
+  markClosed: () => set((s) => ({ closed: true, expired: false, closeEpoch: s.closeEpoch + 1 })),
+  clearClosed: (sinceEpoch) => set((s) => (s.closeEpoch === sinceEpoch ? { closed: false } : s)),
   gate: null,
   markGate: (gate) => set({ gate }),
   clearGate: () => set({ gate: null }),
