@@ -247,6 +247,9 @@ export function firstLineTitle(content: string | null | undefined): string | nul
 // so it lands on the same line `firstLineTitle` chose: a bare `#`,
 // transcription marker, or attachment embed before real content is skipped
 // here too, rather than removed alone and leaving the title text in the body.
+// An attachment embed above the title is the exception: it isn't a title, but
+// it IS content (the editor inserts an attachment at the cursor, which starts
+// at the top of the note), so it stays at the head of the body.
 // Any leading frontmatter is preserved but skipped when locating the title
 // line. Returns `content` unchanged when there's no title line to lift (empty /
 // whitespace / bare-marker-only / placeholder-only / attachment-only /
@@ -261,9 +264,12 @@ export function stripFirstTitleLine(content: string): string {
   // bare-marker lines that preceded it, then the line itself) plus the blanks
   // that trailed it, so the body opens cleanly on the next real content. The
   // trailing skip is a raw trim — a bare marker AFTER the title is real body
-  // content (a heading), not part of the title region.
+  // content (a heading), not part of the title region. Leading embeds are kept,
+  // set off from any following text by one blank line.
   let end = i + 1;
   while (end < lines.length && lines[end]!.trim() === "") end++;
-  lines.splice(start, end - start);
+  const embeds = lines.slice(start, i).filter((line) => BARE_ATTACHMENT_RE.test(line.trim()));
+  if (embeds.length > 0 && end < lines.length) embeds.push("");
+  lines.splice(start, end - start, ...embeds);
   return lines.join("\n");
 }

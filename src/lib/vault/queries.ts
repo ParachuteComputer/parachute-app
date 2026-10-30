@@ -868,8 +868,24 @@ export function useUpdateNote(id: string | undefined) {
         return client.updateNote(id, payload, { signal });
       }, fallback);
     },
-    onSuccess: (updated) => {
+    onSuccess: (response) => {
+      // The PATCH response is a plain note: the vault never includes
+      // `attachments` or `links` on it. Writing it over the cached full note
+      // (fetched with both) would drop them from the read view the save lands
+      // on, so carry the cached ones forward unless the response sent its own.
+      const cached = qc.getQueryData<Note>(["note", activeId, id]);
+      const updated: Note = {
+        ...response,
+        ...(response?.attachments === undefined &&
+          cached?.attachments !== undefined && { attachments: cached.attachments }),
+        ...(response?.links === undefined &&
+          cached?.links !== undefined && { links: cached.links }),
+      };
       qc.setQueryData(["note", activeId, id], updated);
+      // The carried links predate this edit's wikilink changes: mark the entry
+      // stale (without refetching under the open editor) so the read view's
+      // mount pulls the fresh links and attachments.
+      qc.invalidateQueries({ queryKey: ["note", activeId, id], exact: true, refetchType: "none" });
       // View titles come from their path basename. Keep every mounted nav
       // projection in sync immediately when the generic note mutation renames
       // a view; the invalidation below then reconciles the authoritative list.
@@ -883,6 +899,11 @@ export function useUpdateNote(id: string | undefined) {
       // If the path changed (→ new id), also seed the new key.
       if (updated?.id && updated.id !== id) {
         qc.setQueryData(["note", activeId, updated.id], updated);
+        qc.invalidateQueries({
+          queryKey: ["note", activeId, updated.id],
+          exact: true,
+          refetchType: "none",
+        });
       }
       // Keep the offline mirror current on the direct (online) update path;
       // no-ops when the mirror flag is off. Fire-and-forget — the mutation's
