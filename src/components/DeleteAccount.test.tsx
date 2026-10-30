@@ -1,8 +1,12 @@
 import { Account } from "@/app/routes/Account";
+import { AccountSessionBanner } from "@/components/AccountSessionBanner";
+import { getSession } from "@/lib/account/client";
 import { __resetDoorDescriptorCacheForTests } from "@/lib/account/descriptor";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import { loadAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import { useVaultStore } from "@/lib/vault";
+import { forceRefresh } from "@/lib/vault/refresh";
+import { saveToken } from "@/lib/vault/storage";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -17,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const EMAIL = "person@example.com";
 const ACCOUNT_TOKEN_KEY = "lens:account_token";
 
-type Handler = (init: RequestInit | undefined) => Response;
+type Handler = (init: RequestInit | undefined) => Response | Promise<Response>;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -32,6 +36,8 @@ let accountVaults: { name: string }[] = [];
 /** Flips once the door has closed the account: every session check says signed out. */
 let closed = false;
 let descriptor: Record<string, unknown>;
+/** When set, `GET /account/session` waits on it — a session read still in flight. */
+let sessionGate: Promise<void> | null = null;
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 
 function door(): typeof fetch {
@@ -39,10 +45,14 @@ function door(): typeof fetch {
     const path = String(input);
     const method = init?.method ?? "GET";
     if (path === "/.well-known/parachute-account") return json(descriptor);
-    if (path === "/account/session")
-      return json(
-        closed ? { signed_in: false } : { signed_in: true, csrf: "csrf-1", email: EMAIL },
-      );
+    if (path === "/account/session") {
+      // The door answers as of when the request arrives; a gate only delays it.
+      const body = closed
+        ? { signed_in: false }
+        : { signed_in: true, csrf: "csrf-1", email: EMAIL };
+      if (sessionGate) await sessionGate;
+      return json(body);
+    }
     if (path === "/account/token" && method === "POST") return json({ token: "acct-tok" });
     if (path === "/account/vaults" && method === "GET") return json({ vaults: accountVaults });
     if (path === "/account/summary") return json({ error: "not_found" }, 404);
@@ -66,6 +76,8 @@ function renderAccount() {
   return render(
     <MemoryRouter initialEntries={["/account"]}>
       <QueryClientProvider client={qc}>
+        {/* The app shell's session banner, mounted above the routes as in App. */}
+        <AccountSessionBanner />
         <Routes>
           <Route path="/account" element={<Account />} />
           <Route path="/" element={<div>Home surface</div>} />
@@ -99,12 +111,13 @@ function deleteButton() {
 beforeEach(() => {
   accountVaults = [];
   closed = false;
+  sessionGate = null;
   localStorage.clear();
   sessionStorage.clear();
   __resetDoorDescriptorCacheForTests();
   sessionStorage.setItem(ACCOUNT_TOKEN_KEY, JSON.stringify({ token: "acct-tok", identity: EMAIL }));
   useVaultStore.setState({ vaults: {}, activeVaultId: null });
-  useAccountSessionStore.setState({ expired: false, gate: null, identityEpoch: 0 });
+  useAccountSessionStore.setState({ expired: false, closed: false, gate: null, identityEpoch: 0 });
   descriptor = {
     door: "cloud",
     auth: { methods: ["magic_link"], signin_path: "/login" },
@@ -217,9 +230,14 @@ describe("Delete account — confirmation", () => {
     fireEvent.click(deleteButton());
 
     const outcome = await screen.findByText(/Your account is closed\./);
+    // With the time zone: the email gives the deadline in UTC (walk 10-30).
     const deadline = new Date("2026-10-29T12:00:00.000Z").toLocaleString(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
     });
     expect(outcome).toHaveTextContent(
       `Your account is closed. We sent an email with an undo link; it works for 24 hours, until ${deadline}.`,
@@ -323,5 +341,137 @@ describe("Delete account — errors", () => {
       "href",
       "https://example.com/account/delete/undo?token=u",
     );
+  });
+});
+
+// Production walk 10-30: right after "Delete my account" the app-wide "Your
+// sign-in ended … [Sign in]" banner appeared over the "Account closed" card.
+// The trigger is the open vault: once the door ends the account's sessions, its
+// next call 401s and the refresh path re-checks the session, finds it gone and
+// raises the banner. Here that refresh is the REAL one (refresh.ts →
+// remintHostedVault → the account client) against the faked door.
+describe("Delete account — the session-ended banner", () => {
+  function withOpenHostedVault() {
+    accountVaults = [{ name: "moss" }];
+    useVaultStore.setState({
+      vaults: {
+        moss: {
+          id: "moss",
+          url: "https://vault.example.com/vault/moss",
+          name: "moss",
+          issuer: window.location.origin,
+          clientId: HOSTED_CLIENT_ID,
+          scope: "vault:moss:read vault:moss:write",
+          addedAt: "2026-10-01T00:00:00.000Z",
+          lastUsedAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+      activeVaultId: "moss",
+    });
+    saveToken("moss", { accessToken: "vault-tok", scope: "vault:moss:read" });
+  }
+
+  const banner = () => screen.queryByText(/your sign-in ended/i);
+
+  async function deleteTheAccount() {
+    await screen.findByRole("heading", { name: "Delete account" });
+    fireEvent.change(confirmInput(), { target: { value: EMAIL } });
+    fireEvent.click(deleteButton());
+    await screen.findByText(/Your account is closed\./);
+  }
+
+  it("stays away when the vault's 401 lands while the delete is in flight", async () => {
+    withOpenHostedVault();
+    let refreshDone: Promise<string | null> | null = null;
+    const ok = deleteHandler;
+    deleteHandler = async (init) => {
+      closed = true; // the door ends the sessions first …
+      refreshDone = forceRefresh("moss"); // … and the open vault's next call 401s
+      await refreshDone; // the refresh finishes before the delete answers
+      return ok(init);
+    };
+    renderAccount();
+    await deleteTheAccount();
+    expect(await refreshDone).toBeNull();
+    expect(banner()).not.toBeInTheDocument();
+    expect(useAccountSessionStore.getState().expired).toBe(false);
+  });
+
+  it("stays away when that 401's session check answers after the outcome shows", async () => {
+    withOpenHostedVault();
+    let release!: () => void;
+    let refreshDone: Promise<string | null> | null = null;
+    const ok = deleteHandler;
+    deleteHandler = (init) => {
+      closed = true;
+      sessionGate = new Promise((r) => {
+        release = r;
+      });
+      refreshDone = forceRefresh("moss");
+      return ok(init);
+    };
+    renderAccount();
+    await deleteTheAccount();
+    release();
+    expect(await refreshDone).toBeNull();
+    expect(banner()).not.toBeInTheDocument();
+    expect(useAccountSessionStore.getState().expired).toBe(false);
+  });
+
+  it("stays away when a session read from before the delete answers 'signed in' after it", async () => {
+    withOpenHostedVault();
+    // The door's vault list failed to name it, so the dead record stays on the
+    // device (d1e0075: a failed read forgets nothing) and can still 401 later.
+    accountVaults = [];
+    renderAccount();
+    await screen.findByRole("heading", { name: "Delete account" });
+
+    // A session read sent while still signed in, still in flight …
+    let release!: () => void;
+    sessionGate = new Promise((r) => {
+      release = r;
+    });
+    const stale = getSession();
+    sessionGate = null;
+
+    await deleteTheAccount();
+    // … answers "signed in" only after the account is closed.
+    release();
+    expect((await stale).signed_in).toBe(true);
+
+    expect(await forceRefresh("moss")).toBeNull();
+    expect(banner()).not.toBeInTheDocument();
+    expect(useAccountSessionStore.getState().expired).toBe(false);
+  });
+
+  it("still shows for an ordinary expired session (no delete)", async () => {
+    withOpenHostedVault();
+    renderAccount();
+    await screen.findByRole("heading", { name: "Delete account" });
+    closed = true; // the session lapses on its own
+    expect(await forceRefresh("moss")).toBeNull();
+    expect(await screen.findByText(/your sign-in ended/i)).toBeInTheDocument();
+  });
+
+  it("shows again for a later expiry once the person is signed in again", async () => {
+    withOpenHostedVault();
+    const view = renderAccount();
+    await deleteTheAccount();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await screen.findByText("Home surface");
+    view.unmount();
+
+    // Signed in again (a new account on this device), then that session lapses.
+    closed = false;
+    sessionStorage.setItem(
+      ACCOUNT_TOKEN_KEY,
+      JSON.stringify({ token: "acct-tok", identity: EMAIL }),
+    );
+    withOpenHostedVault();
+    renderAccount();
+    await screen.findByText(EMAIL);
+    closed = true;
+    expect(await forceRefresh("moss")).toBeNull();
+    expect(await screen.findByText(/your sign-in ended/i)).toBeInTheDocument();
   });
 });

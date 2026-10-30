@@ -2,7 +2,7 @@ import { type DeleteAccountResponse, deleteAccount, listVaults } from "@/lib/acc
 import type { DoorDescriptor } from "@/lib/account/descriptor";
 import { describeDeletionError } from "@/lib/account/error-copy";
 import { isHomeDoorVault } from "@/lib/account/hosted-vault";
-import { clearAccountToken } from "@/lib/account/store";
+import { clearAccountToken, useAccountSessionStore } from "@/lib/account/store";
 import { vaultServerSlug } from "@/lib/vault/deep-link";
 import { useVaultStore } from "@/lib/vault/store";
 import { useId, useState } from "react";
@@ -24,10 +24,21 @@ function matchesEmail(typed: string, email: string): boolean {
   return typed.trim().toLowerCase() === email.trim().toLowerCase();
 }
 
+// `dateStyle`/`timeStyle` can't be combined with `timeZoneName`, so spelled out.
+const UNDO_DEADLINE_FORMAT: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZoneName: "short",
+};
+
 function formatUndoDeadline(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  // With the zone: the email states the deadline in UTC.
+  return d.toLocaleString(undefined, UNDO_DEADLINE_FORMAT);
 }
 
 const ERROR_COPY = {
@@ -111,7 +122,9 @@ function DeleteAccountSection({
       const result = await deleteAccount(typed.trim());
       // The door already ended every session for this account — the cached
       // bearer is dead, and so is every hosted vault's token. Don't keep any
-      // of it around while the outcome shows.
+      // of it around while the outcome shows, and don't let the open vault's
+      // 401 call this an expired sign-in ("sign in again" to a closed account).
+      useAccountSessionStore.getState().markClosed();
       clearAccountToken();
       forgetAccountVaults(slugs);
       onDeleted(result);

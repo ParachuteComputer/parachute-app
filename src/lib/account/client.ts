@@ -166,6 +166,7 @@ function reconcileIdentity(session: AccountSession): void {
 export async function getSession(
   fetchImpl: Fetch = fetch.bind(globalThis),
 ): Promise<AccountSession> {
+  const closeEpoch = useAccountSessionStore.getState().closeEpoch;
   const res = await fetchImpl("/account/session", {
     credentials: "include",
     headers: { "X-Requested-With": "fetch" },
@@ -173,6 +174,9 @@ export async function getSession(
   if (!res.ok) throw new AccountApiError(res.status, `session ${res.status}`);
   const session = (await res.json()) as AccountSession;
   reconcileIdentity(session);
+  // A live session ends any "account closed" quiet on the expiry banner —
+  // unless the account was closed while this read was in flight.
+  if (session.signed_in) useAccountSessionStore.getState().clearClosed(closeEpoch);
   return session;
 }
 
