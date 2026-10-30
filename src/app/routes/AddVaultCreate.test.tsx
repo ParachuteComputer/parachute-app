@@ -130,12 +130,9 @@ describe("AddVaultCreate (naming + the in-shell creating beat)", () => {
     });
     renderCeremony("/add-vault/create?first=1");
     fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "garden-1030" } });
-    expect(
-      await screen.findByText(`${window.location.origin}/v/garden-1030`),
-    ).toBeInTheDocument();
-    // Let the descriptor resolve, then make sure the API root never shows.
-    await waitFor(() => expect(getDoorDescriptor).toHaveBeenCalled());
-    await Promise.resolve();
+    expect(await screen.findByText(`${window.location.origin}/v/garden-1030`)).toBeInTheDocument();
+    // Let any pending descriptor read settle, then check the API root never shows.
+    await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByText(/\/vault\/garden-1030/)).not.toBeInTheDocument();
   });
 

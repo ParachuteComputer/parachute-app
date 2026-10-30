@@ -8,7 +8,7 @@ import type { VaultRecord } from "@/lib/vault/types";
 import { absoluteNavigateHarness } from "@/test/absolute-navigate";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // The device vault list: BOTH provenance kinds appear here (Cloud home-door +
 // Self-hosted /add), each with a chip; removal is honest ("from this device").

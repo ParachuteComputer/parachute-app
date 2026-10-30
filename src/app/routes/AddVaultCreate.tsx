@@ -1,9 +1,9 @@
 import { ParachuteMark } from "@/components/ParachuteMark";
 import { WizardShell } from "@/components/WizardShell";
-import { getDoorDescriptor } from "@/lib/account/descriptor";
 import { describeAccountError } from "@/lib/account/error-copy";
 import { createHostedVault, openHostedVault } from "@/lib/account/hosted-vault";
 import { loadLastSigninEmail } from "@/lib/account/store";
+import { vaultPageUrl } from "@/lib/vault/deep-link";
 import { useVaultStore } from "@/lib/vault/store";
 import { announceVaultSwitch } from "@/lib/vault/switch";
 import { type FormEvent, useEffect, useRef, useState } from "react";
@@ -30,8 +30,13 @@ import { Navigate, useNavigate, useSearchParams } from "react-router";
 
 const PROGRESS_LABELS = ["Name", "Making it", "Ready"];
 
+// A space becomes a hyphen ("Garden Notes" → "garden-notes", T-318: it used to
+// vanish silently); anything else outside [a-z0-9-] drops.
 function sanitizeVaultName(raw: string): string {
-  return raw.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  return raw
+    .toLowerCase()
+    .replace(/\s/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
 }
 
 type Stage =
@@ -142,26 +147,12 @@ function VaultNamingForm({
   onCreate: (name: string) => void;
 }) {
   const [name, setName] = useState(() => sanitizeVaultName(initialName ?? ""));
-  const [vaultUrlTemplate, setVaultUrlTemplate] = useState<string | null>(null);
   // The chip + the "separate from X" referent come from what this device
   // already knows (same sources as the chooser's Create card) — no blocking
   // session round-trip in front of a form that can render instantly.
   const email = loadLastSigninEmail();
   const existingName = useVaultStore((s) => s.getActiveVault()?.name ?? null);
   const trimmed = name.trim();
-
-  // HUB-PARITY P4 (SYNTHESIS screen 5's live address echo): the door
-  // descriptor's `vault_url_template` lets the naming form preview the real
-  // address instead of just the slug, once a door advertises one.
-  useEffect(() => {
-    let live = true;
-    getDoorDescriptor().then((d) => {
-      if (live) setVaultUrlTemplate(d?.vault_url_template ?? null);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -205,23 +196,20 @@ function VaultNamingForm({
           aria-label="Vault name"
           className="mx-auto mb-2 block w-full max-w-sm border-0 border-b-2 border-border bg-transparent pb-2 text-center font-serif text-3xl text-fg outline-none transition-colors focus:border-accent-light"
         />
+        {/* SYNTHESIS screen 5's live address echo. The address is the app's
+            page for the vault on this origin (createHostedVault mints at the
+            serving door), not the door's `vault_url_template` — that is the
+            vault's API root, raw JSON in a browser (T-318). Empty field: no
+            echo; the permanence note below is the one hint. */}
         <p className="mb-6 min-h-6 font-round text-sm text-fg-muted">
           {trimmed ? (
             <span>
               Your vault:{" "}
               <b className="rounded-md bg-grass-soft px-2 py-0.5 text-grass-ink">{trimmed}</b>
-              {vaultUrlTemplate ? (
-                <>
-                  {" — it will live at "}
-                  <span className="font-mono text-xs">
-                    {vaultUrlTemplate.replace("{name}", trimmed)}
-                  </span>
-                </>
-              ) : null}
+              {" — you'll find it at "}
+              <span className="font-mono text-xs">{vaultPageUrl(trimmed)}</span>
             </span>
-          ) : (
-            "Letters, numbers, hyphens — pick a word you like."
-          )}
+          ) : null}
         </p>
         <p className="mx-auto mb-8 max-w-sm font-round text-xs text-fg-dim">
           <span className="font-semibold text-fg-muted">The address is permanent</span>, so pick a

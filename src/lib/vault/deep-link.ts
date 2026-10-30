@@ -94,6 +94,21 @@ export function noteShareUrl(
 }
 
 /**
+ * The absolute URL of a vault's home in this app (`<origin>/v/<vault>`) — the
+ * address to show a person as "where your vault lives" (T-318).
+ *
+ * Not the vault's own URL: `<door>/vault/<name>` is its API root and answers a
+ * browser with raw JSON. Same origin + mount rules as {@link noteShareUrl};
+ * pass {@link vaultShareRef} for a connected vault.
+ */
+export function vaultPageUrl(
+  vaultName: string,
+  origin: string = typeof window !== "undefined" && window.location ? window.location.origin : "",
+): string {
+  return `${origin}${withMount(`${VAULT_SCOPE_PREFIX}/${encodeURIComponent(vaultName)}`)}`;
+}
+
+/**
  * The vault's **server slug** — the name the vault answers to on its own
  * origin, read back off the URL this device connected to
  * (`https://box.example/vault/aaron` → `aaron`).
