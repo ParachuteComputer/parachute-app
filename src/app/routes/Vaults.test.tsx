@@ -48,32 +48,32 @@ afterEach(() => {
 });
 
 describe("Vaults — the address a person sees", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    sessionStorage.clear();
-  });
-
-  it("a hosted vault shows the door's advertised address, not the machine (u.) one (T-318 night)", async () => {
-    sessionStorage.setItem("lens:account_token", JSON.stringify({ token: "acct", identity: null }));
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const path = typeof input === "string" ? input : input.toString();
-        if (path === "/account/vaults") {
-          return new Response(
-            JSON.stringify({
-              vaults: [{ name: "moss", url: "https://my.parachute.computer/vault/moss" }],
-            }),
-            { status: 200 },
-          );
-        }
-        return new Response("{}", { status: 404 });
-      }),
-    );
+  // T-318 night chose my. over the machine u. host; the newcomer walk then found
+  // that my.parachute.computer/vault/<name> is the vault's API root (raw JSON in
+  // a browser). The address shown is the app's own vault page on this origin.
+  it("a hosted vault shows the app's vault page, not the API root on u. or my.", () => {
     useVaultStore.setState({ vaults: { "1": vaultRecord({}) }, activeVaultId: "1" });
     renderVaults();
-    expect(await screen.findByText("https://my.parachute.computer/vault/moss")).toBeInTheDocument();
-    expect(screen.queryByText("https://u.parachute.computer/vault/moss")).not.toBeInTheDocument();
+    expect(screen.getByText(`${window.location.origin}/v/moss`)).toBeInTheDocument();
+    expect(screen.queryByText(/\/vault\/moss/)).not.toBeInTheDocument();
+  });
+
+  it("a self-hosted vault shows its app page under its server slug", () => {
+    useVaultStore.setState({
+      vaults: {
+        "2": vaultRecord({
+          id: "2",
+          name: "Boulder notes",
+          clientId: "oauth-client-x",
+          issuer: "https://hub.example.com",
+          url: "https://hub.example.com/vault/boulder",
+        }),
+      },
+      activeVaultId: "2",
+    });
+    renderVaults();
+    expect(screen.getByText(`${window.location.origin}/v/boulder`)).toBeInTheDocument();
+    expect(screen.queryByText("https://hub.example.com/vault/boulder")).not.toBeInTheDocument();
   });
 });
 

@@ -101,15 +101,16 @@ describe("AddVaultCreate (naming + the in-shell creating beat)", () => {
 
     const field = screen.getByLabelText(/vault name/i) as HTMLInputElement;
     fireEvent.change(field, { target: { value: "Moss Garden!" } });
-    // auto-lowercase + strip to [a-z0-9-]
-    expect(field.value).toBe("mossgarden");
+    // auto-lowercase, a space becomes a hyphen (T-318: "Garden Notes" used to
+    // collapse silently to "gardennotes"), anything else outside [a-z0-9-] drops
+    expect(field.value).toBe("moss-garden");
     expect(screen.getByText(/your vault:/i)).toBeInTheDocument();
-    expect(screen.getByText("mossgarden")).toBeInTheDocument();
+    expect(screen.getByText("moss-garden")).toBeInTheDocument();
     // Door-agnostic: no hardcoded cloud host in the echo (the door assigns the
     // real address at mint time). The permanent-address promise stays.
     expect(screen.queryByText(/u\.parachute\.computer/i)).not.toBeInTheDocument();
     expect(screen.getByText(/the address is permanent/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /create mossgarden →/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create moss-garden →/i })).toBeInTheDocument();
   });
 
   it("?first=1 renders the onboarding copy (account created, first vault)", () => {
@@ -119,18 +120,29 @@ describe("AddVaultCreate (naming + the in-shell creating beat)", () => {
     expect(screen.queryByText(/separate from/i)).not.toBeInTheDocument();
   });
 
-  // HUB-PARITY P4: once a door advertises `vault_url_template`, the naming
-  // echo substitutes the typed name into it — preview-only (the real,
-  // post-creation address still comes from create/list responses).
-  it("echoes the real address from vault_url_template when the door advertises one", async () => {
+  // T-318 newcomer walk: the echo promised the vault's API root
+  // (my.parachute.computer/vault/<name>), which shows raw JSON in a browser. The
+  // address a person can open and bookmark is the app's own vault page,
+  // /v/<name> on this origin — even when the door advertises its API template.
+  it("echoes the app's vault page as the address, never the vault API root", async () => {
     vi.mocked(getDoorDescriptor).mockResolvedValue({
-      vault_url_template: "https://hub.example/vault/{name}",
+      vault_url_template: "https://my.parachute.computer/vault/{name}",
     });
-    renderCeremony("/add-vault/create");
-    fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "moss" } });
-    await waitFor(() =>
-      expect(screen.getByText("https://hub.example/vault/moss")).toBeInTheDocument(),
-    );
+    renderCeremony("/add-vault/create?first=1");
+    fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "garden-1030" } });
+    expect(
+      await screen.findByText(`${window.location.origin}/v/garden-1030`),
+    ).toBeInTheDocument();
+    // Let the descriptor resolve, then make sure the API root never shows.
+    await waitFor(() => expect(getDoorDescriptor).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(screen.queryByText(/\/vault\/garden-1030/)).not.toBeInTheDocument();
+  });
+
+  it("shows the naming hint once when the field is empty", () => {
+    renderCeremony("/add-vault/create?first=1");
+    expect(screen.getAllByText(/letters, numbers, hyphens/i)).toHaveLength(1);
+    expect(screen.getAllByText(/pick a word you like/i)).toHaveLength(1);
   });
 
   it("has NO skip affordance and NO 'change it later' copy (the name is the immutable slug)", () => {

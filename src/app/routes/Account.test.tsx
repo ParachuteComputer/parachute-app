@@ -200,6 +200,10 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
     expect(await screen.findByText(/1 of 3 vaults/)).toBeInTheDocument();
     expect(screen.getByText(/\$5\/mo/)).toBeInTheDocument();
     expect(screen.getByText("moss")).toBeInTheDocument();
+    // The vault's address is the app's own vault page on this origin, never the
+    // door's API root (T-318 newcomer walk: /vault/<name> shows raw JSON).
+    expect(screen.getByText(`${window.location.host}/v/moss`)).toBeInTheDocument();
+    expect(screen.queryByText(/\/vault\/moss/)).not.toBeInTheDocument();
     expect(screen.getByText(/68 MB/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open →/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /manage plan & billing/i })).toBeInTheDocument();
