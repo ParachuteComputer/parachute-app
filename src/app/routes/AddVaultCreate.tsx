@@ -30,13 +30,17 @@ import { Navigate, useNavigate, useSearchParams } from "react-router";
 
 const PROGRESS_LABELS = ["Name", "Making it", "Ready"];
 
-// A space becomes a hyphen ("Garden Notes" → "garden-notes", T-318: it used to
-// vanish silently); anything else outside [a-z0-9-] drops.
+// The field as typed: lowercase, anything outside [a-z0-9-] drops. Spaces stay
+// in the field so a second word can follow, one key at a time.
 function sanitizeVaultName(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/\s/g, "-")
-    .replace(/[^a-z0-9-]/g, "");
+  return raw.toLowerCase().replace(/[^a-z0-9\s-]/g, "");
+}
+
+// The name the field creates (echo, button, submit) — permanent, so edge spaces
+// go and each run of spaces (with any hyphen beside it) is one hyphen:
+// " Garden  Notes " → "garden-notes" (T-318: spaces used to vanish silently).
+function vaultNameFromField(field: string): string {
+  return field.trim().replace(/[\s-]*\s[\s-]*/g, "-");
 }
 
 type Stage =
@@ -152,12 +156,12 @@ function VaultNamingForm({
   // session round-trip in front of a form that can render instantly.
   const email = loadLastSigninEmail();
   const existingName = useVaultStore((s) => s.getActiveVault()?.name ?? null);
-  const trimmed = name.trim();
+  const slug = vaultNameFromField(name);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!trimmed) return;
-    onCreate(trimmed);
+    if (!slug) return;
+    onCreate(slug);
   }
 
   return (
@@ -202,12 +206,12 @@ function VaultNamingForm({
             vault's API root, raw JSON in a browser (T-318). Empty field: no
             echo; the permanence note below is the one hint. */}
         <p className="mb-6 min-h-6 font-round text-sm text-fg-muted">
-          {trimmed ? (
+          {slug ? (
             <span>
               Your vault:{" "}
-              <b className="rounded-md bg-grass-soft px-2 py-0.5 text-grass-ink">{trimmed}</b>
+              <b className="rounded-md bg-grass-soft px-2 py-0.5 text-grass-ink">{slug}</b>
               {" — you'll find it at "}
-              <span className="font-mono text-xs">{vaultPageUrl(trimmed)}</span>
+              <span className="font-mono text-xs">{vaultPageUrl(slug)}</span>
             </span>
           ) : null}
         </p>
@@ -224,10 +228,10 @@ function VaultNamingForm({
 
         <button
           type="submit"
-          disabled={!trimmed}
+          disabled={!slug}
           className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
         >
-          {trimmed ? `Create ${trimmed} →` : "Create →"}
+          {slug ? `Create ${slug} →` : "Create →"}
         </button>
       </form>
     </>
