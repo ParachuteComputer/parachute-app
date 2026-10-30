@@ -101,9 +101,10 @@ describe("AddVaultCreate (naming + the in-shell creating beat)", () => {
 
     const field = screen.getByLabelText(/vault name/i) as HTMLInputElement;
     fireEvent.change(field, { target: { value: "Moss Garden!" } });
-    // auto-lowercase, a space becomes a hyphen (T-318: "Garden Notes" used to
-    // collapse silently to "gardennotes"), anything else outside [a-z0-9-] drops
-    expect(field.value).toBe("moss-garden");
+    // The field lowercases and drops anything outside [a-z0-9-] but keeps the
+    // space; the name it becomes (echo + button) turns the space into a hyphen
+    // (T-318: "Garden Notes" used to collapse silently to "gardennotes").
+    expect(field.value).toBe("moss garden");
     expect(screen.getByText(/your vault:/i)).toBeInTheDocument();
     expect(screen.getByText("moss-garden")).toBeInTheDocument();
     // Door-agnostic: no hardcoded cloud host in the echo (the door assigns the
@@ -134,6 +135,28 @@ describe("AddVaultCreate (naming + the in-shell creating beat)", () => {
     // Let any pending descriptor read settle, then check the API root never shows.
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByText(/\/vault\/garden-1030/)).not.toBeInTheDocument();
+  });
+
+  // Codex P2 on app#222: the name is permanent, so stray spaces must not leave
+  // edge or doubled hyphens. A pasted " Garden  Notes " creates "garden-notes".
+  it("trims and collapses spaces into single hyphens in the created name", async () => {
+    vi.mocked(createHostedVault).mockResolvedValue("garden-notes");
+    renderCeremony("/add-vault/create?first=1");
+    fireEvent.change(screen.getByLabelText(/vault name/i), {
+      target: { value: " Garden  Notes " },
+    });
+    expect(screen.getByText("garden-notes")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create garden-notes →" }));
+    await waitFor(() => expect(createHostedVault).toHaveBeenCalledWith("garden-notes"));
+  });
+
+  it("lets a person type a space between words, one key at a time", () => {
+    renderCeremony("/add-vault/create");
+    const field = screen.getByLabelText(/vault name/i) as HTMLInputElement;
+    for (const ch of "Garden Notes ") {
+      fireEvent.change(field, { target: { value: field.value + ch } });
+    }
+    expect(screen.getByRole("button", { name: "Create garden-notes →" })).toBeInTheDocument();
   });
 
   it("shows the naming hint once when the field is empty", () => {
