@@ -1,5 +1,6 @@
 import { Account } from "@/app/routes/Account";
 import { AccountSessionBanner } from "@/components/AccountSessionBanner";
+import { getSession } from "@/lib/account/client";
 import { __resetDoorDescriptorCacheForTests } from "@/lib/account/descriptor";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import { loadAccountToken, useAccountSessionStore } from "@/lib/account/store";
@@ -45,10 +46,12 @@ function door(): typeof fetch {
     const method = init?.method ?? "GET";
     if (path === "/.well-known/parachute-account") return json(descriptor);
     if (path === "/account/session") {
+      // The door answers as of when the request arrives; a gate only delays it.
+      const body = closed
+        ? { signed_in: false }
+        : { signed_in: true, csrf: "csrf-1", email: EMAIL };
       if (sessionGate) await sessionGate;
-      return json(
-        closed ? { signed_in: false } : { signed_in: true, csrf: "csrf-1", email: EMAIL },
-      );
+      return json(body);
     }
     if (path === "/account/token" && method === "POST") return json({ token: "acct-tok" });
     if (path === "/account/vaults" && method === "GET") return json({ vaults: accountVaults });
@@ -411,6 +414,32 @@ describe("Delete account — the session-ended banner", () => {
     await deleteTheAccount();
     release();
     expect(await refreshDone).toBeNull();
+    expect(banner()).not.toBeInTheDocument();
+    expect(useAccountSessionStore.getState().expired).toBe(false);
+  });
+
+  it("stays away when a session read from before the delete answers 'signed in' after it", async () => {
+    withOpenHostedVault();
+    // The door's vault list failed to name it, so the dead record stays on the
+    // device (d1e0075: a failed read forgets nothing) and can still 401 later.
+    accountVaults = [];
+    renderAccount();
+    await screen.findByRole("heading", { name: "Delete account" });
+
+    // A session read sent while still signed in, still in flight …
+    let release!: () => void;
+    sessionGate = new Promise((r) => {
+      release = r;
+    });
+    const stale = getSession();
+    sessionGate = null;
+
+    await deleteTheAccount();
+    // … answers "signed in" only after the account is closed.
+    release();
+    expect((await stale).signed_in).toBe(true);
+
+    expect(await forceRefresh("moss")).toBeNull();
     expect(banner()).not.toBeInTheDocument();
     expect(useAccountSessionStore.getState().expired).toBe(false);
   });
