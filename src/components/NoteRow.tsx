@@ -1,4 +1,5 @@
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
+import { plainPreview } from "@/lib/note-preview";
 import { displayTitle } from "@/lib/note-title";
 import { relativeTime } from "@/lib/time";
 import type { Note } from "@/lib/vault/types";
@@ -49,6 +50,7 @@ export function NoteRow({
   // extension-stripped path so a bare root file ("Aaron.md" vs title "Aaron")
   // doesn't render a redundant line that differs only by ".md".
   const showPath = !!note.path && note.path.replace(/\.md$/i, "") !== title.text;
+  const preview = plainPreview(note.preview, title.kind === "title" ? title.text : null);
   const stamp = note.updatedAt ?? note.createdAt;
   const isPinned = (note.tags ?? []).includes(pinnedTag);
   const isArchived = (note.tags ?? []).includes(archivedTag);
@@ -86,9 +88,7 @@ export function NoteRow({
             </span>
           </div>
           {showPath ? <p className="mt-0.5 min-w-0 truncate note-id">{note.path}</p> : null}
-          {note.preview ? (
-            <p className="mt-1 truncate text-sm text-fg-muted">{note.preview}</p>
-          ) : null}
+          {preview ? <p className="mt-1 truncate text-sm text-fg-muted">{preview}</p> : null}
           {note.tags && note.tags.length > 0 ? (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {note.tags.map((t) => (
