@@ -1,4 +1,5 @@
 import { NoteEditor } from "@/app/routes/NoteEditor";
+import { NoteView } from "@/app/routes/NoteView";
 import { loadDraft, saveDraft } from "@/lib/drafts/store";
 import { useFocusMode } from "@/lib/focus-mode";
 import { useToastStore } from "@/lib/toast/store";
@@ -148,6 +149,7 @@ function installFetch(map: FetchMap) {
         status: hit.status ?? 200,
         json: async () => hit.body,
         text: async () => "",
+        blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
       } as Response;
     }
     return { ok: false, status: 404, json: async () => null, text: async () => "" } as Response;
@@ -581,6 +583,60 @@ describe("NoteEditor route", () => {
       });
       expect(linkCall).toBeDefined();
     });
+  });
+
+  it("after saving, the read view still shows the note's attachments", async () => {
+    // Production walk (10-30): attach an image, Save, land on the read view —
+    // and no Attachments section. The PATCH response is a plain note (the vault
+    // never includes attachments or links on it), and the save wrote it straight
+    // over the cached full note the read view then served.
+    const content =
+      "![garden.png](/api/storage/2026-10-30/1793394673667-6dbda966.png)\nPlant the garlic.";
+    const withAttachment = {
+      ...baseNote,
+      content,
+      attachments: [
+        {
+          id: "att-garden",
+          noteId: "abc-123",
+          path: "2026-10-30/1793394673667-6dbda966.png",
+          mimeType: "image/png",
+          createdAt: "2026-10-30T00:00:01Z",
+        },
+      ],
+    };
+    const { attachments: _a, links: _l, ...patchResponse } = {
+      ...withAttachment,
+      content: `${content} #garden`,
+      updatedAt: "2026-10-30T00:01:00Z",
+    };
+    installFetch({
+      "GET /api/notes": { body: withAttachment },
+      "PATCH /api/notes/": { body: patchResponse },
+      "GET /api/storage/": { body: null },
+    });
+    const origCreate = URL.createObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:fake-url");
+    URL.revokeObjectURL = vi.fn();
+
+    render(
+      <MemoryRouter initialEntries={["/n/abc-123/edit"]}>
+        <Routes>
+          <Route path="/n/:id/edit" element={<NoteEditor />} />
+          <Route path="/n/:id" element={<NoteView />} />
+        </Routes>
+      </MemoryRouter>,
+      { wrapper: Wrapper },
+    );
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+    fireEvent.change(cm, { target: { value: `${content} #garden` } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+
+    expect(await screen.findByRole("heading", { name: "Attachments" })).toBeInTheDocument();
+    expect(screen.getByText("1793394673667-6dbda966.png")).toBeInTheDocument();
+    URL.createObjectURL = origCreate;
   });
 
   it("oversized file is rejected before any upload fires", async () => {

@@ -624,6 +624,58 @@ describe("NoteView route", () => {
     expect(screen.queryByText("(no URL)", { exact: true })).not.toBeInTheDocument();
   });
 
+  it("shows an uploaded image from the vault's real attachment row, embed above the title", async () => {
+    // The production walk (10-30): "Attach files…" inserts the embed at the top
+    // of the note, and the vault's attachment row carries only `path` +
+    // `mimeType` — no `filename`, no `url`. The read view showed no image in the
+    // body and a "Processing…" card that never resolved.
+    const fetchImpl = installFetch({
+      "/api/notes": {
+        body: {
+          id: "garden-note",
+          path: "Notes/garden",
+          createdAt: "2026-10-30T00:00:00Z",
+          content:
+            "![garden.png](/api/storage/2026-10-30/1793394673667-6dbda966.png)\nPlant the garlic before the first frost. Ask Sam about the seed order. #garden",
+          tags: ["garden"],
+          links: [],
+          attachments: [
+            {
+              id: "att-garden",
+              noteId: "garden-note",
+              path: "2026-10-30/1793394673667-6dbda966.png",
+              mimeType: "image/png",
+              createdAt: "2026-10-30T00:00:01Z",
+            },
+          ],
+        },
+      },
+      "/api/storage/2026-10-30/": { body: null },
+    });
+    const origCreate = URL.createObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:fake-url");
+    URL.revokeObjectURL = vi.fn();
+
+    renderAt("/n/garden-note");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: /Plant the garlic/ }),
+    ).toBeInTheDocument();
+    // The body keeps the embed that sat above the title line.
+    expect(await screen.findByAltText("garden.png")).toBeInTheDocument();
+    // The Attachments card is a real attachment, named from its storage path.
+    expect(screen.getByRole("heading", { name: "Attachments" })).toBeInTheDocument();
+    expect(screen.queryByText("Processing…")).not.toBeInTheDocument();
+    expect(screen.getByText("1793394673667-6dbda966.png")).toBeInTheDocument();
+    await waitFor(() => {
+      const storageGets = fetchImpl.mock.calls.filter(([url]) =>
+        String(url).includes("/api/storage/2026-10-30/1793394673667-6dbda966.png"),
+      );
+      expect(storageGets.length).toBeGreaterThan(0);
+    });
+    URL.createObjectURL = origCreate;
+  });
+
   it("shows a 404 block when the vault returns no note for the id", async () => {
     installFetch({
       "/api/notes": { body: [] },
