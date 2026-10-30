@@ -224,9 +224,7 @@ describe("stripFirstTitleLine", () => {
     const pending = "_Transcript pending._\n\n![[memo.webm]]\n";
     expect(stripFirstTitleLine(pending)).toBe(pending);
     // The marker is status (the chip shows it); the embed is content and stays.
-    expect(stripFirstTitleLine(`${pending}\n# Real title\n\nbody`)).toBe(
-      "![[memo.webm]]\n\nbody",
-    );
+    expect(stripFirstTitleLine(`${pending}\n# Real title\n\nbody`)).toBe("![[memo.webm]]\n\nbody");
   });
 
   it("keeps an attachment embed that sits above the title in the body", () => {
@@ -234,7 +232,9 @@ describe("stripFirstTitleLine", () => {
     // the note — so a newcomer's first image lands ABOVE the title line. The
     // title is still the text line, but the image must not vanish with it.
     const img = "![garden.png](/api/storage/2026-10-30/1793394673667-6dbda966.png)";
-    expect(stripFirstTitleLine(`${img}\nPlant the garlic before the first frost. #garden`)).toBe(img);
+    expect(stripFirstTitleLine(`${img}\nPlant the garlic before the first frost. #garden`)).toBe(
+      img,
+    );
     expect(stripFirstTitleLine(`${img}\n\n# Garden\n\nAsk Sam.`)).toBe(`${img}\n\nAsk Sam.`);
   });
 

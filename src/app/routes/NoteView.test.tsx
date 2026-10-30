@@ -662,7 +662,7 @@ describe("NoteView route", () => {
       await screen.findByRole("heading", { level: 1, name: /Plant the garlic/ }),
     ).toBeInTheDocument();
     // The body keeps the embed that sat above the title line.
-    expect(await screen.findByAltText("garden.png")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByAltText("garden.png")).toBeInTheDocument());
     // The Attachments card is a real attachment, named from its storage path.
     expect(screen.getByRole("heading", { name: "Attachments" })).toBeInTheDocument();
     expect(screen.queryByText("Processing…")).not.toBeInTheDocument();

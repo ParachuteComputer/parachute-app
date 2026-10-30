@@ -483,10 +483,25 @@ function LinksPanel({
   );
 }
 
-function AttachmentView({ attachment }: { attachment: NoteAttachment }) {
-  const filename = attachment.filename;
+// The vault's attachment row is `{id, noteId, path, mimeType, metadata,
+// createdAt}` on both doors — no `filename`, no `url`. A stored attachment is
+// one with a `path`: its name is the path's last segment and its bytes are
+// served at `/api/storage/<path>` (the same URL the editor's embed uses). Only a
+// row with neither a `url` nor a `path` is still in flight. A voice memo that is
+// still transcribing is NOT in flight here — its audio is stored and playable;
+// the transcription chip above carries that state.
+function attachmentSource(a: NoteAttachment): { filename?: string; url?: string } {
+  const path = a.path?.replace(/^\/+/, "");
+  return {
+    filename: a.filename ?? (path ? path.split("/").pop() : undefined),
+    url: a.url ?? (path ? `/api/storage/${path}` : undefined),
+  };
+}
 
-  if (!filename || !attachment.url) {
+function AttachmentView({ attachment }: { attachment: NoteAttachment }) {
+  const { filename, url } = attachmentSource(attachment);
+
+  if (!filename || !url) {
     return (
       <figure className="card shadow-soft p-3">
         <AttachmentProcessing />
@@ -504,7 +519,7 @@ function AttachmentView({ attachment }: { attachment: NoteAttachment }) {
           <span className="shrink-0 text-xs text-fg-dim">{formatBytes(attachment.size)}</span>
         ) : null}
       </figcaption>
-      <AttachmentBody attachment={attachment} mime={mime} filename={filename} />
+      <AttachmentBody url={url} mime={mime} filename={filename} />
     </figure>
   );
 }
@@ -519,11 +534,11 @@ function AttachmentProcessing() {
 }
 
 function AttachmentBody({
-  attachment,
+  url,
   mime,
   filename,
 }: {
-  attachment: NoteAttachment;
+  url: string;
   mime: string;
   filename: string;
 }) {
@@ -533,15 +548,14 @@ function AttachmentBody({
 
   const kind = attachmentKind(mime, filename);
   const needsBlob = kind !== "other";
-  const src = attachment.url;
 
   useEffect(() => {
-    if (!needsBlob || !src || !client) return;
+    if (!needsBlob || !client) return;
     let cancelled = false;
     let createdUrl: string | null = null;
     setError(null);
     client
-      .fetchAttachmentBlob(src)
+      .fetchAttachmentBlob(url)
       .then((blob) => {
         if (cancelled) return;
         createdUrl = URL.createObjectURL(blob);
@@ -555,11 +569,8 @@ function AttachmentBody({
       cancelled = true;
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
-  }, [needsBlob, src, client]);
+  }, [needsBlob, url, client]);
 
-  if (!src) {
-    return <AttachmentProcessing />;
-  }
   if (error) {
     return <p className="text-sm text-danger">{error}</p>;
   }
@@ -567,7 +578,7 @@ function AttachmentBody({
     return <Skeleton className="h-32 w-full" />;
   }
 
-  const displayUrl = blobUrl ?? src;
+  const displayUrl = blobUrl ?? url;
   if (kind === "image") {
     return <img src={displayUrl} alt={filename} className="max-h-[32rem] rounded" />;
   }

@@ -605,7 +605,11 @@ describe("NoteEditor route", () => {
         },
       ],
     };
-    const { attachments: _a, links: _l, ...patchResponse } = {
+    const {
+      attachments: _a,
+      links: _l,
+      ...patchResponse
+    } = {
       ...withAttachment,
       content: `${content} #garden`,
       updatedAt: "2026-10-30T00:01:00Z",
