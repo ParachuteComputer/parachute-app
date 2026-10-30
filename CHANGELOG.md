@@ -1,3 +1,12 @@
+## [0.22.15-rc.5] - 2026-10-30
+
+**What a brand-new person tripped on (T-318 production walk).** Four PRs on `next`.
+
+- **An attached image shows in the read view (#221).** An embed above the title was cut with the title line; stored attachments (rows carry `path`, no `filename`/`url`) showed "Processing…" forever; Save replaced the cached note with a PATCH response that has no attachments.
+- **The vault's address is its app page, not the API root (#222).** The first-vault form, Vaults, Account and the Welcome picker showed `…/vault/<name>`, which answers raw JSON in a browser; they show `<origin>/v/<name>` now. The naming hint shows once, spaces become one hyphen, and the Export page says where attachments really go.
+- **No "Your sign-in ended" banner right after closing the account (#223).** A deliberate close suppresses the session-lost banner until a later signed-in session; the undo deadline shows its time zone.
+- **No "via API" on notes typed in the app; plain-text previews (#224).** List and card previews drop markdown and the repeated title.
+
 ## [0.22.15-rc.3] - 2026-09-17
 
 - Note version history: browse retained native and imported snapshots, compare content and metadata, and explicitly confirm a restore using the current note timestamp you reviewed. Newer edits block restore. Recovery is online-only and never queued for reconnect; unavailable history is distinct from an empty list. Restore keeps current paths and tags, and does not replace attachment/link caches with a partial response. Requires a history-capable vault; deleted-note recovery remains an API operation.
