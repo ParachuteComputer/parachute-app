@@ -173,6 +173,8 @@ export async function getSession(
   if (!res.ok) throw new AccountApiError(res.status, `session ${res.status}`);
   const session = (await res.json()) as AccountSession;
   reconcileIdentity(session);
+  // A live session ends any "account closed" quiet on the expiry banner.
+  if (session.signed_in) useAccountSessionStore.getState().clearClosed();
   return session;
 }
 

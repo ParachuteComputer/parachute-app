@@ -112,6 +112,16 @@ interface AccountSessionState {
   expired: boolean;
   markExpired: () => void;
   clearExpired: () => void;
+  /**
+   * T-318: the person closed their account on this device. The door ends
+   * every session, so the open vault's next call 401s and the refresh path
+   * would call that an expired sign-in. It isn't: while this is set,
+   * `markExpired` is a no-op. Cleared by the next signed-in session read
+   * (`client.ts`'s `getSession()`).
+   */
+  closed: boolean;
+  markClosed: () => void;
+  clearClosed: () => void;
   /** See `HubGate` — set by the boot dispatcher / Account surface. */
   gate: HubGate | null;
   markGate: (gate: HubGate) => void;
@@ -131,8 +141,11 @@ interface AccountSessionState {
 
 export const useAccountSessionStore = create<AccountSessionState>((set) => ({
   expired: false,
-  markExpired: () => set({ expired: true }),
+  markExpired: () => set((s) => (s.closed ? s : { expired: true })),
   clearExpired: () => set({ expired: false }),
+  closed: false,
+  markClosed: () => set({ closed: true, expired: false }),
+  clearClosed: () => set({ closed: false }),
   gate: null,
   markGate: (gate) => set({ gate }),
   clearGate: () => set({ gate: null }),

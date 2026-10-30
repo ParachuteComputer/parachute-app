@@ -114,7 +114,7 @@ beforeEach(() => {
   __resetDoorDescriptorCacheForTests();
   sessionStorage.setItem(ACCOUNT_TOKEN_KEY, JSON.stringify({ token: "acct-tok", identity: EMAIL }));
   useVaultStore.setState({ vaults: {}, activeVaultId: null });
-  useAccountSessionStore.setState({ expired: false, gate: null, identityEpoch: 0 });
+  useAccountSessionStore.setState({ expired: false, closed: false, gate: null, identityEpoch: 0 });
   descriptor = {
     door: "cloud",
     auth: { methods: ["magic_link"], signin_path: "/login" },
@@ -227,9 +227,14 @@ describe("Delete account — confirmation", () => {
     fireEvent.click(deleteButton());
 
     const outcome = await screen.findByText(/Your account is closed\./);
+    // With the time zone: the email gives the deadline in UTC (walk 10-30).
     const deadline = new Date("2026-10-29T12:00:00.000Z").toLocaleString(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
     });
     expect(outcome).toHaveTextContent(
       `Your account is closed. We sent an email with an undo link; it works for 24 hours, until ${deadline}.`,
@@ -360,7 +365,7 @@ describe("Delete account — the session-ended banner", () => {
       },
       activeVaultId: "moss",
     });
-    saveToken("moss", { accessToken: "vault-tok", tokenType: "Bearer", scope: "vault:moss:read" });
+    saveToken("moss", { accessToken: "vault-tok", scope: "vault:moss:read" });
   }
 
   const banner = () => screen.queryByText(/your sign-in ended/i);
