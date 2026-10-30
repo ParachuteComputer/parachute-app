@@ -95,4 +95,33 @@ describe("describeProvenance", () => {
       expect(parts?.compact).toBe(expected);
     });
   });
+  describe("the app's own writes (metadata.app: \"notes\")", () => {
+    // T-318: a note typed in the app arrives over the app's REST credential,
+    // so the vault stamps the generic `api` channel. That's plumbing, not
+    // news — "via API" on a note the person typed here reads as jargon.
+    const typedHere = {
+      createdBy: "user-1",
+      createdVia: "api",
+      lastUpdatedBy: "user-1",
+      lastUpdatedVia: "api",
+      metadata: { source: "text", app: "notes" },
+    };
+
+    it("says nothing for a note made and edited in the app", () => {
+      expect(describeProvenance(typedHere)).toBeNull();
+    });
+
+    it("still names a later edit from another channel, as an update", () => {
+      const parts = describeProvenance({ ...typedHere, lastUpdatedVia: "mcp" });
+      expect(parts?.created).toBeNull();
+      expect(parts?.updated).toBe("via MCP");
+      expect(parts?.compact).toBe("updated via MCP");
+    });
+
+    it("keeps 'via API' for a REST write that isn't the app's (a script, another client)", () => {
+      expect(describeProvenance({ createdVia: "api", metadata: { source: "script" } })?.compact).toBe(
+        "via API",
+      );
+    });
+  });
 });
