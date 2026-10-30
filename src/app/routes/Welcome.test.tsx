@@ -169,9 +169,11 @@ describe("Welcome (the post-sign-in dispatcher)", () => {
       const opens = screen.getAllByRole("button", { name: /open →/i });
       expect(opens).toHaveLength(3);
       expect(screen.getAllByText("☁ Cloud")).toHaveLength(3);
-      // Door-provided `url` renders; usage is size-only (cloud gives bytes, no
-      // note count) — 68M + 3M attachment bytes ⇒ "68 MB", never "· N notes".
-      expect(screen.getByText("u.parachute.computer/vault/moss")).toBeInTheDocument();
+      // The address is the app's vault page on this origin, not the door's
+      // API root (T-318); usage is size-only (cloud gives bytes, no note
+      // count) — 68M + 3M attachment bytes ⇒ "68 MB", never "· N notes".
+      expect(screen.getByText(`${window.location.host}/v/moss`)).toBeInTheDocument();
+      expect(screen.queryByText(/\/vault\/moss/)).not.toBeInTheDocument();
       expect(screen.getByText("68 MB")).toBeInTheDocument();
       expect(screen.queryByText(/\bnotes?\b/i)).not.toBeInTheDocument();
 

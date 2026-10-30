@@ -27,6 +27,7 @@ import type {
 } from "@/lib/account/types";
 import { summaryOrNull, useAccountSummary } from "@/lib/account/use-summary";
 import { useVaultStore } from "@/lib/vault";
+import { vaultPageUrl } from "@/lib/vault/deep-link";
 import { announceVaultSwitch } from "@/lib/vault/switch";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -827,13 +828,15 @@ function VaultsCard({
           <ul className="mt-3 divide-y divide-border-light">
             {vaults.map((vault) => {
               const usage = formatUsageBytes(vault.usage);
-              const address = vault.url ? vault.url.replace(/^https?:\/\//, "") : null;
+              // The app's page for the vault on this origin, not the door's `url` (the
+              // vault's API root: raw JSON in a browser, T-318).
+              const address = vaultPageUrl(vault.name).replace(/^https?:\/\//, "");
               return (
                 <li key={vault.name} className="flex items-center gap-3 py-3">
                   <VaultGlyph name={vault.name} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-serif text-lg leading-snug text-fg">{vault.name}</p>
-                    {address ? <p className="mt-0.5 truncate note-id">{address}</p> : null}
+                    <p className="mt-0.5 truncate note-id">{address}</p>
                     {usage ? <p className="mt-0.5 text-xs text-fg-muted">{usage}</p> : null}
                   </div>
                   <button

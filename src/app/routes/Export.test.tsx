@@ -66,6 +66,14 @@ describe("Export route", () => {
     expect(screen.getByRole("button", { name: /export my vault/i })).toBeInTheDocument();
   });
 
+  // T-318 newcomer walk: the copy said attachments sit "alongside the notes that
+  // use them"; the real archive keeps them in .parachute/attachments/<id>/.
+  it("says where attachment files actually land in the download", () => {
+    renderRoute();
+    expect(screen.getByText(/\.parachute\/attachments/)).toBeInTheDocument();
+    expect(screen.queryByText(/alongside the notes/i)).not.toBeInTheDocument();
+  });
+
   it("redirects home when no vault is active", () => {
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     renderRoute();

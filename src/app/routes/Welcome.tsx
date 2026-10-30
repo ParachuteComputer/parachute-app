@@ -5,6 +5,7 @@ import { classifyVaults } from "@/lib/account/dispatch";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { formatUsageBytes } from "@/lib/account/provenance";
 import type { AccountVault } from "@/lib/account/types";
+import { vaultPageUrl } from "@/lib/vault/deep-link";
 import { announceVaultSwitch } from "@/lib/vault/switch";
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
@@ -298,9 +299,9 @@ function VaultCard({
   onOpen: () => void;
 }) {
   const usage = formatUsageBytes(vault.usage);
-  // The door provides the vault's real URL (cloud's field is `url`); never
-  // fabricate a cloud host.
-  const address = vault.url ? vault.url.replace(/^https?:\/\//, "") : "";
+  // The app's page for the vault on this origin, not the door's `url` (the
+  // vault's API root: raw JSON in a browser, T-318).
+  const address = vaultPageUrl(vault.name).replace(/^https?:\/\//, "");
   return (
     <li className="card flex items-center gap-4 rounded-2xl p-4 shadow-soft">
       <span
@@ -314,7 +315,7 @@ function VaultCard({
           <span className="font-serif text-lg text-fg">{vault.name}</span>
           <span className="chip">☁ Cloud</span>
         </div>
-        {address ? <p className="mt-0.5 truncate note-id">{address}</p> : null}
+        <p className="mt-0.5 truncate note-id">{address}</p>
         {usage ? <p className="mt-0.5 font-round text-xs text-fg-muted">{usage}</p> : null}
       </div>
       <button

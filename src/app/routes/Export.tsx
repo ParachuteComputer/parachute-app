@@ -91,7 +91,7 @@ export function Export() {
             <li>One markdown file per note, with tags, metadata, and links as frontmatter.</li>
             <li>Your tag definitions, so an import elsewhere keeps their structure.</li>
             <li>
-              Attachment files — images, audio, PDF, video — alongside the notes that use them.
+              Attachment files (images, audio, PDF, video), in a .parachute/attachments folder.
             </li>
           </ul>
         </div>

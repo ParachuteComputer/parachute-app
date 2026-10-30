@@ -1,9 +1,8 @@
 import { vaultProvenance } from "@/lib/account";
 import { detectMountBase } from "@/lib/base-url";
-import { shownVaultUrl, useAdvertisedVaultUrls } from "@/lib/home/mcp-address";
 import { useAbsoluteNavigate } from "@/lib/nav/vault-router";
 import { isLegacyVaultUrl, useVaultStore } from "@/lib/vault";
-import { vaultShareRef } from "@/lib/vault/deep-link";
+import { vaultPageUrl, vaultShareRef } from "@/lib/vault/deep-link";
 import { Link } from "react-router";
 
 export function Vaults() {
@@ -13,7 +12,6 @@ export function Vaults() {
   const removeVault = useVaultStore((s) => s.removeVault);
 
   const list = Object.values(vaults).sort((a, b) => a.name.localeCompare(b.name));
-  const advertised = useAdvertisedVaultUrls(list);
 
   return (
     <div className="page-prose">
@@ -59,7 +57,9 @@ export function Vaults() {
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-1 truncate note-id">{shownVaultUrl(vault, advertised)}</p>
+                    {/* The app's page for the vault, never its API root
+                        (`/vault/<name>` answers a browser with JSON; T-318). */}
+                    <p className="mt-1 truncate note-id">{vaultPageUrl(vaultShareRef(vault))}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-4 text-sm">
                     {!isActive ? (
