@@ -2234,6 +2234,12 @@ describe("NoteNew — no draft survives a create (or discard) inside the debounc
   });
 
   it("a FAILED create keeps the draft (the words are not saved anywhere else)", async () => {
+    // A vault error alone doesn't fail a create: with the sync DB open it
+    // falls back to the offline queue (withOfflineFallback). It fails for real
+    // when there's no queue either — storage blocked, as in a private window.
+    vi.spyOn(indexedDB, "open").mockImplementation(() => {
+      throw new Error("storage blocked");
+    });
     installFetch({ "POST /api/notes": { status: 500, body: { error: "boom" } } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     renderWithLazyDestinations();
@@ -2242,6 +2248,7 @@ describe("NoteNew — no draft survives a create (or discard) inside the debounc
     await tick(300);
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
     await tick(50);
+    expect(screen.getByRole("alert")).toHaveTextContent(/path is taken/i);
     expect(screen.getByTestId("cm-editor")).toHaveValue("keep me");
     await tick(1000);
     expect(loadDraft("dev", "new")?.body.content).toBe("keep me");

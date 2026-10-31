@@ -82,6 +82,25 @@ export function clearDraft(vaultId: string, scope: string): void {
 }
 
 /**
+ * Drop the draft a successful save just consumed. `startedAt` is when the save
+ * was sent: a draft written before then is part of what was saved, and so is
+ * one holding exactly the saved body. A draft written later with other text
+ * (the user kept typing, or began the next note on the other surface) is new
+ * work and stays.
+ */
+export function clearSavedDraft(
+  vaultId: string,
+  scope: string,
+  saved: DraftBody,
+  startedAt: string,
+): void {
+  const stored = loadDraft(vaultId, scope);
+  if (stored && (stored.savedAt <= startedAt || bodyEquals(stored.body, saved))) {
+    clearDraft(vaultId, scope);
+  }
+}
+
+/**
  * Remove EVERY draft for a vault (all scopes) — called when a vault is
  * disconnected so plaintext note content doesn't linger in localStorage after
  * the vault (and its token) are gone. Prefix-scans; collects keys first, then

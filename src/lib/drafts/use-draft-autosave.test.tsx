@@ -1,7 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type DraftBody, loadDraft, saveDraft } from "./store";
-import { useDraftAutosave } from "./use-draft-autosave";
+import { type DraftAutosave, useDraftAutosave } from "./use-draft-autosave";
 
 const body = (over: Partial<DraftBody> = {}): DraftBody => ({
   content: "draft text",
@@ -15,13 +15,16 @@ function Harness({
   scope = "new",
   body: b,
   enabled,
+  onControls,
 }: {
   vaultId?: string | null;
   scope?: string | null;
   body: DraftBody;
   enabled: boolean;
+  onControls?: (c: DraftAutosave) => void;
 }) {
-  useDraftAutosave(vaultId, scope, b, enabled, 500);
+  const controls = useDraftAutosave(vaultId, scope, b, enabled, 500);
+  onControls?.(controls);
   return null;
 }
 
@@ -61,6 +64,43 @@ describe("useDraftAutosave", () => {
     // No debounce advance — pagehide must persist right away.
     act(() => window.dispatchEvent(new Event("pagehide")));
     expect(loadDraft("v1", "new")?.body.content).toBe("unsaved");
+  });
+
+  it("saved() cancels the pending write and never re-persists that body; editing re-arms", () => {
+    let controls: DraftAutosave | null = null;
+    const grab = (c: DraftAutosave) => {
+      controls = c;
+    };
+    const { rerender } = render(
+      <Harness body={body({ content: "sent" })} enabled onControls={grab} />,
+    );
+    act(() => vi.advanceTimersByTime(200));
+    act(() => controls?.saved(body({ content: "sent" }), new Date().toISOString()));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(loadDraft("v1", "new")).toBeNull();
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(loadDraft("v1", "new")).toBeNull();
+
+    rerender(<Harness body={body({ content: "sent, and more" })} enabled onControls={grab} />);
+    act(() => vi.advanceTimersByTime(500));
+    expect(loadDraft("v1", "new")?.body.content).toBe("sent, and more");
+  });
+
+  it("discard() clears the draft and the pending write", () => {
+    let controls: DraftAutosave | null = null;
+    saveDraft("v1", "new", body({ content: "earlier" }));
+    render(
+      <Harness
+        body={body({ content: "thrown away" })}
+        enabled
+        onControls={(c) => {
+          controls = c;
+        }}
+      />,
+    );
+    act(() => controls?.discard());
+    act(() => vi.advanceTimersByTime(1000));
+    expect(loadDraft("v1", "new")).toBeNull();
   });
 
   it("does not flush on pagehide when disabled", () => {

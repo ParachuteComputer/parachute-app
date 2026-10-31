@@ -4,6 +4,7 @@ import {
   type DraftBody,
   bodyEquals,
   clearDraft,
+  clearSavedDraft,
   clearVaultDrafts,
   draftKey,
   loadDraft,
@@ -84,6 +85,28 @@ describe("draft store", () => {
     expect(loadDraft("gone", "new")).toBeNull();
     expect(loadDraft("gone", "note-1")).toBeNull();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
+  });
+
+  it("clearSavedDraft drops what the save consumed and keeps newer work", () => {
+    const store = (b: DraftBody, savedAt: string) =>
+      localStorage.setItem(draftKey("v1", "new"), JSON.stringify({ body: b, savedAt }));
+    const startedAt = "2026-10-30T12:00:00.000Z";
+
+    // Written before the save was sent (an older prefix of the note): consumed.
+    store(body({ content: "hel" }), "2026-10-30T11:59:59.000Z");
+    clearSavedDraft("v1", "new", body(), startedAt);
+    expect(loadDraft("v1", "new")).toBeNull();
+
+    // Written after, but it IS the saved text (an unmount flush): consumed.
+    store(body(), "2026-10-30T12:00:01.000Z");
+    clearSavedDraft("v1", "new", body(), startedAt);
+    expect(loadDraft("v1", "new")).toBeNull();
+
+    // Written after with other text (the next note, begun on the other
+    // surface while this save was in flight): kept.
+    store(body({ content: "the next note" }), "2026-10-30T12:00:01.000Z");
+    clearSavedDraft("v1", "new", body(), startedAt);
+    expect(loadDraft("v1", "new")?.body.content).toBe("the next note");
   });
 
   it("survives a corrupt blob or a wrong-shape body", () => {
