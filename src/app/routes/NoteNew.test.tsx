@@ -2254,6 +2254,83 @@ describe("NoteNew — no draft survives a create (or discard) inside the debounc
     expect(loadDraft("dev", "new")?.body.content).toBe("keep me");
   });
 
+  // Codex (high) on the fix: typing on while Create is in flight. The note is
+  // created with the text as it was at the click; the words typed after it
+  // are saved nowhere else, so they stay as the `new` draft (the next compose
+  // offers them) — whether /new is still held on screen past the debounce or
+  // unmounts before it comes due.
+  function holdCreate() {
+    const passThrough = installFetch({});
+    let answer: (() => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (init?.method === "POST" && url.includes("/api/notes")) {
+          return new Promise<Response>((resolve) => {
+            answer = () =>
+              resolve({
+                ok: true,
+                status: 201,
+                json: async () => ({
+                  id: "made-1",
+                  path: "Notes/first",
+                  createdAt: "2026-10-30T12:00:00Z",
+                }),
+                text: async () => "",
+              } as Response);
+          });
+        }
+        return passThrough(input, init);
+      }),
+    );
+    return () => answer?.();
+  }
+
+  it("typing on during Create: the newer text is autosaved after the debounce", async () => {
+    const answerCreate = holdCreate();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { unmount } = renderWithLazyDestinations();
+
+    const editor = screen.getByTestId("cm-editor");
+    fireEvent.change(editor, { target: { value: "first thought" } });
+    await tick(300);
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    await tick(50);
+    fireEvent.change(editor, { target: { value: "first thought, and more" } });
+    await tick(100);
+    answerCreate();
+    await tick(50);
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Created Notes/first");
+    await tick(1000); // /new still held by the transition; the debounce comes due
+    expect(loadDraft("dev", "new")?.body.content).toBe("first thought, and more");
+
+    releaseChunks();
+    await tick(0);
+    expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    expect(loadDraft("dev", "new")?.body.content).toBe("first thought, and more");
+    unmount();
+  });
+
+  it("typing on during Create: /new unmounting before the debounce still keeps the newer text", async () => {
+    const answerCreate = holdCreate();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    renderWithLazyDestinations();
+    releaseChunks(); // the note view's chunk is ready: /new unmounts at once
+
+    const editor = screen.getByTestId("cm-editor");
+    fireEvent.change(editor, { target: { value: "first thought" } });
+    await tick(300);
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    await tick(50);
+    fireEvent.change(editor, { target: { value: "first thought, and more" } });
+    await tick(100);
+    answerCreate();
+    await tick(0);
+    expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    expect(loadDraft("dev", "new")?.body.content).toBe("first thought, and more");
+  });
+
   it("Cancel 300ms after typing: the discarded text does not come back as a draft", async () => {
     installFetch({});
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

@@ -1,5 +1,6 @@
 import { Composer } from "@/components/Composer";
 import { NEW_NOTE_SCOPE, loadDraft, saveDraft } from "@/lib/drafts/store";
+import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -342,6 +343,44 @@ describe("Composer — the honest write-in-place hero (W2-10; F10)", () => {
       </Wrap>,
     );
     expect(await screen.findByRole("textbox", { name: /what's on your mind\?/i })).toHaveValue("");
+  });
+
+  // Codex (high) on the snags2 fix: the textarea stays editable while a save
+  // is in flight. Words typed after Save are not in the saved note, so the
+  // composer must not wipe them when the save answers; they stay on screen
+  // and in the shared draft.
+  it("typing on while a save is in flight keeps the newer text (on screen and as the draft)", async () => {
+    let answerCreate: (() => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const json = (body: unknown, status = 200) =>
+          ({ ok: status < 400, status, json: async () => body, text: async () => "" }) as Response;
+        if (init?.method === "POST" && url.includes("/api/notes")) {
+          return new Promise<Response>((resolve) => {
+            answerCreate = () =>
+              resolve(json({ id: "made-1", path: "Notes/x", createdAt: "2026-10-30T12:00:00Z" }));
+          });
+        }
+        if (url.includes("/api/notes?")) return json(SEED_ONLY);
+        return json(null, 404);
+      }),
+    );
+    renderComposer();
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    fireEvent.change(input, { target: { value: "first thought" } });
+    fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
+    await waitFor(() => expect(answerCreate).not.toBeNull());
+    fireEvent.change(input, { target: { value: "first thought, and more" } });
+    answerCreate!();
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Saved to default"),
+    );
+    expect(input).toHaveValue("first thought, and more");
+    await waitFor(() =>
+      expect(loadDraft("v1", NEW_NOTE_SCOPE)?.body.content).toBe("first thought, and more"),
+    );
   });
 
   it("a failed save leaves the draft in the store", async () => {

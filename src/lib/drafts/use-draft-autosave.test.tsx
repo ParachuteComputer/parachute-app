@@ -86,6 +86,37 @@ describe("useDraftAutosave", () => {
     expect(loadDraft("v1", "new")?.body.content).toBe("sent, and more");
   });
 
+  // Codex (high) on the snags2 fix: the user keeps typing while the save is in
+  // flight. saved() settles only the body that was sent; the newer text is
+  // unsaved work and must still reach the draft store (debounce and pagehide).
+  it("saved() for an older body leaves the newer, unsaved text autosaving", () => {
+    let controls: DraftAutosave | null = null;
+    const grab = (c: DraftAutosave) => {
+      controls = c;
+    };
+    const { rerender } = render(<Harness body={body({ content: "A" })} enabled onControls={grab} />);
+    const startedAt = new Date().toISOString(); // Save clicked with "A"
+    act(() => vi.advanceTimersByTime(200));
+    rerender(<Harness body={body({ content: "A and B" })} enabled onControls={grab} />);
+    act(() => vi.advanceTimersByTime(100));
+    act(() => controls?.saved(body({ content: "A" }), startedAt)); // the save answers
+    act(() => vi.advanceTimersByTime(500));
+    expect(loadDraft("v1", "new")?.body.content).toBe("A and B");
+  });
+
+  it("saved() for an older body still lets pagehide flush the newer text", () => {
+    let controls: DraftAutosave | null = null;
+    const grab = (c: DraftAutosave) => {
+      controls = c;
+    };
+    const { rerender } = render(<Harness body={body({ content: "A" })} enabled onControls={grab} />);
+    const startedAt = new Date().toISOString();
+    rerender(<Harness body={body({ content: "A and B" })} enabled onControls={grab} />);
+    act(() => controls?.saved(body({ content: "A" }), startedAt));
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(loadDraft("v1", "new")?.body.content).toBe("A and B");
+  });
+
   it("discard() clears the draft and the pending write", () => {
     let controls: DraftAutosave | null = null;
     saveDraft("v1", "new", body({ content: "earlier" }));
