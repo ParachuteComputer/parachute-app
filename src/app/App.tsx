@@ -442,7 +442,7 @@ function VaultNotConnected({ name }: { name: string }) {
               Vault <span className="font-mono">{name}</span> isn't yours
             </span>
           }
-          description={`${reach.who ? `You're signed in as ${reach.who}, and` : "The account you're signed in to"} has no vault by that name. Check the link, or sign in with the account that owns it.`}
+          description={`${reach.who ? `You're signed in as ${reach.who}, and that account` : "The account you're signed in to"} has no vault by that name. Check the link, or sign in with the account that owns it.`}
           action={
             <div className="flex flex-wrap items-center justify-center gap-3">
               <a href={`${mount}/vaults`} className="btn btn-primary btn-touch">
