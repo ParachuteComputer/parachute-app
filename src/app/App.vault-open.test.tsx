@@ -276,6 +276,56 @@ describe("App — /v/<name> on a device that hasn't opened that vault (T-318)", 
     expect(window.location.pathname).toBe("/welcome");
   });
 
+  it("a brand-new account that signed in from someone's vault link gets onboarding, not a dead end", async () => {
+    door.signedIn = true;
+    door.owned = [];
+    window.history.replaceState({}, "", "/welcome?redirect=%2Fv%2Fgarden-notes");
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/add-vault/create"));
+  });
+
+  it("a session check that fails (offline, 5xx) offers Try again, not the self-host card", async () => {
+    door.signedIn = true;
+    door.owned = ["garden-notes"];
+    const doorFetch = vi.mocked(fetch);
+    let down = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        if (down && String(input).includes("/account/session"))
+          throw new TypeError("Failed to fetch");
+        return doorFetch(input, init);
+      }),
+    );
+    window.history.replaceState({}, "", "/v/garden-notes");
+    render(<App />);
+
+    const retry = await screen.findByRole("button", { name: /try again/i });
+    expect(screen.queryByText(/is not connected here/i)).not.toBeInTheDocument();
+    down = false;
+    fireEvent.click(retry);
+    await waitFor(() => expect(activeVaultName()).toBe("garden-notes"));
+  });
+
+  it("check-email opened without a saved address keeps the return target on the way to the front door", async () => {
+    window.history.replaceState({}, "", "/check-email?redirect=%2Fv%2Fgarden-notes");
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(new URLSearchParams(window.location.search).get("redirect")).toBe("/v/garden-notes");
+  });
+
+  it("an expired sign-in link keeps the return target on the way to the front door", async () => {
+    window.history.replaceState({}, "", "/welcome?link=expired&redirect=%2Fv%2Fgarden-notes");
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("link")).toBe("expired");
+    expect(params.get("redirect")).toBe("/v/garden-notes");
+  });
+
   it("a door without an account API keeps the connect card", async () => {
     // A self-hosted box that serves the app but no `/account/*` (404).
     vi.stubGlobal(
