@@ -16,7 +16,7 @@ import { beginOAuth } from "@/lib/vault/oauth";
 import { probeForIssuer } from "@/lib/vault/probe";
 import { announceVaultSwitch } from "@/lib/vault/switch";
 import { safeInternalRedirect, withReturnTo } from "@/lib/vault/url";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, createContext, useContext, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 /** Where a completed sign-in returns (the post-sign-in dispatcher) — the app-
@@ -35,6 +35,20 @@ export interface LandingProps {
   netError?: string;
   /** Retry the boot resolution (passed by the BootGate for the net-error card). */
   onRetry?: () => void;
+  /** Where sign-in returns, when the front door stands in for a page that needs
+   *  it (T-318: `/v/<name>` signed out). Without it, `?redirect=` is used. */
+  returnTo?: string;
+  /** The vault that page names, for the sign-in prompt. */
+  vaultName?: string;
+}
+
+/** The front door's return target + the vault it was reached for: an explicit
+ *  `Landing` prop wins over the `?redirect=` param a bounced deep link carries. */
+const ReturnToContext = createContext<{ returnTo?: string; vaultName?: string }>({});
+
+function useReturnTo(): string | undefined {
+  const [params] = useSearchParams();
+  return useContext(ReturnToContext).returnTo ?? safeInternalRedirect(params.get("redirect"));
 }
 
 // The front door (`/`, signed-out) — SYNTHESIS #1. Not vault-naming, not a
@@ -42,7 +56,7 @@ export interface LandingProps {
 // magic-link resolves new-vs-returning without asking. The self-hosted side door
 // is the ONE quiet alternative. Also renders the already-signed-in card (#9) and
 // the net-error weather (#12) when the BootGate hands them down.
-export function Landing({ signedIn, netError, onRetry }: LandingProps = {}) {
+export function Landing({ signedIn, netError, onRetry, returnTo, vaultName }: LandingProps = {}) {
   if (signedIn) {
     return (
       <AlreadySignedIn
@@ -53,7 +67,11 @@ export function Landing({ signedIn, netError, onRetry }: LandingProps = {}) {
     );
   }
   if (netError) return <NetError message={netError} onRetry={onRetry} />;
-  return <FrontDoor />;
+  return (
+    <ReturnToContext.Provider value={{ returnTo: safeInternalRedirect(returnTo), vaultName }}>
+      <FrontDoor />
+    </ReturnToContext.Provider>
+  );
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -78,13 +96,13 @@ function Shell({ children }: { children: React.ReactNode }) {
 // so connecting a vault lands the reader on the note they were sent. Sanitized
 // by `withReturnTo`; without one the link is the plain `/add` it always was.
 function SelfHostSideDoor() {
-  const [params] = useSearchParams();
+  const returnTo = useReturnTo();
   return (
     <div className="mt-8 border-t border-border pt-6">
       <p className="font-round text-sm text-fg-muted">
         Self-hosting?{" "}
         <Link
-          to={withReturnTo("/add", params.get("redirect"))}
+          to={withReturnTo("/add", returnTo)}
           className="font-semibold hover:underline"
           style={{ color: "var(--color-sky)" }}
         >
@@ -244,7 +262,7 @@ function FrontDoor() {
 // surface-mount (app at `/surface/<slug>` on a descriptor-less host) gets,
 // instead of being mis-onboarded into cloud.
 function NeutralFrontDoor() {
-  const [params] = useSearchParams();
+  const returnTo = useReturnTo();
   return (
     <Shell>
       <ParachuteMark size={60} className="mx-auto mb-6 drop-in" />
@@ -254,7 +272,7 @@ function NeutralFrontDoor() {
       </h1>
       <p className="mx-auto mb-6 max-w-sm text-fg-muted">Sign in to your parachute.</p>
       <Link
-        to={withReturnTo("/add", params.get("redirect"))}
+        to={withReturnTo("/add", returnTo)}
         className="btn btn-primary btn-lg justify-center rounded-full px-6 shadow-soft"
       >
         Sign in →
@@ -283,6 +301,8 @@ function MagicLinkFrontDoor({
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const expired = params.get("link") === "expired";
+  const returnTo = useReturnTo();
+  const { vaultName } = useContext(ReturnToContext);
   const [email, setEmail] = useState(loadLastSigninEmail() ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -299,11 +319,13 @@ function MagicLinkFrontDoor({
       // Same-origin: read the session for an (anonymous) CSRF, then request the
       // magic link as a JSON POST. The email moment stays in the app.
       const session = await getSession();
-      await requestMagicLink(email.trim(), session.csrf, SIGNIN_NEXT);
+      // A return target rides the link's `next` (and check-email's own hop) to
+      // `/welcome?redirect=`, which lands there once signed in.
+      await requestMagicLink(email.trim(), session.csrf, withReturnTo(SIGNIN_NEXT, returnTo));
       saveLastSigninEmail(email.trim());
       // NAVIGATION.md: "Landing: submit email → /check-email" — user-
       // initiated, push.
-      navigate("/check-email");
+      navigate(withReturnTo("/check-email", returnTo));
     } catch (err) {
       setBusy(false);
       setError(
@@ -332,7 +354,7 @@ function MagicLinkFrontDoor({
       <form onSubmit={onSubmit} className="mx-auto w-full max-w-sm">
         <div className="composer flex flex-col gap-3 p-4 text-left">
           <label htmlFor="email" className="eyebrow">
-            Sign in or create your account
+            {vaultName ? `Sign in to open ${vaultName}` : "Sign in or create your account"}
           </label>
           <input
             id="email"
@@ -413,11 +435,10 @@ function HubFrontDoor({
   signupPath?: string;
 }) {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
   const [connecting, setConnecting] = useState(false);
   const host = typeof window !== "undefined" ? window.location.host : "";
   // Where to land after the connect, when a bounced deep link put us here.
-  const returnTo = safeInternalRedirect(params.get("redirect"));
+  const returnTo = useReturnTo();
 
   async function openYourParachute() {
     if (connecting) return;
@@ -447,7 +468,7 @@ function HubFrontDoor({
     // prefix (under a hub the app serves at `/app` → `/app/welcome`).
     // `signin_path` is the DOOR's own path (the hub's `/login`) — origin-
     // rooted, NEVER mount-prefixed; it isn't an app route.
-    const next = encodeURIComponent(withMount(SIGNIN_NEXT));
+    const next = encodeURIComponent(withMount(withReturnTo(SIGNIN_NEXT, returnTo)));
     window.location.assign(`${auth.signin_path}?next=${next}`);
   }
 
