@@ -15,7 +15,7 @@ import { UpdateBanner } from "@/components/UpdateBanner";
 import { VaultStatusBanner } from "@/components/VaultStatusBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account";
-import { SessionExpiredError, getSession, listVaults } from "@/lib/account/client";
+import { AccountApiError, SessionExpiredError, getSession, listVaults } from "@/lib/account/client";
 import { openHostedVault } from "@/lib/account/hosted-vault";
 import { detectMountBase } from "@/lib/base-url";
 import { isFocusablePath, useFocusMode } from "@/lib/focus-mode";
@@ -351,7 +351,8 @@ function NoteRefNormalizer() {
 //     account's own vaults, so this says nothing about whether the vault exists;
 //   · signed out → the front door in place, carrying this address so the
 //     sign-in comes back here (and the branch above opens the vault);
-//   · a door with no account API (or no answer) → the connect card below.
+//   · a door with no account API → the connect card below; no answer at all
+//     (offline, a 5xx) → Try again.
 //
 // The connect link carries the address the reader arrived on as `?redirect=`,
 // so the flow returns them to the note they were sent rather than the default
@@ -372,6 +373,7 @@ function VaultNotConnected({ name }: { name: string }) {
   const mount = detectMountBase(renderedLocation.pathname);
   const raw = `${renderedLocation.pathname.slice(mount.length)}${renderedLocation.search}`;
   const connectHref = `${mount}/add?redirect=${encodeURIComponent(raw)}`;
+  const vaultsHref = `${mount}/vaults`;
   const [reach, setReach] = useState<VaultReach>({ kind: "checking" });
   const [attempt, setAttempt] = useState(0);
 
@@ -383,8 +385,18 @@ function VaultNotConnected({ name }: { name: string }) {
       let session: Awaited<ReturnType<typeof getSession>>;
       try {
         session = await getSession();
-      } catch {
-        if (live) setReach({ kind: "no-account" });
+      } catch (err) {
+        if (!live) return;
+        // A door that doesn't serve `/account/*` answers 404 (or the app's own
+        // HTML). Anything else may pass: offer a retry, not the self-host card.
+        const absent =
+          (err instanceof AccountApiError && (err.status === 404 || err.status === 501)) ||
+          err instanceof SyntaxError;
+        setReach(
+          absent
+            ? { kind: "no-account" }
+            : { kind: "error", message: "Couldn't reach your account. Check your connection." },
+        );
         return;
       }
       if (!session.signed_in) {
@@ -428,11 +440,6 @@ function VaultNotConnected({ name }: { name: string }) {
     );
   }
 
-  const vaultsLink = (
-    <a href={`${mount}/vaults`} className="btn btn-secondary btn-touch">
-      Your vaults
-    </a>
-  );
   if (reach.kind === "not-yours") {
     return (
       <div className="page">
@@ -445,7 +452,7 @@ function VaultNotConnected({ name }: { name: string }) {
           description={`${reach.who ? `You're signed in as ${reach.who}, and that account` : "The account you're signed in to"} has no vault by that name. Check the link, or sign in with the account that owns it.`}
           action={
             <div className="flex flex-wrap items-center justify-center gap-3">
-              <a href={`${mount}/vaults`} className="btn btn-primary btn-touch">
+              <a href={vaultsHref} className="btn btn-primary btn-touch">
                 Your vaults
               </a>
               <a href={connectHref} className="btn btn-secondary btn-touch">
@@ -476,7 +483,9 @@ function VaultNotConnected({ name }: { name: string }) {
               >
                 Try again
               </button>
-              {vaultsLink}
+              <a href={vaultsHref} className="btn btn-secondary btn-touch">
+                Your vaults
+              </a>
             </div>
           }
         />
@@ -497,7 +506,9 @@ function VaultNotConnected({ name }: { name: string }) {
             <a href={connectHref} className="btn btn-primary btn-touch">
               Connect a vault
             </a>
-            {vaultsLink}
+            <a href={vaultsHref} className="btn btn-secondary btn-touch">
+              Your vaults
+            </a>
           </div>
         }
       />

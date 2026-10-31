@@ -7,7 +7,7 @@ import { formatUsageBytes } from "@/lib/account/provenance";
 import type { AccountVault } from "@/lib/account/types";
 import { vaultPageUrl } from "@/lib/vault/deep-link";
 import { announceVaultSwitch } from "@/lib/vault/switch";
-import { safeInternalRedirect } from "@/lib/vault/url";
+import { safeInternalRedirect, withReturnTo } from "@/lib/vault/url";
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 
@@ -83,17 +83,17 @@ export function Welcome() {
         setStage({ kind: "redirect" });
         return;
       }
-      // T-318: a sign-in started from a page that needed it (`/v/<name>`
-      // signed out) returns there; that page opens the vault for its owner.
-      // NAVIGATION.md: (d) the single post-auth landing — replace.
-      const returnTo = safeInternalRedirect(searchParams.get("redirect"));
-      if (returnTo) {
-        navigate(returnTo, { replace: true });
-        return;
-      }
-
       try {
         const { vaults } = await listVaults();
+        // T-318: a sign-in started from a page that needed it (`/v/<name>`
+        // signed out) returns there; that page opens the vault for its owner.
+        // An account with no vaults yet can't own it: onboarding comes first.
+        // NAVIGATION.md: (d) the single post-auth landing — replace.
+        const returnTo = safeInternalRedirect(searchParams.get("redirect"));
+        if (returnTo && vaults.length > 0) {
+          navigate(returnTo, { replace: true });
+          return;
+        }
         if (wantsPicker && vaults.length > 0) {
           setStage({ kind: "picker", email: session.email, vaults });
           return;
@@ -155,7 +155,13 @@ export function Welcome() {
       // (Landing reads ?link=expired). Carry the param through the redirect.
       // NAVIGATION.md: (b) one-shot param carry-through — replace.
       return (
-        <Navigate to={searchParams.get("link") === "expired" ? "/?link=expired" : "/"} replace />
+        <Navigate
+          to={withReturnTo(
+            searchParams.get("link") === "expired" ? "/?link=expired" : "/",
+            searchParams.get("redirect"),
+          )}
+          replace
+        />
       );
     case "first-vault":
       // NAVIGATION.md: (c) the dispatcher is transient — replace. The

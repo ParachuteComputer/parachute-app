@@ -55,7 +55,7 @@ export function CheckEmail() {
   }, [navigate, next]);
 
   // No email on record (deep-linked here directly) — send them to the front door.
-  if (!email) return <Navigate to="/" replace />;
+  if (!email) return <Navigate to={withReturnTo("/", params.get("redirect"))} replace />;
 
   async function resend(to = email) {
     if (ranResend.current) return;
