@@ -12,7 +12,9 @@
  *     PWA or a killed tab never runs React unmount — the exact crash case this
  *     guards against.
  *   - `saved` / `discard` also cancel the pending debounced write and stop
- *     this editor from persisting that body again. Navigation runs in a
+ *     this editor from persisting that body again. `saved` leaves the write
+ *     alone when the body has moved on since the save was sent (typed on
+ *     while it was in flight): that newer text is still unsaved. Navigation runs in a
  *     transition and the destination routes are lazy, so the editor can stay
  *     mounted past the debounce after it navigates; without this the armed
  *     timer wrote the just-saved text back as a draft (T-318 snags2).
@@ -61,9 +63,13 @@ export function useDraftAutosave(
       saveDraft(v, s, bodyRef.current);
     };
     const settle = (settledBody: DraftBody) => {
+      settledRef.current = JSON.stringify(settledBody);
+      // The pending write belongs to the CURRENT body. Cancel it only when
+      // that is the body being settled: text typed while the save was in
+      // flight is unsaved work, so its timer (and pagehide) must still run.
+      if (JSON.stringify(bodyRef.current) !== settledRef.current) return;
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       timerRef.current = null;
-      settledRef.current = JSON.stringify(settledBody);
     };
     return {
       flush: persist,

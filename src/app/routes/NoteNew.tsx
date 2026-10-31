@@ -236,6 +236,10 @@ export function NoteNew() {
     draft.tags.length > 0 ||
     (draft.path.trim().length > 0 && draft.path !== defaultPathRef.current);
   const autosave = useDraftAutosave(composeVaultId, NEW_NOTE_SCOPE, draft, persistableDirty);
+  // Leaving mid-debounce must not drop the tail: a Create that answers while
+  // the user typed on navigates away with those words still unsaved. A saved
+  // or discarded body is never written back (the hook skips it).
+  useEffect(() => () => autosave.flush(), [autosave]);
 
   if (!activeVault) return <Navigate to="/" replace />;
 

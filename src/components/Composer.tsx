@@ -3,7 +3,7 @@ import { VoiceUnavailableNote } from "@/components/VoiceUnavailableNote";
 import { pendingInboxTag } from "@/lib/capture/new-note-tags";
 import { quickPath } from "@/lib/capture/recorder";
 import { buildTextNotePayload } from "@/lib/capture/text-note";
-import { type DraftBody, NEW_NOTE_SCOPE, loadDraft } from "@/lib/drafts/store";
+import { type DraftBody, NEW_NOTE_SCOPE, bodyEquals, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
 import { useToastStore } from "@/lib/toast/store";
 import { useCreateNote, useTagRoles } from "@/lib/vault";
@@ -92,6 +92,8 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
   // drop the tail of what was typed. Flush synchronously through the same
   // store on those edges.
   const flushDraft = autosave.flush;
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
   useEffect(() => {
     return () => flushDraft();
   }, [flushDraft]);
@@ -147,12 +149,22 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
     }
     setSaveError(null);
     const startedAt = new Date().toISOString();
+    const sent = body;
     // mutateAsync so the draft is consumed even if the composer unmounted
     // before the vault answered (TanStack skips the per-call callbacks then;
     // the unmount flush would otherwise leave the saved text as a draft).
     const saving = mutation.mutateAsync(payload, {
       onSuccess: () => {
+        const sentPath = defaultPathRef.current;
         defaultPathRef.current = quickPath();
+        // The textarea stays editable while saving. Text typed after Save is
+        // not in the note just made: keep it (on screen and as the draft),
+        // under a fresh path so its own save doesn't collide.
+        if (!bodyEquals(bodyRef.current, sent)) {
+          setBody((b) => (b.path === sentPath ? { ...b, path: defaultPathRef.current } : b));
+          pushToast(`Saved to ${vault.name}`, "success");
+          return;
+        }
         // This instance stays mounted for the NEXT note — start it empty.
         setTagInput("");
         setBody({ content: "", path: defaultPathRef.current, tags: [] });
@@ -180,7 +192,7 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
       },
     });
     saving.then(
-      () => autosave.saved(body, startedAt),
+      () => autosave.saved(sent, startedAt),
       () => {}, // onError says why; the draft stays
     );
   };

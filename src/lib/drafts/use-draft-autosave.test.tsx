@@ -94,7 +94,9 @@ describe("useDraftAutosave", () => {
     const grab = (c: DraftAutosave) => {
       controls = c;
     };
-    const { rerender } = render(<Harness body={body({ content: "A" })} enabled onControls={grab} />);
+    const { rerender } = render(
+      <Harness body={body({ content: "A" })} enabled onControls={grab} />,
+    );
     const startedAt = new Date().toISOString(); // Save clicked with "A"
     act(() => vi.advanceTimersByTime(200));
     rerender(<Harness body={body({ content: "A and B" })} enabled onControls={grab} />);
@@ -109,7 +111,9 @@ describe("useDraftAutosave", () => {
     const grab = (c: DraftAutosave) => {
       controls = c;
     };
-    const { rerender } = render(<Harness body={body({ content: "A" })} enabled onControls={grab} />);
+    const { rerender } = render(
+      <Harness body={body({ content: "A" })} enabled onControls={grab} />,
+    );
     const startedAt = new Date().toISOString();
     rerender(<Harness body={body({ content: "A and B" })} enabled onControls={grab} />);
     act(() => controls?.saved(body({ content: "A" }), startedAt));
