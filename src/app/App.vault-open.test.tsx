@@ -179,7 +179,11 @@ describe("App — /v/<name> on a device that hasn't opened that vault (T-318)", 
 
       expect(await screen.findByText(/isn't yours/i)).toBeInTheDocument();
       expect(screen.getByText("someone-elses")).toBeInTheDocument();
-      expect(screen.getByText(/owner@example\.test/)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "You're signed in as owner@example.test, and that account has no vault by that name. Check the link, or sign in with the account that owns it.",
+        ),
+      ).toBeInTheDocument();
       expect(screen.queryByText(/is not connected here/i)).not.toBeInTheDocument();
       // Decided from the account's own list: no per-vault probe goes out.
       expect(door.calls.some((c) => c.startsWith("POST /account/vaults/"))).toBe(false);
