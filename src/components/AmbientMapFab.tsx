@@ -22,9 +22,6 @@ import { Link, useLocation } from "react-router";
 // Hidden on the graph route itself — you're already
 // there. Uses ONLY the shipped graph route; no new backend.
 //
-// The gate is its own hook because AppShell needs it too: while the FAB is up
-// on a phone, the content column reserves room under the last line so it can
-// scroll clear of the button (newcomer walk snag 12).
 export function useAmbientMapFabShown(): boolean {
   const hasVault = useVaultStore((s) => s.activeVaultId !== null);
   const earned = useMapEarned();
@@ -54,4 +51,19 @@ export function AmbientMapFab() {
       <IconMap width={22} height={22} />
     </Link>
   );
+}
+
+// The FAB floats over the page, so while it's up on a phone the content column
+// ends with this spacer: with the column's own pb-16 (the bar) it leaves 9rem —
+// the FAB's 5rem offset + its 3rem + a 1rem gap — so the last line can always
+// scroll out from under the button (newcomer walk snag 12). The body already
+// pays the home-indicator inset. The View-modified strip takes the FAB's place
+// in that corner and is no taller, so it keeps the same room — which also stops
+// the page jumping when the strip comes and goes. A leaf of its own so the
+// map-earned cache read re-renders this div, not the app shell.
+export function MapFabClearance() {
+  const fabShown = useAmbientMapFabShown();
+  const modifiedBarShown = useViewModifiedBar((s) => s.shown);
+  if (!fabShown && !modifiedBarShown) return null;
+  return <div aria-hidden="true" data-map-fab-clearance="" className="h-20 shrink-0 md:hidden" />;
 }

@@ -11,7 +11,7 @@ import { App } from "./App";
 // bottom bar, hiding its raised +, and the ambient Map FAB covered the last
 // content on every page. jsdom can't measure layout, so these pin the gates the
 // layout hangs off — WHEN the toast lifts above the bar and WHEN the content
-// column reserves room for the FAB. The geometry itself was measured in a real
+// column ends with room for the FAB. The geometry itself was measured in a real
 // browser at 390×844 (see the PR).
 
 function stubFetch() {
@@ -86,8 +86,9 @@ describe("App — phone bottom clearance (snag 12)", () => {
     seedOneVault();
     render(<App />);
     await screen.findByRole("link", { name: /open the relational map/i });
+    // The reserve closes the content column, after the footer.
     const column = document.querySelector("main")?.parentElement;
-    expect(column).toHaveAttribute("data-clears-map-fab", "true");
+    expect(column?.lastElementChild).toHaveAttribute("data-map-fab-clearance");
   });
 
   it("drops the FAB reserve where the FAB is hidden (the map itself)", async () => {
@@ -96,7 +97,6 @@ describe("App — phone bottom clearance (snag 12)", () => {
     render(<App />);
     await screen.findByRole("navigation", { name: "Primary" });
     expect(screen.queryByRole("link", { name: /open the relational map/i })).toBeNull();
-    const column = document.querySelector("main")?.parentElement;
-    expect(column).not.toHaveAttribute("data-clears-map-fab");
+    expect(document.querySelector("[data-map-fab-clearance]")).toBeNull();
   });
 });
