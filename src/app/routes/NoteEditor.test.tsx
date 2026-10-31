@@ -6,7 +6,7 @@ import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { type ReactNode, Suspense, lazy } from "react";
 import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -754,6 +754,56 @@ describe("NoteEditor — local draft persistence (notes#175)", () => {
     // confirm() is mocked to true in beforeEach → the user chose "discard".
     fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
     expect(loadDraft("dev", "abc-123")).toBeNull();
+  });
+
+  // T-318 snags2: the app's read view is lazy and navigation runs in a
+  // transition, so after Cancel the editor stays mounted until NoteView's
+  // chunk loads. An edit made inside the 600ms autosave debounce left that
+  // timer armed; it wrote the discarded edits back, to be offered again as an
+  // "unsaved draft" on the next edit.
+  it("Cancel inside the debounce window: the discarded edits are not written back", async () => {
+    let releaseChunk: () => void = () => {};
+    const chunk = new Promise<void>((resolve) => {
+      releaseChunk = resolve;
+    });
+    const NoteViewLazy = lazy(async () => {
+      await chunk;
+      return { default: NoteViewProbe };
+    });
+    installFetch({ "/api/notes": { body: baseNote } });
+    render(
+      <MemoryRouter initialEntries={["/n/abc-123/edit"]}>
+        <Suspense fallback={<div>Loading…</div>}>
+          <Routes>
+            <Route path="/n/:id/edit" element={<NoteEditor />} />
+            <Route path="/n/:id" element={<NoteViewLazy />} />
+          </Routes>
+        </Suspense>
+      </MemoryRouter>,
+      { wrapper: Wrapper },
+    );
+    const cm = await screen.findByTestId("cm-editor");
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.change(cm, { target: { value: "edits I throw away" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(loadDraft("dev", "abc-123")).toBeNull();
+      releaseChunk();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText("NoteViewPage:abc-123")).toBeInTheDocument();
+      expect(loadDraft("dev", "abc-123")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("clears the draft when the conflict banner's 'Reload latest' is chosen (F3b)", async () => {
