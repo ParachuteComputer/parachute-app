@@ -224,7 +224,9 @@ describe("App — /v/<name> on a device that hasn't opened that vault (T-318)", 
     it("the whole round trip: sign in from the vault page, land back in the vault", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       try {
-        door.owned = ["garden-notes"];
+        // Two vaults, so only the return target (not welcome-back's auto-open
+        // of a lone vault) can bring the reader to this one.
+        door.owned = ["other", "garden-notes"];
         window.history.replaceState({}, "", "/v/garden-notes");
         render(<App />);
 
