@@ -1,6 +1,6 @@
 import { AccountSessionBanner, HubGateBanner } from "@/components/AccountSessionBanner";
-import { AmbientMapFab } from "@/components/AmbientMapFab";
-import { BottomTabBar } from "@/components/BottomTabBar";
+import { AmbientMapFab, useAmbientMapFabShown } from "@/components/AmbientMapFab";
+import { BottomTabBar, useBottomTabBarShown } from "@/components/BottomTabBar";
 import { AppErrorBoundary, RouteErrorBoundary } from "@/components/ErrorBoundary";
 import { FocusModeExitChip, FocusModeMount } from "@/components/FocusModeMount";
 import { Header } from "@/components/Header";
@@ -590,10 +590,13 @@ function AppShell() {
   const location = useLocation();
   const focusOn = useFocusMode((s) => s.on);
   const focusActive = focusOn && isFocusablePath(location.pathname);
+  // Focus mode unmounts both, so neither may claim space while it's on.
+  const bottomBarShown = useBottomTabBarShown() && !focusActive;
+  const mapFabShown = useAmbientMapFabShown() && !focusActive;
 
   return (
     <div className="app-canvas min-h-dvh overflow-x-hidden text-fg">
-      <Toaster />
+      <Toaster aboveBottomBar={bottomBarShown} />
       <UpdateBanner />
       <VaultStatusBanner />
       <AccountSessionBanner />
@@ -615,7 +618,10 @@ function AppShell() {
                                   that slides out to a docked 288px panel.
           · desktop (>=1024px)  — the Rail (unchanged).
         `pb-16 md:pb-0` therefore drops the bottom-bar gutter at md, where the
-        bar itself is gone. Focus mode (PR 4) drops
+        bar itself is gone. While the phone Map FAB floats above the bar the
+        gutter grows to `pb-36` (the FAB's 5rem offset + its 3rem + a 1rem
+        gap), so the last line can always scroll out from under the button
+        (newcomer walk snag 12). Focus mode (PR 4) drops
         Rail/NavDrawer/Header/BottomTabBar/AppFooter/SpeedDial/AmbientMapFab
         entirely — an instant unmount, not an exit animation: PR1 already
         settled "entrances only, exits stay instant" for every floating
@@ -626,7 +632,12 @@ function AppShell() {
       <div className="md:flex">
         {focusActive ? null : <NavDrawer />}
         {focusActive ? null : <Rail />}
-        <div className={`flex min-w-0 flex-1 flex-col ${focusActive ? "" : "pb-16 md:pb-0"}`}>
+        <div
+          className={`flex min-w-0 flex-1 flex-col ${
+            focusActive ? "" : mapFabShown ? "pb-36 md:pb-0" : "pb-16 md:pb-0"
+          }`}
+          data-clears-map-fab={mapFabShown ? "true" : undefined}
+        >
           {focusActive ? null : <Header />}
           <QuickSwitchMount />
           <main

@@ -3,7 +3,11 @@ import { useEffect } from "react";
 
 const AUTO_DISMISS_MS = 4000;
 
-export function Toaster() {
+// `aboveBottomBar`: on phones the fixed BottomTabBar owns the bottom edge and
+// its raised + pokes above it, so while the bar is up the stack sits at the
+// same height as the Map FAB (5rem + the home-indicator inset) instead of
+// covering the +. From md up the bar is gone and the corner offset returns.
+export function Toaster({ aboveBottomBar = false }: { aboveBottomBar?: boolean }) {
   const toasts = useToastStore((s) => s.toasts);
   const dismiss = useToastStore((s) => s.dismiss);
 
@@ -22,7 +26,10 @@ export function Toaster() {
   return (
     <output
       aria-live="polite"
-      className="pointer-events-none fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2"
+      data-above-bottom-bar={aboveBottomBar ? "true" : undefined}
+      className={`pointer-events-none fixed left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2 ${
+        aboveBottomBar ? "bottom-[calc(5rem+env(safe-area-inset-bottom))] md:bottom-6" : "bottom-6"
+      }`}
     >
       {toasts.map((t) => (
         <div
