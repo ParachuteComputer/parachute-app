@@ -69,8 +69,9 @@ describe("AmbientMapFab", () => {
     });
     renderFab("/");
     const fab = screen.getByRole("link", { name: /open the relational map/i });
-    // Phone: raised above the bar. From md up: the true corner.
-    expect(fab.className).toMatch(/\bbottom-20\b/);
+    // Phone: raised above the bar, which grows by the home-indicator inset.
+    // From md up: the true corner.
+    expect(fab.className).toContain("bottom-[calc(5rem+env(safe-area-inset-bottom))]");
     expect(fab.className).toMatch(/\bmd:bottom-6\b/);
     expect(fab.className).not.toMatch(/\blg:bottom-6\b/);
   });

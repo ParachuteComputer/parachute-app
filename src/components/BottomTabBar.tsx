@@ -26,8 +26,15 @@ import { Link, useLocation } from "react-router";
 // Settings left the bottom bar with the D6 pass — it lives behind the header
 // ⋯ menu and in the desktop rail foot (the dissolved console is a room, not a
 // tab).
+//
+// The bar's own gate is a hook so the Toaster can follow it: a toast lifts
+// above the bar (and its raised +) only while the bar is up.
+export function useBottomTabBarShown(): boolean {
+  return useVaultStore((s) => s.activeVaultId !== null);
+}
+
 export function BottomTabBar() {
-  const hasActiveVault = useVaultStore((s) => s.activeVaultId !== null);
+  const hasActiveVault = useBottomTabBarShown();
   const setSwitcherOpen = useQuickSwitchOpen((s) => s.setOpen);
   const location = useLocation();
 

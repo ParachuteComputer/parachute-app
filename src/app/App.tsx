@@ -1,6 +1,6 @@
 import { AccountSessionBanner, HubGateBanner } from "@/components/AccountSessionBanner";
-import { AmbientMapFab } from "@/components/AmbientMapFab";
-import { BottomTabBar } from "@/components/BottomTabBar";
+import { AmbientMapFab, MapFabClearance } from "@/components/AmbientMapFab";
+import { BottomTabBar, useBottomTabBarShown } from "@/components/BottomTabBar";
 import { AppErrorBoundary, RouteErrorBoundary } from "@/components/ErrorBoundary";
 import { FocusModeExitChip, FocusModeMount } from "@/components/FocusModeMount";
 import { Header } from "@/components/Header";
@@ -590,10 +590,12 @@ function AppShell() {
   const location = useLocation();
   const focusOn = useFocusMode((s) => s.on);
   const focusActive = focusOn && isFocusablePath(location.pathname);
+  // Focus mode unmounts the bar, so toasts drop back to the screen edge.
+  const bottomBarShown = useBottomTabBarShown() && !focusActive;
 
   return (
     <div className="app-canvas min-h-dvh overflow-x-hidden text-fg">
-      <Toaster />
+      <Toaster aboveBottomBar={bottomBarShown} />
       <UpdateBanner />
       <VaultStatusBanner />
       <AccountSessionBanner />
@@ -615,7 +617,9 @@ function AppShell() {
                                   that slides out to a docked 288px panel.
           · desktop (>=1024px)  — the Rail (unchanged).
         `pb-16 md:pb-0` therefore drops the bottom-bar gutter at md, where the
-        bar itself is gone. Focus mode (PR 4) drops
+        bar itself is gone; while the phone Map FAB floats above the bar,
+        `MapFabClearance` adds the room it needs at the end of the column.
+        Focus mode (PR 4) drops
         Rail/NavDrawer/Header/BottomTabBar/AppFooter/SpeedDial/AmbientMapFab
         entirely — an instant unmount, not an exit animation: PR1 already
         settled "entrances only, exits stay instant" for every floating
@@ -979,6 +983,7 @@ function AppShell() {
             </Suspense>
           </main>
           {focusActive ? null : <AppFooter />}
+          {focusActive ? null : <MapFabClearance />}
         </div>
       </div>
       {focusActive ? null : <BottomTabBar />}
