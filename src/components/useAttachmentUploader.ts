@@ -27,7 +27,9 @@ interface UploaderArgs {
   noteId: string | null;
   onInsert: (markdown: string) => void;
   onStaged?: (staged: { path: string; mimeType: string; filename: string }) => void;
-  onLinked?: () => void;
+  // Called with the same embed markdown `onInsert` got, once the link lands —
+  // the read view writes the embed only after the attachment row exists.
+  onLinked?: (markdown: string) => void;
   onError?: (message: string) => void;
 }
 
@@ -77,7 +79,8 @@ export function useAttachmentUploader({
           })
           .then(async (result) => {
             update(id, { result, loaded: result.size, mimeType: result.mimeType });
-            onInsert(markdownForUpload(result, file.name));
+            const markdown = markdownForUpload(result, file.name);
+            onInsert(markdown);
 
             if (noteId) {
               update(id, { status: "linking" });
@@ -88,7 +91,7 @@ export function useAttachmentUploader({
                   mimeType: result.mimeType,
                 });
                 update(id, { status: "done" });
-                onLinked?.();
+                onLinked?.(markdown);
               } catch (err) {
                 const msg = err instanceof Error ? err.message : "Link failed";
                 update(id, { status: "error", error: msg });
