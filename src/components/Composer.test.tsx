@@ -291,6 +291,70 @@ describe("Composer — the honest write-in-place hero (W2-10; F10)", () => {
     expect(loadDraft("v1", NEW_NOTE_SCOPE)).toBeNull();
   });
 
+  // T-318 snags2 "unsaved-draft leak": leaving Home while a Save is in flight
+  // (tap a recent note, the "+", the palette) unmounts the composer, whose
+  // unmount flush rightly keeps the words — but TanStack drops `mutate`'s own
+  // onSuccess once the component is gone, so the clear never ran. The note got
+  // created AND its text stayed behind as the shared draft, to be saved again
+  // from the next /new or composer.
+  it("a save that lands after the composer unmounted still consumes the draft", async () => {
+    let answerCreate: ((r: Response) => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const json = (body: unknown, status = 200) =>
+          ({ ok: status < 400, status, json: async () => body, text: async () => "" }) as Response;
+        if (init?.method === "POST" && url.includes("/api/notes")) {
+          return new Promise<Response>((resolve) => {
+            answerCreate = resolve;
+          });
+        }
+        if (url.includes("/api/notes?")) return json(SEED_ONLY);
+        return json(null, 404);
+      }),
+    );
+    const first = render(
+      <Wrap>
+        <Composer vault={VAULT} />
+      </Wrap>,
+    );
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    fireEvent.change(input, { target: { value: "saved while leaving" } });
+    fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
+    await waitFor(() => expect(answerCreate).not.toBeNull());
+    first.unmount();
+    // The unmount flush kept the words while the save was still unanswered.
+    expect(loadDraft("v1", NEW_NOTE_SCOPE)?.body.content).toBe("saved while leaving");
+
+    answerCreate!({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: "made-1", path: "Notes/x", createdAt: "2026-10-30T12:00:00Z" }),
+      text: async () => "",
+    } as Response);
+    await waitFor(() => expect(loadDraft("v1", NEW_NOTE_SCOPE)).toBeNull());
+
+    // Back on Home: the composer opens empty, nothing to save twice.
+    render(
+      <Wrap>
+        <Composer vault={VAULT} />
+      </Wrap>,
+    );
+    expect(await screen.findByRole("textbox", { name: /what's on your mind\?/i })).toHaveValue("");
+  });
+
+  it("a failed save leaves the draft in the store", async () => {
+    installRoutedFetch({ notes: SEED_ONLY, createStatus: 500 });
+    renderComposer();
+    const input = await screen.findByRole("textbox", { name: /what's on your mind\?/i });
+    fireEvent.change(input, { target: { value: "not saved yet" } });
+    fireEvent.click(screen.getByRole("button", { name: /save to default/i }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    fireEvent.focusOut(input);
+    expect(loadDraft("v1", NEW_NOTE_SCOPE)?.body.content).toBe("not saved yet");
+  });
+
   it("the mic honors the transcription gate: disabled vault → no mic, the honest line", async () => {
     installRoutedFetch({
       notes: SEED_ONLY,
