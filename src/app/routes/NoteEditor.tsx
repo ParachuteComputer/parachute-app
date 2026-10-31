@@ -152,7 +152,7 @@ function EditorSurface({ note }: { note: Note }) {
 
   // Persist the draft locally while there are unsaved edits (crash / navigation
   // protection). Clears itself when clean; explicitly cleared on save/discard.
-  useDraftAutosave(vaultId, note.id, draft, isDirty);
+  const autosave = useDraftAutosave(vaultId, note.id, draft, isDirty);
 
   // Block saving while an attachment is still uploading (or linking). The
   // embed markdown only lands in `draft.content` once the upload resolves
@@ -250,9 +250,9 @@ function EditorSurface({ note }: { note: Note }) {
     if (isDirty && !confirm("Discard unsaved changes?")) return;
     // The user answered "discard" — drop the local draft too, or it would
     // resurface as a false "restore?" offer on the next edit.
-    if (vaultId) clearDraft(vaultId, note.id);
+    autosave.discard();
     navigate(`/n/${encodeURIComponent(note.id)}`);
-  }, [isDirty, navigate, note.id, vaultId]);
+  }, [autosave, isDirty, navigate, note.id]);
 
   // Prevent tab close with unsaved edits.
   useEffect(() => {

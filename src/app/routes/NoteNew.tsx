@@ -235,7 +235,11 @@ export function NoteNew() {
     draft.content.trim().length > 0 ||
     draft.tags.length > 0 ||
     (draft.path.trim().length > 0 && draft.path !== defaultPathRef.current);
-  useDraftAutosave(composeVaultId, NEW_NOTE_SCOPE, draft, persistableDirty);
+  const autosave = useDraftAutosave(composeVaultId, NEW_NOTE_SCOPE, draft, persistableDirty);
+  // Leaving mid-debounce must not drop the tail: a Create that answers while
+  // the user typed on navigates away with those words still unsaved. A saved
+  // or discarded body is never written back (the hook skips it).
+  useEffect(() => () => autosave.flush(), [autosave]);
 
   if (!activeVault) return <Navigate to="/" replace />;
 
@@ -284,7 +288,12 @@ export function NoteNew() {
     }
 
     setSaveError(null);
-    mutation.mutate(payload, {
+    const startedAt = new Date().toISOString();
+    // mutateAsync, not mutate: the draft must be consumed even when this
+    // screen unmounted before the vault answered (TanStack skips the per-call
+    // callbacks below once the component is gone). The callbacks stay
+    // mount-gated, so a late answer never navigates a user who has left.
+    const creating = mutation.mutateAsync(payload, {
       onSuccess: async (created: Note) => {
         for (const s of staged) {
           try {
@@ -298,7 +307,6 @@ export function NoteNew() {
             pushToast(`Failed to attach ${s.filename}: ${msg}`, "error");
           }
         }
-        if (composeVaultId) clearDraft(composeVaultId, NEW_NOTE_SCOPE);
         pushToast(`Created ${created.path ?? created.id}`, "success");
         // NAVIGATION.md: "NoteNew save → /n/<id>" — (b) consumes the compose
         // form; replace (Back to a cleared, ghost draft would lie).
@@ -318,9 +326,13 @@ export function NoteNew() {
         }
       },
     });
+    creating.then(
+      () => autosave.saved(draft, startedAt),
+      () => {}, // onError says why; the draft stays
+    );
   }, [
     activeVault,
-    composeVaultId,
+    autosave,
     client,
     draft,
     isValid,
@@ -400,6 +412,7 @@ export function NoteNew() {
     }
 
     setIsSavingAudio(true);
+    const startedAt = new Date().toISOString();
 
     // Fire-and-forget lazy declaration of the inbox tag — only when this
     // save carries it (see the text path). Not awaited.
@@ -484,7 +497,7 @@ export function NoteNew() {
         ["note", activeVault.id, localId],
         optimisticCreatedNote(createPayload, localId),
       );
-      if (composeVaultId) clearDraft(composeVaultId, NEW_NOTE_SCOPE);
+      autosave.saved(draft, startedAt);
       pushToast("Captured — syncing audio.", "success");
       voice.discardAudio();
       // NAVIGATION.md: "NoteNew save → /n/<id>" — (b) consumes the compose
@@ -498,7 +511,7 @@ export function NoteNew() {
     }
   }, [
     activeVault,
-    composeVaultId,
+    autosave,
     blobStore,
     client,
     db,
@@ -523,10 +536,10 @@ export function NoteNew() {
 
   const handleCancel = useCallback(() => {
     if (isDirty && !confirm("Discard this draft?")) return;
-    if (composeVaultId) clearDraft(composeVaultId, NEW_NOTE_SCOPE);
+    autosave.discard();
     voice.discardAudio();
     navigate("/");
-  }, [composeVaultId, isDirty, navigate, voice]);
+  }, [autosave, isDirty, navigate, voice]);
 
   // The "draft restored" banner's discard: wipe the saved draft AND reset the
   // compose surface to a fresh, empty note.

@@ -12,7 +12,7 @@ import { SyncProvider } from "@/providers/SyncProvider";
 import { type NavLogEntry, NavTypeLog } from "@/test/nav-probe";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { type ReactNode, Suspense, lazy } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -2135,6 +2135,211 @@ describe("NoteNew — local draft persistence (notes#175)", () => {
       fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
     });
     await waitFor(() => expect(screen.getByText("NoteViewPage")).toBeInTheDocument());
+    expect(loadDraft("dev", "new")).toBeNull();
+  });
+});
+
+// T-318 snags2 "unsaved-draft leak": in the real app every destination route
+// is `lazy()` behind one <Suspense>, and the router wraps navigation in
+// startTransition — so after Create (or Cancel) navigates, React keeps /new
+// MOUNTED until the destination's chunk loads. A Create clicked inside the
+// autosave debounce (600ms) left that timer armed through the hold; it fired
+// after the clear and wrote the just-saved text back under the shared `new`
+// key, so the home composer and the next /new resurrected it (and the next
+// note was saved as old text + new). These routes mirror App.tsx: lazy
+// destinations whose chunk resolves only when the test says so.
+describe("NoteNew — no draft survives a create (or discard) inside the debounce window", () => {
+  let releaseChunks: () => void = () => {};
+
+  function renderWithLazyDestinations() {
+    const chunk = new Promise<void>((resolve) => {
+      releaseChunks = resolve;
+    });
+    const NoteViewLazy = lazy(async () => {
+      await chunk;
+      return { default: () => <div>NoteViewPage</div> };
+    });
+    const HomeLazy = lazy(async () => {
+      await chunk;
+      return { default: () => <div>NotesListPage</div> };
+    });
+    return render(
+      <MemoryRouter initialEntries={["/new"]}>
+        <Suspense fallback={<div>Loading…</div>}>
+          <Routes>
+            <Route path="/new" element={<NoteNew />} />
+            <Route path="/n/:id" element={<NoteViewLazy />} />
+            <Route path="/" element={<HomeLazy />} />
+          </Routes>
+        </Suspense>
+      </MemoryRouter>,
+      { wrapper: Wrapper },
+    );
+  }
+
+  // Advance fake time and let the mocked fetch / React work settle.
+  const tick = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  beforeEach(async () => {
+    const db = await freshDb();
+    db.close();
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    seedStore();
+    vi.spyOn(window, "confirm").mockImplementation(() => true);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it("Create 300ms after typing: the draft is gone and a fresh /new opens empty", async () => {
+    installFetch({
+      "POST /api/notes": {
+        status: 201,
+        body: { id: "made-1", path: "Notes/first", createdAt: "2026-10-30T12:00:00Z" },
+      },
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { unmount } = renderWithLazyDestinations();
+
+    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "first thought" } });
+    await tick(300); // inside the 600ms debounce
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    await tick(50); // the POST resolves; the create clears the draft and navigates
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Created Notes/first");
+    // The transition holds /new on screen while the note view's chunk loads…
+    expect(screen.getByTestId("cm-editor")).toBeInTheDocument();
+    // …long enough for the old debounce to come due.
+    await tick(1000);
+    expect(loadDraft("dev", "new")).toBeNull();
+
+    releaseChunks();
+    await tick(0);
+    expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    expect(loadDraft("dev", "new")).toBeNull();
+    unmount();
+
+    // The next compose starts clean: no restored text, no banner.
+    vi.useRealTimers();
+    renderAt("/new");
+    expect(screen.getByTestId("cm-editor")).toHaveValue("");
+    expect(screen.queryByTestId("draft-restored")).not.toBeInTheDocument();
+  });
+
+  it("a FAILED create keeps the draft (the words are not saved anywhere else)", async () => {
+    // A vault error alone doesn't fail a create: with the sync DB open it
+    // falls back to the offline queue (withOfflineFallback). It fails for real
+    // when there's no queue either — storage blocked, as in a private window.
+    vi.spyOn(indexedDB, "open").mockImplementation(() => {
+      throw new Error("storage blocked");
+    });
+    installFetch({ "POST /api/notes": { status: 500, body: { error: "boom" } } });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    renderWithLazyDestinations();
+
+    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "keep me" } });
+    await tick(300);
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    await tick(50);
+    expect(screen.getByRole("alert")).toHaveTextContent(/path is taken/i);
+    expect(screen.getByTestId("cm-editor")).toHaveValue("keep me");
+    await tick(1000);
+    expect(loadDraft("dev", "new")?.body.content).toBe("keep me");
+  });
+
+  // Codex (high) on the fix: typing on while Create is in flight. The note is
+  // created with the text as it was at the click; the words typed after it
+  // are saved nowhere else, so they stay as the `new` draft (the next compose
+  // offers them) — whether /new is still held on screen past the debounce or
+  // unmounts before it comes due.
+  function holdCreate() {
+    const passThrough = installFetch({});
+    let answer: (() => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (init?.method === "POST" && url.includes("/api/notes")) {
+          return new Promise<Response>((resolve) => {
+            answer = () =>
+              resolve({
+                ok: true,
+                status: 201,
+                json: async () => ({
+                  id: "made-1",
+                  path: "Notes/first",
+                  createdAt: "2026-10-30T12:00:00Z",
+                }),
+                text: async () => "",
+              } as Response);
+          });
+        }
+        return passThrough(input, init);
+      }),
+    );
+    return () => answer?.();
+  }
+
+  it("typing on during Create: the newer text is autosaved after the debounce", async () => {
+    const answerCreate = holdCreate();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { unmount } = renderWithLazyDestinations();
+
+    const editor = screen.getByTestId("cm-editor");
+    fireEvent.change(editor, { target: { value: "first thought" } });
+    await tick(300);
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    await tick(50);
+    fireEvent.change(editor, { target: { value: "first thought, and more" } });
+    await tick(100);
+    answerCreate();
+    await tick(50);
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Created Notes/first");
+    await tick(1000); // /new still held by the transition; the debounce comes due
+    expect(loadDraft("dev", "new")?.body.content).toBe("first thought, and more");
+
+    releaseChunks();
+    await tick(0);
+    expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    expect(loadDraft("dev", "new")?.body.content).toBe("first thought, and more");
+    unmount();
+  });
+
+  it("typing on during Create: /new unmounting before the debounce still keeps the newer text", async () => {
+    const answerCreate = holdCreate();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    renderWithLazyDestinations();
+    releaseChunks(); // the note view's chunk is ready: /new unmounts at once
+
+    const editor = screen.getByTestId("cm-editor");
+    fireEvent.change(editor, { target: { value: "first thought" } });
+    await tick(300);
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    await tick(50);
+    fireEvent.change(editor, { target: { value: "first thought, and more" } });
+    await tick(100);
+    answerCreate();
+    await tick(0);
+    expect(screen.getByText("NoteViewPage")).toBeInTheDocument();
+    expect(loadDraft("dev", "new")?.body.content).toBe("first thought, and more");
+  });
+
+  it("Cancel 300ms after typing: the discarded text does not come back as a draft", async () => {
+    installFetch({});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    renderWithLazyDestinations();
+
+    fireEvent.change(screen.getByTestId("cm-editor"), { target: { value: "never mind" } });
+    await tick(300);
+    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+    await tick(1000);
     expect(loadDraft("dev", "new")).toBeNull();
   });
 });

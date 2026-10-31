@@ -3,13 +3,7 @@ import { VoiceUnavailableNote } from "@/components/VoiceUnavailableNote";
 import { pendingInboxTag } from "@/lib/capture/new-note-tags";
 import { quickPath } from "@/lib/capture/recorder";
 import { buildTextNotePayload } from "@/lib/capture/text-note";
-import {
-  type DraftBody,
-  NEW_NOTE_SCOPE,
-  clearDraft,
-  loadDraft,
-  saveDraft,
-} from "@/lib/drafts/store";
+import { type DraftBody, NEW_NOTE_SCOPE, bodyEquals, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
 import { useToastStore } from "@/lib/toast/store";
 import { useCreateNote, useTagRoles } from "@/lib/vault";
@@ -17,7 +11,7 @@ import { VaultAuthError } from "@/lib/vault/client";
 import { useActiveVaultClient, useTranscriptionGate } from "@/lib/vault/queries";
 import { ensureNotesSchema } from "@/lib/vault/schema-ensure";
 import type { VaultRecord } from "@/lib/vault/types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 // Composer — the write-in-place hero, HONEST since W2-10 (F10: the affordance
@@ -91,19 +85,15 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
     body.content.trim().length > 0 ||
     body.tags.length > 0 ||
     (body.path.trim().length > 0 && body.path !== defaultPathRef.current);
-  useDraftAutosave(vault.id, NEW_NOTE_SCOPE, body, persistableDirty);
+  const autosave = useDraftAutosave(vault.id, NEW_NOTE_SCOPE, body, persistableDirty);
 
   // The autosave above is debounced (600ms); a same-tick route hop — tapping
   // the mic or the full-editor escape, or any unmount mid-debounce — must not
   // drop the tail of what was typed. Flush synchronously through the same
   // store on those edges.
+  const flushDraft = autosave.flush;
   const bodyRef = useRef(body);
   bodyRef.current = body;
-  const dirtyRef = useRef(persistableDirty);
-  dirtyRef.current = persistableDirty;
-  const flushDraft = useCallback(() => {
-    if (dirtyRef.current) saveDraft(vault.id, NEW_NOTE_SCOPE, bodyRef.current);
-  }, [vault.id]);
   useEffect(() => {
     return () => flushDraft();
   }, [flushDraft]);
@@ -158,10 +148,23 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
       void ensureNotesSchema(vault.id, client, inboxTag);
     }
     setSaveError(null);
-    mutation.mutate(payload, {
+    const startedAt = new Date().toISOString();
+    const sent = body;
+    // mutateAsync so the draft is consumed even if the composer unmounted
+    // before the vault answered (TanStack skips the per-call callbacks then;
+    // the unmount flush would otherwise leave the saved text as a draft).
+    const saving = mutation.mutateAsync(payload, {
       onSuccess: () => {
-        clearDraft(vault.id, NEW_NOTE_SCOPE);
+        const sentPath = defaultPathRef.current;
         defaultPathRef.current = quickPath();
+        // The textarea stays editable while saving. Text typed after Save is
+        // not in the note just made: keep it (on screen and as the draft),
+        // under a fresh path so its own save doesn't collide.
+        if (!bodyEquals(bodyRef.current, sent)) {
+          setBody((b) => (b.path === sentPath ? { ...b, path: defaultPathRef.current } : b));
+          pushToast(`Saved to ${vault.name}`, "success");
+          return;
+        }
         // This instance stays mounted for the NEXT note — start it empty.
         setTagInput("");
         setBody({ content: "", path: defaultPathRef.current, tags: [] });
@@ -188,6 +191,10 @@ export function Composer({ vault, focused = false }: { vault: VaultRecord; focus
         );
       },
     });
+    saving.then(
+      () => autosave.saved(sent, startedAt),
+      () => {}, // onError says why; the draft stays
+    );
   };
 
   return (
