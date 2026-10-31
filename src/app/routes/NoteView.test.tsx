@@ -1157,3 +1157,153 @@ describe("NoteView route — a note deep link survives the logged-out bounce (ap
     expect(log.every((e) => e.pathname === "/n/abc-123")).toBe(true);
   });
 });
+
+describe("NoteView — attach a file from the read view (T-318 snag #9)", () => {
+  // The production walk (10-30): a newcomer opened a note to add a picture and
+  // found no way to do it — "Attach files…" lived only in Edit mode. The read
+  // view now offers it, through the editor's own upload → link path, and the
+  // note ends the same as attaching in Edit and saving: a linked attachment
+  // AND the embed line in the body.
+  class FakeXhr {
+    url = "";
+    status = 0;
+    responseText = "";
+    upload = { onprogress: null as ((e: ProgressEvent) => void) | null };
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+    open(_method: string, url: string) {
+      this.url = url;
+    }
+    setRequestHeader() {}
+    send() {}
+    abort() {
+      this.onabort?.();
+    }
+    resolve(status: number, body: string) {
+      this.status = status;
+      this.responseText = body;
+      this.onload?.();
+    }
+  }
+
+  // A small stateful vault: GET serves the current note, the link POST adds an
+  // attachment row, the PATCH writes content — so the test sees what a refetch
+  // of the real vault would return, not a canned response.
+  function installVault() {
+    const note = {
+      id: "garden-note",
+      path: "Notes/garden",
+      createdAt: "2026-10-30T00:00:00Z",
+      updatedAt: "2026-10-30T00:00:00Z",
+      content: "Plant the garlic.\n\nAsk Sam about the seed order.",
+      tags: [] as string[],
+      links: [],
+      attachments: [] as Array<Record<string, unknown>>,
+    };
+    const patches: Array<Record<string, unknown>> = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      const json = (status: number, body: unknown) =>
+        ({
+          ok: status < 400,
+          status,
+          // A fresh copy per response, as off the wire.
+          json: async () => structuredClone(body),
+          text: async () => JSON.stringify(body),
+          blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+        }) as Response;
+      if (url.includes("/api/storage/")) return json(200, null);
+      if (method === "POST" && url.includes("/api/notes/garden-note/attachments")) {
+        const body = JSON.parse(String(init?.body));
+        const row = {
+          id: `att-${note.attachments.length + 1}`,
+          noteId: note.id,
+          path: body.path,
+          mimeType: body.mimeType,
+          createdAt: "2026-10-30T00:00:05Z",
+        };
+        note.attachments.push(row);
+        return json(201, row);
+      }
+      if (method === "PATCH" && url.includes("/api/notes/garden-note")) {
+        const body = JSON.parse(String(init?.body));
+        patches.push(body);
+        if (typeof body.content === "string") note.content = body.content;
+        if (typeof body.append === "string") note.content += body.append;
+        note.updatedAt = "2026-10-30T00:01:00Z";
+        const { attachments: _a, links: _l, ...plain } = note;
+        return json(200, plain);
+      }
+      if (method === "GET" && url.includes("/api/notes")) return json(200, [note]);
+      return json(404, null);
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    const xhrs: FakeXhr[] = [];
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      // biome-ignore lint/complexity/useArrowFunction: must be `new`-able
+      function () {
+        const x = new FakeXhr();
+        xhrs.push(x);
+        return x;
+      } as unknown as typeof XMLHttpRequest,
+    );
+    return { note, patches, xhrs };
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    seedStore();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("an Attach file action uploads, links, embeds, and shows the picture without a reload", async () => {
+    const { patches, xhrs } = installVault();
+    const origCreate = URL.createObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:fake-url");
+    URL.revokeObjectURL = vi.fn();
+
+    renderAt("/n/garden-note");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: /Plant the garlic/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Attachments" })).not.toBeInTheDocument();
+
+    // The control sits in the read view's action row, beside Edit.
+    const attach = screen.getByRole("button", { name: /attach file/i });
+    const input = attach.parentElement?.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    const file = new File([new Uint8Array([1, 2, 3])], "garden.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(xhrs.length).toBe(1));
+    expect(xhrs[0]!.url).toBe("http://localhost:1940/api/storage/upload");
+    await act(async () => {
+      xhrs[0]!.resolve(
+        201,
+        JSON.stringify({ path: "2026-10-30/garden-abc.png", size: 3, mimeType: "image/png" }),
+      );
+    });
+
+    // Same end state as Edit → attach → Save: the embed line joins the body,
+    // as its own paragraph. An append, so text this view never saw is kept.
+    await waitFor(() => expect(patches.length).toBe(1));
+    expect(patches[0]).toEqual({
+      append: "\n\n![garden.png](/api/storage/2026-10-30/garden-abc.png)\n",
+    });
+
+    // And the read view shows it in place: the inline image and the
+    // Attachments card for the linked row — no reload.
+    expect(await screen.findByRole("heading", { name: "Attachments" })).toBeInTheDocument();
+    expect(screen.getByText("garden-abc.png")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByAltText("garden.png").length).toBeGreaterThan(0));
+    URL.createObjectURL = origCreate;
+  });
+});

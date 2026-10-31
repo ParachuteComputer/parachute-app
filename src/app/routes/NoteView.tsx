@@ -1,3 +1,5 @@
+import { AttachmentPicker } from "@/components/AttachmentPicker";
+import { AttachmentUploadList } from "@/components/AttachmentUploadList";
 import { CopyField, useCopyToClipboard } from "@/components/CopyField";
 import { DeleteNoteButton } from "@/components/DeleteNoteButton";
 import { buildWikilinkResolver } from "@/components/MarkdownView";
@@ -12,6 +14,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { OfflineRibbon } from "@/components/ui/OfflineRibbon";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useAttachmentUploader } from "@/components/useAttachmentUploader";
 import { useFocusMode } from "@/lib/focus-mode";
 import {
   type DisplayTitle,
@@ -21,7 +24,9 @@ import {
   stripFirstTitleLine,
 } from "@/lib/note-title";
 import { pushRecent } from "@/lib/quick-switch/recents";
+import { isLocalId } from "@/lib/sync/id-map";
 import { relativeTime } from "@/lib/time";
+import { useToastStore } from "@/lib/toast/store";
 import {
   useActiveVaultClient,
   useLiveNote,
@@ -32,10 +37,11 @@ import {
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { noteShareUrl, vaultShareRef } from "@/lib/vault/deep-link";
 import { useTagRoles } from "@/lib/vault/settings";
-import type { Note, NoteAttachment, NoteLink } from "@/lib/vault/types";
+import type { Note, NoteAttachment, NoteLink, UpdateNotePayload } from "@/lib/vault/types";
 import { withReturnTo } from "@/lib/vault/url";
 import { isViewNote } from "@/lib/views/schema";
 import { useSync } from "@/providers/SyncProvider";
+import { useQueryClient } from "@tanstack/react-query";
 import { type SVGProps, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
 
@@ -101,7 +107,8 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
   const vault = useVaultStore((s) => s.getActiveVault());
   const { roles } = useTagRoles(vault?.id ?? null);
   const retryTranscription = useRetryTranscription();
-  const { mirror } = useSync();
+  const { mirror, isOnline } = useSync();
+  const attach = useReadViewAttach(note, cacheId);
   // Served from the durable-offline mirror while offline: mark it a saved copy.
   const savedCopy = mirror.state === "offline";
   // A body dropped by the storage-ceiling eviction (mirror-only bookkeeping): the
@@ -188,6 +195,16 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
             >
               Edit
             </Link>
+            {/* Uploads need the vault: hidden offline, on a body not loaded
+                here, and on a note still waiting to sync (its local id has no
+                server row to link to). */}
+            {isOnline && !bodyEvicted && !isLocalId(note.id) ? (
+              <AttachmentPicker
+                label="Attach file"
+                className="btn btn-secondary btn-touch"
+                onPickFiles={attach.start}
+              />
+            ) : null}
             <PinArchiveButtons note={note} keyboard />
             <DeleteNoteButton note={note} />
             <button
@@ -211,6 +228,15 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
               </Link>
             ) : null}
           </div>
+          {attach.uploads.length > 0 ? (
+            <div className="mt-3">
+              <AttachmentUploadList
+                uploads={attach.uploads}
+                onCancel={attach.cancel}
+                onDismiss={attach.dismiss}
+              />
+            </div>
+          ) : null}
           <HeaderPath value={label} isPath={!!note.path} />
           <NoteHistory note={note} />
         </header>
@@ -262,6 +288,60 @@ function NoteBody({ note, cacheId }: { note: Note; cacheId?: string }) {
       </aside>
     </article>
   );
+}
+
+// "Attach file" from the read view (T-318 snag #9 — a newcomer couldn't find
+// how to add a picture without first finding Edit). Same upload → link path
+// as the editor's picker, and the same end state as attaching in Edit and
+// saving: a linked attachment AND its embed line, at the end of the body since
+// there is no cursor. The embed is written only once the link lands, so a
+// failed link leaves the note as it was.
+//
+// The body write is the vault's `append` (both doors), not a full-content
+// PATCH: it can't overwrite text this view never loaded (an evicted mirror
+// body, a newer edit from another device) and needs no baseline. It goes
+// straight to the client, not through `useUpdateNote`'s offline queue — an
+// upload only happens online anyway, and a queued append replayed after a
+// timeout that had in fact landed would add the embed twice. The refetch
+// then brings in the new body and the Attachments card without a reload.
+function useReadViewAttach(note: Note, cacheId?: string) {
+  const client = useActiveVaultClient();
+  const activeId = useVaultStore((s) => s.activeVaultId);
+  const qc = useQueryClient();
+  const pushToast = useToastStore((s) => s.push);
+
+  const uploader = useAttachmentUploader({
+    noteId: note.id,
+    onInsert: () => {},
+    onLinked: async (markdown) => {
+      const key = ["note", activeId, cacheId ?? note.id];
+      const current = qc.getQueryData<Note>(key) ?? note;
+      try {
+        if (!client) throw new Error("No active vault");
+        // `append` is on both doors' PATCH but not yet on the client's type.
+        const payload = { append: embedSeparator(current.content) + markdown };
+        await client.updateNote(note.id, payload as UpdateNotePayload);
+        pushToast("Attachment added", "success");
+      } catch {
+        pushToast("Attached, but couldn't add it to the note text.", "error");
+      }
+      await qc.invalidateQueries({ queryKey: key, exact: true });
+      qc.invalidateQueries({ queryKey: ["notes", activeId] });
+    },
+    onError: (msg) => pushToast(msg, "error"),
+  });
+  // A finished upload shows as the attachment itself; only in-flight and
+  // failed rows stay listed.
+  return { ...uploader, uploads: uploader.uploads.filter((u) => u.status !== "done") };
+}
+
+// The embed goes on its own paragraph at the end of the body. Unknown content
+// (not loaded) gets the paragraph break; a spare blank line is harmless.
+function embedSeparator(content: string | undefined): string {
+  if (content === "") return "";
+  if (content?.endsWith("\n\n")) return "";
+  if (content?.endsWith("\n")) return "\n";
+  return "\n\n";
 }
 
 function MetadataPanel({ note }: { note: Note }) {
