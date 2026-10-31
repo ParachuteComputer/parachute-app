@@ -15,6 +15,8 @@ import { UpdateBanner } from "@/components/UpdateBanner";
 import { VaultStatusBanner } from "@/components/VaultStatusBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { type BootDecision, getDoorDescriptor, resolveBoot } from "@/lib/account";
+import { SessionExpiredError, getSession, listVaults } from "@/lib/account/client";
+import { openHostedVault } from "@/lib/account/hosted-vault";
 import { detectMountBase } from "@/lib/base-url";
 import { isFocusablePath, useFocusMode } from "@/lib/focus-mode";
 import { NavBandsProvider, isCeremonyPath } from "@/lib/nav/model";
@@ -29,7 +31,7 @@ import { useCrossTabVaultSync } from "@/lib/vault/cross-tab-sync";
 import { parseNoteRef, resolveVaultRef, vaultShareRef } from "@/lib/vault/deep-link";
 import { useActiveVaultClient } from "@/lib/vault/queries";
 import { useReachabilityProbe } from "@/lib/vault/reachability-probe";
-import { switchVault } from "@/lib/vault/switch";
+import { announceVaultSwitch, switchVault } from "@/lib/vault/switch";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { SyncProvider } from "@/providers/SyncProvider";
 import { matchesNavigationDenylist } from "@/pwa-navigation-denylist";
@@ -338,8 +340,18 @@ function NoteRefNormalizer() {
 // The unknown-vault state for a vault-scoped deep link. A link naming a vault
 // this device has never connected is a genuinely different situation from a
 // dead note id: the address is well-formed, the note may well exist, and the
-// fix is a connect — so it gets its own copy and points at `/add` (the existing
-// "Connect your own vault" ceremony) plus `/vaults` for the ones already here.
+// fix is a connect.
+//
+// T-318: old `/vault/<name>` links land here too (cloud #350), so the first
+// person to see this page is usually the vault's OWNER on a new device. So it
+// asks the home door who is signed in before it says anything:
+//   · signed in, and the name is in the account's own vault list → open it in
+//     place (the same mint `/welcome` uses); the gate then resolves the URL;
+//   · signed in, not in that list → "isn't yours". The list only ever holds the
+//     account's own vaults, so this says nothing about whether the vault exists;
+//   · signed out → the front door in place, carrying this address so the
+//     sign-in comes back here (and the branch above opens the vault);
+//   · a door with no account API (or no answer) → the connect card below.
 //
 // The connect link carries the address the reader arrived on as `?redirect=`,
 // so the flow returns them to the note they were sent rather than the default
@@ -347,11 +359,130 @@ function NoteRefNormalizer() {
 // (`withReturnTo` → `/add` → `beginOAuth` → `OAuthCallback`). The FULL `/v/...`
 // address is what returns: once the vault is connected this route resolves it
 // and opens the note at the same canonical vault-scoped address.
+type VaultReach =
+  | { kind: "checking" }
+  | { kind: "no-account" }
+  | { kind: "signed-out" }
+  | { kind: "opening"; name: string }
+  | { kind: "not-yours"; who?: string }
+  | { kind: "error"; message: string };
+
 function VaultNotConnected({ name }: { name: string }) {
   const renderedLocation = useRenderedLocation();
   const mount = detectMountBase(renderedLocation.pathname);
   const raw = `${renderedLocation.pathname.slice(mount.length)}${renderedLocation.search}`;
   const connectHref = `${mount}/add?redirect=${encodeURIComponent(raw)}`;
+  const [reach, setReach] = useState<VaultReach>({ kind: "checking" });
+  const [attempt, setAttempt] = useState(0);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger, not a value read in the body
+  useEffect(() => {
+    let live = true;
+    setReach({ kind: "checking" });
+    (async () => {
+      let session: Awaited<ReturnType<typeof getSession>>;
+      try {
+        session = await getSession();
+      } catch {
+        if (live) setReach({ kind: "no-account" });
+        return;
+      }
+      if (!session.signed_in) {
+        if (live) setReach({ kind: "signed-out" });
+        return;
+      }
+      try {
+        const { vaults } = await listVaults();
+        if (!live) return;
+        const owned = vaults.find((v) => v.name.toLowerCase() === name.toLowerCase());
+        if (!owned) {
+          setReach({ kind: "not-yours", who: session.email ?? session.username });
+          return;
+        }
+        setReach({ kind: "opening", name: owned.name });
+        // Stores + activates the record; the gate above resolves this URL to it
+        // and unmounts this page.
+        await openHostedVault(owned.name);
+        announceVaultSwitch(owned.name);
+      } catch (err) {
+        if (!live) return;
+        if (err instanceof SessionExpiredError) setReach({ kind: "signed-out" });
+        else setReach({ kind: "error", message: err instanceof Error ? err.message : "" });
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [name, attempt]);
+
+  if (reach.kind === "checking") return <RouteFallback />;
+  if (reach.kind === "signed-out") return <Landing returnTo={raw} vaultName={name} />;
+  if (reach.kind === "opening") {
+    return (
+      <output
+        aria-live="polite"
+        className="mx-auto block max-w-5xl px-6 py-10 text-center text-sm text-fg-dim"
+      >
+        Opening {reach.name}…
+      </output>
+    );
+  }
+
+  const vaultsLink = (
+    <a href={`${mount}/vaults`} className="btn btn-secondary btn-touch">
+      Your vaults
+    </a>
+  );
+  if (reach.kind === "not-yours") {
+    return (
+      <div className="page">
+        <EmptyState
+          title={
+            <span className="font-serif text-xl text-fg">
+              Vault <span className="font-mono">{name}</span> isn't yours
+            </span>
+          }
+          description={`${reach.who ? `You're signed in as ${reach.who}, and` : "The account you're signed in to"} has no vault by that name. Check the link, or sign in with the account that owns it.`}
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <a href={`${mount}/vaults`} className="btn btn-primary btn-touch">
+                Your vaults
+              </a>
+              <a href={connectHref} className="btn btn-secondary btn-touch">
+                Connect a vault
+              </a>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+  if (reach.kind === "error") {
+    return (
+      <div className="page">
+        <EmptyState
+          title={
+            <span className="font-serif text-xl text-fg">
+              Couldn't open <span className="font-mono">{name}</span>
+            </span>
+          }
+          description={reach.message || "Something went wrong reaching your account."}
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setAttempt((n) => n + 1)}
+                className="btn btn-primary btn-touch"
+              >
+                Try again
+              </button>
+              {vaultsLink}
+            </div>
+          }
+        />
+      </div>
+    );
+  }
   return (
     <div className="page">
       <EmptyState
@@ -366,9 +497,7 @@ function VaultNotConnected({ name }: { name: string }) {
             <a href={connectHref} className="btn btn-primary btn-touch">
               Connect a vault
             </a>
-            <a href={`${mount}/vaults`} className="btn btn-secondary btn-touch">
-              Your vaults
-            </a>
+            {vaultsLink}
           </div>
         }
       />

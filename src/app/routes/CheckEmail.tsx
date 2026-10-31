@@ -2,8 +2,9 @@ import { ParachuteMark } from "@/components/ParachuteMark";
 import { WizardShell } from "@/components/WizardShell";
 import { getSession, requestMagicLink, verifySignInCode } from "@/lib/account/client";
 import { loadLastSigninEmail, saveLastSigninEmail } from "@/lib/account/store";
+import { withReturnTo } from "@/lib/vault/url";
 import { useEffect, useRef, useState } from "react";
-import { Navigate, useNavigate } from "react-router";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
 
 const SIGNIN_NEXT = "/welcome";
 const POLL_MS = 3000;
@@ -20,6 +21,10 @@ const CODE_ERROR = "That code didn't work — check it and try again.";
 // in the same browser. Resend / use-a-different-email are the calm micro-states.
 export function CheckEmail() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // The front door's return target (T-318: a vault page reached signed out):
+  // every way out of here hands it on to `/welcome?redirect=`.
+  const next = withReturnTo(SIGNIN_NEXT, params.get("redirect"));
   const [email, setEmail] = useState(() => loadLastSigninEmail() ?? "");
   const [sub, setSub] = useState<"idle" | "resent" | "changeemail" | "code">("idle");
   const [newEmail, setNewEmail] = useState("");
@@ -37,7 +42,7 @@ export function CheckEmail() {
         const session = await getSession();
         // NAVIGATION.md: "CheckEmail poll success → /welcome" — (c) auto-
         // advance; returning to a consumed check-email would be wrong.
-        if (!cancelled && session.signed_in) navigate(SIGNIN_NEXT, { replace: true });
+        if (!cancelled && session.signed_in) navigate(next, { replace: true });
       } catch {
         // keep polling — a transient failure shouldn't strand the tab
       }
@@ -47,7 +52,7 @@ export function CheckEmail() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [navigate]);
+  }, [navigate, next]);
 
   // No email on record (deep-linked here directly) — send them to the front door.
   if (!email) return <Navigate to="/" replace />;
@@ -57,7 +62,7 @@ export function CheckEmail() {
     ranResend.current = true;
     try {
       const session = await getSession();
-      await requestMagicLink(to, session.csrf, SIGNIN_NEXT);
+      await requestMagicLink(to, session.csrf, next);
       if (to !== email) {
         saveLastSigninEmail(to);
         setEmail(to);
@@ -85,7 +90,7 @@ export function CheckEmail() {
       const session = await getSession();
       const ok = await verifySignInCode(email, digits, session.csrf);
       if (ok) {
-        navigate(SIGNIN_NEXT, { replace: true });
+        navigate(next, { replace: true });
         return;
       }
       setCodeError(CODE_ERROR);

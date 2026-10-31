@@ -38,18 +38,31 @@ function json(body: unknown, status = 200): Response {
 }
 
 function fakeDoor(): Door {
-  const d: Door = { signedIn: false, email: "owner@example.test", owned: [], calls: [], magicBodies: [] };
+  const d: Door = {
+    signedIn: false,
+    email: "owner@example.test",
+    owned: [],
+    calls: [],
+    magicBodies: [],
+  };
   vi.stubGlobal(
     "fetch",
     vi.fn<typeof fetch>(async (input, init) => {
-      const url = new URL(typeof input === "string" ? input : (input as Request).url, "http://localhost");
+      const url = new URL(
+        typeof input === "string" ? input : (input as Request).url,
+        "http://localhost",
+      );
       const method = (init?.method ?? "GET").toUpperCase();
       d.calls.push(`${method} ${url.pathname}`);
       if (url.pathname === "/.well-known/parachute-account") {
         return json({ door: "cloud", auth: { methods: ["magic_link"] } });
       }
       if (url.pathname === "/account/session") {
-        return json(d.signedIn ? { signed_in: true, csrf: "c", email: d.email } : { signed_in: false, csrf: "c" });
+        return json(
+          d.signedIn
+            ? { signed_in: true, csrf: "c", email: d.email }
+            : { signed_in: false, csrf: "c" },
+        );
       }
       if (url.pathname === "/auth/magic" && method === "POST") {
         d.magicBodies.push(JSON.parse(String(init?.body)));
@@ -60,7 +73,9 @@ function fakeDoor(): Door {
       }
       if (url.pathname === "/account/vaults" && method === "GET") {
         if (!d.signedIn) return json({ error: "unauthorized" }, 401);
-        return json({ vaults: d.owned.map((name) => ({ name, url: `http://localhost:8788/vault/${name}` })) });
+        return json({
+          vaults: d.owned.map((name) => ({ name, url: `http://localhost:8788/vault/${name}` })),
+        });
       }
       const mint = /^\/account\/vaults\/([^/]+)\/token$/.exec(url.pathname);
       if (mint && method === "POST") {
@@ -132,7 +147,10 @@ describe("App — /v/<name> on a device that hasn't opened that vault (T-318)", 
     it("opens it next to a vault already on the device, keeping the note address", async () => {
       door.signedIn = true;
       door.owned = ["garden-notes"];
-      useVaultStore.setState({ vaults: { "v-alpha": oauthVault("v-alpha", "alpha") }, activeVaultId: "v-alpha" });
+      useVaultStore.setState({
+        vaults: { "v-alpha": oauthVault("v-alpha", "alpha") },
+        activeVaultId: "v-alpha",
+      });
       window.history.replaceState({}, "", "/v/garden-notes/n/abc123");
       render(<App />);
 
@@ -172,7 +190,10 @@ describe("App — /v/<name> on a device that hasn't opened that vault (T-318)", 
     it("leaves the active vault alone", async () => {
       door.signedIn = true;
       door.owned = [];
-      useVaultStore.setState({ vaults: { "v-alpha": oauthVault("v-alpha", "alpha") }, activeVaultId: "v-alpha" });
+      useVaultStore.setState({
+        vaults: { "v-alpha": oauthVault("v-alpha", "alpha") },
+        activeVaultId: "v-alpha",
+      });
       window.history.replaceState({}, "", "/v/someone-elses/n/abc123");
       render(<App />);
 

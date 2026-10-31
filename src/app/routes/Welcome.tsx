@@ -7,6 +7,7 @@ import { formatUsageBytes } from "@/lib/account/provenance";
 import type { AccountVault } from "@/lib/account/types";
 import { vaultPageUrl } from "@/lib/vault/deep-link";
 import { announceVaultSwitch } from "@/lib/vault/switch";
+import { safeInternalRedirect } from "@/lib/vault/url";
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 
@@ -82,6 +83,14 @@ export function Welcome() {
         setStage({ kind: "redirect" });
         return;
       }
+      // T-318: a sign-in started from a page that needed it (`/v/<name>`
+      // signed out) returns there; that page opens the vault for its owner.
+      // NAVIGATION.md: (d) the single post-auth landing — replace.
+      const returnTo = safeInternalRedirect(searchParams.get("redirect"));
+      if (returnTo) {
+        navigate(returnTo, { replace: true });
+        return;
+      }
 
       try {
         const { vaults } = await listVaults();
@@ -104,7 +113,7 @@ export function Welcome() {
         });
       }
     })();
-  }, [runId, searchParams, wantsAddVault]);
+  }, [runId, searchParams, wantsAddVault, navigate]);
 
   // The welcome-back beat (SYNTHESIS #7): auto-opens the account's one vault,
   // then lands Home. The beat IS the "you signed in, not up" statement — no
