@@ -738,6 +738,62 @@ describe("NoteView route", () => {
     }
   });
 
+  it("downloads a non-media attachment from the vault, with the vault token", async () => {
+    // The vault's row carries only `path`: its bytes live at the VAULT's
+    // `/api/storage/<path>` behind the bearer. A bare `<a href="/api/storage/…">`
+    // resolves against the app's own origin and carries no token, so the
+    // "Download" link saved an app page (or a 404) under the file's name.
+    const fetchImpl = installFetch({
+      "/api/notes": {
+        body: {
+          id: "doc-note",
+          path: "Notes/doc",
+          createdAt: "2026-10-30T00:00:00Z",
+          content: "# Quarterly report\n\nSee the attached file.",
+          tags: [],
+          links: [],
+          attachments: [
+            {
+              id: "att-doc",
+              noteId: "doc-note",
+              path: "2026-10-30/1793394673667-report.docx",
+              mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              createdAt: "2026-10-30T00:00:01Z",
+            },
+          ],
+        },
+      },
+      "/api/storage/2026-10-30/": { body: null },
+    });
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:fake-doc");
+    URL.revokeObjectURL = vi.fn();
+    const storageGets = () =>
+      fetchImpl.mock.calls.filter(([u]) =>
+        String(u).includes("/api/storage/2026-10-30/1793394673667-report.docx"),
+      );
+    try {
+      renderAt("/n/doc-note");
+      const download = await screen.findByText("Download 1793394673667-report.docx");
+      // Never a link to the app origin's `/api/storage` (not the vault, no token).
+      expect(download.closest("a")?.getAttribute("href") ?? "").not.toMatch(/^\/api\/storage\//);
+      // Not fetched until asked for (a 100 MB zip shouldn't load on view).
+      expect(storageGets()).toHaveLength(0);
+      fireEvent.click(download);
+      await waitFor(() => expect(storageGets().length).toBeGreaterThan(0));
+      const [url, init] = storageGets()[0]!;
+      expect(String(url)).toBe(
+        "http://localhost:1940/api/storage/2026-10-30/1793394673667-report.docx",
+      );
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer pvt_abc");
+      await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
+  });
+
   it("shows a 404 block when the vault returns no note for the id", async () => {
     installFetch({
       "/api/notes": { body: [] },
