@@ -1190,13 +1190,13 @@ describe("NoteView — attach a file from the read view (T-318 snag #9)", () => 
   // A small stateful vault: GET serves the current note, the link POST adds an
   // attachment row, the PATCH writes content — so the test sees what a refetch
   // of the real vault would return, not a canned response.
-  function installVault() {
+  function installVault(over: { path?: string; content?: string } = {}) {
     const note = {
       id: "garden-note",
-      path: "Notes/garden",
+      path: over.path ?? "Notes/garden",
       createdAt: "2026-10-30T00:00:00Z",
       updatedAt: "2026-10-30T00:00:00Z",
-      content: "Plant the garlic.\n\nAsk Sam about the seed order.",
+      content: over.content ?? "Plant the garlic.\n\nAsk Sam about the seed order.",
       tags: [] as string[],
       links: [],
       attachments: [] as Array<Record<string, unknown>>,
@@ -1305,5 +1305,32 @@ describe("NoteView — attach a file from the read view (T-318 snag #9)", () => 
     expect(screen.getByText("garden-abc.png")).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByAltText("garden.png").length).toBeGreaterThan(0));
     URL.createObjectURL = origCreate;
+  });
+  // T-318 day review 2: the app renders a note whose path ends in .json,
+  // .csv, .yaml or a code extension in that format. Appending a markdown
+  // embed line to it changes the data (the JSON no longer parses, the CSV
+  // gains a row). Attaching there links the file and leaves the text alone.
+  it("attaching to a JSON note links the file without writing markdown into the data", async () => {
+    const content = '{ "garlic": "October", "beans": "May" }';
+    const { note, patches, xhrs } = installVault({ path: "Garden/plants.json", content });
+    renderAt("/n/garden-note");
+    const attach = await screen.findByRole("button", { name: /attach file/i });
+    const input = attach.parentElement?.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File([new Uint8Array([1, 2, 3])], "garden.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(xhrs.length).toBe(1));
+    await act(async () => {
+      xhrs[0]!.resolve(
+        201,
+        JSON.stringify({ path: "2026-10-30/garden-abc.png", size: 3, mimeType: "image/png" }),
+      );
+    });
+
+    await waitFor(() => expect(note.attachments.length).toBe(1));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(patches).toEqual([]);
+    expect(JSON.parse(note.content)).toEqual({ garlic: "October", beans: "May" });
   });
 });
