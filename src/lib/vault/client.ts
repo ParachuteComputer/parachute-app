@@ -364,10 +364,28 @@ export class VaultClient extends BaseVaultClient {
    * subclass at construction (see field declarations above).
    */
   async fetchAttachmentBlob(url: string): Promise<Blob> {
-    const target = url.startsWith("http")
-      ? url
-      : `${this.vaultBaseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
-    return this.fetchBlobWithRetry(target, url, true);
+    const base = this.vaultBaseUrl.replace(/\/+$/, "");
+    const raw = /^https?:\/\//i.test(url) ? url : `${base}${url.startsWith("/") ? "" : "/"}${url}`;
+    // The URL comes from a note (its markdown, its attachment rows), which any
+    // writer controls, and this request carries the owner's bearer. Only the
+    // vault's own storage gets it: same origin, under `<base>/api/storage/`
+    // AFTER dot-segment resolution (`../`, `%2e%2e`). Anything else is refused,
+    // never fetched with or without the token.
+    const storage = new URL(`${base}/api/storage/`);
+    let target: URL | null = null;
+    try {
+      target = new URL(raw);
+    } catch {
+      target = null;
+    }
+    if (
+      !target ||
+      target.origin !== storage.origin ||
+      !target.pathname.startsWith(storage.pathname)
+    ) {
+      throw new Error(`Not this vault's storage: ${url}`);
+    }
+    return this.fetchBlobWithRetry(target.toString(), url, true);
   }
 
   private async fetchBlobWithRetry(

@@ -581,13 +581,15 @@ describe("NoteView route", () => {
               id: "att-1",
               filename: "hero.png",
               mimeType: "image/png",
-              url: "/attachments/att-1",
+              // A `url` is only ever the vault's own storage: the blob fetch
+              // carries the owner's token and refuses anything else.
+              url: "/api/storage/2026-04-16/hero.png",
               size: 2048,
             },
           ],
         },
       },
-      "/attachments/att-1": { body: null },
+      "/api/storage/2026-04-16/hero.png": { body: null },
     });
     const origCreate = URL.createObjectURL;
     URL.createObjectURL = vi.fn(() => "blob:fake-url");
@@ -674,6 +676,66 @@ describe("NoteView route", () => {
       expect(storageGets.length).toBeGreaterThan(0);
     });
     URL.createObjectURL = origCreate;
+  });
+
+  it("never sends the vault token to a host or path a note's writer picked", async () => {
+    // Anyone who can write a note (an MCP agent, a pasted import) controls its
+    // markdown and its attachment rows. Reading the note must not hand the
+    // owner's bearer to `evil.example` or to a path outside the vault's storage.
+    const fetchImpl = installFetch({
+      "/api/notes": {
+        body: {
+          id: "bait",
+          path: "Notes/bait",
+          createdAt: "2026-10-30T00:00:00Z",
+          content: "# Bait\n\n![a](https://evil.example/api/storage/a.png)\n",
+          tags: [],
+          links: [],
+          attachments: [
+            {
+              id: "att-up",
+              noteId: "bait",
+              path: "../../collect/b.png",
+              mimeType: "image/png",
+              createdAt: "2026-10-30T00:00:01Z",
+            },
+            {
+              id: "att-ok",
+              noteId: "bait",
+              path: "2026-10-30/real.png",
+              mimeType: "image/png",
+              createdAt: "2026-10-30T00:00:02Z",
+            },
+          ],
+        },
+      },
+      "/api/storage/": { body: null },
+      "evil.example": { body: null },
+      "/collect/": { body: null },
+    });
+    const origCreate = URL.createObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:fake-url");
+    URL.revokeObjectURL = vi.fn();
+    try {
+      renderAt("/n/bait");
+      // The vault's own attachment still loads, so the blob effects have run.
+      await waitFor(() =>
+        expect(
+          fetchImpl.mock.calls.some(([u]) =>
+            String(u).includes("/api/storage/2026-10-30/real.png"),
+          ),
+        ).toBe(true),
+      );
+      const leaked = fetchImpl.mock.calls
+        .filter(([, init]) => new Headers(init?.headers).get("Authorization"))
+        .map(([u]) => new URL(String(u)))
+        // The vault's own API is the only place its bearer belongs.
+        .filter((u) => u.origin !== "http://localhost:1940" || !u.pathname.startsWith("/api/"))
+        .map(String);
+      expect(leaked).toEqual([]);
+    } finally {
+      URL.createObjectURL = origCreate;
+    }
   });
 
   it("shows a 404 block when the vault returns no note for the id", async () => {
