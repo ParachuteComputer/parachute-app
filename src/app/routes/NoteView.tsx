@@ -41,6 +41,7 @@ import type { Note, NoteAttachment, NoteLink, UpdateNotePayload } from "@/lib/va
 import { withReturnTo } from "@/lib/vault/url";
 import { isViewNote } from "@/lib/views/schema";
 import { useSync } from "@/providers/SyncProvider";
+import { formatForPath } from "@openparachute/surface-render";
 import { useQueryClient } from "@tanstack/react-query";
 import { type SVGProps, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
@@ -316,6 +317,15 @@ function useReadViewAttach(note: Note, cacheId?: string) {
     onLinked: async (markdown) => {
       const key = ["note", activeId, cacheId ?? note.id];
       const current = qc.getQueryData<Note>(key) ?? note;
+      // Only a markdown body takes an embed line. A note the app renders as
+      // JSON/CSV/YAML/code (by its path) would have its data changed; there
+      // the linked row in Attachments is the whole result.
+      if (formatForPath(note.path) !== "markdown") {
+        pushToast("Attachment added", "success");
+        await qc.invalidateQueries({ queryKey: key, exact: true });
+        qc.invalidateQueries({ queryKey: ["notes", activeId] });
+        return;
+      }
       try {
         if (!client) throw new Error("No active vault");
         // `append` is on both doors' PATCH but not yet on the client's type.
