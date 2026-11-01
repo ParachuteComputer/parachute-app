@@ -852,6 +852,43 @@ describe("NoteEditor — local draft persistence (notes#175)", () => {
     );
   });
 
+  it("typing on during a Save-button save stays in the editor with the newer text", async () => {
+    const saved = { ...baseNote, content: "# hi\n\nfirst", updatedAt: "2026-04-18T09:00:00Z" };
+    let answerPatch: (() => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const json = (body: unknown) =>
+          ({ ok: true, status: 200, json: async () => body, text: async () => "" }) as Response;
+        if (init?.method === "PATCH" && url.includes("/api/notes/")) {
+          return new Promise<Response>((resolve) => {
+            answerPatch = () => resolve(json(saved));
+          });
+        }
+        if (url.includes("/api/notes")) return json(baseNote);
+        return { ok: false, status: 404, json: async () => null, text: async () => "" } as Response;
+      }),
+    );
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+
+    fireEvent.change(cm, { target: { value: "# hi\n\nfirst" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() => expect(answerPatch).not.toBeNull());
+    fireEvent.change(cm, { target: { value: "# hi\n\nfirst, and more" } });
+    await act(async () => {
+      answerPatch!();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(screen.queryByText(/NoteViewPage/)).not.toBeInTheDocument();
+    expect((screen.getByTestId("cm-editor") as HTMLTextAreaElement).value).toBe(
+      "# hi\n\nfirst, and more",
+    );
+    expect(screen.getByText(/unsaved/i)).toBeInTheDocument();
+  });
+
   it("clears the draft when the conflict banner's 'Reload latest' is chosen (F3b)", async () => {
     // clearDraft runs synchronously BEFORE window.location.reload() in the
     // onReload handler; jsdom's real reload is a harmless no-op, so asserting the
