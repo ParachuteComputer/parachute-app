@@ -688,10 +688,53 @@ function AttachmentBody({
       </>
     );
   }
+  return <AttachmentDownload url={url} filename={filename} />;
+}
+
+// A file the read view can't show inline. Its bytes sit at the VAULT's
+// `/api/storage/<path>` behind the bearer, so a plain `<a href={url}>` would
+// resolve against the app's own origin with no token and save an app page under
+// the file's name. Fetched only when asked for (a large zip shouldn't load on
+// view), through the vault client, then handed to the browser as a download.
+function AttachmentDownload({ url, filename }: { url: string; filename: string }) {
+  const client = useActiveVaultClient();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function download() {
+    if (!client || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const blob = await client.fetchAttachmentBlob(url);
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Give the browser time to start the download before the URL goes.
+      setTimeout(() => URL.revokeObjectURL(href), 60_000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to download attachment");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <a href={displayUrl} download={filename} className="text-sm text-accent hover:underline">
-      Download {filename}
-    </a>
+    <>
+      <button
+        type="button"
+        onClick={download}
+        disabled={busy || !client}
+        className="text-sm text-accent hover:underline disabled:opacity-60"
+      >
+        Download {filename}
+      </button>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
+    </>
   );
 }
 
