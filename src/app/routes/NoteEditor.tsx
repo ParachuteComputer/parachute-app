@@ -94,6 +94,9 @@ function EditorSurface({ note }: { note: Note }) {
   const resolver = useMemo(() => buildWikilinkResolver(note), [note]);
   const [baseline, setBaseline] = useState<EditorState>(() => toEditorState(note));
   const [draft, setDraft] = useState<EditorState>(() => toEditorState(note));
+  // The text on screen right now, for a save that answers after more typing.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   // A locally-persisted draft (notes#175) may hold edits from a prior session
   // that never reached the server. For an EXISTING note the server copy is
   // authoritative, so we don't silently overwrite it — we OFFER to restore only
@@ -184,15 +187,23 @@ function EditorSurface({ note }: { note: Note }) {
 
       setSaveError(null);
       setConflict(null);
+      const sent = draft;
+      const startedAt = new Date().toISOString();
       mutation.mutate(payload, {
         onSuccess: (updated) => {
           setBaseline(toEditorState(updated));
-          setDraft(toEditorState(updated));
           lastServerNote.current = updated;
-          // The edits are now on the server — drop the local draft so it can't
-          // later masquerade as unsaved work.
-          if (vaultId) clearDraft(vaultId, note.id);
-          if (navigateToView) {
+          // The editor stays editable while the save is in flight (⌘S is
+          // "save often, keep typing"). Words typed after it are not in the
+          // saved note: keep them on screen, dirty against the new baseline,
+          // and let autosave keep their draft. Only an unchanged body takes
+          // the server copy.
+          const typedOn = !bodyEquals(draftRef.current, sent);
+          if (!typedOn) setDraft(toEditorState(updated));
+          // The sent edits are now on the server — drop that draft so it can't
+          // later masquerade as unsaved work (a newer draft stays).
+          autosave.saved(sent, startedAt);
+          if (navigateToView && !typedOn) {
             // Finish editing: return to the note's read view. `replace` keeps
             // "back" from dropping the user into the editor they just left.
             // The id may have changed if a path edit moved the note.
@@ -204,7 +215,7 @@ function EditorSurface({ note }: { note: Note }) {
             // note (new id), follow it so the editor URL stays valid.
             navigate(`/n/${encodeURIComponent(updated.id)}/edit`, { replace: true });
           }
-          if (!navigateToView) {
+          if (!navigateToView || typedOn) {
             setJustSaved(true);
             if (savedWhisperTimeout.current !== null) {
               window.clearTimeout(savedWhisperTimeout.current);
@@ -220,7 +231,7 @@ function EditorSurface({ note }: { note: Note }) {
         },
       });
     },
-    [baseline, draft, isDirty, mutation, navigate, note.id, uploadsActive, vaultId],
+    [autosave, baseline, draft, isDirty, mutation, navigate, note.id, uploadsActive],
   );
 
   // Restore the offered draft into the editor, or discard it.
