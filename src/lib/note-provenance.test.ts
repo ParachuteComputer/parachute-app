@@ -123,5 +123,23 @@ describe("describeProvenance", () => {
         describeProvenance({ createdVia: "api", metadata: { source: "script" } })?.compact,
       ).toBe("via API");
     });
+
+    it("still names MCP when an agent's note claims the app's stamp", () => {
+      // `metadata.app` is ordinary metadata any writer can set (or copy from
+      // an app note while splitting it). Only the app's own channel (`api`)
+      // may go quiet; an MCP write stamped `app: "notes"` must not pass as
+      // something the person typed here.
+      const agentNote = {
+        createdBy: "user-1",
+        createdVia: "mcp",
+        lastUpdatedBy: "user-1",
+        lastUpdatedVia: "mcp",
+        metadata: { source: "text", app: "notes" },
+      };
+      expect(describeProvenance(agentNote)?.compact).toBe("via MCP");
+      expect(describeProvenance({ ...agentNote, createdVia: "agent:x" })?.created).toBe(
+        "via agent",
+      );
+    });
   });
 });

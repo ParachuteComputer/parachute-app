@@ -49,6 +49,9 @@ const VIA_LABELS: Record<string, string> = {
   operator: "operator",
 };
 
+// The channel the vault stamps on the app's own writes (its REST credential).
+const APP_VIA = "api";
+
 function friendlyVia(via: string): string {
   const known = VIA_LABELS[via];
   if (known) return known;
@@ -72,7 +75,10 @@ export function describeProvenance(note: ProvenanceAttribution): ProvenanceParts
   // person who typed the note here — "via API" reads as jargon. So the app's
   // channel says nothing; a write through any OTHER channel (an MCP edit)
   // still shows. Still factual: this hides a label, it never invents one.
-  const ownVia = note.metadata?.app === NOTES_APP ? note.createdVia : null;
+  // Only the REST channel can be the app's: `metadata.app` is ordinary
+  // metadata any writer can set (or copy while splitting an app note), so a
+  // note created over MCP or by an agent keeps its label whatever it claims.
+  const ownVia = note.metadata?.app === NOTES_APP && note.createdVia === APP_VIA ? APP_VIA : null;
   const label = (via: string | null | undefined) =>
     via && via !== ownVia ? `via ${friendlyVia(via)}` : null;
   const created = label(note.createdVia);
