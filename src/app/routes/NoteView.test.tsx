@@ -581,13 +581,15 @@ describe("NoteView route", () => {
               id: "att-1",
               filename: "hero.png",
               mimeType: "image/png",
-              url: "/attachments/att-1",
+              // A `url` is only ever the vault's own storage: the blob fetch
+              // carries the owner's token and refuses anything else.
+              url: "/api/storage/2026-04-16/hero.png",
               size: 2048,
             },
           ],
         },
       },
-      "/attachments/att-1": { body: null },
+      "/api/storage/2026-04-16/hero.png": { body: null },
     });
     const origCreate = URL.createObjectURL;
     URL.createObjectURL = vi.fn(() => "blob:fake-url");
