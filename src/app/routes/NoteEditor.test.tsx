@@ -806,6 +806,52 @@ describe("NoteEditor — local draft persistence (notes#175)", () => {
     }
   });
 
+  // T-318 day review 2: ⌘S is a checkpoint save that keeps you in the editor
+  // ("save often, keep typing"), and the editor stays editable while the PATCH
+  // is in flight. Words typed after ⌘S are not in the saved note; when the
+  // save answered, the editor reset its text to the server copy and the draft
+  // autosave (now clean) deleted the stored draft, so those words were gone.
+  it("typing on during a ⌘S checkpoint save keeps the newer text (on screen and as the draft)", async () => {
+    const saved = { ...baseNote, content: "# hi\n\nfirst", updatedAt: "2026-04-18T09:00:00Z" };
+    let answerPatch: (() => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const json = (body: unknown) =>
+          ({ ok: true, status: 200, json: async () => body, text: async () => "" }) as Response;
+        if (init?.method === "PATCH" && url.includes("/api/notes/")) {
+          return new Promise<Response>((resolve) => {
+            answerPatch = () => resolve(json(saved));
+          });
+        }
+        if (url.includes("/api/notes")) return json(baseNote);
+        return { ok: false, status: 404, json: async () => null, text: async () => "" } as Response;
+      }),
+    );
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+
+    fireEvent.change(cm, { target: { value: "# hi\n\nfirst" } });
+    fireEvent.click(screen.getByTestId("cm-save"));
+    await waitFor(() => expect(answerPatch).not.toBeNull());
+    fireEvent.change(cm, { target: { value: "# hi\n\nfirst, and the second line" } });
+    await act(async () => {
+      answerPatch!();
+      // let the mutation settle and its onSuccess render
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // The save landed; the words typed after ⌘S are still in the editor, still unsaved.
+    expect((screen.getByTestId("cm-editor") as HTMLTextAreaElement).value).toBe(
+      "# hi\n\nfirst, and the second line",
+    );
+    expect(screen.getByText(/unsaved/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(loadDraft("dev", "abc-123")?.body.content).toBe("# hi\n\nfirst, and the second line"),
+    );
+  });
+
   it("clears the draft when the conflict banner's 'Reload latest' is chosen (F3b)", async () => {
     // clearDraft runs synchronously BEFORE window.location.reload() in the
     // onReload handler; jsdom's real reload is a harmless no-op, so asserting the
