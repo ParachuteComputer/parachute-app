@@ -266,6 +266,46 @@ describe("VaultClient (Notes subclass) — fetchAttachmentBlob", () => {
     expect(headers.Authorization).toBe("Bearer pvt_abc");
   });
 
+  it("never sends the vault token outside the vault's own storage", async () => {
+    // A note's markdown is writer-controlled: `![x](https://evil.example/api/storage/a.png)`
+    // is routed here by surface-render (any host whose path starts /api/storage/),
+    // and an attachment row's `path` is a free string on POST /attachments.
+    const fetchImpl = mockBlobFetch([{ status: 200 }, { status: 200 }, { status: 200 }]);
+    const client = new VaultClient({
+      vaultUrl: "https://my.example/vault/aaron",
+      accessToken: "pvt_owner",
+      fetchImpl,
+    });
+    for (const url of [
+      "https://evil.example/api/storage/a.png",
+      "/api/storage/../../../collect/a.png",
+      "/api/storage/%2e%2e/%2e%2e/%2e%2e/collect/a.png",
+    ]) {
+      await client.fetchAttachmentBlob(url).catch(() => undefined);
+    }
+    for (const [target, init] of fetchImpl.mock.calls) {
+      const headers = (init as RequestInit | undefined)?.headers as Record<string, string>;
+      const resolved = new URL(String(target));
+      const inside =
+        resolved.origin === "https://my.example" &&
+        resolved.pathname.startsWith("/vault/aaron/api/storage/");
+      expect(inside || !headers?.Authorization, String(target)).toBe(true);
+    }
+    // The vault's own storage, relative or absolute, still loads with the token.
+    const ok = mockBlobFetch([{ status: 200 }, { status: 200 }]);
+    const own = new VaultClient({
+      vaultUrl: "https://my.example/vault/aaron",
+      accessToken: "pvt_owner",
+      fetchImpl: ok,
+    });
+    await own.fetchAttachmentBlob("/api/storage/2026-10-30/a.png");
+    await own.fetchAttachmentBlob("https://my.example/vault/aaron/api/storage/2026-10-30/b.png");
+    expect(ok.mock.calls.map(([t]) => String(t))).toEqual([
+      "https://my.example/vault/aaron/api/storage/2026-10-30/a.png",
+      "https://my.example/vault/aaron/api/storage/2026-10-30/b.png",
+    ]);
+  });
+
   it("retries once with the rotated token on 401 + onAuthError", async () => {
     const fetchImpl = mockBlobFetch([{ status: 401 }, { status: 200, body: "bytes" }]);
     const onAuthError = vi.fn(async () => "eyJ.new");
