@@ -43,7 +43,9 @@ export function CopyField({
 
   return (
     <div className={`flex items-stretch gap-2 ${className ?? ""}`}>
-      <code className="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-bg-soft px-3 py-2 font-mono text-sm text-fg">
+      {/* Wrap, never scroll sideways: on a phone a scrolled field shows no
+          scrollbar, so a long address looked cut off (T-318 snag #13). */}
+      <code className="min-w-0 flex-1 wrap-anywhere rounded-md border border-border bg-bg-soft px-3 py-2 font-mono text-sm text-fg">
         {value}
       </code>
       <button
