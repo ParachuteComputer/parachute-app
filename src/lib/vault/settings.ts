@@ -2,7 +2,7 @@ import { enqueue } from "@/lib/sync/queue";
 import { useSync } from "@/providers/SyncProvider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { type VaultClient, VaultConflictError, VaultNotFoundError } from "./client";
+import { type VaultClient, VaultConflictError } from "./client";
 import { isOffline, useActiveVaultClient, withOfflineFallback } from "./queries";
 import {
   DEFAULT_TAG_ROLES,
@@ -243,6 +243,18 @@ function resolveInitialEntry(vaultId: string): SettingsCacheEntry {
   return cleanEntry(null);
 }
 
+// Read the settings note, or null when the vault has none. Asks with the
+// exact-path list filter (`?path=`, answers `[]` when absent) instead of the
+// single-note `?id=` form, which answers 404 for an absent note. Most vaults
+// never write settings, so the 404 form put a failed request in the browser
+// console on every page load. The path check keeps a door that ignored the
+// filter from handing back some other note as the settings note.
+export async function getSettingsNote(client: VaultClient): Promise<Note | null> {
+  const rows = await client.queryNotes({ path: SETTINGS_NOTE_PATH, limit: 1 });
+  if (!Array.isArray(rows)) return null;
+  return rows.find((n) => n.path?.toLowerCase() === SETTINGS_NOTE_PATH) ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Write path
 //
@@ -332,13 +344,7 @@ async function patchWithRefetch(
   patch: NotesSettingsPatch,
   signal?: AbortSignal,
 ): Promise<WriteSettingsResult> {
-  let note: Note | null = null;
-  try {
-    note = await client.getNote(SETTINGS_NOTE_PATH);
-  } catch (err) {
-    if (!(err instanceof VaultNotFoundError)) throw err;
-    note = null;
-  }
+  const note = await getSettingsNote(client);
   if (!note) {
     const initial = applySettingsPatch(DEFAULT_NOTES_SETTINGS, patch);
     const created = await client.createNote(
@@ -405,7 +411,7 @@ export function useVaultSettings(vaultId: string | null): UseVaultSettingsResult
     setStatus(client ? "loading" : "offline");
   }, [initial, client]);
 
-  // Remote fetch. On 404 we use defaults but DO NOT eagerly create the note —
+  // Remote fetch. No settings note: use defaults but DO NOT eagerly create it —
   // that happens lazily on the first `update()`. If the cache is dirty from
   // an offline edit (or from the legacy-tag-roles seed), the reconcile below
   // pushes it up on the next fetch.
@@ -413,20 +419,15 @@ export function useVaultSettings(vaultId: string | null): UseVaultSettingsResult
     queryKey: ["vault-settings", vaultId],
     enabled: !!vaultId && !!client,
     queryFn: async () => {
-      try {
-        const note = await client!.getNote(SETTINGS_NOTE_PATH);
-        if (note) {
-          return {
-            server: extractNotesSettings(note),
-            serverUpdatedAt: note.updatedAt ?? note.createdAt ?? null,
-            noteExists: true as const,
-          };
-        }
-        return { server: null, serverUpdatedAt: null, noteExists: false as const };
-      } catch (err) {
-        if (!(err instanceof VaultNotFoundError)) throw err;
-        return { server: null, serverUpdatedAt: null, noteExists: false as const };
+      const note = await getSettingsNote(client!);
+      if (note) {
+        return {
+          server: extractNotesSettings(note),
+          serverUpdatedAt: note.updatedAt ?? note.createdAt ?? null,
+          noteExists: true as const,
+        };
       }
+      return { server: null, serverUpdatedAt: null, noteExists: false as const };
     },
     retry: false,
     staleTime: 60_000,
