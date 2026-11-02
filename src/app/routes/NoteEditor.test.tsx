@@ -1,6 +1,6 @@
 import { NoteEditor } from "@/app/routes/NoteEditor";
 import { NoteView } from "@/app/routes/NoteView";
-import { loadDraft, saveDraft } from "@/lib/drafts/store";
+import { clearVaultDrafts, loadDraft, saveDraft } from "@/lib/drafts/store";
 import { useFocusMode } from "@/lib/focus-mode";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
@@ -1288,5 +1288,73 @@ describe("NoteEditor — a refetch under unsaved edits keeps the conflict guard"
 
     expect(server.note.content).toContain("a line from the phone");
     expect(await screen.findByText(/edited elsewhere/i)).toBeInTheDocument();
+  });
+});
+
+// Leaving the editor and reloading it are both "the page goes away" edges for
+// the draft: one must keep the last words typed, the other must not bring back
+// edits the user chose to throw away.
+describe("NoteEditor — draft at the edges of the editor's life", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    useFocusMode.setState({ on: false });
+    seedStore();
+    vi.spyOn(window, "confirm").mockImplementation(() => true);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it("words typed just before leaving the editor (inside the autosave beat) are kept as the draft", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+    fireEvent.change(cm, { target: { value: "# hi\n\nbody and the last words" } });
+    // "← Back to note" right away, before the 600 ms autosave runs.
+    fireEvent.click(screen.getByRole("link", { name: /back to note/i }));
+    expect(await screen.findByText("NoteViewPage:abc-123")).toBeInTheDocument();
+    expect(loadDraft("dev", "abc-123")?.body.content).toBe("# hi\n\nbody and the last words");
+  });
+
+  it("a vault removed while its editor is open (another tab) doesn't get the draft written back", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+    fireEvent.change(cm, { target: { value: "# hi\n\nprivate words" } });
+    // The other tab's "Remove from this device": drafts wiped, record gone;
+    // this tab's store follows the storage event and the editor unmounts.
+    act(() => {
+      clearVaultDrafts("dev");
+      useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    });
+    expect(await screen.findByText("NotesListPage")).toBeInTheDocument();
+    expect(loadDraft("dev", "abc-123")).toBeNull();
+  });
+
+  it("'Reload latest (discard my edits)' doesn't get the edits written back by the reload's pagehide", async () => {
+    installFetch({
+      "GET /api/notes": { body: baseNote },
+      "PATCH /api/notes/": {
+        status: 409,
+        body: { error: "conflict", current_updated_at: "2026-04-18T10:00:00Z" },
+      },
+    });
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+    fireEvent.change(cm, { target: { value: "my edit" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /reload latest/i }));
+    // A real reload fires pagehide before the page goes (jsdom's reload is a
+    // no-op, so send it the way the browser would).
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    expect(loadDraft("dev", "abc-123")).toBeNull();
   });
 });

@@ -21,6 +21,7 @@ import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
 import { useNote, useUpdateNote, useVaultStore } from "@/lib/vault";
 import { type UpdateNotePayload, VaultAuthError, VaultConflictError } from "@/lib/vault/client";
+import { useActiveVaultClient } from "@/lib/vault/queries";
 import type { Note, NoteAttachment } from "@/lib/vault/types";
 import { isDefaultViewPath } from "@/lib/views/defaults";
 import type { RefObject } from "react";
@@ -123,7 +124,9 @@ function EditorSurface({ note }: { note: Note }) {
   // Mobile-only pane toggle. Desktop renders both side-by-side and ignores it.
   const [mobilePane, setMobilePane] = useState<EditorPane>("edit");
   const mutation = useUpdateNote(note.id);
+  const client = useActiveVaultClient();
   const lastServerNote = useRef<Note>(note);
+  const rebasing = useRef(false);
   const editorRef = useRef<CodeMirrorEditorHandle>(null);
   const attachmentPickerRef = useRef<AttachmentPickerHandle>(null);
 
@@ -182,6 +185,17 @@ function EditorSurface({ note }: { note: Note }) {
   // Persist the draft locally while there are unsaved edits (crash / navigation
   // protection). Clears itself when clean; explicitly cleared on save/discard.
   const autosave = useDraftAutosave(vaultId, note.id, draft, isDirty);
+  // Leaving mid-debounce (Back to note, a vault switch that unmounts the
+  // editor) must not drop the last words. A saved or discarded body is never
+  // written back (the hook skips it), and a clean editor persists nothing.
+  // Not when the unmount is the vault going away (removed in another tab):
+  // removal wiped its drafts, and note text must not outlive it here.
+  useEffect(
+    () => () => {
+      if (vaultId && useVaultStore.getState().vaults[vaultId]) autosave.flush();
+    },
+    [autosave, vaultId],
+  );
 
   // Block saving while an attachment is still uploading (or linking). The
   // embed markdown only lands in `draft.content` once the upload resolves
@@ -197,7 +211,7 @@ function EditorSurface({ note }: { note: Note }) {
   //     (writer muscle memory — save often, keep typing).
   const saveNote = useCallback(
     ({ navigateToView }: { navigateToView: boolean }) => {
-      if (!isDirty || mutation.isPending || uploadsActive) return;
+      if (!isDirty || mutation.isPending || uploadsActive || rebasing.current) return;
       const payload: UpdateNotePayload = {};
       if (draft.content !== baseline.content) payload.content = draft.content;
       if (draft.path !== baseline.path) payload.path = draft.path;
@@ -214,50 +228,76 @@ function EditorSurface({ note }: { note: Note }) {
       setSaveError(null);
       setConflict(null);
       const sent = draft;
+      const sentBaseline = baseline;
       const startedAt = new Date().toISOString();
-      mutation.mutate(payload, {
-        onSuccess: (updated) => {
-          setBaseline(toEditorState(updated));
-          lastServerNote.current = updated;
-          // The editor stays editable while the save is in flight (⌘S is
-          // "save often, keep typing"). Words typed after it are not in the
-          // saved note: keep them on screen, dirty against the new baseline,
-          // and let autosave keep their draft. Only an unchanged body takes
-          // the server copy.
-          const typedOn = !bodyEquals(draftRef.current, sent);
-          if (!typedOn) setDraft(toEditorState(updated));
-          // The sent edits are now on the server — drop that draft so it can't
-          // later masquerade as unsaved work (a newer draft stays).
-          autosave.saved(sent, startedAt);
-          if (navigateToView && !typedOn) {
-            // Finish editing: return to the note's read view. `replace` keeps
-            // "back" from dropping the user into the editor they just left.
-            // The id may have changed if a path edit moved the note.
-            // NAVIGATION.md: same "consumes the compose form" shape as
-            // NoteNew's save — replace.
-            navigate(`/n/${encodeURIComponent(updated.id)}`, { replace: true });
-          } else if (updated.id !== note.id) {
-            // Checkpoint save that stays put — but if a path edit renamed the
-            // note (new id), follow it so the editor URL stays valid.
-            navigate(`/n/${encodeURIComponent(updated.id)}/edit`, { replace: true });
-          }
-          if (!navigateToView || typedOn) {
-            setJustSaved(true);
-            if (savedWhisperTimeout.current !== null) {
-              window.clearTimeout(savedWhisperTimeout.current);
+      const send = (body: UpdateNotePayload, rebased: boolean) =>
+        mutation.mutate(body, {
+          onSuccess: (updated) => {
+            setBaseline(toEditorState(updated));
+            lastServerNote.current = updated;
+            // The editor stays editable while the save is in flight (⌘S is
+            // "save often, keep typing"). Words typed after it are not in the
+            // saved note: keep them on screen, dirty against the new baseline,
+            // and let autosave keep their draft. Only an unchanged body takes
+            // the server copy.
+            const typedOn = !bodyEquals(draftRef.current, sent);
+            if (!typedOn) setDraft(toEditorState(updated));
+            // The sent edits are now on the server — drop that draft so it can't
+            // later masquerade as unsaved work (a newer draft stays).
+            autosave.saved(sent, startedAt);
+            if (navigateToView && !typedOn) {
+              // Finish editing: return to the note's read view. `replace` keeps
+              // "back" from dropping the user into the editor they just left.
+              // The id may have changed if a path edit moved the note.
+              // NAVIGATION.md: same "consumes the compose form" shape as
+              // NoteNew's save — replace.
+              navigate(`/n/${encodeURIComponent(updated.id)}`, { replace: true });
+            } else if (updated.id !== note.id) {
+              // Checkpoint save that stays put — but if a path edit renamed the
+              // note (new id), follow it so the editor URL stays valid.
+              navigate(`/n/${encodeURIComponent(updated.id)}/edit`, { replace: true });
             }
-            savedWhisperTimeout.current = window.setTimeout(() => setJustSaved(false), 1500);
-          }
-        },
-        onError: (err) => {
-          if (err instanceof VaultConflictError) setConflict(err);
-          else if (err instanceof VaultAuthError)
-            setSaveError("Session expired. Reconnect to save.");
-          else setSaveError(err instanceof Error ? err.message : "Save failed");
-        },
-      });
+            if (!navigateToView || typedOn) {
+              setJustSaved(true);
+              if (savedWhisperTimeout.current !== null) {
+                window.clearTimeout(savedWhisperTimeout.current);
+              }
+              savedWhisperTimeout.current = window.setTimeout(() => setJustSaved(false), 1500);
+            }
+          },
+          onError: (err) => {
+            if (err instanceof VaultConflictError && !rebased && client) {
+              // A 409 whose server copy still has the body these edits were made
+              // on is no conflict: only the stamp moved (this session's own
+              // queued save landed, a pin, an attachment). Re-send once on it.
+              // No second save while this one looks (it would take the
+              // re-send's callbacks).
+              rebasing.current = true;
+              client.getNote(note.id).then(
+                (fresh) => {
+                  rebasing.current = false;
+                  if (fresh && bodyEquals(toEditorState(fresh), sentBaseline)) {
+                    lastServerNote.current = fresh;
+                    const stamp = fresh.updatedAt ?? fresh.createdAt;
+                    send({ ...body, ...(stamp && { if_updated_at: stamp }) }, true);
+                  } else setConflict(err);
+                },
+                () => {
+                  rebasing.current = false;
+                  setConflict(err);
+                },
+              );
+              return;
+            }
+            if (err instanceof VaultConflictError) setConflict(err);
+            else if (err instanceof VaultAuthError)
+              setSaveError("Session expired. Reconnect to save.");
+            else setSaveError(err instanceof Error ? err.message : "Save failed");
+          },
+        });
+      send(payload, false);
     },
-    [autosave, baseline, draft, isDirty, mutation, navigate, note.id, uploadsActive],
+    [autosave, baseline, client, draft, isDirty, mutation, navigate, note.id, uploadsActive],
   );
 
   // Restore the offered draft into the editor, or discard it.
@@ -488,8 +528,9 @@ function EditorSurface({ note }: { note: Note }) {
           onReload={() => {
             // "Reload latest (discard my edits)" — clear the draft first, or the
             // reloaded editor would immediately offer to restore the edits the
-            // user just chose to discard.
-            if (vaultId) clearDraft(vaultId, note.id);
+            // user just chose to discard. `discard` (not a bare clear) so the
+            // reload's own pagehide doesn't flush the edits straight back.
+            autosave.discard();
             window.location.reload();
           }}
           onDismiss={() => setConflict(null)}
