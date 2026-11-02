@@ -2438,7 +2438,7 @@ describe("NoteNew — phone layout puts the writing area first (snag #14)", () =
     );
   }
 
-  const before = (a: Element, b: Element) =>
+  const precedes = (a: Element, b: Element) =>
     (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
   it("phone: the editor comes before the path field, tags and recorder, and holds focus", async () => {
@@ -2449,11 +2449,13 @@ describe("NoteNew — phone layout puts the writing area first (snag #14)", () =
     const editor = await screen.findByTestId("cm-editor");
     const path = screen.getByLabelText(/note path/i);
     const record = await screen.findByRole("button", { name: /record voice memo/i });
-    expect(before(editor, path)).toBe(true);
-    expect(before(editor, record)).toBe(true);
-    expect(before(editor, screen.getByText(/^tags$/i))).toBe(true);
+    expect(precedes(editor, path)).toBe(true);
+    expect(precedes(editor, record)).toBe(true);
+    expect(precedes(editor, screen.getByText(/^tags$/i))).toBe(true);
     // Still reachable, still the auto-named default.
-    expect((path as HTMLInputElement).value).toMatch(/^Notes\/\d{4}\/\d{2}-\d{2}\/\d{2}-\d{2}-\d{2}$/);
+    expect((path as HTMLInputElement).value).toMatch(
+      /^Notes\/\d{4}\/\d{2}-\d{2}\/\d{2}-\d{2}-\d{2}$/,
+    );
     // Tapping + means "write": the caret is already in the body.
     await waitFor(() => expect(editor).toHaveFocus());
   });
@@ -2464,7 +2466,7 @@ describe("NoteNew — phone layout puts the writing area first (snag #14)", () =
     renderAt("/new?voice=1");
 
     const stop = await screen.findByRole("button", { name: /stop/i });
-    expect(before(stop, screen.getByTestId("cm-editor"))).toBe(true);
+    expect(precedes(stop, screen.getByTestId("cm-editor"))).toBe(true);
     // The arrival is a recording, not typing: no keyboard thrown over Stop.
     expect(screen.getByTestId("cm-editor")).not.toHaveFocus();
   });
@@ -2476,8 +2478,8 @@ describe("NoteNew — phone layout puts the writing area first (snag #14)", () =
 
     const editor = await screen.findByTestId("cm-editor");
     const record = await screen.findByRole("button", { name: /record voice memo/i });
-    expect(before(screen.getByLabelText(/note path/i), editor)).toBe(true);
-    expect(before(record, editor)).toBe(true);
+    expect(precedes(screen.getByLabelText(/note path/i), editor)).toBe(true);
+    expect(precedes(record, editor)).toBe(true);
     expect(editor).not.toHaveFocus();
   });
 });
