@@ -348,7 +348,7 @@ describe("Settings route", () => {
 
     expect(
       await screen.findByText(
-        "Your vaults stay on this device and keep working; sign in again to manage your account. To take a vault off this device, remove it under Vaults.",
+        "Your notes stay on this device. Vaults from your account stop syncing until you sign in again; vaults you connected another way are not affected. To take a vault off this device, remove it under Vaults.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/account session/i)).not.toBeInTheDocument();
