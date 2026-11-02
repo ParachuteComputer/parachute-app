@@ -30,19 +30,23 @@ vi.mock("@/components/CodeMirrorEditor", async () => {
       ref: React.Ref<{ insertAtCursor(s: string): void; focus(): void }>,
     ) {
       const { value, onChange, onPasteFile } = props;
+      const textareaRef = React.useRef<HTMLTextAreaElement>(null);
       React.useImperativeHandle(
         ref,
         () => ({
           insertAtCursor(s: string) {
             onChange(value + s);
           },
-          focus() {},
+          focus() {
+            textareaRef.current?.focus();
+          },
         }),
         [value, onChange],
       );
       return (
         <>
           <textarea
+            ref={textareaRef}
             data-testid="cm-editor"
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -2391,5 +2395,89 @@ describe("W2-10 — one shared draft: the Recent lens's composer ↔ /new", () =
     const editor = await screen.findByTestId("cm-editor");
     expect(editor).toHaveValue("a thought that must survive");
     expect(screen.getByTestId("draft-restored")).toBeInTheDocument();
+  });
+});
+
+// T-318 snag #14: on a phone (390x844) a new note opened on the path field and
+// the voice block, with "Start writing…" pushed down under them. On the phone
+// band the writing area comes first; path, tags and the recorder follow it.
+// jsdom has no layout, so the band comes from a stubbed `matchMedia` (the same
+// `(max-width: 767.98px)` boundary as `md:`) and order is DOCUMENT order.
+describe("NoteNew — phone layout puts the writing area first (snag #14)", () => {
+  beforeEach(async () => {
+    const db = await freshDb();
+    db.close();
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    seedStore();
+    fakeState.controller = null;
+    fakeState.emitBytes = null;
+    fakeState.pickResult = "audio/webm;codecs=opus";
+    fakeState.requestMic = vi.fn(async () => ({ getTracks: () => [] }) as unknown as MediaStream);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function stubViewport(phone: boolean) {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: phone && query === "(max-width: 767.98px)",
+        media: query,
+        onchange: null,
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+        dispatchEvent: () => false,
+      })),
+    );
+  }
+
+  const before = (a: Element, b: Element) =>
+    (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+  it("phone: the editor comes before the path field, tags and recorder, and holds focus", async () => {
+    stubViewport(true);
+    installFetch({});
+    renderAt("/new");
+
+    const editor = await screen.findByTestId("cm-editor");
+    const path = screen.getByLabelText(/note path/i);
+    const record = await screen.findByRole("button", { name: /record voice memo/i });
+    expect(before(editor, path)).toBe(true);
+    expect(before(editor, record)).toBe(true);
+    expect(before(editor, screen.getByText(/^tags$/i))).toBe(true);
+    // Still reachable, still the auto-named default.
+    expect((path as HTMLInputElement).value).toMatch(/^Notes\/\d{4}\/\d{2}-\d{2}\/\d{2}-\d{2}-\d{2}$/);
+    // Tapping + means "write": the caret is already in the body.
+    await waitFor(() => expect(editor).toHaveFocus());
+  });
+
+  it("phone + ?voice=1: the recorder stays on top so Stop is in view", async () => {
+    stubViewport(true);
+    installFetch({});
+    renderAt("/new?voice=1");
+
+    const stop = await screen.findByRole("button", { name: /stop/i });
+    expect(before(stop, screen.getByTestId("cm-editor"))).toBe(true);
+    // The arrival is a recording, not typing: no keyboard thrown over Stop.
+    expect(screen.getByTestId("cm-editor")).not.toHaveFocus();
+  });
+
+  it("desktop keeps today's order: path and recorder above the editor, no autofocus", async () => {
+    stubViewport(false);
+    installFetch({});
+    renderAt("/new");
+
+    const editor = await screen.findByTestId("cm-editor");
+    const record = await screen.findByRole("button", { name: /record voice memo/i });
+    expect(before(screen.getByLabelText(/note path/i), editor)).toBe(true);
+    expect(before(record, editor)).toBe(true);
+    expect(editor).not.toHaveFocus();
   });
 });
