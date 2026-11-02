@@ -3,7 +3,7 @@ import { readNote, readNotesList } from "@/lib/mirror/read";
 import { getMirrorTags, mirrorRecordRemove, mirrorRecordUpsert } from "@/lib/mirror/store";
 import type { LensDB } from "@/lib/sync/db";
 import { isLocalId, newLocalId, resolveNoteId } from "@/lib/sync/id-map";
-import { enqueue } from "@/lib/sync/queue";
+import { enqueue, listPending } from "@/lib/sync/queue";
 import { useToastStore } from "@/lib/toast/store";
 import { isTranscriptionPending, retryOptimisticNote } from "@/lib/transcription-status";
 import { useSync } from "@/providers/SyncProvider";
@@ -16,6 +16,7 @@ import {
   type UpdateNotePayload,
   type UploadProgress,
   VaultClient,
+  VaultConflictError,
   VaultUnreachableError,
 } from "./client";
 import { useLiveNotesQuery } from "./live-query";
@@ -762,6 +763,7 @@ export function useNote(id: string | undefined) {
 //   3. If the network call rejects (error, abort, or timeout) and we have the
 //      sync DB available, enqueue the mutation and return the optimistic row.
 //   4. If there's nowhere to enqueue, re-throw — that's a genuine config fail.
+//   A 409 conflict is never enqueued: it is an answer, not an outage.
 //
 // Callers keep the same signature; the returned Note is optimistic (local id +
 // local timestamps) and is replaced by the server-authored one when the drain
@@ -785,10 +787,41 @@ export async function withOfflineFallback<T>(
   try {
     return await online(ctrl.signal);
   } catch (err) {
+    // A 409 is the vault refusing a stale write, not a lost connection: the
+    // caller has to see it (the editor's conflict banner). Queued, it would be
+    // re-sent on a fresh baseline by the drain and overwrite the other edit.
+    // A 428 (no `if_updated_at` sent, same error class) stays queued: callers
+    // like Pin/Archive send none and rely on the drain to fetch a baseline.
+    if (err instanceof VaultConflictError && !isPreconditionRequired(err)) throw err;
     if (enqueueFallback) return enqueueFallback();
     throw err;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function hasQueuedUpdate(db: LensDB, vaultId: string, noteId: string): Promise<boolean> {
+  try {
+    const rows = await listPending(db, vaultId);
+    for (const r of rows) {
+      if (r.mutation.kind !== "update-note" || r.status === "needs-human") continue;
+      const target = r.mutation.targetId;
+      if (target === noteId) return true;
+      // Queued while the note was still local: its row keeps the local id.
+      if (isLocalId(target) && (await resolveNoteId(db, target, vaultId)) === noteId) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function isPreconditionRequired(err: VaultConflictError): boolean {
+  try {
+    const body = JSON.parse(String(err.body ?? "{}")) as { error_type?: string };
+    return body.error_type === "precondition_required";
+  } catch {
+    return false;
   }
 }
 
@@ -843,6 +876,14 @@ async function enqueueUpdate(
     ...(payload.content !== undefined && { content: payload.content }),
     ...(payload.path !== undefined && { path: payload.path }),
     ...(payload.metadata !== undefined && { metadata: payload.metadata }),
+    // The tag diff too: the editor takes this note as its new baseline, and a
+    // baseline missing the queued tags reads as someone else's change later.
+    ...(payload.tags && {
+      tags: [
+        ...(base.tags ?? []).filter((t) => !payload.tags?.remove?.includes(t)),
+        ...(payload.tags.add ?? []).filter((t) => !(base.tags ?? []).includes(t)),
+      ],
+    }),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -863,6 +904,12 @@ export function useUpdateNote(id: string | undefined) {
               return enqueueUpdate(db, activeId, id, payload, existing);
             }
           : null;
+      // An earlier save of this note still in the queue goes first: sent
+      // online now, this one would land ahead of it, and its baseline (the
+      // queued save's local stamp) would be refused as a conflict.
+      if (fallback && db && activeId && (await hasQueuedUpdate(db, activeId, id))) {
+        return fallback();
+      }
       return withOfflineFallback((signal) => {
         if (!client) throw new Error("No active vault");
         return client.updateNote(id, payload, { signal });
