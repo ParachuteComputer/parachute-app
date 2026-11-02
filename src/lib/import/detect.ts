@@ -35,3 +35,8 @@ export function isMarkdownLike(file: File): boolean {
   const lower = file.name.toLowerCase();
   return lower.endsWith(".md") || lower.endsWith(".markdown");
 }
+
+/** A `.tar`: what the Export page downloads (a Parachute export). */
+export function isTarLike(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".tar");
+}

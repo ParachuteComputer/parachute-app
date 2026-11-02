@@ -1,8 +1,9 @@
 import { AttachmentDropZone } from "@/components/AttachmentDropZone";
 import { applyImport } from "@/lib/import/apply";
-import { detectFormat, isMarkdownLike, isZipLike } from "@/lib/import/detect";
+import { detectFormat, isMarkdownLike, isTarLike, isZipLike } from "@/lib/import/detect";
 import { parseLooseMarkdown } from "@/lib/import/loose";
 import { parseObsidianZip } from "@/lib/import/obsidian";
+import { parseParachuteArchive } from "@/lib/import/parachute-export";
 import type {
   DetectedFormat,
   ImportProgress,
@@ -72,8 +73,28 @@ export function Import() {
       setStage({ kind: "parsing" });
       const format = detectFormat(files);
       try {
+        // A Parachute export (the Export page's .tar, or that export zipped)
+        // carries `.parachute/vault.yaml`; read it as one, with its files.
+        const tar = files.find(isTarLike);
+        const archive = tar ?? files.find(isZipLike);
+        const exported = archive ? await parseParachuteArchive(archive) : null;
         let parsed: ParsedImport;
-        if (format === "obsidian-zip") {
+        if (exported) {
+          parsed = exported;
+        } else if (tar) {
+          parsed = {
+            format: "unknown",
+            notes: [],
+            errors: [
+              {
+                sourcePath: tar.name,
+                reason: "Not a Parachute export: there's no .parachute/vault.yaml inside.",
+              },
+            ],
+            tags: [],
+            attachments: [],
+          };
+        } else if (format === "obsidian-zip") {
           const zip = files.find(isZipLike);
           if (!zip) {
             // Defensive — detector said obsidian-zip but no zip in the list.
@@ -90,7 +111,7 @@ export function Import() {
             notes: [],
             errors: files.map((f) => ({
               sourcePath: f.name,
-              reason: "Unrecognized format (expected .zip, .md, or .markdown).",
+              reason: "Unrecognized format (expected .tar, .zip, .md, or .markdown).",
             })),
             tags: [],
             attachments: [],
@@ -154,8 +175,9 @@ export function Import() {
           Import notes into <span className="text-accent">{activeVault.name}</span>
         </h1>
         <p className="mt-3 text-fg-muted">
-          Upload an Obsidian vault zip or drop in loose markdown files. Everything is parsed in your
-          browser and previewed before any note lands in the vault.
+          Bring back a Parachute export, upload an Obsidian vault zip, or drop in loose markdown
+          files. Everything is read in your browser and previewed before any note lands in the
+          vault.
         </p>
       </header>
 
@@ -205,14 +227,15 @@ function PickStage({ parsing, onFiles, inputRef }: PickProps) {
       <AttachmentDropZone
         onDropFiles={onFiles}
         className="rounded-2xl border border-border bg-card shadow-soft"
-        hint="zip or markdown"
+        hint="export, zip or markdown"
       >
         <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 p-8 text-center">
           <p className="font-serif text-lg text-fg">
             {parsing ? "Reading files…" : "Drop a file here"}
           </p>
           <p className="text-sm text-fg-dim">
-            Accepts an Obsidian vault `.zip`, or one or more `.md` / `.markdown` files.
+            Accepts a Parachute export `.tar` (from Export, pictures and files included), an
+            Obsidian vault `.zip`, or one or more `.md` / `.markdown` files.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <label className="btn btn-primary btn-touch cursor-pointer">
@@ -221,7 +244,7 @@ function PickStage({ parsing, onFiles, inputRef }: PickProps) {
                 ref={inputRef}
                 type="file"
                 className="sr-only"
-                accept=".zip,.md,.markdown"
+                accept=".tar,.zip,.md,.markdown"
                 multiple
                 disabled={parsing}
                 onChange={handleChange}
@@ -300,6 +323,13 @@ function ReviewStage({ parsed, onConfirm, onBack }: ReviewProps) {
             <span className="text-fg-dim">{errors.length} file(s) couldn't be parsed.</span>
           ) : null}
         </p>
+        {parsed.parachuteExport && parsed.parachuteExport.tagSchemas > 0 ? (
+          <p className="mt-2 text-sm text-fg-dim">
+            The export's {parsed.parachuteExport.tagSchemas} tag definition
+            {parsed.parachuteExport.tagSchemas === 1 ? "" : "s"} (descriptions and fields) aren't
+            brought in here. Each note keeps its tags.
+          </p>
+        ) : null}
         {tags.length > 0 ? (
           <p className="mt-2 text-sm text-fg-muted">
             <span className="eyebrow">Tags found</span>{" "}
@@ -536,11 +566,13 @@ function DoneStage({
 
 function FormatBadge({ format }: { format: DetectedFormat }) {
   const label =
-    format === "obsidian-zip"
-      ? "Obsidian vault (zip)"
-      : format === "loose-markdown"
-        ? "loose markdown"
-        : "unknown";
+    format === "parachute-export"
+      ? "Parachute export"
+      : format === "obsidian-zip"
+        ? "Obsidian vault (zip)"
+        : format === "loose-markdown"
+          ? "loose markdown"
+          : "unknown";
   return (
     <span className="rounded bg-bg-soft px-1.5 py-0.5 font-mono text-xs text-fg">{label}</span>
   );

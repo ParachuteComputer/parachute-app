@@ -21,3 +21,18 @@ export function readBlobAsText(blob: Blob): Promise<string> {
     reader.readAsText(blob);
   });
 }
+
+/** The bytes of a `Blob`/`File`, with the same jsdom fallback as above. */
+export function readBlobAsArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  if (
+    typeof (blob as Blob & { arrayBuffer?: () => Promise<ArrayBuffer> }).arrayBuffer === "function"
+  ) {
+    return blob.arrayBuffer();
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+    reader.readAsArrayBuffer(blob);
+  });
+}

@@ -15,7 +15,7 @@
  * `ParsedImport` shape; the runner is format-agnostic.
  */
 
-export type DetectedFormat = "obsidian-zip" | "loose-markdown" | "unknown";
+export type DetectedFormat = "obsidian-zip" | "loose-markdown" | "parachute-export" | "unknown";
 
 /**
  * One parsed note from a source file, ready to POST to vault. Mirrors
@@ -56,6 +56,33 @@ export interface ParsedNote {
    * metadata column.
    */
   metadata: Record<string, unknown>;
+  /**
+   * Parachute export only: the note's attached files (frontmatter
+   * `attachments`), each with the relative body link the export wrote for it.
+   */
+  exportAttachments?: ExportAttachmentRef[];
+  /** Parachute export only: typed links (frontmatter `links`), added once every note exists. */
+  links?: PortableLinkRef[];
+}
+
+/** One attached file of an exported note. */
+export interface ExportAttachmentRef {
+  /** Where the file sits in the export: `.parachute/attachments/<id>/<file>`. */
+  sourcePath: string;
+  mimeType: string;
+  /**
+   * The link target the export wrote in the body in place of
+   * `/api/storage/<path>` (core's `body_link`). Absent when the body has no
+   * link to this file (it is still attached to the note).
+   */
+  bodyLink?: string;
+}
+
+/** A typed link from an exported note's frontmatter (target is a note id). */
+export interface PortableLinkRef {
+  target: string;
+  relationship: string;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -111,6 +138,11 @@ export interface ParsedImport {
    * and reports the rest. Empty for loose-markdown imports.
    */
   attachments: CollectedAttachment[];
+  /**
+   * Set for a Parachute export: how many tag definitions
+   * (`.parachute/schemas/`) it carries, which this page does not restore.
+   */
+  parachuteExport?: { tagSchemas: number };
 }
 
 /**

@@ -73,6 +73,7 @@ interface UploadedRecord {
  * partial success beats all-or-nothing; failures become report rows.
  */
 export async function applyImport(opts: ApplyImportOptions): Promise<ImportReport> {
+  if (opts.parsed.format === "parachute-export") return applyParachuteExport(opts);
   const { client, parsed, signal } = opts;
   const attachmentOutcomes: AttachmentOutcome[] = [];
 
@@ -256,6 +257,116 @@ export async function applyImport(opts: ApplyImportOptions): Promise<ImportRepor
       sourcePath: att.sourcePath,
       reason: `.${att.ext || "?"} is not a vault storage type — not imported. (Re-save it in a supported format to bring it across.)`,
     });
+  }
+
+  return mergeReport(noteReport, attachmentOutcomes);
+}
+
+/**
+ * Apply a Parachute export (see `parachute-export.ts`). The export says
+ * exactly which file belongs to which note and where the body links to it,
+ * so there is no name-guessing here, unlike an Obsidian vault:
+ *
+ *   1. upload each attached file (the vault gives it a new storage path);
+ *   2. in each note body, turn the export's relative link for that file
+ *      (`body_link`) back into `/api/storage/<new path>`, as core's
+ *      `fromExportedAttachmentLinks` does on the vault's own import;
+ *   3. create the notes (ids, paths, tags, metadata, created_at kept);
+ *   4. attach each file to its note, linked from the body or not;
+ *   5. add the typed links, once every note exists (a target the vault
+ *      doesn't have is skipped by the vault).
+ */
+async function applyParachuteExport(opts: ApplyImportOptions): Promise<ImportReport> {
+  const { client, parsed, signal } = opts;
+  const attachmentOutcomes: AttachmentOutcome[] = [];
+  const uploaded = new Map<string, { storagePath: string; mimeType: string }>();
+  for (const att of parsed.attachments) {
+    if (!isUploadableKind(att.kind)) {
+      attachmentOutcomes.push({
+        status: "skipped",
+        sourcePath: att.sourcePath,
+        reason: `.${att.ext || "?"} is not a vault storage type — not imported.`,
+      });
+      continue;
+    }
+    if (signal?.aborted) {
+      attachmentOutcomes.push({
+        status: "skipped",
+        sourcePath: att.sourcePath,
+        reason: "Skipped — import was cancelled.",
+      });
+      continue;
+    }
+    try {
+      const file = new File([att.blob], att.filename, { type: att.blob.type || undefined });
+      const result = await client.uploadStorageFile(file, { signal });
+      uploaded.set(att.sourcePath, { storagePath: result.path, mimeType: result.mimeType });
+    } catch (err) {
+      attachmentOutcomes.push({
+        status: "errored",
+        sourcePath: att.sourcePath,
+        reason: `Upload failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  const notes: ParsedNote[] = parsed.notes.map((note) => {
+    let content = note.content;
+    for (const ref of note.exportAttachments ?? []) {
+      const up = uploaded.get(ref.sourcePath);
+      if (!up || !ref.bodyLink) continue;
+      content = content.split(`](${ref.bodyLink})`).join(`](/api/storage/${up.storagePath})`);
+    }
+    return { ...note, content };
+  });
+
+  const noteReport = await runImport({
+    client,
+    notes,
+    ...(opts.concurrency !== undefined ? { concurrency: opts.concurrency } : {}),
+    ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+    ...(signal ? { signal } : {}),
+  });
+  const noteIdByPath = new Map<string, string>();
+  for (const o of noteReport.outcomes) {
+    if (o.status === "created") noteIdByPath.set(o.sourcePath, o.noteId);
+  }
+
+  const references = new Map<string, number>();
+  for (const note of notes) {
+    const noteId = noteIdByPath.get(note.sourcePath);
+    for (const ref of note.exportAttachments ?? []) {
+      const up = uploaded.get(ref.sourcePath);
+      if (!up) continue;
+      let n = references.get(ref.sourcePath) ?? 0;
+      if (noteId && !signal?.aborted) {
+        try {
+          await client.linkAttachment(noteId, { path: up.storagePath, mimeType: up.mimeType });
+          n++;
+        } catch {
+          // The file is uploaded and the body links it; only the row is missing.
+        }
+      }
+      references.set(ref.sourcePath, n);
+    }
+  }
+  for (const [sourcePath, up] of uploaded) {
+    attachmentOutcomes.push({
+      status: "uploaded",
+      sourcePath,
+      storagePath: up.storagePath,
+      references: references.get(sourcePath) ?? 0,
+    });
+  }
+
+  for (const note of notes) {
+    const noteId = noteIdByPath.get(note.sourcePath);
+    if (!noteId || !note.links?.length || signal?.aborted) continue;
+    try {
+      await client.updateNote(noteId, { links: { add: note.links }, force: true });
+    } catch {
+      // Typed links are best-effort here, like a missing target on the vault's own import.
+    }
   }
 
   return mergeReport(noteReport, attachmentOutcomes);
