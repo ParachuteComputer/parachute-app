@@ -178,6 +178,35 @@ describe("ConnectAI", () => {
       ).toBeInTheDocument();
     });
 
+    it("a vault the door's list doesn't carry keeps its own address, never the template's", async () => {
+      seedHosted();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) => {
+          const path = typeof input === "string" ? input : input.toString();
+          if (path === "/account/vaults") {
+            return new Response(
+              JSON.stringify({
+                vaults: [
+                  { name: "other", mcp_url: "https://my.parachute.computer/vault/other/mcp" },
+                ],
+              }),
+              { status: 200 },
+            );
+          }
+          if (path === "/.well-known/parachute-account") {
+            return new Response(JSON.stringify(DESCRIPTOR), { status: 200 });
+          }
+          return new Response("{}", { status: 404 });
+        }),
+      );
+      renderConnect();
+      expect(
+        await screen.findByText("https://u.parachute.computer/vault/aaron/mcp"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(MY_MCP)).not.toBeInTheDocument();
+    });
+
     it("falls back when the lookup fails", async () => {
       seedHosted();
       vi.stubGlobal(
