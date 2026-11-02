@@ -1,4 +1,5 @@
 import { ConnectAI } from "@/app/routes/ConnectAI";
+import { __resetDoorDescriptorCacheForTests } from "@/lib/account/descriptor";
 import { HOSTED_CLIENT_ID } from "@/lib/account/hosted-vault";
 import { LOOKUP_TIMEOUT_MS, advertisedMcpUrl } from "@/lib/home/mcp-address";
 import { useVaultStore } from "@/lib/vault/store";
@@ -43,6 +44,7 @@ function renderConnect() {
 describe("ConnectAI", () => {
   beforeEach(() => {
     localStorage.clear();
+    __resetDoorDescriptorCacheForTests();
     useVaultStore.setState({ vaults: {}, activeVaultId: null });
     seedStore();
   });
@@ -209,6 +211,66 @@ describe("ConnectAI", () => {
       }
     });
 
+    // Snag #13 (T-318 newcomer walk): the phone showed u.… while the desktop
+    // showed my.… for the same vault. The phone's account session was gone
+    // (closing the account deletes sessions; the vault token kept working
+    // after the undo), so /account/vaults failed and the page fell back to the
+    // record's machine URL. The door's PUBLIC descriptor carries the same
+    // advertised address as a `{name}` template, with no session needed.
+    const DESCRIPTOR = {
+      issuer: "https://cloud.parachute.computer",
+      door: "cloud",
+      auth: { methods: ["magic_link"], signin_path: "/login" },
+      vault_url_template: "https://my.parachute.computer/vault/{name}",
+    };
+
+    it("a signed-out device still shows the door's address, from its public descriptor", async () => {
+      seedHosted();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) => {
+          const path = typeof input === "string" ? input : input.toString();
+          if (path === "/.well-known/parachute-account") {
+            return new Response(JSON.stringify(DESCRIPTOR), { status: 200 });
+          }
+          if (path === "/account/session") {
+            return new Response(JSON.stringify({ signed_in: false }), { status: 200 });
+          }
+          return new Response("{}", { status: 401 });
+        }),
+      );
+      renderConnect();
+      expect(await screen.findByText(MY_MCP)).toBeInTheDocument();
+      expect(
+        screen.queryByText("https://u.parachute.computer/vault/aaron/mcp"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText(`claude mcp add --transport http parachute-aaron-s-vault ${MY_MCP}`),
+      ).toBeInTheDocument();
+    });
+
+    it("a door that never answers uses the descriptor this device already knows", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        seedHosted();
+        localStorage.setItem(
+          `parachute:door-descriptor:${window.location.origin}`,
+          JSON.stringify(DESCRIPTOR),
+        );
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(() => new Promise<Response>(() => {})),
+        );
+        renderConnect();
+        await act(async () => {
+          vi.advanceTimersByTime(LOOKUP_TIMEOUT_MS);
+        });
+        expect(screen.getByText(MY_MCP)).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("a vault connected from another door never asks this door — derived address at once", () => {
       const fetchMock = stubVaultsList([{ name: "Aaron's Vault", mcp_url: MY_MCP }]);
       renderConnect();
@@ -222,6 +284,18 @@ describe("ConnectAI", () => {
       expect(advertisedMcpUrl([{ name: "b", mcp_url: MY_MCP }], "a")).toBeNull();
       expect(advertisedMcpUrl([{ name: "a", mcp_url: MY_MCP }], "a")).toBe(MY_MCP);
     });
+  });
+
+  it("wraps a long address in full on a phone — no sideways scroll, no clipping", () => {
+    // Snag #13: at 390px the address box scrolled sideways with no visible
+    // scrollbar, so the middle of the URL looked cut off. jsdom has no layout,
+    // so pin the wrapping rule on the rendered field itself.
+    renderConnect();
+    const field = screen.getByText("https://u.parachute.computer/vault/aaron/mcp");
+    expect(field.className).toMatch(/\bwrap-anywhere\b/);
+    expect(field.className).not.toMatch(
+      /\b(overflow-x-auto|overflow-x-scroll|overflow-hidden|truncate|text-ellipsis|whitespace-nowrap)\b/,
+    );
   });
 
   it("redirects to the index when no vault is connected", () => {
