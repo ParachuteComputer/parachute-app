@@ -66,13 +66,16 @@ function NotesLink({ href, className, children }: LinkComponentProps) {
       </Link>
     );
   }
-  if (href.startsWith("/v/"))
+  // `//host` (and `/\host`, which browsers read the same way) names another
+  // site, not an app path: it takes the external branch below.
+  const appPath = href.startsWith("/") && !href.startsWith("//") && !href.startsWith("/\\");
+  if (appPath && href.startsWith("/v/"))
     return (
       <a href={withMount(href)} className="text-accent hover:underline">
         {children}
       </a>
     );
-  if (href.startsWith("/") || href.startsWith("#")) {
+  if (appPath || href.startsWith("#")) {
     return (
       <Link to={href} className="text-accent hover:underline">
         {children}
