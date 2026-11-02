@@ -6,6 +6,7 @@ import { withMirrorVaultLock } from "./lock";
 import { collectProtectedIds, diffMirror, makeIsProtected } from "./reconcile";
 import {
   clearMirrorCursor,
+  dropMirrorVault,
   getMirrorCursor,
   getMirrorLastSweepAt,
   getMirrorLastSyncedAt,
@@ -103,6 +104,12 @@ export interface MirrorEngineOptions {
   // each page so a one-time "Saving your vault for offline · {n}" progress
   // line can tick. Not emitted on warm polls.
   onProgress?: (vaultId: string, done: number) => void;
+  // True once the vault was removed from this browser (vault or account
+  // deleted, disconnected), possibly by ANOTHER tab whose change this tab's
+  // `resolveContext` hasn't caught up with. The drain and the sweep check it
+  // under the vault lock before and after their writes; a removed vault is
+  // wiped instead of written, so a drain can never put it back. Default: never.
+  isVaultRemoved?: (vaultId: string) => boolean;
 }
 
 export interface MirrorSyncResult {
@@ -111,7 +118,7 @@ export interface MirrorSyncResult {
   // True if a stored cursor was rejected and we re-walked from "".
   reWalked: boolean;
   // Set instead of the counts when the tick did no work.
-  skipped?: "in-flight" | "offline" | "no-context" | "locked";
+  skipped?: "in-flight" | "offline" | "no-context" | "locked" | "removed";
   // Set when the drain threw (state persisted as "error").
   error?: string;
 }
@@ -132,6 +139,7 @@ export interface MirrorSweepResult {
     | "offline"
     | "no-context"
     | "locked"
+    | "removed"
     | "incomplete-enumeration"
     | "empty-enumeration";
 }
@@ -242,7 +250,12 @@ export class MirrorEngine {
       const result = await this.withVaultLock(
         ctx.vaultId,
         () => ({ ...empty, skipped: "locked" as const }),
-        () => this.drainCursor(ctx.client, ctx.vaultId),
+        () =>
+          this.unlessRemoved(
+            ctx.vaultId,
+            () => ({ ...empty, skipped: "removed" as const }),
+            () => this.drainCursor(ctx.client, ctx.vaultId),
+          ),
       );
       // Reconcile AFTER the drain's lock section has released (a fresh lock
       // acquisition inside a held lock would deadlock — Web Locks aren't
@@ -277,6 +290,30 @@ export class MirrorEngine {
     fn: () => Promise<T>,
   ): Promise<T> {
     return withMirrorVaultLock(vaultId, onLocked, fn);
+  }
+
+  // Run a mirror-WRITING body (drain, sweep) for a vault that may have been
+  // removed from this browser. Call it INSIDE the vault lock. Removed before:
+  // the body never runs. Removed while it ran: its writes may have landed after
+  // the remover's wipe (no Web Locks, or a wipe that couldn't wait), so wipe
+  // again now, after the body's last write. Either way the vault is left empty
+  // and the result says "removed", which also skips the follow-up sweep and
+  // eviction.
+  private async unlessRemoved<T>(
+    vaultId: string,
+    removed: () => T,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const isRemoved = this.opts.isVaultRemoved;
+    if (!isRemoved) return fn();
+    if (isRemoved(vaultId)) {
+      await dropMirrorVault(this.db, vaultId);
+      return removed();
+    }
+    const result = await fn();
+    if (!isRemoved(vaultId)) return result;
+    await dropMirrorVault(this.db, vaultId);
+    return removed();
   }
 
   private async drainCursor(
@@ -478,7 +515,12 @@ export class MirrorEngine {
       return await this.withVaultLock(
         ctx.vaultId,
         () => aborted("locked"),
-        () => this.runSweep(ctx.client, ctx.vaultId),
+        () =>
+          this.unlessRemoved(
+            ctx.vaultId,
+            () => aborted("removed"),
+            () => this.runSweep(ctx.client, ctx.vaultId),
+          ),
       );
     } finally {
       this.sweeping = false;

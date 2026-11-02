@@ -15,7 +15,7 @@ import { type LensDB, openLensDB } from "@/lib/sync/db";
 import { SyncEngine } from "@/lib/sync/engine";
 import { requestPersistent } from "@/lib/sync/storage-quota";
 import { useActiveVaultClient } from "@/lib/vault/queries";
-import { useVaultStore } from "@/lib/vault/store";
+import { isVaultRemoved, useVaultStore } from "@/lib/vault/store";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type ReactNode,
@@ -236,6 +236,7 @@ export function SyncProvider({ children }: { children: ReactNode }): ReactNode {
         if (!c || !v) return null;
         return { client: c, vaultId: v };
       },
+      isVaultRemoved,
       onStateChange: (vaultId, state) => {
         if (!forActive(vaultId)) return;
         setMirrorPhase(state.phase);

@@ -78,16 +78,23 @@ export const MIRROR_LOCK_WAIT_MS = 15_000;
  * `signal` is mutually exclusive with `ifAvailable`, which is why only this
  * helper carries a deadline — `withMirrorVaultLock` never queues in the first
  * place, so it cannot wedge.
+ *
+ * `timeoutMs: null` queues with NO deadline. Only for work nobody awaits and
+ * that must not run beside a holder: forgetting a removed vault's mirror
+ * (`./forget`), where giving up or wiping unlocked would let a drain in flight
+ * write the vault back after the wipe.
  */
 export async function underMirrorVaultLock<T>(
   vaultId: string,
   fn: () => Promise<T>,
-  timeoutMs: number = MIRROR_LOCK_WAIT_MS,
+  timeoutMs: number | null = MIRROR_LOCK_WAIT_MS,
 ): Promise<T> {
   const locks = webLocks();
   if (!locks) return fn();
+  const name = mirrorLockName(vaultId);
+  if (timeoutMs === null) return locks.request(name, async () => await fn()) as Promise<T>;
   return locks.request(
-    mirrorLockName(vaultId),
+    name,
     { signal: AbortSignal.timeout(timeoutMs) },
     async () => await fn(),
   ) as Promise<T>;
