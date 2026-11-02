@@ -474,6 +474,34 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
       expect(screen.queryByRole("button", { name: /upgrade/i })).not.toBeInTheDocument();
     });
 
+    // T-318 snag #17: "Plan & billing" over a free beta promises a bill that
+    // doesn't exist. Billing words only where there is billing.
+    it("names the card 'Your plan' when nothing is billed", async () => {
+      signedIn();
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummaryState).mockResolvedValue(BETA);
+
+      renderAccount();
+      await screen.findByTestId("open-beta-plan");
+      const card = screen.getByRole("region", { name: "Your plan" });
+      expect(within(card).getByRole("heading", { name: "Your plan" })).toBeInTheDocument();
+      expect(screen.queryByText(/billing/i)).not.toBeInTheDocument();
+    });
+
+    it("keeps 'Plan & billing' for a beta account that still pays through Stripe", async () => {
+      signedIn();
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummaryState).mockResolvedValue({
+        ...BETA,
+        plan: { ...BETA.plan, tier: "plus", label: "Plus", price_monthly_usd: 5 },
+        has_billing_customer: true,
+      });
+
+      renderAccount();
+      await screen.findByTestId("open-beta-plan");
+      expect(screen.getByRole("heading", { name: "Plan & billing" })).toBeInTheDocument();
+    });
+
     it("paid mode is unchanged: the trial countdown + upgrade cards still render", async () => {
       signedIn();
       vi.mocked(listVaults).mockResolvedValue({ vaults: [] });

@@ -330,6 +330,31 @@ describe("Settings route", () => {
     // The cached account bearer is gone — the device honestly forgot the session.
     expect(sessionStorage.getItem("lens:account_token")).toBeNull();
   });
+
+  // T-318 snag #17 (newcomer walk): "Tag roles", "account session" and
+  // "billing" in a free beta read as jargon. The copy says what each thing
+  // does, in words a first-time visitor can act on.
+  it("speaks plainly: the tags section, the sign-out line and the Account row", async () => {
+    accountHolder.session = { signed_in: true, email: "maya@example.test", csrf: "csrf-1" };
+    renderSettings();
+
+    const tags = screen.getByRole("heading", { name: "Tags the app uses" }).closest("section");
+    expect(
+      within(tags as HTMLElement).getByText(
+        /Pinning, archiving, the inbox and saved views each work by adding a tag\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Tag roles")).not.toBeInTheDocument();
+
+    expect(
+      await screen.findByText(
+        "Your vaults stay on this device and keep working; sign in again to manage your account. To take a vault off this device, remove it under Vaults.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/account session/i)).not.toBeInTheDocument();
+
+    expect(screen.getByText("Your plan, hosted vaults, and sign-in.")).toBeInTheDocument();
+  });
 });
 
 // Voice-retention transparency (voice recordings section). The dial is
