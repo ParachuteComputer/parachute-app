@@ -168,8 +168,9 @@ function AccountSessionRow() {
           Signed in{identity ? ` as ${identity}` : ""}
         </span>
         <span className="mt-0.5 block text-sm text-fg-muted">
-          Your vaults stay on this device and keep working; sign in again to manage your account. To
-          take a vault off this device, remove it under Vaults.
+          Your notes stay on this device. Vaults from your account stop syncing until you sign in
+          again; vaults you connected another way are not affected. To take a vault off this device,
+          remove it under Vaults.
         </span>
       </span>
       <button

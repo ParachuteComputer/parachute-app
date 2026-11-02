@@ -348,12 +348,29 @@ describe("Settings route", () => {
 
     expect(
       await screen.findByText(
-        "Your vaults stay on this device and keep working; sign in again to manage your account. To take a vault off this device, remove it under Vaults.",
+        "Your notes stay on this device. Vaults from your account stop syncing until you sign in again; vaults you connected another way are not affected. To take a vault off this device, remove it under Vaults.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/account session/i)).not.toBeInTheDocument();
 
     expect(screen.getByText("Your plan, hosted vaults, and sign-in.")).toBeInTheDocument();
+  });
+
+  // T-318 review 3: the sign-out line must not promise more than sign-out
+  // leaves. A vault from the account (home-door record) has no refresh token:
+  // its 15-minute vault token is re-minted from the account session
+  // (refresh.ts -> remintHostedVault), so once signed out it stops syncing
+  // within minutes and the app raises "sign in again to keep syncing"
+  // (AccountSessionBanner). "Keep working" is false for those vaults.
+  it("the sign-out line says account vaults stop syncing until you sign in again", async () => {
+    accountHolder.session = { signed_in: true, email: "maya@example.test", csrf: "csrf-1" };
+    renderSettings();
+
+    const signOut = await screen.findByRole("button", { name: "Sign out" });
+    const row = signOut.parentElement as HTMLElement;
+    expect(row.textContent).not.toMatch(/keep working/i);
+    expect(row.textContent).toMatch(/stop syncing until you sign in again/i);
+    expect(row.textContent).toMatch(/remove it under Vaults/i);
   });
 });
 
