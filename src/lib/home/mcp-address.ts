@@ -9,11 +9,23 @@
  * `GET /account/vaults` carries an `mcp_url` for this vault, that is the
  * address shown and copied, and the Claude Code command uses it too.
  *
- * Fallback, unchanged from before: `<vault.url>/mcp` — a self-hosted hub (no
- * `mcp_url` in its list), a vault connected over OAuth from another door (not
- * in this door's list), a signed-out session, or any failure.
+ * When that list can't answer (the account session is gone while the vault
+ * token still works, a slow network, a row without `mcp_url`), the door's
+ * PUBLIC descriptor still knows the address: its `vault_url_template` is built
+ * from the same advertised origin as `mcp_url`, needs no session, and is cached
+ * per origin. Without this a phone whose session had lapsed showed u.… while
+ * the desktop showed my.… for the same vault (snag #13).
+ *
+ * Last resort: `<vault.url>/mcp` — a self-hosted hub that publishes neither, a
+ * vault connected over OAuth from another door (not in this door's list), or
+ * no answer at all. It works too; it just isn't the address the door prints.
  */
 import { listVaults } from "@/lib/account/client";
+import {
+  type DoorDescriptor,
+  getDoorDescriptor,
+  peekDoorDescriptor,
+} from "@/lib/account/descriptor";
 import { isHostedVaultRecord } from "@/lib/account/hosted-vault";
 import type { AccountVault } from "@/lib/account/types";
 import { vaultServerSlug } from "@/lib/vault/deep-link";
@@ -34,9 +46,22 @@ export function advertisedMcpUrl(vaults: readonly AccountVault[], name: string):
   }
 }
 
+/** `<template with {name}>/mcp` from the door's descriptor, or null when it
+ *  publishes no usable template. */
+export function templatedMcpUrl(door: DoorDescriptor | null, slug: string): string | null {
+  const template = door?.vault_url_template;
+  if (typeof template !== "string" || !template.includes("{name}")) return null;
+  try {
+    const u = new URL(template.replace("{name}", encodeURIComponent(slug)));
+    return u.protocol === "https:" || u.protocol === "http:" ? mcpEndpoint(u.href) : null;
+  } catch {
+    return null;
+  }
+}
+
 type Fetch = typeof fetch;
 
-/** How long Connect AI waits for the door before showing the derived address. */
+/** How long Connect AI waits for the door before showing a fallback address. */
 export const LOOKUP_TIMEOUT_MS = 4000;
 
 /**
@@ -51,6 +76,8 @@ export function useMcpAddress(
 ): { url: string; settled: boolean } {
   const derived = mcpEndpoint(vault.url);
   const hosted = isHostedVaultRecord(vault.clientId);
+  // Match by the SERVER slug: a renamed vault keeps its slug, not its label.
+  const slug = vaultServerSlug(vault.url) ?? vault.name;
   const [state, setState] = useState<{ url: string; settled: boolean }>({
     url: derived,
     settled: !hosted,
@@ -64,31 +91,33 @@ export function useMcpAddress(
     let live = true;
     setState({ url: derived, settled: false });
     // Never leave the page without an address: if the door is slow, show the
-    // derived one (it works too) and stop waiting.
+    // descriptor's address this device already knows (else the derived one,
+    // which works too) and stop waiting.
     const giveUp = setTimeout(() => {
-      if (live) setState({ url: derived, settled: true });
+      if (live)
+        setState({ url: templatedMcpUrl(peekDoorDescriptor(), slug) ?? derived, settled: true });
       live = false;
     }, LOOKUP_TIMEOUT_MS);
+    const fallBack = async () =>
+      templatedMcpUrl(await getDoorDescriptor(fetchImpl), slug) ?? derived;
     listVaults(fetchImpl)
-      .then((res) => {
+      .then(async (res) => {
         if (!live) return;
+        const advertised = advertisedMcpUrl(Array.isArray(res?.vaults) ? res.vaults : [], slug);
+        const url = advertised ?? (await fallBack());
         clearTimeout(giveUp);
-        const advertised = advertisedMcpUrl(
-          Array.isArray(res?.vaults) ? res.vaults : [],
-          // Match by the SERVER slug: a renamed vault keeps its slug, not its label.
-          vaultServerSlug(vault.url) ?? vault.name,
-        );
-        setState({ url: advertised ?? derived, settled: true });
+        if (live) setState({ url, settled: true });
       })
-      .catch(() => {
+      .catch(async () => {
+        const url = await fallBack();
         clearTimeout(giveUp);
-        if (live) setState({ url: derived, settled: true });
+        if (live) setState({ url, settled: true });
       });
     return () => {
       live = false;
       clearTimeout(giveUp);
     };
-  }, [hosted, derived, vault.name, vault.url, fetchImpl]);
+  }, [hosted, derived, slug, fetchImpl]);
 
   return state;
 }
