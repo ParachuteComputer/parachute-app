@@ -1,5 +1,5 @@
-import { IconNotes, IconPlus, IconSearch } from "@/components/NavIcons";
-import { RECENT_TO, matchVaultSurface } from "@/lib/nav/model";
+import { IconMap, IconNotes, IconPlus, IconSearch } from "@/components/NavIcons";
+import { MAP_TO, RECENT_TO, matchVaultSurface } from "@/lib/nav/model";
 import { useQuickSwitchOpen } from "@/lib/quick-switch/open-store";
 import { useVaultStore } from "@/lib/vault";
 import type { ReactNode } from "react";
@@ -22,6 +22,11 @@ import { Link, useLocation } from "react-router";
 // `lg:hidden` would put the bar and the drawer on screen together on a
 // tablet. The pinned invariant lives in
 // `navigation-breakpoint-contract.test.tsx`.
+//
+// Decision prototype B2: the Map moved here from the floating bottom-right
+// button, which sat over page content mid-scroll (newcomer walk). It's a
+// fourth slot, so Search takes a double-width slot on the right to keep the
+// raised + in the centre of the bar.
 //
 // Settings left the bottom bar with the D6 pass — it lives behind the header
 // ⋯ menu and in the desktop rail foot (the dissolved console is a room, not a
@@ -55,8 +60,14 @@ export function BottomTabBar() {
     >
       <ul className="mx-auto flex max-w-(--w-page) items-stretch justify-around px-2">
         <Tab to={RECENT_TO} label="Notes" active={isSurface} icon={<IconNotes />} />
+        <Tab to={MAP_TO} label="Map" active={location.pathname === MAP_TO} icon={<IconMap />} />
         <CenterCapture />
-        <TabButton label="Search" icon={<IconSearch />} onClick={() => setSwitcherOpen(true)} />
+        <TabButton
+          label="Search"
+          icon={<IconSearch />}
+          onClick={() => setSwitcherOpen(true)}
+          wide
+        />
       </ul>
     </nav>
   );
@@ -94,13 +105,15 @@ function TabButton({
   label,
   icon,
   onClick,
+  wide = false,
 }: {
   label: string;
   icon: ReactNode;
   onClick: () => void;
+  wide?: boolean;
 }) {
   return (
-    <li className="flex-1">
+    <li className={wide ? "flex-[2]" : "flex-1"}>
       <button
         type="button"
         onClick={onClick}

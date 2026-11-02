@@ -43,7 +43,7 @@ describe("BottomTabBar (LENS-SPEC §5.2 — the 3-slot bar, ratified D2)", () =>
     useQuickSwitchOpen.setState({ open: false });
   });
 
-  it("renders EXACTLY three slots — Notes · [+] · Search — when a vault is active", () => {
+  it("renders EXACTLY four slots — Notes · Map · [+] · Search — when a vault is active", () => {
     renderAt("/");
     const nav = screen.getByRole("navigation", { name: /primary/i });
     // One surface ⇒ one surface tab. The LZ-2 interim "Recent" tab is gone;
@@ -55,8 +55,19 @@ describe("BottomTabBar (LENS-SPEC §5.2 — the 3-slot bar, ratified D2)", () =>
     // The centre capture action (the raised + disc) and the palette entry.
     expect(within(nav).getByLabelText(/new note/i)).toBeInTheDocument();
     expect(within(nav).getByLabelText(/search/i)).toBeInTheDocument();
-    // The hard count: 3 slots, no more.
-    expect(nav.querySelectorAll("li")).toHaveLength(3);
+    // B2: the Map left its floating button for a tab here.
+    expect(within(nav).getByLabelText(/^map$/i)).toHaveAttribute("href", "/map");
+    // The hard count: 4 slots, no more.
+    expect(nav.querySelectorAll("li")).toHaveLength(4);
+  });
+
+  it("lights the Map tab on the map and keeps the + in the centre of the bar", () => {
+    renderAt("/map");
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    expect(within(nav).getByLabelText(/^map$/i)).toHaveAttribute("aria-current", "page");
+    // Two single slots left of the +, one double slot right of it: 2 | 1 | 2.
+    const slots = [...nav.querySelectorAll("li")].map((li) => li.className.match(/flex-(1|\[2\])/)?.[1]);
+    expect(slots).toEqual(["1", "1", "1", "[2]"]);
   });
 
   it("the Notes tab goes to / (the Recent lens is the front door)", () => {
