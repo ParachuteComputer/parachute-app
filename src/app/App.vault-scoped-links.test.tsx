@@ -64,6 +64,22 @@ describe("App — vault-scoped deep links (app#186, app#194)", () => {
   });
 
   describe("under the /notes mount", () => {
+    it("a protocol-relative //host link in a note is marked and opened as leaving the app", async () => {
+      // `[Sign in again](//evil.example/login)` starts with "/", so it used to
+      // take the in-app branch: no departing arrow, same tab, and react-router
+      // hands an absolute `//` target straight to the browser — the reader
+      // leaves Parachute in place, from a link styled as part of it.
+      render(
+        <MemoryRouter>
+          <MarkdownView content="[Sign in again](//evil.example/login)" />
+        </MemoryRouter>,
+      );
+      const link = await screen.findByRole("link", { name: "Sign in again" });
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      expect(link.className).toContain("external-link");
+    });
+
     it("P16-mount: cross-vault Markdown anchors preserve the deployment mount", async () => {
       render(
         <MemoryRouter>
