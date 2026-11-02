@@ -1,6 +1,6 @@
 import { NoteEditor } from "@/app/routes/NoteEditor";
 import { NoteView } from "@/app/routes/NoteView";
-import { loadDraft, saveDraft } from "@/lib/drafts/store";
+import { clearVaultDrafts, loadDraft, saveDraft } from "@/lib/drafts/store";
 import { useFocusMode } from "@/lib/focus-mode";
 import { useToastStore } from "@/lib/toast/store";
 import { useVaultStore } from "@/lib/vault/store";
@@ -1100,6 +1100,21 @@ describe("NoteEditor — draft at the edges of the editor's life", () => {
     fireEvent.click(screen.getByRole("link", { name: /back to note/i }));
     expect(await screen.findByText("NoteViewPage:abc-123")).toBeInTheDocument();
     expect(loadDraft("dev", "abc-123")?.body.content).toBe("# hi\n\nbody and the last words");
+  });
+
+  it("a vault removed while its editor is open (another tab) doesn't get the draft written back", async () => {
+    installFetch({ "/api/notes": { body: baseNote } });
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+    fireEvent.change(cm, { target: { value: "# hi\n\nprivate words" } });
+    // The other tab's "Remove from this device": drafts wiped, record gone;
+    // this tab's store follows the storage event and the editor unmounts.
+    act(() => {
+      clearVaultDrafts("dev");
+      useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    });
+    expect(await screen.findByText("NotesListPage")).toBeInTheDocument();
+    expect(loadDraft("dev", "abc-123")).toBeNull();
   });
 
   it("'Reload latest (discard my edits)' doesn't get the edits written back by the reload's pagehide", async () => {

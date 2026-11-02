@@ -156,6 +156,17 @@ function EditorSurface({ note }: { note: Note }) {
   // Persist the draft locally while there are unsaved edits (crash / navigation
   // protection). Clears itself when clean; explicitly cleared on save/discard.
   const autosave = useDraftAutosave(vaultId, note.id, draft, isDirty);
+  // Leaving mid-debounce (Back to note, a vault switch that unmounts the
+  // editor) must not drop the last words. A saved or discarded body is never
+  // written back (the hook skips it), and a clean editor persists nothing.
+  // Not when the unmount is the vault going away (removed in another tab):
+  // removal wiped its drafts, and note text must not outlive it here.
+  useEffect(
+    () => () => {
+      if (vaultId && useVaultStore.getState().vaults[vaultId]) autosave.flush();
+    },
+    [autosave, vaultId],
+  );
 
   // Block saving while an attachment is still uploading (or linking). The
   // embed markdown only lands in `draft.content` once the upload resolves
@@ -462,8 +473,9 @@ function EditorSurface({ note }: { note: Note }) {
           onReload={() => {
             // "Reload latest (discard my edits)" — clear the draft first, or the
             // reloaded editor would immediately offer to restore the edits the
-            // user just chose to discard.
-            if (vaultId) clearDraft(vaultId, note.id);
+            // user just chose to discard. `discard` (not a bare clear) so the
+            // reload's own pagehide doesn't flush the edits straight back.
+            autosave.discard();
             window.location.reload();
           }}
           onDismiss={() => setConflict(null)}
