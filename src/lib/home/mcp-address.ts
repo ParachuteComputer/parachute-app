@@ -10,7 +10,7 @@
  * address shown and copied, and the Claude Code command uses it too.
  *
  * When that list can't answer (the account session is gone while the vault
- * token still works, a slow network, a row without `mcp_url`), the door's
+ * token still works, a slow network) or lists the vault without `mcp_url`, the door's
  * PUBLIC descriptor still knows the address: its `vault_url_template` is built
  * from the same advertised origin as `mcp_url`, needs no session, and is cached
  * per origin. Without this a phone whose session had lapsed showed u.… while
@@ -103,8 +103,12 @@ export function useMcpAddress(
     listVaults(fetchImpl)
       .then(async (res) => {
         if (!live) return;
-        const advertised = advertisedMcpUrl(Array.isArray(res?.vaults) ? res.vaults : [], slug);
-        const url = advertised ?? (await fallBack());
+        const rows = Array.isArray(res?.vaults) ? res.vaults : [];
+        // The template only stands in for a row the door lists without an
+        // mcp_url; a vault the list doesn't carry isn't this door's to name.
+        const listed = rows.some((v) => v?.name === slug);
+        const advertised = advertisedMcpUrl(rows, slug);
+        const url = advertised ?? (listed ? await fallBack() : derived);
         clearTimeout(giveUp);
         if (live) setState({ url, settled: true });
       })
