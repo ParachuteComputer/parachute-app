@@ -92,7 +92,7 @@ function ManageSection() {
         <ManageRow
           to="/account"
           title="Account"
-          description="Your plan, billing, hosted vaults, and sign-in — managed in the app."
+          description="Your plan, hosted vaults, and sign-in."
         />
         <AccountSessionRow />
         <ManageRow
@@ -168,8 +168,8 @@ function AccountSessionRow() {
           Signed in{identity ? ` as ${identity}` : ""}
         </span>
         <span className="mt-0.5 block text-sm text-fg-muted">
-          Signing out ends your account session on this device. Vaults already connected here stay
-          until you remove them.
+          Your vaults stay on this device and keep working; sign in again to manage your account. To
+          take a vault off this device, remove it under Vaults.
         </span>
       </span>
       <button
@@ -250,7 +250,7 @@ function ImportSection() {
 // The "Vault schema" audit section that used to sit here (notes#129) was
 // retired in the 2026-07 one-tag simplification. Since T-318 the `capture`
 // tag is not required at all: it is declared lazily only when "Tag new notes
-// as an inbox" (Tag roles, below) adds it (schema-ensure.ts).
+// as an inbox" (Tags the app uses, below) adds it (schema-ensure.ts).
 
 // One honest line per retention option; changing PATCHes immediately; errors
 // surface as a toast and the radios stay on the server truth (controlled inputs
@@ -761,22 +761,23 @@ function TagRolesSection({ vaultId }: { vaultId: string }) {
 
   const save = () => {
     setRoles(draft);
-    pushToast("Tag roles saved.", "success");
+    pushToast("Tag choices saved.", "success");
   };
 
   const resetDefaults = () => {
     setRoles(null);
     setDraft(DEFAULT_TAG_ROLES);
-    pushToast("Tag roles reset to defaults.", "success");
+    pushToast("Tags reset to defaults.", "success");
   };
 
   return (
     <section className="card space-y-5 rounded-xl p-6 shadow-soft">
       <div>
-        <h2 className="font-serif text-xl text-fg">Tag roles</h2>
+        <h2 className="font-serif text-xl text-fg">Tags the app uses</h2>
         <p className="mt-1 text-sm text-fg-muted">
-          Point each role at whatever tag your vault already uses. Changes apply to future notes
-          only — existing notes keep their current tags.
+          Pinning, archiving, the inbox and saved views each work by adding a tag. Choose which tag
+          each one uses — handy if your vault already has its own. Changes apply from now on; notes
+          you've already tagged keep their tags.
         </p>
       </div>
 

@@ -186,7 +186,7 @@ describe("Settings route", () => {
   it("renders tag roles with defaults and saves overrides into the vault-settings cache", async () => {
     renderSettings();
     const section = screen
-      .getByRole("heading", { name: /tag roles/i })
+      .getByRole("heading", { name: /tags the app uses/i })
       .closest("section") as HTMLElement;
     const pinnedInput = within(section).getByLabelText(/pinned tag role/i);
     expect((pinnedInput as HTMLInputElement).value).toBe("pinned");
@@ -215,7 +215,7 @@ describe("Settings route", () => {
   it("shows 'Tag new notes as an inbox' OFF by default and saves it when turned on", async () => {
     renderSettings();
     const section = screen
-      .getByRole("heading", { name: /tag roles/i })
+      .getByRole("heading", { name: /tags the app uses/i })
       .closest("section") as HTMLElement;
     const toggle = within(section).getByRole("switch", { name: /tag new notes as an inbox/i });
     expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -282,7 +282,7 @@ describe("Settings route", () => {
     );
     renderSettings();
     const section = screen
-      .getByRole("heading", { name: /tag roles/i })
+      .getByRole("heading", { name: /tags the app uses/i })
       .closest("section") as HTMLElement;
     expect((within(section).getByLabelText(/pinned tag role/i) as HTMLInputElement).value).toBe(
       "starred",
