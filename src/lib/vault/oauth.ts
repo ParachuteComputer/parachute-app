@@ -159,6 +159,13 @@ export async function beginOAuth(
   const redirectUri = redirectUriForOrigin();
 
   const metadata = await discoverAuthServer(issuerUrl, fetchImpl);
+  // The caller hands the authorize URL to `window.location.assign`, and the
+  // issuer named it: `/add?add=<url>` (a link any note can carry) auto-begins
+  // against a host of the link writer's choosing. A `javascript:` endpoint would
+  // run that host's script in this origin, next to every stored vault token.
+  if (!isHttpUrl(metadata.authorization_endpoint)) {
+    throw new Error("The vault's authorization endpoint isn't an http(s) URL.");
+  }
 
   // Reuse cached client_id keyed by the metadata-reported issuer (not the
   // input URL) so a hub fronted at multiple aliases shares one registration.
@@ -229,15 +236,17 @@ export async function beginOAuth(
 // stripping non-http(s) schemes here guarantees the UI can't accidentally
 // surface one.
 function safeApproveUrl(raw: unknown): string | undefined {
-  if (typeof raw !== "string" || raw.length === 0) return undefined;
-  let u: URL;
+  return isHttpUrl(raw) ? raw : undefined;
+}
+
+function isHttpUrl(raw: unknown): raw is string {
+  if (typeof raw !== "string" || raw.length === 0) return false;
   try {
-    u = new URL(raw);
+    const { protocol } = new URL(raw);
+    return protocol === "http:" || protocol === "https:";
   } catch {
-    return undefined;
+    return false;
   }
-  if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
-  return raw;
 }
 
 function parsePendingApproval(text: string): { approveUrl: string } | null {

