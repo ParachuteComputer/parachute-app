@@ -261,4 +261,43 @@ describe("Import route", () => {
     expect(normalized).toMatch(/1 notes skipped/i);
     expect(normalized).toMatch(/0 notes errored/i);
   });
+
+  it("says a Parachute export's files stay behind, and where to restore them", async () => {
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    zip.file(".parachute/vault.yaml", "name: garden-notes\n");
+    zip.file(".parachute/attachments/01ATT/tulips.png", "png-bytes");
+    zip.file("Garden/Tulip bed.md", "![tulips.png](../.parachute/attachments/01ATT/tulips.png)\n");
+    const file = new File([await zip.generateAsync({ type: "blob" })], "garden.zip", {
+      type: "application/zip",
+    });
+
+    renderRoute();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await act(async () => {
+      Object.defineProperty(input, "files", { value: [file], configurable: true });
+      fireEvent.change(input);
+    });
+
+    const warning = await screen.findByText(/This is a Parachute export/i);
+    const text = warning.closest('[role="note"]')?.textContent?.replace(/\s+/g, " ") ?? "";
+    expect(text).toMatch(/1 attached file \(pictures, audio, PDFs\) won't come across here/);
+    // No door descriptor cached here (a hub or unknown door): the command line.
+    expect(text).toMatch(/parachute-vault import <folder>/);
+  });
+
+  it("explains a picked export .tar instead of calling it an unknown file", async () => {
+    renderRoute();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input.accept).toContain(".tar");
+    const tar = new File([new Uint8Array(1024)], "garden-notes-export-2026-11-02.tar");
+    await act(async () => {
+      Object.defineProperty(input, "files", { value: [tar], configurable: true });
+      fireEvent.change(input);
+    });
+    expect(
+      await screen.findByText(/A Parachute export \(.tar\) can't be read on this page/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/This is a Parachute export/i)).toBeInTheDocument();
+  });
 });

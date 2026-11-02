@@ -130,4 +130,25 @@ describe("parseObsidianZip", () => {
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.reason).toMatch(/zip/i);
   });
+
+  it("flags a Parachute export and counts the attached files it leaves behind", async () => {
+    // The Export page's shape, zipped from its folder: notes beside a
+    // `.parachute/` sidecar that holds the manifest and the attached files.
+    const zip = await buildZip({
+      "garden-notes/.parachute/vault.yaml": "name: garden-notes\nexport_format_version: 1\n",
+      "garden-notes/.parachute/attachments/01ATT/tulips.png": "png-bytes",
+      "garden-notes/Garden/Tulip bed.md":
+        "---\nid: n1\n---\n![tulips.png](../.parachute/attachments/01ATT/tulips.png)\n",
+    });
+    const result = await parseObsidianZip(zip);
+    expect(result.notes.map((n) => n.path)).toEqual(["Garden/Tulip bed"]);
+    expect(result.attachments).toEqual([]);
+    expect(result.parachuteExport).toEqual({ attachmentFiles: 1 });
+  });
+
+  it("leaves an ordinary Obsidian zip unflagged", async () => {
+    const zip = await buildZip({ "Vault/A.md": "a", "Vault/img/a.png": "png" });
+    const result = await parseObsidianZip(zip);
+    expect(result.parachuteExport).toBeUndefined();
+  });
 });
