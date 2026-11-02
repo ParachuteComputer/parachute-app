@@ -1072,3 +1072,179 @@ describe("route-param decoding (app#113)", () => {
     expect(cm.value).toBe(baseNote.content);
   });
 });
+
+// The save's `if_updated_at` must name the server version the edits were made
+// on. The editor's note query keeps refetching under the open editor (the 4 s
+// transcription poll, the attachment link's invalidation, the reachability
+// probe's reconnect). Each refetch used to move `if_updated_at` forward to the
+// refetched version while the editor kept the older text, so the save went
+// through and silently replaced what the refetch brought in.
+describe("NoteEditor — a refetch under unsaved edits keeps the conflict guard", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useVaultStore.setState({ vaults: {}, activeVaultId: null });
+    useToastStore.setState({ toasts: [] });
+    useFocusMode.setState({ on: false });
+    seedStore();
+    vi.spyOn(window, "confirm").mockImplementation(() => true);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  // A vault that enforces `if_updated_at` the way both doors do (409 when it
+  // isn't the current version), and whose note can change underneath.
+  function installVault(initial: typeof baseNote) {
+    const server = { note: { ...initial } };
+    const json = (status: number, body: unknown) =>
+      ({ ok: status < 400, status, json: async () => body, text: async () => "" }) as Response;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (method === "PATCH" && url.includes("/api/notes/")) {
+          const body = JSON.parse(String(init?.body)) as {
+            content?: string;
+            if_updated_at?: string;
+          };
+          if (body.if_updated_at && body.if_updated_at !== server.note.updatedAt) {
+            return json(409, {
+              message: "Note was modified",
+              current_updated_at: server.note.updatedAt,
+              expected_updated_at: body.if_updated_at,
+            });
+          }
+          server.note = {
+            ...server.note,
+            ...(body.content !== undefined && { content: body.content }),
+            updatedAt: "2026-04-19T00:00:00Z",
+          };
+          return json(200, server.note);
+        }
+        if (method === "POST" && url.includes("/attachments")) {
+          return json(201, {
+            id: "att-1",
+            noteId: initial.id,
+            path: "2026-04-18/shot.png",
+            mimeType: "image/png",
+          });
+        }
+        if (url.includes("/api/notes")) return json(200, server.note);
+        return json(404, null);
+      }),
+    );
+    return server;
+  }
+
+  it("a transcript that lands while the title is being edited is not wiped by the save", async () => {
+    const voice = { ...baseNote, content: "# Voice memo\n\n_Transcript pending._" };
+    const server = installVault(voice);
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+    fireEvent.change(cm, { target: { value: "# Call with Sam\n\n_Transcript pending._" } });
+
+    // The transcription finishes on the server; the editor's 4 s poll sees it.
+    server.note = {
+      ...server.note,
+      content: "# Voice memo\n\nthe words that were spoken",
+      updatedAt: "2026-04-18T12:00:00Z",
+    };
+    const fetchMock = vi.mocked(fetch);
+    const gets = () =>
+      fetchMock.mock.calls.filter(([, init]) => (init?.method ?? "GET") === "GET").length;
+    const before = gets();
+    await waitFor(() => expect(gets()).toBeGreaterThan(before), { timeout: 12_000 });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // Either way the transcript survives on the server; here the save is
+    // refused and the user is told, with their title edit still on screen.
+    expect(server.note.content).toContain("the words that were spoken");
+    expect(await screen.findByText(/edited elsewhere/i)).toBeInTheDocument();
+    expect((screen.getByTestId("cm-editor") as HTMLTextAreaElement).value).toBe(
+      "# Call with Sam\n\n_Transcript pending._",
+    );
+  }, 30_000);
+
+  it("a transcript that lands while the editor is open and clean shows up, and the next edit keeps it", async () => {
+    const voice = { ...baseNote, content: "# Voice memo\n\n_Transcript pending._" };
+    const server = installVault(voice);
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+
+    server.note = {
+      ...server.note,
+      content: "# Voice memo\n\nthe words that were spoken",
+      updatedAt: "2026-04-18T12:00:00Z",
+    };
+    const fetchMock = vi.mocked(fetch);
+    const gets = () =>
+      fetchMock.mock.calls.filter(([, init]) => (init?.method ?? "GET") === "GET").length;
+    const before = gets();
+    await waitFor(() => expect(gets()).toBeGreaterThan(before), { timeout: 12_000 });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // The user retitles whatever the editor now shows.
+    const shown = (screen.getByTestId("cm-editor") as HTMLTextAreaElement).value;
+    fireEvent.change(cm, { target: { value: shown.replace("# Voice memo", "# Call with Sam") } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(server.note.content).toBe("# Call with Sam\n\nthe words that were spoken");
+  }, 30_000);
+
+  it("attaching a file (which refetches the note) doesn't let the save overwrite another device's edit", async () => {
+    const server = installVault(baseNote);
+    const xhrs = installXhr();
+    renderAt("/n/abc-123/edit");
+    const cm = (await screen.findByTestId("cm-editor")) as HTMLTextAreaElement;
+    fireEvent.change(cm, { target: { value: "# hi\n\nbody, edited here" } });
+
+    // Another device saves a change to the same note.
+    server.note = {
+      ...server.note,
+      content: "# hi\n\nbody, and a line from the phone",
+      updatedAt: "2026-04-18T12:00:00Z",
+    };
+
+    // Paste an image: upload, link, and the link's refetch of the note.
+    fireEvent.click(screen.getByTestId("cm-paste-image"));
+    await waitFor(() => expect(xhrs.length).toBe(1));
+    await act(async () => {
+      xhrs[0]!.resolve(
+        201,
+        JSON.stringify({ path: "2026-04-18/shot.png", size: 2, mimeType: "image/png" }),
+      );
+    });
+    const fetchMock = vi.mocked(fetch);
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([, init]) => (init?.method ?? "GET") === "GET").length,
+      ).toBeGreaterThan(1),
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(server.note.content).toContain("a line from the phone");
+    expect(await screen.findByText(/edited elsewhere/i)).toBeInTheDocument();
+  });
+});
