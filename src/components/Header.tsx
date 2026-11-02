@@ -1,6 +1,7 @@
 import { NavSheet } from "@/components/NavSheet";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
+import { PHONE_BAND_QUERY } from "@/lib/phone-band";
 import { useVaultStore } from "@/lib/vault";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
@@ -23,10 +24,6 @@ import { Link, useLocation } from "react-router";
 // the pill lands on its switcher band. One surface, two entry points, no
 // separate menu vocabulary. With no vault, the bar shows the "Parachute"
 // wordmark (the "No vault connected" state line died with the menu — F21).
-// Mirrors the CSS band this header (and the NavSheet it owns) renders in
-// (`md:hidden`, Tailwind's default 768px breakpoint) — see the force-close
-// effect below for why a JS-side copy of that boundary is needed at all.
-const PHONE_BAND_QUERY = "(max-width: 767.98px)";
 
 export function Header() {
   const location = useLocation();

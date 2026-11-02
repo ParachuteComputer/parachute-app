@@ -18,6 +18,7 @@ import { buildVoiceCapturePlan } from "@/lib/capture/voice-capture-plan";
 import { NEW_NOTE_SCOPE, clearDraft, loadDraft } from "@/lib/drafts/store";
 import { useDraftAutosave } from "@/lib/drafts/use-draft-autosave";
 import { readStoredLivePreview } from "@/lib/editor-mode";
+import { usePhoneBand } from "@/lib/phone-band";
 import { blobRef, enqueue, newBlobId, newLocalId } from "@/lib/sync";
 import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
@@ -209,6 +210,19 @@ export function NoteNew() {
     transcriptionGate.capability,
     voice.startRecording,
   ]);
+
+  // Phone layout (T-318 snag #14): a newcomer's tap on + opened on the path
+  // field and the voice block, with "Start writing…" below them. On the phone
+  // band the editor comes first and takes the caret; path, tags and the
+  // recorder follow it. A ?voice=1 arrival is a recording, not typing, so the
+  // recorder stays on top there (its Stop must be in view) and nothing grabs
+  // focus. Desktop and tablet keep the order below unchanged.
+  const isPhone = usePhoneBand();
+  const voiceOnTop = !isPhone || voiceRequested;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only — a later rotation must not steal the caret
+  useEffect(() => {
+    if (isPhone && !voiceRequested) editorRef.current?.focus();
+  }, []);
 
   const uploader = useAttachmentUploader({
     noteId: null,
@@ -572,6 +586,64 @@ export function NoteNew() {
     setDraft((d) => ({ ...d, tags: d.tags.filter((x) => x !== name) }));
   };
 
+  // The path + tags pair: in the header card on desktop, under the editor on
+  // a phone (see `isPhone` above).
+  const noteFields = (
+    <>
+      <input
+        type="text"
+        value={draft.path}
+        onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
+        // UI-audit finding #4a: this field's VALUE is the auto-generated
+        // date path ("Notes/2026/07-16/22-10-48"), not a placeholder —
+        // so it was rendering at full display-heading scale, reading as
+        // a headline rather than a suggestion. While it's still the
+        // untouched default, style it small/muted (a hint the operator
+        // can accept or overwrite); once they've typed their own title
+        // it earns the normal serif/display treatment. The generated
+        // value itself, and where it's stored, are unchanged.
+        className={
+          draft.path === defaultPathRef.current
+            ? "w-full border-0 bg-transparent font-sans text-sm text-fg-dim outline-none placeholder:text-fg-dim"
+            : "w-full border-0 bg-transparent font-serif text-2xl text-fg outline-none placeholder:text-fg-dim md:text-3xl"
+        }
+        aria-label="Note path"
+        placeholder="Name your note — or just start writing"
+      />
+
+      <div className="mt-4">
+        <TagEditor
+          tags={draft.tags}
+          input={tagInput}
+          onInputChange={setTagInput}
+          onAdd={addTag}
+          onRemove={removeTag}
+        />
+        {inboxHint ? (
+          <p className="mt-1.5 text-xs text-fg-dim" data-testid="inbox-tag-hint">
+            No tags yet, so this note will be saved with #{inboxHint}.
+          </p>
+        ) : null}
+      </div>
+    </>
+  );
+
+  const voiceBlock = voiceGated ? (
+    <VoiceUnavailableNote capability={transcription} />
+  ) : (
+    <>
+      <VoicePanel
+        voice={voice}
+        minutesRemaining={minutesRemaining}
+        outOfMinutes={outOfMinutes}
+        transcribe={transcribeThisCapture}
+        onTranscribeChange={setTranscribeThisCapture}
+        showTranscribeToggle={showTranscribeToggle}
+      />
+      <RetentionChoice vaultId={activeVault.id} captureEngaged={hasAudio} />
+    </>
+  );
+
   const resolver = buildWikilinkResolver({
     id: "__new__",
     createdAt: new Date().toISOString(),
@@ -607,41 +679,7 @@ export function NoteNew() {
             </div>
           </div>
 
-          <input
-            type="text"
-            value={draft.path}
-            onChange={(e) => setDraft((d) => ({ ...d, path: e.target.value }))}
-            // UI-audit finding #4a: this field's VALUE is the auto-generated
-            // date path ("Notes/2026/07-16/22-10-48"), not a placeholder —
-            // so it was rendering at full display-heading scale, reading as
-            // a headline rather than a suggestion. While it's still the
-            // untouched default, style it small/muted (a hint the operator
-            // can accept or overwrite); once they've typed their own title
-            // it earns the normal serif/display treatment. The generated
-            // value itself, and where it's stored, are unchanged.
-            className={
-              draft.path === defaultPathRef.current
-                ? "mt-4 w-full border-0 bg-transparent font-sans text-sm text-fg-dim outline-none placeholder:text-fg-dim"
-                : "mt-4 w-full border-0 bg-transparent font-serif text-2xl text-fg outline-none placeholder:text-fg-dim md:text-3xl"
-            }
-            aria-label="Note path"
-            placeholder="Name your note — or just start writing"
-          />
-
-          <div className="mt-4">
-            <TagEditor
-              tags={draft.tags}
-              input={tagInput}
-              onInputChange={setTagInput}
-              onAdd={addTag}
-              onRemove={removeTag}
-            />
-            {inboxHint ? (
-              <p className="mt-1.5 text-xs text-fg-dim" data-testid="inbox-tag-hint">
-                No tags yet, so this note will be saved with #{inboxHint}.
-              </p>
-            ) : null}
-          </div>
+          {isPhone ? null : <div className="mt-4">{noteFields}</div>}
         </header>
 
         {restoredAt ? (
@@ -683,21 +721,7 @@ export function NoteNew() {
           </div>
         ) : null}
 
-        {voiceGated ? (
-          <VoiceUnavailableNote capability={transcription} />
-        ) : (
-          <>
-            <VoicePanel
-              voice={voice}
-              minutesRemaining={minutesRemaining}
-              outOfMinutes={outOfMinutes}
-              transcribe={transcribeThisCapture}
-              onTranscribeChange={setTranscribeThisCapture}
-              showTranscribeToggle={showTranscribeToggle}
-            />
-            <RetentionChoice vaultId={activeVault.id} captureEngaged={hasAudio} />
-          </>
-        )}
+        {voiceOnTop ? voiceBlock : null}
 
         {/* DEFINITE editor-pane height — see NoteEditor.tsx for the full why.
             `scrollPastEnd()` runs away in a content-sized editor (padding-bottom
@@ -747,6 +771,13 @@ export function NoteNew() {
             </div>
           )}
         </div>
+
+        {isPhone ? (
+          <>
+            <div className="composer mt-4 p-5">{noteFields}</div>
+            {voiceOnTop ? null : <div className="mt-4">{voiceBlock}</div>}
+          </>
+        ) : null}
 
         <section className="mt-6 border-t border-border pt-4">
           <div className="mb-3 flex items-center justify-between">
@@ -874,7 +905,8 @@ function RetentionChoice({
 
 // Inline voice affordance. Sits above the editor so the operator sees it
 // at a glance — Aaron's "voice-capture affordance at the top of the content
-// area." Idle: a single "Record" button. Recording: live elapsed + a "Stop"
+// area." (On a phone it follows the editor unless the arrival was ?voice=1 —
+// see `voiceOnTop` in NoteNew.) Idle: a single "Record" button. Recording: live elapsed + a "Stop"
 // button (tap-toggle — tap Record to start, tap Stop to finish).
 // Below this many transcription minutes, we surface the quiet remaining-minutes
 // line near the mic (hosted door only). At/under zero the copy flips to the
