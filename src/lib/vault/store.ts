@@ -1,4 +1,5 @@
 import { clearVaultDrafts } from "@/lib/drafts/store";
+import { forgetVaultMirror } from "@/lib/mirror/forget";
 import { create } from "zustand";
 import {
   deleteServicesCatalog,
@@ -6,6 +7,7 @@ import {
   loadActiveVaultId,
   loadToken,
   loadVaults,
+  persistedVaultListed,
   saveActiveVaultId,
   saveToken,
   saveVaults,
@@ -64,6 +66,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     deleteServicesCatalog(id);
     // Disconnecting a vault must not leave its plaintext note drafts behind.
     clearVaultDrafts(id);
+    // ...nor its offline mirror (every note, in IndexedDB).
+    void forgetVaultMirror(id);
     const nextActive =
       get().activeVaultId === id ? (Object.keys(rest)[0] ?? null) : get().activeVaultId;
     saveActiveVaultId(nextActive);
@@ -108,3 +112,14 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     return activeVaultId ? loadToken(activeVaultId) : null;
   },
 }));
+
+/**
+ * True once `vaultId` was removed from this browser: gone from this tab's store
+ * or from the shared registry, which another tab's removal updates at once,
+ * before this tab's store hears of it. The mirror engine uses it to refuse to
+ * write (and to wipe) a removed vault.
+ */
+export function isVaultRemoved(vaultId: string): boolean {
+  if (!Object.hasOwn(useVaultStore.getState().vaults, vaultId)) return true;
+  return persistedVaultListed(vaultId) === false;
+}

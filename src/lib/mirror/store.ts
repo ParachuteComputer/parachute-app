@@ -197,6 +197,15 @@ export async function clearMirrorForVault(db: LensDB, vaultId: string): Promise<
   return keys.length;
 }
 
+// Drop everything the mirror holds for a vault: its rows, its cursor and its
+// sync-state meta, so nothing of it is left and a re-fill would run COLD. Used
+// when a vault is removed from this browser. Hold the vault's mirror lock.
+export async function dropMirrorVault(db: LensDB, vaultId: string): Promise<void> {
+  await clearMirrorForVault(db, vaultId);
+  await clearMirrorCursor(db, vaultId);
+  await clearMirrorMeta(db, vaultId);
+}
+
 // ---------- flag-gated write-path helpers + sink ----------
 
 export async function mirrorRecordUpsert(db: LensDB, vaultId: string, note: Note): Promise<void> {

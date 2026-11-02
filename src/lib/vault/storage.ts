@@ -33,6 +33,16 @@ export function loadVaults(): Record<string, VaultRecord> {
   return read<Record<string, VaultRecord>>(localStorage, VAULTS_KEY) ?? {};
 }
 
+/**
+ * Whether the persisted vault registry (shared by every tab of this origin)
+ * lists `vaultId`: true / false, or null when there is no readable registry
+ * (never written, storage blocked), which says nothing either way.
+ */
+export function persistedVaultListed(vaultId: string): boolean | null {
+  const vaults = read<Record<string, VaultRecord>>(localStorage, VAULTS_KEY);
+  return vaults ? Object.hasOwn(vaults, vaultId) : null;
+}
+
 export function saveVaults(vaults: Record<string, VaultRecord>): void {
   write(localStorage, VAULTS_KEY, vaults);
 }
