@@ -142,16 +142,42 @@ function EditorSurface({ note }: { note: Note }) {
     onError: (msg) => pushToast(msg, "error"),
   });
 
-  // If the server-side note is refetched (e.g., after a background refresh),
-  // only update baseline if the user has no in-flight changes.
-  useEffect(() => {
-    lastServerNote.current = note;
-  }, [note]);
-
   const isDirty =
     draft.content !== baseline.content ||
     draft.path !== baseline.path ||
     !setEquals(draft.tags, baseline.tags);
+
+  // The note keeps refetching under the open editor (the transcription poll,
+  // an attachment link, a reconnect). `lastServerNote` is what the save's
+  // `if_updated_at` names, so it may only move to a version whose body the
+  // editor already holds:
+  //   - same body as the baseline (a pin, an attachment row): move on;
+  //   - a new body and no unsaved edits: take it into the editor;
+  //   - a new body under unsaved edits: stay on the version the edits were
+  //     made on, so the save is refused (409, the conflict banner) instead of
+  //     silently replacing what the refetch brought in.
+  const dirtyRef = useRef(isDirty);
+  dirtyRef.current = isDirty;
+  const baselineRef = useRef(baseline);
+  baselineRef.current = baseline;
+  useEffect(() => {
+    if (note === lastServerNote.current) return;
+    // A GET that started before a save and answered after it carries the
+    // version the save replaced: never step back to it.
+    const seen = lastServerNote.current.updatedAt;
+    if (seen && note.updatedAt && note.updatedAt < seen) return;
+    const serverBody = toEditorState(note);
+    if (
+      bodyEquals(serverBody, baselineRef.current) ||
+      bodyEquals(serverBody, toEditorState(lastServerNote.current))
+    ) {
+      lastServerNote.current = note;
+    } else if (!dirtyRef.current) {
+      lastServerNote.current = note;
+      setBaseline(serverBody);
+      setDraft(serverBody);
+    }
+  }, [note]);
 
   // Persist the draft locally while there are unsaved edits (crash / navigation
   // protection). Clears itself when clean; explicitly cleared on save/discard.

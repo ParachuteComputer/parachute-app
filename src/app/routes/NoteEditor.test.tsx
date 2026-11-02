@@ -1206,6 +1206,48 @@ describe("NoteEditor — a refetch under unsaved edits keeps the conflict guard"
     expect(server.note.content).toBe("# Call with Sam\n\nthe words that were spoken");
   }, 30_000);
 
+  it("a refetch that started before a save and answers after it doesn't roll the editor back", async () => {
+    const server = installVault(baseNote);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    // GETs answer late from here on, with the copy the server held when asked.
+    const inner = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if ((init?.method ?? "GET") === "GET") {
+        const answer = await inner(input, init);
+        await new Promise((r) => setTimeout(r, 200));
+        return answer;
+      }
+      return inner(input, init);
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/n/abc-123/edit"]}>
+          <Routes>
+            <Route path="/n/:id/edit" element={<NoteEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const cm = (await screen.findByTestId(
+      "cm-editor",
+      {},
+      { timeout: 3000 },
+    )) as HTMLTextAreaElement;
+    fireEvent.change(cm, { target: { value: "# hi\n\nsaved text" } });
+    await act(async () => {
+      // A refetch (an attachment link, a reconnect) goes out, then ⌘S.
+      void qc.invalidateQueries({ queryKey: ["note", "dev", "abc-123"] });
+      await new Promise((r) => setTimeout(r, 10));
+      fireEvent.click(screen.getByTestId("cm-save"));
+      await new Promise((r) => setTimeout(r, 400));
+    });
+
+    expect(server.note.content).toBe("# hi\n\nsaved text");
+    expect((screen.getByTestId("cm-editor") as HTMLTextAreaElement).value).toBe(
+      "# hi\n\nsaved text",
+    );
+  });
+
   it("attaching a file (which refetches the note) doesn't let the save overwrite another device's edit", async () => {
     const server = installVault(baseNote);
     const xhrs = installXhr();
