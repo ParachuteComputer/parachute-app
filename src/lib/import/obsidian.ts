@@ -70,8 +70,17 @@ export async function parseObsidianZip(file: File): Promise<ParsedImport> {
   // the prior O(n²) per-markdown-entry recompute.
   const commonRoot = detectCommonRoot(entries);
 
+  // A Parachute export keeps its attached files under `.parachute/`, which
+  // the exclusion below skips. Count them so the review step can say they
+  // stay behind instead of the pictures vanishing without a word.
+  let isParachuteExport = false;
+  let parachuteAttachmentFiles = 0;
+
   for (const { path, obj } of entries) {
     if (obj.dir) continue;
+    const sidecar = parachuteSidecarKind(path);
+    if (sidecar === "manifest") isParachuteExport = true;
+    else if (sidecar === "attachment") parachuteAttachmentFiles++;
     if (isExcludedPath(path)) continue;
     const sourcePath = applyCommonRoot(path, commonRoot);
     if (isMarkdownEntry(path)) {
@@ -115,7 +124,25 @@ export async function parseObsidianZip(file: File): Promise<ParsedImport> {
     errors,
     tags: collectTagSet(notes),
     attachments,
+    ...(isParachuteExport
+      ? { parachuteExport: { attachmentFiles: parachuteAttachmentFiles } }
+      : {}),
   };
+}
+
+/**
+ * Which part of a Parachute export an archive path is, if any: its manifest
+ * (`.parachute/vault.yaml`) or an attached file
+ * (`.parachute/attachments/<id>/<file>`). Allows one wrapping folder, the
+ * shape a zipped export folder has.
+ */
+function parachuteSidecarKind(path: string): "manifest" | "attachment" | null {
+  const segs = path.split("/");
+  const i = segs.indexOf(".parachute");
+  if (i < 0 || i > 1) return null;
+  if (segs[i + 1] === "vault.yaml" && segs.length === i + 2) return "manifest";
+  if (segs[i + 1] === "attachments" && segs.length > i + 2) return "attachment";
+  return null;
 }
 
 function baseName(p: string): string {

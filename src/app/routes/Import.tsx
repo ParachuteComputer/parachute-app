@@ -1,6 +1,7 @@
 import { AttachmentDropZone } from "@/components/AttachmentDropZone";
+import { peekDoorDescriptor } from "@/lib/account/descriptor";
 import { applyImport } from "@/lib/import/apply";
-import { detectFormat, isMarkdownLike, isZipLike } from "@/lib/import/detect";
+import { detectFormat, isMarkdownLike, isTarLike, isZipLike } from "@/lib/import/detect";
 import { parseLooseMarkdown } from "@/lib/import/loose";
 import { parseObsidianZip } from "@/lib/import/obsidian";
 import type {
@@ -90,7 +91,9 @@ export function Import() {
             notes: [],
             errors: files.map((f) => ({
               sourcePath: f.name,
-              reason: "Unrecognized format (expected .zip, .md, or .markdown).",
+              reason: isTarLike(f)
+                ? "A Parachute export (.tar) can't be read on this page. See below for where to restore it."
+                : "Unrecognized format (expected .zip, .md, or .markdown).",
             })),
             tags: [],
             attachments: [],
@@ -214,6 +217,10 @@ function PickStage({ parsing, onFiles, inputRef }: PickProps) {
           <p className="text-sm text-fg-dim">
             Accepts an Obsidian vault `.zip`, or one or more `.md` / `.markdown` files.
           </p>
+          <p className="max-w-md text-sm text-fg-muted">
+            Bringing back a Parachute export? This page doesn't bring in its pictures and other
+            files. <ExportRestoreHint />
+          </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <label className="btn btn-primary btn-touch cursor-pointer">
               {parsing ? "Reading…" : "Choose files"}
@@ -221,7 +228,9 @@ function PickStage({ parsing, onFiles, inputRef }: PickProps) {
                 ref={inputRef}
                 type="file"
                 className="sr-only"
-                accept=".zip,.md,.markdown"
+                // `.tar` is listed so a Parachute export can be picked and
+                // told where it goes, rather than greyed out in the picker.
+                accept=".zip,.md,.markdown,.tar"
                 multiple
                 disabled={parsing}
                 onChange={handleChange}
@@ -314,6 +323,25 @@ function ReviewStage({ parsed, onConfirm, onBack }: ReviewProps) {
           </p>
         ) : null}
       </div>
+
+      {parsed.parachuteExport || parsed.errors.some((e) => e.sourcePath.endsWith(".tar")) ? (
+        <div
+          role="note"
+          className="rounded-xl border border-warning bg-warning-soft p-5 text-sm text-fg"
+        >
+          <p>
+            <strong>This is a Parachute export.</strong>{" "}
+            {parsed.parachuteExport && parsed.parachuteExport.attachmentFiles > 0
+              ? `Its ${parsed.parachuteExport.attachmentFiles} attached file${
+                  parsed.parachuteExport.attachmentFiles === 1 ? "" : "s"
+                } (pictures, audio, PDFs) won't come across here, so notes that show them will have broken pictures.`
+              : "This page only brings in its notes."}
+          </p>
+          <p className="mt-2">
+            <ExportRestoreHint />
+          </p>
+        </div>
+      ) : null}
 
       {sampleNotes.length > 0 ? (
         <div className="card rounded-xl p-5 shadow-soft">
@@ -531,6 +559,37 @@ function DoneStage({
         </button>
       </div>
     </section>
+  );
+}
+
+/**
+ * Where a Parachute export is restored WITH its files. The cloud door's
+ * account console has "Import a vault" (a new vault, notes and files); a
+ * self-hosted vault restores from its command line. The door is read from the
+ * cached descriptor (the console lives on the vault's issuer); an unknown door
+ * falls back to the command line.
+ */
+function ExportRestoreHint() {
+  const issuer = useVaultStore((s) => s.getActiveVault()?.issuer);
+  if (peekDoorDescriptor()?.door === "cloud" && issuer) {
+    return (
+      <>
+        To restore everything, use{" "}
+        <a href={`${issuer}/console`} className="text-accent underline">
+          Import a vault
+        </a>{" "}
+        on your account page. It makes a new vault with the notes and their files.
+      </>
+    );
+  }
+  return (
+    <>
+      To restore everything, run{" "}
+      <code className="rounded bg-bg-soft px-1 font-mono">
+        parachute-vault import &lt;folder&gt;
+      </code>{" "}
+      on your vault's server.
+    </>
   );
 }
 

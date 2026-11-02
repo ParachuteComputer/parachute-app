@@ -111,6 +111,13 @@ export interface ParsedImport {
    * and reports the rest. Empty for loose-markdown imports.
    */
   attachments: CollectedAttachment[];
+  /**
+   * Set when the archive is a Parachute export (it carries
+   * `.parachute/vault.yaml`). This importer skips `.parachute/`, so the
+   * export's attached files (`.parachute/attachments/<id>/<file>`) stay
+   * behind; `attachmentFiles` counts them so the review step can say so.
+   */
+  parachuteExport?: { attachmentFiles: number };
 }
 
 /**
