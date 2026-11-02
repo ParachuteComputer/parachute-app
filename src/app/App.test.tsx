@@ -234,7 +234,10 @@ describe("App", () => {
     const link = await screen.findByRole("link", { name: /^parachute$/i });
     const shell = link.closest("div.min-h-dvh");
     expect(shell).not.toBeNull();
-    expect(shell?.className).toMatch(/\boverflow-x-hidden\b/);
+    expect(shell?.className).toMatch(/\boverflow-x-clip\b/);
+    // `hidden` would make the shell a scroll container and unstick the phone
+    // Header (B3's Map entry lives there).
+    expect(shell?.className).not.toMatch(/\boverflow-x-hidden\b/);
   });
 
   it("RouteFallback exposes role=status with aria-live=polite and visible text (#100)", () => {

@@ -593,8 +593,12 @@ function AppShell() {
   // Focus mode unmounts the bar, so toasts drop back to the screen edge.
   const bottomBarShown = useBottomTabBarShown() && !focusActive;
 
+  // `overflow-x-clip`, not `-hidden`: both stop a stray wide descendant from
+  // scrolling the page sideways, but `hidden` also makes this div a scroll
+  // container, which pins the phone Header's `sticky top-0` to a box that
+  // never scrolls, so the bar (and the B3 Map entry in it) scrolled away.
   return (
-    <div className="app-canvas min-h-dvh overflow-x-hidden text-fg">
+    <div className="app-canvas min-h-dvh overflow-x-clip text-fg">
       <Toaster aboveBottomBar={bottomBarShown} />
       <UpdateBanner />
       <VaultStatusBanner />
