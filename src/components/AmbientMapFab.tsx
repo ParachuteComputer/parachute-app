@@ -3,6 +3,7 @@ import { MAP_TO } from "@/lib/nav/model";
 import { useMapEarned } from "@/lib/vault/map-earned";
 import { useVaultStore } from "@/lib/vault/store";
 import { useViewModifiedBar } from "@/lib/views/modified-bar";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 // The Map's ambient home (SYNTHESIS D5). Until the Map earns a nav slot
@@ -38,15 +39,59 @@ export function useAmbientMapFabShown(): boolean {
   return !modifiedBarShown;
 }
 
+// Decision prototype B4: the button floats over page content mid-scroll
+// (newcomer walk: it covered Copy buttons and text), so it steps aside while
+// you scroll DOWN through a page and comes back when you scroll up, near the
+// top, at the very end (where MapFabClearance leaves it room), and on a new
+// page. Small jitters (< SCROLL_SLOP px) don't flip it.
+const SCROLL_SLOP = 6;
+const NEAR_TOP = 64;
+
+export function useHiddenWhileScrollingDown(): boolean {
+  const { pathname } = useLocation();
+  const [hidden, setHidden] = useState(false);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger — a new page starts with the button shown
+  useEffect(() => {
+    setHidden(false);
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      const end = document.documentElement.scrollHeight - window.innerHeight;
+      if (y < NEAR_TOP || y >= end - 2) {
+        setHidden(false);
+        last = y;
+      } else if (y > last + SCROLL_SLOP) {
+        setHidden(true);
+        last = y;
+      } else if (y < last - SCROLL_SLOP) {
+        setHidden(false);
+        last = y;
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [pathname]);
+
+  return hidden;
+}
+
 export function AmbientMapFab() {
-  if (!useAmbientMapFabShown()) return null;
+  const shown = useAmbientMapFabShown();
+  const hidden = useHiddenWhileScrollingDown();
+  if (!shown) return null;
 
   return (
     <Link
       to={MAP_TO}
       aria-label="Open the relational map"
       title="Your map"
-      className="focus-ring fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 grid h-12 w-12 place-items-center rounded-full border border-border bg-card text-accent shadow-lg hover:border-accent md:right-6 md:bottom-6"
+      aria-hidden={hidden || undefined}
+      tabIndex={hidden ? -1 : undefined}
+      data-scroll-hidden={hidden ? "" : undefined}
+      className={`focus-ring fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 grid h-12 w-12 place-items-center rounded-full border border-border bg-card text-accent shadow-lg transition-[opacity,translate] duration-200 ease-out hover:border-accent motion-reduce:transition-none md:right-6 md:bottom-6 ${
+        hidden ? "pointer-events-none translate-y-4 opacity-0" : ""
+      }`}
     >
       <IconMap width={22} height={22} />
     </Link>

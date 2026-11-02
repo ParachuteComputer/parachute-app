@@ -3,7 +3,7 @@ import { useVaultStore } from "@/lib/vault/store";
 import type { VaultRecord } from "@/lib/vault/types";
 import { useViewModifiedBar } from "@/lib/views/modified-bar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -108,5 +108,43 @@ describe("AmbientMapFab", () => {
     });
     const { container } = renderFab("/");
     expect(container.querySelector("a")).toBeNull();
+  });
+
+  // B4: steps aside while you scroll down, back on scroll up / near the top.
+  it("hides while scrolling down a page and returns on scroll up", () => {
+    useVaultStore.setState({
+      vaults: { a: makeVault("a", "http://localhost:1940") },
+      activeVaultId: "a",
+    });
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      value: 3000,
+    });
+    const scrollTo = (y: number) =>
+      act(() => {
+        Object.defineProperty(window, "scrollY", { configurable: true, value: y });
+        fireEvent.scroll(window);
+      });
+    try {
+      const { container } = renderFab("/connect");
+      // aria-hidden while stepped aside, so find it by its target, not its name.
+      const fab = () => container.querySelector('a[href="/map"]');
+      expect(fab()).not.toHaveAttribute("data-scroll-hidden");
+      scrollTo(200);
+      scrollTo(600);
+      expect(fab()).toHaveAttribute("data-scroll-hidden");
+      expect(fab()).toHaveAttribute("tabindex", "-1");
+      expect(fab().className).toMatch(/\bpointer-events-none\b/);
+      scrollTo(560);
+      expect(fab()).not.toHaveAttribute("data-scroll-hidden");
+      scrollTo(900);
+      expect(fab()).toHaveAttribute("data-scroll-hidden");
+      scrollTo(20);
+      expect(fab()).not.toHaveAttribute("data-scroll-hidden");
+    } finally {
+      Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
+      // biome-ignore lint/performance/noDelete: drop the own-property stub so jsdom's getter is back
+      delete (document.documentElement as { scrollHeight?: number }).scrollHeight;
+    }
   });
 });
