@@ -186,6 +186,16 @@ describe("Header mobile shell (W2-5 — NavSheet entry points)", () => {
     expect(screen.getByRole("button", { name: /active vault: default/i })).toBeInTheDocument();
   });
 
+  it("carries the Map entry on a phone (B3: it left the floating button)", () => {
+    seedVault();
+    renderHeader();
+    const header = screen.getByRole("banner");
+    expect(within(header).getByRole("link", { name: /open the relational map/i })).toHaveAttribute(
+      "href",
+      "/map",
+    );
+  });
+
   it("shows the Parachute wordmark with no vault — the 'No vault connected' noise is gone (F21)", () => {
     // `/` is the signed-out arrival route, where the bar suppresses itself
     // entirely (see the test below) — Landing's own Shell renders the

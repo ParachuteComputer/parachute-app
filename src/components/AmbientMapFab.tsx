@@ -22,6 +22,9 @@ import { Link, useLocation } from "react-router";
 // Hidden on the graph route itself — you're already
 // there. Uses ONLY the shipped graph route; no new backend.
 //
+// Decision prototype B3: on a phone the Map is a header icon now, so this
+// button is desktop/tablet only (`hidden md:grid`) and the phone column no
+// longer needs the end-of-page room for it.
 export function useAmbientMapFabShown(): boolean {
   const hasVault = useVaultStore((s) => s.activeVaultId !== null);
   const earned = useMapEarned();
@@ -46,7 +49,7 @@ export function AmbientMapFab() {
       to={MAP_TO}
       aria-label="Open the relational map"
       title="Your map"
-      className="focus-ring fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 grid h-12 w-12 place-items-center rounded-full border border-border bg-card text-accent shadow-lg hover:border-accent md:right-6 md:bottom-6"
+      className="focus-ring fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 hidden h-12 w-12 place-items-center rounded-full border border-border bg-card text-accent shadow-lg hover:border-accent md:right-6 md:bottom-6 md:grid"
     >
       <IconMap width={22} height={22} />
     </Link>
@@ -61,9 +64,9 @@ export function AmbientMapFab() {
 // in that corner and is no taller, so it keeps the same room — which also stops
 // the page jumping when the strip comes and goes. A leaf of its own so the
 // map-earned cache read re-renders this div, not the app shell.
+// (B3: the FAB is md+ only, so only the strip needs the room on a phone now.)
 export function MapFabClearance() {
-  const fabShown = useAmbientMapFabShown();
   const modifiedBarShown = useViewModifiedBar((s) => s.shown);
-  if (!fabShown && !modifiedBarShown) return null;
+  if (!modifiedBarShown) return null;
   return <div aria-hidden="true" data-map-fab-clearance="" className="h-20 shrink-0 md:hidden" />;
 }

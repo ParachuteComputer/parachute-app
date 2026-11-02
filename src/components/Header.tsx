@@ -1,6 +1,8 @@
+import { IconMap } from "@/components/NavIcons";
 import { NavSheet } from "@/components/NavSheet";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
+import { MAP_TO } from "@/lib/nav/model";
 import { useVaultStore } from "@/lib/vault";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
@@ -31,6 +33,7 @@ const PHONE_BAND_QUERY = "(max-width: 767.98px)";
 export function Header() {
   const location = useLocation();
   const hasVaults = useVaultStore((s) => Object.keys(s.vaults).length > 0);
+  const hasActiveVault = useVaultStore((s) => s.activeVaultId !== null);
   const [sheet, setSheet] = useState<null | "menu" | "switcher">(null);
 
   // Close the sheet whenever the route changes — a tap on a nav link must not
@@ -90,6 +93,20 @@ export function Header() {
 
           <div className="flex shrink-0 items-center gap-2">
             {hasVaults ? <SyncStatusIndicator /> : null}
+            {/* Decision prototype B3: the Map's phone entry, moved up here from
+                the floating bottom-right button, which sat over page content
+                mid-scroll (newcomer walk). Same chip as ☰ beside it. */}
+            {hasActiveVault ? (
+              <Link
+                to={MAP_TO}
+                aria-label="Open the relational map"
+                aria-current={location.pathname === MAP_TO ? "page" : undefined}
+                title="Your map"
+                className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-accent hover:border-accent"
+              >
+                <IconMap width={20} height={20} />
+              </Link>
+            ) : null}
             {/* A pure opener: while the sheet is up its scrim covers this
                 button, so closing belongs to the sheet (scrim/Escape/swipe). */}
             <button
