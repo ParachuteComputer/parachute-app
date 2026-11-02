@@ -306,6 +306,51 @@ describe("VaultClient (Notes subclass) — fetchAttachmentBlob", () => {
     ]);
   });
 
+  it("a note's encoded ../ storage link can't make the vault look signed out", async () => {
+    // `![x](/api/storage/..%2fx)` stays under <base>/api/storage/ after URL
+    // parsing (%2f isn't a separator), so it used to go out with the token. Both
+    // doors decode the path and answer `..` with 403 Invalid path, which the blob
+    // loop reads as a rejected token: a refresh, then onAuthRevoked → the
+    // "Vault session expired" banner, every time the owner opens the note.
+    const doors = vi.fn<typeof fetch>(async (input) => {
+      const rest = new URL(String(input)).pathname.split("/api/storage/")[1] ?? "";
+      const traversal = decodeURIComponent(rest)
+        .split("/")
+        .some((seg) => seg === "..");
+      return {
+        ok: !traversal,
+        status: traversal ? 403 : 200,
+        blob: async () => new Blob(["bytes"]),
+        text: async () =>
+          traversal ? JSON.stringify({ error: "Invalid path", error_type: "invalid_path" }) : "",
+        json: async () => ({}),
+        headers: new Headers(),
+      } as Response;
+    });
+    const onAuthError = vi.fn(async () => "eyJ.rotated");
+    const onAuthRevoked = vi.fn();
+    const client = new VaultClient({
+      vaultUrl: "https://hub.example/vault/default",
+      accessToken: "eyJ.owner",
+      fetchImpl: doors,
+      onAuthError,
+      onAuthRevoked,
+    });
+    for (const url of [
+      "/api/storage/..%2fx",
+      "/api/storage/2026-11-01/..%2F..%2F..%2Fx",
+      "https://hub.example/vault/default/api/storage/%2e%2e%2fx",
+    ]) {
+      await client.fetchAttachmentBlob(url).catch(() => undefined);
+    }
+    expect(onAuthError).not.toHaveBeenCalled();
+    expect(onAuthRevoked).not.toHaveBeenCalled();
+    // A real storage path still loads.
+    await expect(
+      client.fetchAttachmentBlob("/api/storage/2026-11-01/a.png"),
+    ).resolves.toBeInstanceOf(Blob);
+  });
+
   it("retries once with the rotated token on 401 + onAuthError", async () => {
     const fetchImpl = mockBlobFetch([{ status: 401 }, { status: 200, body: "bytes" }]);
     const onAuthError = vi.fn(async () => "eyJ.new");

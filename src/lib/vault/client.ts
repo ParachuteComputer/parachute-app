@@ -381,7 +381,11 @@ export class VaultClient extends BaseVaultClient {
     if (
       !target ||
       target.origin !== storage.origin ||
-      !target.pathname.startsWith(storage.pathname)
+      !target.pathname.startsWith(storage.pathname) ||
+      // Both doors decode the storage path once (an encoded `%2f` becomes a
+      // separator) and answer a `..` in it with 403, which the loop below would
+      // read as a rejected token. No stored file's path has one.
+      hasDotSegment(target.pathname.slice(storage.pathname.length))
     ) {
       throw new Error(`Not this vault's storage: ${url}`);
     }
@@ -449,4 +453,15 @@ export class VaultClient extends BaseVaultClient {
     }
     return res.blob();
   }
+}
+
+/** True if `path`, decoded once the way the doors decode it, has a `.`/`..` segment (or can't be decoded). */
+function hasDotSegment(path: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return true;
+  }
+  return decoded.split(/[/\\]/).some((seg) => seg === ".." || seg === ".");
 }
