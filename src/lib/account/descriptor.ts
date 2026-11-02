@@ -45,8 +45,10 @@ export interface DoorDescriptor {
    *  supports self-serve signup (a password door without this ⇒ accounts are
    *  operator-provisioned only). */
   signup_path?: string;
-  /** `{name}`-templated preview of a vault's eventual address — preview-only,
-   *  never the source of truth for a URL after creation (Welcome.tsx). */
+  /** `{name}`-templated preview of a vault's eventual address — never the
+   *  source of truth for a URL after creation (Welcome.tsx). Connect AI uses it
+   *  only as a fallback for the advertised MCP address when the session-gated
+   *  `/account/vaults` can't answer (mcp-address.ts). */
   vault_url_template?: string;
   /** What this door lets the signed-in account do. Absent (a hub, an older
    *  door) ⇒ none of these surfaces render. `account_delete` gates "Delete
