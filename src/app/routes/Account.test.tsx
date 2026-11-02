@@ -194,7 +194,8 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
 
     await waitFor(() => expect(screen.getByText("ag@unforced.org")).toBeInTheDocument());
     expect(screen.getByText(/signed in as/i)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Plan & billing" })).toBeInTheDocument();
+    // A billed plan: the card's name settles once the summary lands.
+    expect(await screen.findByRole("heading", { name: "Plan & billing" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Your vaults" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Connections" })).toBeInTheDocument();
     expect(await screen.findByText(/1 of 3 vaults/)).toBeInTheDocument();
@@ -474,6 +475,34 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
       expect(screen.queryByRole("button", { name: /upgrade/i })).not.toBeInTheDocument();
     });
 
+    // T-318 snag #17: "Plan & billing" over a free beta promises a bill that
+    // doesn't exist. Billing words only where there is billing.
+    it("names the card 'Your plan' when nothing is billed", async () => {
+      signedIn();
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummaryState).mockResolvedValue(BETA);
+
+      renderAccount();
+      await screen.findByTestId("open-beta-plan");
+      const card = screen.getByRole("region", { name: "Your plan" });
+      expect(within(card).getByRole("heading", { name: "Your plan" })).toBeInTheDocument();
+      expect(screen.queryByText(/billing/i)).not.toBeInTheDocument();
+    });
+
+    it("keeps 'Plan & billing' for a beta account that still pays through Stripe", async () => {
+      signedIn();
+      vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
+      vi.mocked(getAccountSummaryState).mockResolvedValue({
+        ...BETA,
+        plan: { ...BETA.plan, tier: "plus", label: "Plus", price_monthly_usd: 5 },
+        has_billing_customer: true,
+      });
+
+      renderAccount();
+      await screen.findByTestId("open-beta-plan");
+      expect(screen.getByRole("heading", { name: "Plan & billing" })).toBeInTheDocument();
+    });
+
     it("paid mode is unchanged: the trial countdown + upgrade cards still render", async () => {
       signedIn();
       vi.mocked(listVaults).mockResolvedValue({ vaults: [] });
@@ -501,7 +530,8 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
 
       renderAccount();
       await waitFor(() => expect(screen.getByText("ag@unforced.org")).toBeInTheDocument());
-      const card = screen.getByRole("region", { name: "Plan & billing" });
+      // Not known yet whether there is billing — the neutral name.
+      const card = screen.getByRole("region", { name: "Your plan" });
       expect(card.querySelector('[aria-busy="true"]')).not.toBeNull();
     });
 
@@ -552,7 +582,7 @@ describe("Account — 'Your parachute', the four-card manager home", () => {
       expect(
         screen.getByText(/a hiccup reaching your account — your plan hasn't changed/i),
       ).toBeInTheDocument();
-      const card = screen.getByRole("region", { name: "Plan & billing" });
+      const card = screen.getByRole("region", { name: "Your plan" });
 
       // Retry recovers IN PLACE: the same card swaps to the trial state.
       fireEvent.click(within(card).getByRole("button", { name: /^retry$/i }));

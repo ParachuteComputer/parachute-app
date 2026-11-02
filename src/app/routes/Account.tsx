@@ -351,10 +351,18 @@ function PlanBillingCard({
   // story and shows the usage meters (no plan grid, no Upgrade, no countdown).
   const openBeta = state !== "loading" && state !== "error" && isOpenBeta(state);
   if (state !== "loading" && state !== "error" && !state.billing_enabled && !openBeta) return null;
+  // Snag #17: billing words only where there is billing. Open beta with no
+  // paid subscription (and loading/failed, where we don't know yet) is just
+  // "Your plan"; billing on, or a beta account still paying, keeps the bill.
+  const billed =
+    state !== "loading" &&
+    state !== "error" &&
+    (openBeta ? isPayingSubscriber(state) : state.billing_enabled);
+  const title = billed ? "Plan & billing" : "Your plan";
 
   return (
-    <section aria-label="Plan & billing" className="card p-6 shadow-soft">
-      <h2 className="font-serif text-xl text-fg">Plan & billing</h2>
+    <section aria-label={title} className="card p-6 shadow-soft">
+      <h2 className="font-serif text-xl text-fg">{title}</h2>
       {state === "loading" ? (
         <div aria-busy="true" className="mt-4 space-y-2.5">
           <div className="skeleton h-4 w-3/5 rounded-md" />
@@ -391,7 +399,7 @@ function PlanBillingCard({
 // only for someone who already pays through Stripe — the portal, so nobody is
 // left with a charge they can't see or cancel. Nothing to buy, no countdown.
 function OpenBetaPlan({ summary }: { summary: AccountSummary }) {
-  const paying = summary.has_billing_customer && PAID_TIER_IDS.has(summary.plan.tier);
+  const paying = isPayingSubscriber(summary);
   return (
     <div className="mt-4" data-testid="open-beta-plan">
       <p className="text-sm text-fg-muted">{planSummaryLine(summary)}</p>
@@ -402,6 +410,10 @@ function OpenBetaPlan({ summary }: { summary: AccountSummary }) {
 }
 
 const PAID_TIER_IDS = new Set(["entry", "standard", "plus", "power"]);
+
+function isPayingSubscriber(summary: AccountSummary): boolean {
+  return summary.has_billing_customer && PAID_TIER_IDS.has(summary.plan.tier);
+}
 
 // Existing subscriber: the current-plan line + the one true trip to the
 // Stripe billing portal. A 409/503 (comped account, or billing momentarily

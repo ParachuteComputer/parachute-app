@@ -186,7 +186,7 @@ describe("Settings route", () => {
   it("renders tag roles with defaults and saves overrides into the vault-settings cache", async () => {
     renderSettings();
     const section = screen
-      .getByRole("heading", { name: /tag roles/i })
+      .getByRole("heading", { name: /tags the app uses/i })
       .closest("section") as HTMLElement;
     const pinnedInput = within(section).getByLabelText(/pinned tag role/i);
     expect((pinnedInput as HTMLInputElement).value).toBe("pinned");
@@ -215,7 +215,7 @@ describe("Settings route", () => {
   it("shows 'Tag new notes as an inbox' OFF by default and saves it when turned on", async () => {
     renderSettings();
     const section = screen
-      .getByRole("heading", { name: /tag roles/i })
+      .getByRole("heading", { name: /tags the app uses/i })
       .closest("section") as HTMLElement;
     const toggle = within(section).getByRole("switch", { name: /tag new notes as an inbox/i });
     expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -282,7 +282,7 @@ describe("Settings route", () => {
     );
     renderSettings();
     const section = screen
-      .getByRole("heading", { name: /tag roles/i })
+      .getByRole("heading", { name: /tags the app uses/i })
       .closest("section") as HTMLElement;
     expect((within(section).getByLabelText(/pinned tag role/i) as HTMLInputElement).value).toBe(
       "starred",
@@ -329,6 +329,31 @@ describe("Settings route", () => {
     expect(accountHolder.logout).toHaveBeenCalledWith("csrf-1");
     // The cached account bearer is gone — the device honestly forgot the session.
     expect(sessionStorage.getItem("lens:account_token")).toBeNull();
+  });
+
+  // T-318 snag #17 (newcomer walk): "Tag roles", "account session" and
+  // "billing" in a free beta read as jargon. The copy says what each thing
+  // does, in words a first-time visitor can act on.
+  it("speaks plainly: the tags section, the sign-out line and the Account row", async () => {
+    accountHolder.session = { signed_in: true, email: "maya@example.test", csrf: "csrf-1" };
+    renderSettings();
+
+    const tags = screen.getByRole("heading", { name: "Tags the app uses" }).closest("section");
+    expect(
+      within(tags as HTMLElement).getByText(
+        /Pinning, archiving, the inbox and saved views each work by adding a tag\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Tag roles")).not.toBeInTheDocument();
+
+    expect(
+      await screen.findByText(
+        "Your vaults stay on this device and keep working; sign in again to manage your account. To take a vault off this device, remove it under Vaults.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/account session/i)).not.toBeInTheDocument();
+
+    expect(screen.getByText("Your plan, hosted vaults, and sign-in.")).toBeInTheDocument();
   });
 });
 
