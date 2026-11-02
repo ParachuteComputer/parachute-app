@@ -1,4 +1,5 @@
 import { clearVaultDrafts } from "@/lib/drafts/store";
+import { forgetVaultMirror } from "@/lib/mirror/forget";
 import { create } from "zustand";
 import {
   deleteServicesCatalog,
@@ -64,6 +65,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     deleteServicesCatalog(id);
     // Disconnecting a vault must not leave its plaintext note drafts behind.
     clearVaultDrafts(id);
+    // ...nor its offline mirror (every note, in IndexedDB).
+    void forgetVaultMirror(id);
     const nextActive =
       get().activeVaultId === id ? (Object.keys(rest)[0] ?? null) : get().activeVaultId;
     saveActiveVaultId(nextActive);
