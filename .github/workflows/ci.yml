@@ -1,4 +1,5 @@
-# CI on pull requests — the repo's manual pre-merge gate set, mechanized.
+# CI on pull requests and on pushes to main and next — the repo's manual
+# pre-merge gate set, mechanized.
 #
 # parachute-app shipped for months with NO CI at all: every gate verdict in a
 # PR body was a builder self-report, and nothing mechanically checked a claim
@@ -21,19 +22,24 @@
 # stale runs on the same PR cancelled by the concurrency group.
 #
 # OPERATOR STEP (not automatable from this repo's contents): making this a
-# REQUIRED check happens in branch protection for `main` — Settings →
-# Branches → require the `gates` job.
+# REQUIRED check happens in branch protection for `main` and `next` —
+# Settings → Branches → require the `gates` job. A required check must run on
+# every PR, so this workflow has no path filter.
 
 name: CI
 
 on:
   pull_request:
+  push:
+    branches: [main, next]
   workflow_dispatch: {}
 
 concurrency:
-  # One live run per PR — a new push cancels the stale run.
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # One live run per PR — a new push cancels the stale run. A push to main or
+  # next gets its own run that nothing cancels, so every commit there has a
+  # verdict.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
