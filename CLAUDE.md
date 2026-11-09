@@ -13,10 +13,11 @@ Hub and hosted Cloud). Real users on both — keep compatible.
   and must be green before merge. A merge that changes `version` publishes to npm
   (`.github/workflows/release.yml` explains rc and stable).
 - **Review is recorded in the PR body.** Every PR gets a fresh Claude reviewer (an agent that didn't write the code),
-  written up in a `## Review` section with its verdict. GitHub approvals aren't used: Uni opens and merges PRs as
-  `unforcedagi` after the review says ship.
+  written up in a `## Review` section with its verdict. GitHub approvals aren't used: Uni opens PRs and merges them into
+  `next` as `unforcedagi` after the review says ship. A `next`→`main` release PR can publish a stable `@latest`,
+  so Aaron (`unforced`) merges it; an agent never merges into `main`.
 - **This repo is public.** No private notes, real user data or secrets in code, tests, commits or PRs.
-- **Merging here does NOT deploy.** Cloud embeds the SPA from a source pin
+- **Merging here does NOT deploy to hosted Cloud.** Cloud embeds the SPA from a source pin
   (`parachute-cloud/scripts/spa-source.env`); promoting the app to hosted = a cloud pin-bump PR.
 - **Aaron's box serves this app bun-linked at the hub origin root** — the dogfood ring runs the
   leading-edge local build ahead of cloud; what's live there is the local `dist`, not npm.
