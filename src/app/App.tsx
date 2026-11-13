@@ -452,13 +452,8 @@ function AppShell() {
   const focusActive = focusOn && isFocusablePath(location.pathname);
 
   return (
-    <div className="app-canvas min-h-dvh overflow-x-hidden text-fg">
+    <div className="app-canvas min-h-dvh overflow-x-clip text-fg">
       <Toaster />
-      <UpdateBanner />
-      <VaultStatusBanner />
-      <AccountSessionBanner />
-      <HubGateBanner />
-      <MirrorStatusLine />
       <FocusModeMount />
       {/*
         The shell: a left nav column beside the content column. THREE bands
@@ -487,6 +482,13 @@ function AppShell() {
         {focusActive ? null : <NavDrawer />}
         {focusActive ? null : <Rail />}
         <div className={`flex min-w-0 flex-1 flex-col ${focusActive ? "" : "pb-16 md:pb-0"}`}>
+          {/* Keep banners in the content column so viewport-height navigation
+              starts at the viewport top and its footer stays reachable. */}
+          <UpdateBanner />
+          <VaultStatusBanner />
+          <AccountSessionBanner />
+          <HubGateBanner />
+          <MirrorStatusLine />
           {focusActive ? null : <Header />}
           <QuickSwitchMount />
           <main
