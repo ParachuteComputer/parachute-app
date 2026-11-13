@@ -452,7 +452,7 @@ function AppShell() {
   const focusActive = focusOn && isFocusablePath(location.pathname);
 
   return (
-    <div className="app-canvas min-h-dvh overflow-x-hidden text-fg">
+    <div className="app-canvas min-h-dvh overflow-x-clip text-fg">
       <Toaster />
       <UpdateBanner />
       <VaultStatusBanner />

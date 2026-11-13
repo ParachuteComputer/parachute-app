@@ -624,7 +624,7 @@ body {
 }
 /* Wide tables (more columns than the prose column can fit) get their own
    horizontal scroller instead of being silently clipped by .app-canvas's
-   overflow-x: hidden — the whole ancestor chain otherwise leaves overflow
+   overflow-x: clip — the whole ancestor chain otherwise leaves overflow
    visible, so nothing else catches it (UI audit, phone: ~330px of an
    8-column table was permanently unreachable, no scrollbar, no affordance).
    `display: block` + `width: max-content` + `max-width: 100%` is the
