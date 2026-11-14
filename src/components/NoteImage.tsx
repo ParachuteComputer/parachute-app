@@ -79,9 +79,10 @@ export function useNoteMediaUrl(src: string | null): {
   const kind: NoteMediaKind = src
     ? noteMediaKind(src, client?.vaultBaseUrl ?? null, pageHref())
     : "blocked";
-  // Keyed by the src it was loaded for, so a changed src never shows the
+  // Keyed by the client + src it was loaded for, so a change never shows the
   // previous (about to be revoked) object URL or error for one render.
   const [loaded, setLoaded] = useState<{
+    client: unknown;
     src: string;
     url: string | null;
     error: string | null;
@@ -96,11 +97,12 @@ export function useNoteMediaUrl(src: string | null): {
       .then((blob) => {
         if (cancelled) return;
         created = URL.createObjectURL(blob);
-        setLoaded({ src, url: created, error: null });
+        setLoaded({ client, src, url: created, error: null });
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setLoaded({
+            client,
             src,
             url: null,
             error: err instanceof Error ? err.message : "failed to load",
@@ -115,7 +117,7 @@ export function useNoteMediaUrl(src: string | null): {
 
   if (kind === "inline") return { kind, url: src, error: null };
   if (kind === "storage") {
-    const current = loaded?.src === src ? loaded : null;
+    const current = loaded?.src === src && loaded.client === client ? loaded : null;
     return { kind, url: current?.url ?? null, error: current?.error ?? null };
   }
   return { kind, url: null, error: null };

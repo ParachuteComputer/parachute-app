@@ -26,6 +26,16 @@ describe("vaultStorageTarget", () => {
     ["https:/vault/default/api/storage/x", "https://hub.example/vault/default/api/storage/x"],
     // a lone encoded dot is folded by the parser; the folded URL is what's fetched
     ["/api/storage/a/%2e/b.png", "https://hub.example/vault/default/api/storage/a/b.png"],
+    // protocol-relative to this vault's own host is still this vault
+    [
+      "//hub.example/vault/default/api/storage/a.png",
+      "https://hub.example/vault/default/api/storage/a.png",
+    ],
+    // an encoded slash in the query isn't part of the stored path
+    [
+      "/api/storage/a.png?next=%2Fx",
+      "https://hub.example/vault/default/api/storage/a.png?next=%2Fx",
+    ],
     ["/api/storage/my photo.png", "https://hub.example/vault/default/api/storage/my%20photo.png"],
   ])("accepts %s", (url, href) => {
     expect(vaultStorageTarget(VAULT, url, PAGE)?.href).toBe(href);
@@ -51,6 +61,11 @@ describe("vaultStorageTarget", () => {
     "/api/storage/a\\b.png",
     "/\\evil.example/api/storage/x",
     "/\t/evil.example/api/storage/x",
+    "/api/storage/a%00.png",
+    "/api/storage/%09/x.png",
+    "/api/storage/a%7F.png",
+    "https://u@hub.example/vault/default/api/storage/x.png",
+    "https://:p@hub.example/vault/default/api/storage/x.png",
     "/api/storage/a\u0000.png",
     "/api/storage/a\u007f.png",
     "javascript:alert(1)",

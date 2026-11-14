@@ -12,10 +12,11 @@
 import { NoteCard } from "@/components/views/NoteCard";
 import { VaultClient } from "@/lib/vault/client";
 import type { Note } from "@/lib/vault/types";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, renderHook, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarkdownView } from "./MarkdownView";
+import { useNoteMediaUrl } from "./NoteImage";
 
 let client: VaultClient | null = null;
 vi.mock("@/lib/vault/queries", () => ({ useActiveVaultClient: () => client }));
@@ -147,5 +148,32 @@ describe("gallery card cover", () => {
     expect(fetchImpl.mock.calls.map(([u]) => String(u))).toEqual([
       "https://hub.example/vault/default/api/storage/2026-11-13/c.png",
     ]);
+  });
+});
+
+describe("useNoteMediaUrl", () => {
+  it("a new src never shows the previous object URL, and unmount revokes", async () => {
+    let n = 0;
+    vi.mocked(URL.createObjectURL).mockImplementation(() => `blob:mock-${++n}`);
+    let release: () => void = () => {};
+    const { result, rerender, unmount } = renderHook(({ src }) => useNoteMediaUrl(src), {
+      initialProps: { src: "/api/storage/a.png" },
+    });
+    await waitFor(() => expect(result.current.url).toBe("blob:mock-1"));
+    // Hold the second fetch so the in-between render is observable.
+    fetchImpl.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(new Response(new Blob(["png"])));
+        }),
+    );
+    rerender({ src: "/api/storage/b.png" });
+    expect(result.current.url).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-1");
+    release();
+    await waitFor(() => expect(result.current.url).toBe("blob:mock-2"));
+    unmount();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-2");
+    vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:mock");
   });
 });
