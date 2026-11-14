@@ -32,7 +32,8 @@ export function NoteImage({
   if (kind === "remote") {
     return (
       <a
-        className="vault-media-remote"
+        // Looks like every other external link in a note (MarkdownView's NotesLink).
+        className="vault-media-remote external-link text-accent underline decoration-dashed underline-offset-4 hover:text-accent-hover"
         href={src}
         target="_blank"
         rel="noopener noreferrer"
