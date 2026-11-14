@@ -31,7 +31,10 @@ beforeAll(() => {
 beforeEach(() => {
   fetchImpl.mockReset();
   fetchImpl.mockImplementation(async () => new Response(new Blob(["png"])));
-  vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:mock");
+  vi.mocked(URL.createObjectURL)
+    .mockClear()
+    .mockImplementation(() => "blob:mock");
+  vi.mocked(URL.revokeObjectURL).mockClear();
   client = new VaultClient({
     vaultUrl: "https://hub.example/vault/default",
     accessToken: "pvt_owner",
@@ -178,7 +181,7 @@ describe("useNoteMediaUrl", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-2");
   });
 
-  it("coming back to an earlier src never returns a revoked URL or an old error", async () => {
+  it("coming back to an earlier src, or a new client, never returns a revoked URL", async () => {
     let n = 0;
     vi.mocked(URL.createObjectURL).mockImplementation(() => `blob:mock-${++n}`);
     const held = () => fetchImpl.mockImplementationOnce(() => new Promise<Response>(() => {}));
@@ -193,7 +196,7 @@ describe("useNoteMediaUrl", () => {
     rerender({ src: "/api/storage/a.png" });
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-1");
     expect(result.current.url).toBeNull();
-    // Same src, new client (a re-sign-in): the old client's URL is not reused.
+    // Load c.png, then swap the client (a re-sign-in) under the same src.
     rerender({ src: "/api/storage/c.png" });
     await waitFor(() => expect(result.current.url).toMatch(/^blob:mock-/));
     held();
