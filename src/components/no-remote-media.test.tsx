@@ -29,7 +29,9 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  fetchImpl.mockClear();
+  fetchImpl.mockReset();
+  fetchImpl.mockImplementation(async () => new Response(new Blob(["png"])));
+  vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:mock");
   client = new VaultClient({
     vaultUrl: "https://hub.example/vault/default",
     accessToken: "pvt_owner",
@@ -174,10 +176,9 @@ describe("useNoteMediaUrl", () => {
     await waitFor(() => expect(result.current.url).toBe("blob:mock-2"));
     unmount();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-2");
-    vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:mock");
   });
 
-  it("coming back to an earlier src, or a new client, never returns a revoked URL", async () => {
+  it("coming back to an earlier src never returns a revoked URL or an old error", async () => {
     let n = 0;
     vi.mocked(URL.createObjectURL).mockImplementation(() => `blob:mock-${++n}`);
     const held = () => fetchImpl.mockImplementationOnce(() => new Promise<Response>(() => {}));
@@ -193,8 +194,6 @@ describe("useNoteMediaUrl", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-1");
     expect(result.current.url).toBeNull();
     // Same src, new client (a re-sign-in): the old client's URL is not reused.
-    fetchImpl.mockReset();
-    fetchImpl.mockImplementation(async () => new Response(new Blob(["png"])));
     rerender({ src: "/api/storage/c.png" });
     await waitFor(() => expect(result.current.url).toMatch(/^blob:mock-/));
     held();
@@ -205,6 +204,19 @@ describe("useNoteMediaUrl", () => {
     });
     rerender({ src: "/api/storage/c.png" });
     expect(result.current.url).toBeNull();
-    vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:mock");
+  });
+
+  it("a failed load's error doesn't come back with the src", async () => {
+    fetchImpl.mockImplementationOnce(async () => new Response("", { status: 404 }));
+    const { result, rerender } = renderHook(
+      ({ src }: { src: string | null }) => useNoteMediaUrl(src),
+      { initialProps: { src: "/api/storage/a.png" as string | null } },
+    );
+    await waitFor(() => expect(result.current.error).toMatch(/404/));
+    rerender({ src: null });
+    fetchImpl.mockImplementationOnce(() => new Promise<Response>(() => {}));
+    rerender({ src: "/api/storage/a.png" });
+    expect(result.current.error).toBeNull();
+    expect(result.current.url).toBeNull();
   });
 });

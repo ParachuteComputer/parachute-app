@@ -111,12 +111,11 @@ export function useNoteMediaUrl(src: string | null): {
       });
     return () => {
       cancelled = true;
-      if (created) {
-        URL.revokeObjectURL(created);
-        // Forget it too, so coming back to this src never returns a dead URL.
-        const dead = created;
-        setLoaded((cur) => (cur?.url === dead ? null : cur));
-      }
+      if (created) URL.revokeObjectURL(created);
+      // Forget this run's result (url or error), so coming back to the same src
+      // or client never returns a revoked URL or a stale error. The key check
+      // below covers the one render before this lands.
+      setLoaded(null);
     };
   }, [kind, client, src]);
 
