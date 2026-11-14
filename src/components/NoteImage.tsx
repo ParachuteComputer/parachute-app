@@ -1,0 +1,129 @@
+import { useActiveVaultClient } from "@/lib/vault/queries";
+import { type NoteMediaKind, noteMediaKind, pageHref } from "@/lib/vault/storage-url";
+import { useEffect, useState } from "react";
+
+/**
+ * How a note's image is drawn. A note never makes the reader's device load
+ * anything from outside the vault (a tracker pixel would learn the note was
+ * opened, when and from where):
+ *
+ * - this vault's storage → fetched through the vault client (bearer, refresh),
+ *   shown from an object URL;
+ * - inline `data:image/…` or `blob:` → shown as is (no request);
+ * - any other http(s) URL → a plain link (alt text or the address), new tab,
+ *   no referrer, never loaded;
+ * - anything else → words.
+ *
+ * The same rules as surface-render's `VaultImage` after parachute-surface#246,
+ * applied here because the app pins surface-render 0.3.1, which still loads
+ * remote images. Drop this override once the app is on a surface-render that
+ * ships #246 and passes it `vaultUrl`.
+ */
+export function NoteImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt?: string;
+  className?: string;
+}) {
+  const { kind, url, error } = useNoteMediaUrl(src);
+  if (kind === "remote") {
+    return (
+      <a
+        // Looks like every other external link in a note (MarkdownView's NotesLink).
+        className="vault-media-remote external-link text-accent underline decoration-dashed underline-offset-4 hover:text-accent-hover"
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={src}
+      >
+        {alt || src}
+      </a>
+    );
+  }
+  if (kind === "blocked") {
+    return <span className="vault-media-blocked">{alt ? `[${alt}]` : "[image]"}</span>;
+  }
+  if (error) {
+    return (
+      <span className="vault-media-error" role="img" aria-label={alt || "image failed to load"}>
+        [{alt || "image"}: {error}]
+      </span>
+    );
+  }
+  if (!url) {
+    return (
+      <span
+        className={`vault-media-loading ${className ?? ""}`.trim()}
+        aria-busy="true"
+        aria-label={alt || "loading image"}
+      />
+    );
+  }
+  return <img src={url} alt={alt ?? ""} className={className} />;
+}
+
+/**
+ * Classify a note's media `src` and, for this vault's storage, fetch it through
+ * the active vault client into an object URL (revoked on change/unmount).
+ * `url` is the address safe to put in `src`: the object URL, the inline src, or
+ * null (remote, blocked, still loading, or failed).
+ */
+export function useNoteMediaUrl(src: string | null): {
+  kind: NoteMediaKind;
+  url: string | null;
+  error: string | null;
+} {
+  const client = useActiveVaultClient();
+  const kind: NoteMediaKind = src
+    ? noteMediaKind(src, client?.vaultBaseUrl ?? null, pageHref())
+    : "blocked";
+  // Keyed by the client + src it was loaded for, so a change never shows the
+  // previous (about to be revoked) object URL or error for one render.
+  const [loaded, setLoaded] = useState<{
+    client: unknown;
+    src: string;
+    url: string | null;
+    error: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (kind !== "storage" || !client || !src) return;
+    let cancelled = false;
+    let created: string | null = null;
+    client
+      .fetchAttachmentBlob(src)
+      .then((blob) => {
+        if (cancelled) return;
+        created = URL.createObjectURL(blob);
+        setLoaded({ client, src, url: created, error: null });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setLoaded({
+            client,
+            src,
+            url: null,
+            error: err instanceof Error ? err.message : "failed to load",
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+      if (created) URL.revokeObjectURL(created);
+      // Forget this run's result (url or error), so coming back to the same src
+      // or client never returns a revoked URL or a stale error. The key check
+      // below covers the one render before this lands.
+      setLoaded(null);
+    };
+  }, [kind, client, src]);
+
+  if (kind === "inline") return { kind, url: src, error: null };
+  if (kind === "storage") {
+    const current = loaded?.src === src && loaded.client === client ? loaded : null;
+    return { kind, url: current?.url ?? null, error: current?.error ?? null };
+  }
+  return { kind, url: null, error: null };
+}

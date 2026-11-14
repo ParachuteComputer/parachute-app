@@ -351,6 +351,95 @@ describe("VaultClient (Notes subclass) — fetchAttachmentBlob", () => {
     ).resolves.toBeInstanceOf(Blob);
   });
 
+  it("refuses #246's bypasses before any request: userinfo, encoded and back slashes, other vaults", async () => {
+    // Each of these must be refused with no request at all, so neither the
+    // bearer nor a probe reaches anything a note names.
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("x"));
+    const client = new VaultClient({
+      vaultUrl: "https://hub.example/vault/default",
+      accessToken: "pvt_owner",
+      fetchImpl,
+    });
+    for (const url of [
+      "https://evil.example/vault/default/api/storage/x.png",
+      "//evil.example/api/storage/x.png",
+      "https://hub.example@evil.example/vault/default/api/storage/x.png",
+      "https://u:p@hub.example/vault/default/api/storage/x.png",
+      "https://hub.example/vault/other/api/storage/x.png",
+      "https://hub.example/vault/default/api/notes/x",
+      "/../../admin/x",
+      "/\\evil.example/x",
+      "/\t/evil.example/x",
+      "/api/storage/a\\..\\..\\x",
+      "/api/storage/a%2fb.png",
+      "/api/storage/a%5Cb.png",
+      "/api/storage/",
+      "javascript:alert(1)",
+      "data:image/png;base64,AAAA",
+    ]) {
+      await expect(client.fetchAttachmentBlob(url), url).rejects.toThrow(/storage/);
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("fetches exactly the URL it checked, never the raw string", async () => {
+    // `http:/vault/…` is relative to an http page in a browser but a different
+    // string to any other fetcher; the request must go to the resolved URL.
+    // (jsdom's page is http, so the vault sits on the page's origin.)
+    const page = window.location.origin;
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("x"));
+    const client = new VaultClient({
+      vaultUrl: `${page}/vault/default`,
+      accessToken: "pvt_owner",
+      fetchImpl,
+    });
+    await client.fetchAttachmentBlob("http:/vault/default/api/storage/x.png");
+    await client.fetchAttachmentBlob("http:evil.example/api/storage/x").catch(() => undefined);
+    expect(fetchImpl.mock.calls.map(([t]) => String(t))).toEqual([
+      `${page}/vault/default/api/storage/x.png`,
+    ]);
+  });
+
+  it("an empty or root-relative vault URL still loads its own storage, and only that", async () => {
+    // The hub serves the app at its own origin; a vault URL stored without a
+    // host must resolve against the page, not refuse every attachment.
+    for (const vaultUrl of ["", "/vault/default"]) {
+      const fetchImpl = vi.fn<typeof fetch>(async () => new Response("x"));
+      const client = new VaultClient({ vaultUrl, accessToken: "pvt_owner", fetchImpl });
+      await client.fetchAttachmentBlob("/api/storage/2026-11-13/a.png");
+      expect(fetchImpl.mock.calls.map(([t]) => String(t))).toEqual([
+        `${window.location.origin}${vaultUrl}/api/storage/2026-11-13/a.png`,
+      ]);
+      for (const url of [
+        "https://evil.example/api/storage/x.png",
+        "/\\evil.example/api/storage/x.png",
+        "//evil.example/api/storage/x.png",
+      ]) {
+        await expect(client.fetchAttachmentBlob(url), `${vaultUrl} ${url}`).rejects.toThrow();
+      }
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("ordinary storage names still load: spaces, %20, unicode, a query", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("x"));
+    const client = new VaultClient({
+      vaultUrl: "https://hub.example/vault/default/",
+      accessToken: "pvt_owner",
+      fetchImpl,
+    });
+    for (const url of [
+      "/api/storage/2026-11-13/my photo.png",
+      "/api/storage/2026-11-13/my%20photo.png",
+      "/api/storage/2026-11-13/café.png",
+      "https://hub.example/vault/default/api/storage/2026-11-13/a.png?v=1",
+      "/api/storage/2026-11-13/a..b.png",
+    ]) {
+      await expect(client.fetchAttachmentBlob(url), url).resolves.toBeInstanceOf(Blob);
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+  });
+
   it("retries once with the rotated token on 401 + onAuthError", async () => {
     const fetchImpl = mockBlobFetch([{ status: 401 }, { status: 200, body: "bytes" }]);
     const onAuthError = vi.fn(async () => "eyJ.new");

@@ -1,3 +1,4 @@
+import { useNoteMediaUrl } from "@/components/NoteImage";
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import { plainPreview } from "@/lib/note-preview";
 import { displayTitle } from "@/lib/note-title";
@@ -18,18 +19,18 @@ import { Link } from "react-router";
 //     note carries one, else a text tile.
 
 /**
- * The note's first image attachment as a directly-usable absolute URL, or
- * `null`. Deliberately conservative: only an already-absolute `http(s)` URL
- * is used (a relative vault path would need an authed blob fetch and would
- * otherwise render broken), and the list result shape usually omits
- * attachments entirely — so the gallery is text-first by construction and
- * lights up a cover only when the data unambiguously supports one.
+ * The note's first image attachment URL, or `null`. Drawn through
+ * `useNoteMediaUrl`, so only this vault's storage (fetched with the client) or
+ * inline data ever loads; a remote URL an attachment row names gets no cover.
+ * The list result shape usually omits attachments entirely, so the gallery is
+ * text-first by construction and lights up a cover only when the data
+ * supports one.
  */
 function firstImageUrl(note: Note): string | null {
   for (const att of note.attachments ?? []) {
     const url = typeof att.url === "string" ? att.url : null;
     const isImage = typeof att.mimeType === "string" && att.mimeType.startsWith("image/");
-    if (isImage && url && /^https?:\/\//i.test(url)) return url;
+    if (isImage && url) return url;
   }
   return null;
 }
@@ -76,7 +77,7 @@ export function NoteCard({
   const stamp = note.updatedAt ?? note.createdAt;
   const isPinned = (note.tags ?? []).includes(pinnedTag);
   const isArchived = (note.tags ?? []).includes(archivedTag);
-  const cover = variant === "gallery" ? firstImageUrl(note) : null;
+  const { url: cover } = useNoteMediaUrl(variant === "gallery" ? firstImageUrl(note) : null);
   const [coverBroken, setCoverBroken] = useState(false);
   const showCover = cover && !coverBroken;
   const draggable = drag?.canDrag ?? false;
