@@ -28,9 +28,12 @@
  */
 export function vaultStorageTarget(vaultUrl: string, url: string, here?: string): URL | null {
   if (unsafeChars(url)) return null;
-  const base = vaultUrl.replace(/\/+$/, "");
-  const vault = parseHttpUrl(`${base}/`, here);
-  if (!vault) return null;
+  // The vault as a directory, from its parsed origin + path (a stray `?`/`#` in
+  // the stored vault URL can't bend the storage prefix).
+  const parsed = parseHttpUrl(`${vaultUrl.replace(/\/+$/, "")}/`, here);
+  if (!parsed) return null;
+  const vault = new URL(`${parsed.origin}${parsed.pathname.replace(/\/*$/, "/")}`);
+  const base = vault.href.slice(0, -1);
   const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//");
   const raw = absolute ? url : `${base}${url.startsWith("/") ? "" : "/"}${url}`;
   const target = parseHttpUrl(raw, here ?? vault.href);
@@ -63,12 +66,19 @@ const INLINE_IMAGE = /^data:image\/(png|jpeg|gif|webp|avif)[;,]/i;
 export function noteMediaKind(src: string, vaultUrl: string | null, here?: string): NoteMediaKind {
   if (vaultUrl !== null && vaultStorageTarget(vaultUrl, src, here)) return "storage";
   if (INLINE_IMAGE.test(src) || src.startsWith("blob:")) return "inline";
-  if (/^https?:\/\//i.test(src) && !unsafeChars(src)) return "remote";
+  // A remote link is never loaded, so an encoded slash is fine here (image
+  // proxies and bucket URLs carry them); a backslash or control character isn't.
+  if (/^https?:\/\//i.test(src) && !src.includes("\\") && !hasControlChar(src)) {
+    if (parseHttpUrl(src)) return "remote";
+  }
   return "blocked";
 }
 
 function unsafeChars(url: string): boolean {
-  if (url.includes("\\") || /%2f|%5c/i.test(url)) return true;
+  return url.includes("\\") || /%2f|%5c/i.test(url) || hasControlChar(url);
+}
+
+function hasControlChar(url: string): boolean {
   for (let i = 0; i < url.length; i++) {
     const c = url.charCodeAt(i);
     if (c < 0x20 || c === 0x7f) return true;

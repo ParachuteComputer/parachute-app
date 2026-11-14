@@ -383,25 +383,21 @@ describe("VaultClient (Notes subclass) — fetchAttachmentBlob", () => {
   });
 
   it("fetches exactly the URL it checked, never the raw string", async () => {
-    // `https:evil.example/x` parses relative to an https base; outside a
-    // browser the raw string could go to evil.example.
+    // `http:/vault/…` is relative to an http page in a browser but a different
+    // string to any other fetcher; the request must go to the resolved URL.
+    // (jsdom's page is http, so the vault sits on the page's origin.)
+    const page = window.location.origin;
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response("x"));
     const client = new VaultClient({
-      vaultUrl: "https://hub.example/vault/default",
+      vaultUrl: `${page}/vault/default`,
       accessToken: "pvt_owner",
       fetchImpl,
     });
-    for (const url of [
-      "https:evil.example/api/storage/x",
-      "https:/evil.example/api/storage/x",
-      "https:evil.example/vault/default/api/storage/x",
-    ]) {
-      await client.fetchAttachmentBlob(url).catch(() => undefined);
-    }
-    for (const [target] of fetchImpl.mock.calls) {
-      expect(new URL(String(target)).origin).toBe("https://hub.example");
-      expect(new URL(String(target)).pathname.startsWith("/vault/default/api/storage/")).toBe(true);
-    }
+    await client.fetchAttachmentBlob("http:/vault/default/api/storage/x.png");
+    await client.fetchAttachmentBlob("http:evil.example/api/storage/x").catch(() => undefined);
+    expect(fetchImpl.mock.calls.map(([t]) => String(t))).toEqual([
+      `${page}/vault/default/api/storage/x.png`,
+    ]);
   });
 
   it("an empty or root-relative vault URL still loads its own storage, and only that", async () => {

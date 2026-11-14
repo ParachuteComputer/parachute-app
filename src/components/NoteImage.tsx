@@ -79,12 +79,15 @@ export function useNoteMediaUrl(src: string | null): {
   const kind: NoteMediaKind = src
     ? noteMediaKind(src, client?.vaultBaseUrl ?? null, pageHref())
     : "blocked";
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Keyed by the src it was loaded for, so a changed src never shows the
+  // previous (about to be revoked) object URL or error for one render.
+  const [loaded, setLoaded] = useState<{
+    src: string;
+    url: string | null;
+    error: string | null;
+  } | null>(null);
 
   useEffect(() => {
-    setBlobUrl(null);
-    setError(null);
     if (kind !== "storage" || !client || !src) return;
     let cancelled = false;
     let created: string | null = null;
@@ -93,10 +96,16 @@ export function useNoteMediaUrl(src: string | null): {
       .then((blob) => {
         if (cancelled) return;
         created = URL.createObjectURL(blob);
-        setBlobUrl(created);
+        setLoaded({ src, url: created, error: null });
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "failed to load");
+        if (!cancelled) {
+          setLoaded({
+            src,
+            url: null,
+            error: err instanceof Error ? err.message : "failed to load",
+          });
+        }
       });
     return () => {
       cancelled = true;
@@ -105,6 +114,9 @@ export function useNoteMediaUrl(src: string | null): {
   }, [kind, client, src]);
 
   if (kind === "inline") return { kind, url: src, error: null };
-  if (kind === "storage") return { kind, url: blobUrl, error };
+  if (kind === "storage") {
+    const current = loaded?.src === src ? loaded : null;
+    return { kind, url: current?.url ?? null, error: current?.error ?? null };
+  }
   return { kind, url: null, error: null };
 }
