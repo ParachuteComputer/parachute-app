@@ -176,4 +176,35 @@ describe("useNoteMediaUrl", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-2");
     vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:mock");
   });
+
+  it("coming back to an earlier src, or a new client, never returns a revoked URL", async () => {
+    let n = 0;
+    vi.mocked(URL.createObjectURL).mockImplementation(() => `blob:mock-${++n}`);
+    const held = () => fetchImpl.mockImplementationOnce(() => new Promise<Response>(() => {}));
+    const { result, rerender } = renderHook(
+      ({ src }: { src: string | null }) => useNoteMediaUrl(src),
+      { initialProps: { src: "/api/storage/a.png" as string | null } },
+    );
+    await waitFor(() => expect(result.current.url).toBe("blob:mock-1"));
+    // A → nothing → A (a list refetch that drops, then restores, attachments)
+    rerender({ src: null });
+    held();
+    rerender({ src: "/api/storage/a.png" });
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-1");
+    expect(result.current.url).toBeNull();
+    // Same src, new client (a re-sign-in): the old client's URL is not reused.
+    fetchImpl.mockReset();
+    fetchImpl.mockImplementation(async () => new Response(new Blob(["png"])));
+    rerender({ src: "/api/storage/c.png" });
+    await waitFor(() => expect(result.current.url).toMatch(/^blob:mock-/));
+    held();
+    client = new VaultClient({
+      vaultUrl: "https://hub.example/vault/default",
+      accessToken: "pvt_rotated",
+      fetchImpl,
+    });
+    rerender({ src: "/api/storage/c.png" });
+    expect(result.current.url).toBeNull();
+    vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:mock");
+  });
 });

@@ -111,7 +111,12 @@ export function useNoteMediaUrl(src: string | null): {
       });
     return () => {
       cancelled = true;
-      if (created) URL.revokeObjectURL(created);
+      if (created) {
+        URL.revokeObjectURL(created);
+        // Forget it too, so coming back to this src never returns a dead URL.
+        const dead = created;
+        setLoaded((cur) => (cur?.url === dead ? null : cur));
+      }
     };
   }, [kind, client, src]);
 
