@@ -698,6 +698,15 @@ body {
   font-size: var(--text-xs);
   color: var(--color-danger);
 }
+/* <NoteImage>: a remote image is a link, never loaded; anything else is words. */
+.vault-media-remote {
+  font-size: var(--text-sm);
+  word-break: break-all;
+}
+.vault-media-blocked {
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
 .vault-media-loading {
   display: inline-block;
   height: 6rem;
