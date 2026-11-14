@@ -1,19 +1,19 @@
 import { withMount } from "@/lib/base-url";
-import { useActiveVaultClient } from "@/lib/vault/queries";
 import type { Note } from "@/lib/vault/types";
 import {
   type LinkComponentProps,
+  type MarkdownViewProps,
   MarkdownView as SurfaceMarkdownView,
   type WikilinkResolver,
-  vaultClientFetchBlob,
 } from "@openparachute/surface-render";
-import { useMemo } from "react";
 import { Link } from "react-router";
 import rehypeHighlight from "rehype-highlight";
+import { NoteImage } from "./NoteImage";
 
 // notes-ui-specific glue over `@openparachute/surface-render`'s
 // <MarkdownView>. The shared layer owns markdown + wikilink parsing + the
-// resolved/unresolved class contract + the auth'd-image path; notes-ui owns
+// resolved/unresolved class contract; notes-ui owns note images (<NoteImage>:
+// only this vault's storage or inline data loads, remote images are links),
 // the note-index → resolver source, the `/n/<id>` URL space, and the
 // react-router link component.
 
@@ -94,6 +94,15 @@ function NotesLink({ href, className, children }: LinkComponentProps) {
   );
 }
 
+// Every image a note draws goes through <NoteImage>: this vault's storage loads
+// through the client, remote images become links, nothing else loads.
+const NOTE_COMPONENTS: MarkdownViewProps["components"] = {
+  img({ src, alt, className }) {
+    if (typeof src !== "string" || !src) return null;
+    return <NoteImage src={src} alt={alt ?? ""} className={className} />;
+  },
+};
+
 export function MarkdownView({
   content,
   resolve,
@@ -108,17 +117,12 @@ export function MarkdownView({
   resolve?: WikilinkResolver;
   className?: string;
 }) {
-  const client = useActiveVaultClient();
-  // `vaultClientFetchBlob` adapts notes-ui's VaultClient (`fetchAttachmentBlob`)
-  // to surface-render's `FetchBlob` hook, so `/api/storage/…` images load
-  // auth'd via <VaultImage>. `?? undefined` when not signed in / no client.
-  const fetchBlob = useMemo(() => vaultClientFetchBlob(client) ?? undefined, [client]);
   return (
     <SurfaceMarkdownView
       content={content}
       resolve={resolve}
       linkComponent={NotesLink}
-      fetchBlob={fetchBlob}
+      components={NOTE_COMPONENTS}
       rehypePlugins={[rehypeHighlight]}
       className={`prose-note ${className ?? ""}`.trim()}
     />
