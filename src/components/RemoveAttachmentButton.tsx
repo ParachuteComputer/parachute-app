@@ -1,5 +1,6 @@
 import { useToastStore } from "@/lib/toast/store";
 import { useDeleteAttachment } from "@/lib/vault";
+import { attachmentName } from "@/lib/vault/attachment-name";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import type { NoteAttachment } from "@/lib/vault/types";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -150,11 +151,5 @@ function ConfirmRemoveDialog({
 }
 
 function labelFor(a: NoteAttachment): string {
-  if (a.filename) return a.filename;
-  if (a.path) {
-    const last = a.path.split("/").pop();
-    if (last) return last;
-    return a.path;
-  }
-  return a.id;
+  return attachmentName(a);
 }

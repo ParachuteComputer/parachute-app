@@ -20,6 +20,7 @@ import { useFocusMode } from "@/lib/focus-mode";
 import { relativeTime } from "@/lib/time";
 import { useToastStore } from "@/lib/toast/store";
 import { useNote, useUpdateNote, useVaultStore } from "@/lib/vault";
+import { attachmentName } from "@/lib/vault/attachment-name";
 import { type UpdateNotePayload, VaultAuthError, VaultConflictError } from "@/lib/vault/client";
 import { useActiveVaultClient } from "@/lib/vault/queries";
 import type { Note, NoteAttachment } from "@/lib/vault/types";
@@ -678,7 +679,7 @@ function AttachmentsSection({
               className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card/50 px-3 py-1.5 font-mono text-xs"
             >
               <span className="truncate" title={a.path ?? a.id}>
-                {a.filename ?? a.path ?? a.id}
+                {attachmentName(a)}
               </span>
               <div className="flex shrink-0 items-center gap-2">
                 {a.mimeType ? <span className="text-fg-dim">{a.mimeType}</span> : null}

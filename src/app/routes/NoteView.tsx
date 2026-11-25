@@ -34,6 +34,7 @@ import {
   useRetryTranscription,
   useVaultStore,
 } from "@/lib/vault";
+import { attachmentName } from "@/lib/vault/attachment-name";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { noteShareUrl, vaultShareRef } from "@/lib/vault/deep-link";
 import { useTagRoles } from "@/lib/vault/settings";
@@ -575,7 +576,7 @@ function LinksPanel({
 
 // The vault's attachment row is `{id, noteId, path, mimeType, metadata,
 // createdAt}` on both doors — no `filename`, no `url`. A stored attachment is
-// one with a `path`: its name is the path's last segment and its bytes are
+// one with a `path`: its name is `attachmentName` (the name it was sent with, else the path's last segment) and its bytes are
 // served at `/api/storage/<path>` (the same URL the editor's embed uses). Only a
 // row with neither a `url` nor a `path` is still in flight. A voice memo that is
 // still transcribing is NOT in flight here — its audio is stored and playable;
@@ -583,7 +584,7 @@ function LinksPanel({
 function attachmentSource(a: NoteAttachment): { filename?: string; url?: string } {
   const path = a.path?.replace(/^\/+/, "");
   return {
-    filename: a.filename ?? (path ? path.split("/").pop() : undefined),
+    filename: path || a.filename ? attachmentName(a) : undefined,
     url: a.url ?? (path ? `/api/storage/${path}` : undefined),
   };
 }
