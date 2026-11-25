@@ -142,14 +142,14 @@ const CLAUDE_STEPS: Step[] = [
       <>
         Open{" "}
         <a
-          href="https://claude.ai"
+          href="https://claude.ai/customize/connectors"
           target="_blank"
           rel="noopener noreferrer"
           className="text-accent hover:underline"
         >
-          claude.ai
+          Claude's connectors
         </a>{" "}
-        and go to <strong className="text-fg">Customize → Connectors</strong>.
+        (in claude.ai's sidebar: <strong className="text-fg">Plugins</strong>).
       </>
     ),
   },
@@ -157,8 +157,8 @@ const CLAUDE_STEPS: Step[] = [
     key: "add",
     body: (
       <>
-        Click <strong className="text-fg">+ Add</strong>, then{" "}
-        <strong className="text-fg">Add custom connector</strong>.
+        Click <strong className="text-fg">Add</strong>, then{" "}
+        <strong className="text-fg">Add custom connector</strong>, and name it Parachute.
       </>
     ),
   },
@@ -166,8 +166,8 @@ const CLAUDE_STEPS: Step[] = [
     key: "paste",
     body: (
       <>
-        Paste your vault address above, click <strong className="text-fg">Continue</strong>, and
-        allow access when Parachute asks.
+        Paste your vault address above, click <strong className="text-fg">Continue</strong>, then{" "}
+        <strong className="text-fg">Add</strong>, and allow access when Parachute asks.
       </>
     ),
   },
