@@ -60,9 +60,12 @@ describe("ConnectAI", () => {
     expect(screen.getByRole("heading", { level: 1, name: /connect your ai/i })).toBeInTheDocument();
     // The load-bearing MCP endpoint (bare vault URL + /mcp).
     expect(screen.getByText("https://u.parachute.computer/vault/aaron/mcp")).toBeInTheDocument();
-    // Claude's current menu names (T-318), never the stale "Settings → Connectors".
-    expect(screen.getByText(/customize → connectors/i)).toBeInTheDocument();
-    expect(screen.queryByText(/settings → connectors/i)).not.toBeInTheDocument();
+    // Claude's menus move (Settings, then Customize, now Plugins: T-318, T-476), so the step links straight to
+    // claude.ai's connectors page and names the sidebar item claude.ai shows today; never a stale "X → Connectors".
+    const connectors = screen.getByRole("link", { name: /claude's connectors/i });
+    expect(connectors).toHaveAttribute("href", "https://claude.ai/customize/connectors");
+    expect(screen.getByText("Plugins")).toBeInTheDocument();
+    expect(screen.queryByText(/(settings|customize) → connectors/i)).not.toBeInTheDocument();
     expect(screen.getByText(/add custom connector/i)).toBeInTheDocument();
     expect(
       screen.getByText(/on claude's free plan you can add one custom connector/i),
