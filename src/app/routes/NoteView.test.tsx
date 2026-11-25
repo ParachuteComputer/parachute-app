@@ -127,6 +127,38 @@ describe("NoteView route", () => {
     syncState.mirrorState = "off";
   });
 
+  it("names an attached file by the name it was sent with, not its server-made path (T-476)", async () => {
+    installFetch({
+      "/api/notes": {
+        body: {
+          id: "seed-1",
+          path: "Ideas/Seed library box",
+          createdAt: "2026-11-25T19:00:00.000Z",
+          updatedAt: "2026-11-25T19:00:00.000Z",
+          content: "A seed library box at the garden gate.",
+          metadata: {},
+          tags: ["idea"],
+          links: [],
+          attachments: [
+            {
+              id: "att-1",
+              noteId: "seed-1",
+              path: "2026-11-25/1795635230689-d9bf96f7-8976-42c2-8fe6-b8b76f317430.csv",
+              mimeType: "text/csv",
+              metadata: { original_name: "seed-inventory.csv", size: 431 },
+            },
+          ],
+        },
+      },
+    });
+
+    renderAt("/n/seed-1");
+
+    expect(await screen.findByText("A seed library box at the garden gate.")).toBeInTheDocument();
+    expect((await screen.findAllByText(/seed-inventory\.csv/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/1795635230689-d9bf96f7/)).not.toBeInTheDocument();
+  });
+
   it("renders markdown content, metadata, tags, and back link", async () => {
     installFetch({
       "/api/notes": {

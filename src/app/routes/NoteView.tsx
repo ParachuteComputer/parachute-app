@@ -34,6 +34,7 @@ import {
   useRetryTranscription,
   useVaultStore,
 } from "@/lib/vault";
+import { attachmentName } from "@/lib/vault/attachment-name";
 import { VaultAuthError, VaultNotFoundError } from "@/lib/vault/client";
 import { noteShareUrl, vaultShareRef } from "@/lib/vault/deep-link";
 import { useTagRoles } from "@/lib/vault/settings";
@@ -583,7 +584,7 @@ function LinksPanel({
 function attachmentSource(a: NoteAttachment): { filename?: string; url?: string } {
   const path = a.path?.replace(/^\/+/, "");
   return {
-    filename: a.filename ?? (path ? path.split("/").pop() : undefined),
+    filename: path || a.filename ? attachmentName(a) : undefined,
     url: a.url ?? (path ? `/api/storage/${path}` : undefined),
   };
 }
